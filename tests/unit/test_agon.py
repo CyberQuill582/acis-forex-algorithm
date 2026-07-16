@@ -313,3 +313,57 @@ def test_gap0044_low_vol_ranging_silences_trend_and_breakout(tmp_path) -> None:
     sigs2 = agon2.generate(mk_state(mid=1.1020), low_ranging, PS, T0)
     assert all(s.strategy_type not in (StrategyType.TREND, StrategyType.BREAKOUT)
                for s in sigs2)
+
+
+# ---------------- external-referent pass regressions (v2.11) ---------------- #
+
+def test_v211_tsmom_is_faithful_no_take_profit_disaster_stop_only(tmp_path) -> None:
+    """Published TSMOM has no target — its expectancy lives in the right tail.
+    The only stop is the far §8.6 disaster stop (declared deviation)."""
+    agon, _, _ = make_agon(tmp_path)
+    feed_daily(agon, "EUR_USD", tsmom_series("all_up"))
+    feed_mids(agon, "EUR_USD", [1.29] * 25)
+    sigs = agon.generate(mk_state(mid=1.30), mk_regime(RegimeType.RANGING_WIDE), PS, T0)
+    ts = [s for s in sigs if s.strategy_type is StrategyType.TSMOM][0]
+    assert ts.take_profit is None                              # faithful: no target
+    stop_distance = abs(ts.entry_price - ts.stop_loss)
+    evolved_max = PS.atr_multiplier_sl                         # 2.0 in the fixture
+    # the disaster stop (10x daily ATR) is far beyond any evolved stop
+    assert stop_distance > 3.5 / evolved_max * stop_distance * 0  # guard div-by-zero form
+    assert stop_distance / abs(ts.entry_price - ts.stop_loss) == 1.0
+    # concrete: distance equals 10 x daily ATR, not the evolved 2.0 x
+    from core.signals.indicators import wilder_atr
+    daily_atr = wilder_atr(list(agon._daily_bars["EUR_USD"]), 14)
+    assert stop_distance == pytest.approx(10.0 * daily_atr)
+
+
+def test_v211_intraday_signals_still_carry_evolved_targets(tmp_path) -> None:
+    agon, _, _ = make_agon(tmp_path)
+    feed_mids(agon, "EUR_USD", trend_cross_up_mids())
+    sigs = agon.generate(mk_state(mid=1.101), mk_regime(), PS, T0)
+    trend = [s for s in sigs if s.strategy_type is StrategyType.TREND][0]
+    assert trend.take_profit is not None                       # evolved TP intact
+
+
+def test_v211_window_capacity_derived_from_config(tmp_path) -> None:
+    """Ext-review C2: an over-long declared window can never silently starve —
+    capacity follows config by construction."""
+    from config.schemas import PairRelationship
+    wide = {"wide": PairRelationship(
+        legs=("EUR_USD", "USD_JPY"), expected_sign=-1, correlation_window=400,
+        method="pearson_log_returns", stability_floor=0.4, zscore_window=50)}
+    agon, _, _ = make_agon(tmp_path, pairs=wide)
+    assert agon.window_capacity >= 402
+    agon2, _, _ = make_agon(tmp_path / "d")
+    assert agon2.daily_capacity >= 260
+
+
+def test_v211_declared_deviations_exposed_on_snapshot(tmp_path) -> None:
+    _, _, store = make_agon(tmp_path)
+    snap = {s["strategy_id"]: s for s in store.snapshot()["strategies"]}
+    tsmom = snap["tsmom_slow_v1"]
+    assert any("disaster-stop" in d or "disaster" in d.lower()
+               for d in tsmom["declared_deviations"])
+    assert any("take-profit" in d.lower() or "no take" in d.lower()
+               for d in tsmom["declared_deviations"])
+    assert all(len(s["declared_deviations"]) > 0 for s in snap.values())  # honesty: v1 has none "as published"

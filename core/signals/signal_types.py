@@ -28,8 +28,8 @@ class Signal:
     conviction: float              # [0.45, 1] for any emitted signal
     entry_price: float
     stop_loss: float
-    take_profit: float
-    strategy_type: StrategyType
+    take_profit: float | None     # None = no target (faithful TSMOM, v2.11);
+    strategy_type: StrategyType   # a stop is ALWAYS required (§8.6 safety law)
     regime_at_generation: RegimeType
     param_set_id: str
     generated_at: datetime
@@ -42,22 +42,26 @@ class Signal:
         if not math.isfinite(self.conviction) or not (0.45 <= self.conviction <= 1.0):
             raise DataQualityError("conviction", self.conviction,
                                    "emitted conviction must be in [0.45, 1]")
-        for name in ("entry_price", "stop_loss", "take_profit"):
+        names = ("entry_price", "stop_loss") + (
+            ("take_profit",) if self.take_profit is not None else ())
+        for name in names:
             v = getattr(self, name)
             if not math.isfinite(v) or v <= 0:
                 raise DataQualityError(name, v, "must be finite and > 0")
         if self.direction == 1:
-            if not (self.stop_loss < self.entry_price < self.take_profit):
-                raise DataQualityError(
-                    "stop_loss/take_profit", (self.stop_loss, self.take_profit),
-                    "long requires stop < entry < target",
-                )
+            if not self.stop_loss < self.entry_price:
+                raise DataQualityError("stop_loss", self.stop_loss,
+                                       "long requires stop < entry")
+            if self.take_profit is not None and not self.entry_price < self.take_profit:
+                raise DataQualityError("take_profit", self.take_profit,
+                                       "long requires entry < target")
         else:
-            if not (self.take_profit < self.entry_price < self.stop_loss):
-                raise DataQualityError(
-                    "stop_loss/take_profit", (self.stop_loss, self.take_profit),
-                    "short requires target < entry < stop",
-                )
+            if not self.entry_price < self.stop_loss:
+                raise DataQualityError("stop_loss", self.stop_loss,
+                                       "short requires entry < stop")
+            if self.take_profit is not None and not self.take_profit < self.entry_price:
+                raise DataQualityError("take_profit", self.take_profit,
+                                       "short requires target < entry")
         if self.generated_at.tzinfo is None:
             raise DataQualityError("generated_at", self.generated_at, "must be tz-aware")
         if self.valid_for_seconds <= 0:

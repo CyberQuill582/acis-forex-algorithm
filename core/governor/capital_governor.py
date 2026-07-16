@@ -22,7 +22,7 @@ from core.data.errors import DataQualityError
 from core.governor.factors import correlation_factor, liquidity_factor, vol_norm
 from core.governor.marginal_alpha import MarginalAlphaEstimator
 from core.governor.portfolio_types import PortfolioState, SizedOrder
-from core.regime.nvma import atr
+from core.regime.nvma import mean_abs_delta
 from core.regime.regime_types import LiqState, RegimeContext
 from core.signals.signal_types import Signal, StrategyType
 
@@ -341,7 +341,9 @@ class CapitalGovernor:
             snapshot["vol_norm_pinned"] = True
             return 1.0
         seq = list(mids)
-        a = atr(seq, _ATR_PERIOD)
+        # C16 realized-vol estimator: mean-|Δmid| fraction (declared proxy,
+        # ACIS-05 §6.2) — dampen-only geometry is unaffected by the proxy choice
+        a = mean_abs_delta(seq, _ATR_PERIOD)
         if not math.isfinite(a) or a <= 0:
             self._log.event("VOL_NORM_PINNED", instrument=instrument)
             snapshot["vol_norm_pinned"] = True

@@ -55,6 +55,11 @@ class ProvenanceRecord:
     why_it_persists: str
     falsifier: str
     registered_at: datetime
+    # §5.6 declared-deviations law (v2.11): EVERY departure from the cited
+    # source's actual method, exhaustively. An EMPTY tuple is a positive
+    # assertion: "implemented as published." Audited by the external-referent
+    # audit; deviating beyond the declaration is dishonest provenance.
+    declared_deviations: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("strategy_id", "citation", "claimed_inefficiency",
@@ -62,6 +67,10 @@ class ProvenanceRecord:
             v = getattr(self, name)
             if not isinstance(v, str) or not v.strip():
                 raise DataQualityError(name, v, "provenance field must be non-empty (§5.6)")
+        for d in self.declared_deviations:
+            if not isinstance(d, str) or not d.strip():
+                raise DataQualityError("declared_deviations", d,
+                                       "a declared deviation must be non-empty text")
         if self.registered_at.tzinfo is None:
             raise DataQualityError("registered_at", self.registered_at, "must be tz-aware")
 
@@ -70,7 +79,8 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS provenance (
     strategy_id TEXT PRIMARY KEY, citation TEXT NOT NULL,
     claimed_inefficiency TEXT NOT NULL, why_it_persists TEXT NOT NULL,
-    falsifier TEXT NOT NULL, registered_at TEXT NOT NULL
+    falsifier TEXT NOT NULL, registered_at TEXT NOT NULL,
+    declared_deviations TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS rung_state (
     strategy_id TEXT PRIMARY KEY REFERENCES provenance(strategy_id),
@@ -121,9 +131,11 @@ class ProvenanceStore:
         due = (record.registered_at + timedelta(days=self._cadence)).isoformat()
         with self._db:
             self._db.execute(
-                "INSERT INTO provenance VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO provenance VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (record.strategy_id, record.citation, record.claimed_inefficiency,
-                 record.why_it_persists, record.falsifier, record.registered_at.isoformat()),
+                 record.why_it_persists, record.falsifier,
+                 record.registered_at.isoformat(),
+                 json.dumps(list(record.declared_deviations))),
             )
             self._db.execute(
                 "INSERT INTO rung_state VALUES (?, ?, ?, 0, NULL, 0, 0, ?)",
@@ -353,7 +365,8 @@ class ProvenanceStore:
         strategies = []
         for row in self._db.execute(
             "SELECT p.strategy_id, p.citation, p.falsifier, r.rung, r.revalidation_due, "
-            "r.entries_frozen, r.removal_staged, r.boundaries_skipped "
+            "r.entries_frozen, r.removal_staged, r.boundaries_skipped, "
+            "p.declared_deviations "
             "FROM provenance p JOIN rung_state r USING (strategy_id)"
         ).fetchall():
             family = row[0].rsplit("_v", 1)[0]
@@ -362,6 +375,7 @@ class ProvenanceStore:
                 "rung": row[3], "revalidation_due": row[4],
                 "entries_frozen": bool(row[5]), "removal_staged": bool(row[6]),
                 "boundaries_skipped": row[7], "attempts": self.attempts(family),
+                "declared_deviations": json.loads(row[8]),
             })
         graveyard = [
             {"strategy_id": r[0], "revival_condition": r[3], "revival_flagged": bool(r[5])}

@@ -26,6 +26,9 @@ regime:
   spread_illiquid_sigma: 2.0
   stability_window: 20
 signals:
+  signal_bar_seconds: 60      # v2.11: THE declared time base (= the GAP-0009 scalp bar)
+  atr_period: 14
+  tsmom_disaster_stop_atr: 10.0  # safety-only far stop (declared deviation from published TSMOM)
   conviction_discard: 0.45
   medium_vol_discount: 0.85
   valid_for_seconds:

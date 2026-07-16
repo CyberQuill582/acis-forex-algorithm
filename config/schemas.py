@@ -127,6 +127,9 @@ _STRATEGY_TYPES = frozenset({
 class SignalsConfig(_Strict):
     """AGON config (ACIS-04 §5). All required — no correctness defaults."""
 
+    signal_bar_seconds: int = Field(gt=0)     # v2.11: THE declared time base
+    atr_period: int = Field(gt=1)             # ext-review C1: no hardcoded 14
+    tsmom_disaster_stop_atr: float = Field(ge=5.0)  # far beyond the evolved SL cap 3.5
     # C4: 0.45. Floor ge=0.45 (GAP-0043): the Signal contract's emitted floor is
     # 0.45 — a discard threshold below it would be a silent no-op knob whose
     # drops surface mislabelled as construction errors. Tighter allowed.
@@ -157,6 +160,11 @@ class SignalsConfig(_Strict):
             raise ValueError("tsmom_lookback_days must be ascending")
         if self.tsmom_min_history_days <= self.tsmom_lookback_days[-1]:
             raise ValueError("tsmom_min_history_days must exceed the longest lookback")
+        if self.momentum_scalp_bar_seconds != self.signal_bar_seconds:
+            raise ValueError(
+                "one time base (v2.11): momentum_scalp_bar_seconds must equal "
+                "signal_bar_seconds — the GAP-0009 scalp bar IS the signal bar"
+            )
         return self
 
 

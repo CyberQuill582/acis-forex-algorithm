@@ -32,16 +32,23 @@ from core.regime.stability import RegimeStabilityTracker
 # Indicators (mid-price series; deterministic, NaN-checked at the call site)
 # --------------------------------------------------------------------------- #
 
-def atr(mids: Sequence[float], period: int) -> float:
-    """Average true range proxy on a mid series: mean |Δmid| over `period`."""
+def mean_abs_delta(mids: Sequence[float], period: int) -> float:
+    """HONESTY RENAME (v2.11, external-referent pass): this is mean |Δmid| over
+    the trailing tick window — a volatility PROXY, NOT Wilder's Average True
+    Range (no high/low/prev-close/gaps). NVMA's regime thresholds were
+    empirically tuned against THIS proxy (phase 3) and are self-consistent;
+    nothing outside the regime layer may treat it as ATR.
+    (The real true-range ATR lives on bars — core/optimizer/fitness.atr_series.)"""
     if len(mids) < period + 1:
         return math.nan
     deltas = [abs(mids[i] - mids[i - 1]) for i in range(len(mids) - period, len(mids))]
     return sum(deltas) / period
 
 
-def adx(mids: Sequence[float], period: int) -> tuple[float, int]:
-    """Wilder-style ADX on a mid series; returns (adx, direction -1|0|+1)."""
+def adx_proxy(mids: Sequence[float], period: int) -> tuple[float, int]:
+    """HONESTY RENAME (v2.11): a close-only directional-index PROXY — |Δmid| as
+    the true-range stand-in, no high/low. Directionally faithful to Wilder's
+    construction, not the standard ADX. Returns (value, direction -1|0|+1)."""
     n = len(mids)
     if n < 2 * period + 1:
         return math.nan, 0
@@ -250,8 +257,8 @@ class NVMA:
 
         # 4. Indicators — NaN anywhere means UNCLASSIFIED + veto (C-REG-4).
         p_fast, p_mid, p_slow = cfg.atr_periods
-        atr_fast, atr_slow = atr(mids, p_fast), atr(mids, p_slow)
-        adx_value, direction = adx(mids, cfg.adx_period)
+        atr_fast, atr_slow = mean_abs_delta(mids, p_fast), mean_abs_delta(mids, p_slow)
+        adx_value, direction = adx_proxy(mids, cfg.adx_period)
         bb_pct = bollinger_width_percentile(mids, cfg.bb_window)
         hurst = hurst_exponent(mids, cfg.hurst_window)
         snapshot.update(atr_fast=atr_fast, atr_slow=atr_slow, adx=adx_value,

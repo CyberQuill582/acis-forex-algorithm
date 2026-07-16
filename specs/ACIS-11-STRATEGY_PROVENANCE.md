@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-PROVENANCE-011` |
-| **Version** | 1.0 (LOCKED — authored 2026-07-15 at phase-5 start, per the deep-spec queue) |
+| **Version** | 1.1 (LOCKED — v2.11 declared-deviations law, 2026-07-16) |
 | **Layer / DIR** | Layer 4 · `[DIR:core/signals]` (provenance/lifecycle scaffolding lives with AGON) |
 | **Consumes** | Module registrations (design-time), re-validation verdicts (phase-11 harness / Phronesis via §12) |
 | **Emits** | Provenance + lifecycle state → `acis://strategies/provenance` (ACIS-08); rung gates consumed by AGON (ACIS-04) |
@@ -161,4 +161,5 @@ CREATE TABLE reading_list (
 **What AGON (ACIS-04) consumes:** `entry_allowed(strategy_id, now)` as a per-module emission gate, and the registration requirement at module construction. **What ACIS-08 consumes:** `snapshot()` for `acis://strategies/provenance`. **Done-when (phase 5 scaffolding):** §14 tests green in a full run; no walk-forward execution (phase 11), no LLM research loop (Phronesis-side), no live promotion path exercised.
 
 ## Changelog
+- **1.1 (LOCKED, 2026-07-16)** — v2.11 declared-deviations law (owner-directed, external-referent pass): `ProvenanceRecord.declared_deviations: tuple[str, ...]` — every departure from the cited source's ACTUAL method, exhaustively; an EMPTY tuple is the positive assertion "implemented as published"; persisted, exposed on `snapshot()`/`acis://strategies/provenance`, and audited by the new external-referent per-phase audit (CLAUDE.md). All six v1 modules now carry honest deviation lists (none is "as published"). Blank deviations refused.
 - **1.0 (LOCKED, 2026-07-15)** — Authored at phase-5 start per the deep-spec queue. Makes §5.6/§5.7 executable as scaffolding: falsifier-gated registration, append-only attempt registry, exhaustive rung ladder with quarterly re-validation due dates, the GAP-0019 demotion transition on the QIEA C2 pattern, graveyard with mandatory revival conditions, paper-only challenger lane, F29 reading-list ledger. Verdict *computation* stays with ACIS-09 (phase 11); research stays out-of-band (§0/§12). Human token required for PAPER→LIVE — no agent self-promotion, mirroring the family audit-firewall.

@@ -13,6 +13,42 @@ Format — one entry per gap, newest first. Never delete entries; close them wit
 - Linked: commits / test names / halt-postmortems
 ```
 
+## GAP-0057: §16 names ta-lib; the fast loop hand-rolls all indicators — deviation now DECLARED (ext-review A6)
+- Severity: low
+- Likelihood: low
+- Status: closed (2026-07-16, v2.11 — the deviation is recorded in §16 itself: stdlib indicators are a deliberate zero-dependency determinism choice for the decision path, unit-pinned in-repo; ta-lib stays in the stack as the phase-11 CROSS-VALIDATION referent (our indicators checked against ta-lib on shared bar fixtures at the backtest gate); and the naming law — no function wears a canonical name it does not implement — is now binding (nvma `atr`→`mean_abs_delta`, `adx`→`adx_proxy`))
+- Area: ACIS_SPEC.md §16/§18, core/regime/nvma.py, core/signals/indicators.py
+- Description: §18 calls a hand-rolled indicator library "a defect" where §16 names one; the stdlib choice was real but undeclared, and two proxies wore canonical names.
+- Justification: determinism rationale recorded where the stack is declared; phase-11 cross-validation makes the proxy honest rather than hidden.
+- Linked: ACIS_SPEC.md §16 (v2.11 note), owner external review 2026-07-16 (A6)
+
+## GAP-0056: Undeclared magic numbers in the signals layer — hardcoded ATR period and window capacities (ext-review C)
+- Severity: medium
+- Likelihood: medium
+- Status: closed (fixed 2026-07-16, v2.11 — `signals.atr_period` is config (schema-required); window capacities are DERIVED from config at AGON construction (`window_capacity` = max(ema_slow cap+1, every declared pair window+2)+margin; `daily_capacity` from tsmom_min_history_days), so an over-long declared window can never silently starve a module; regression `test_v211_window_capacity_derived_from_config`)
+- Area: [DIR:core/signals] agon.py, config/schemas.py SignalsConfig
+- Description: `_ATR_PERIOD=14` was hardcoded while RegimeConfig declares its periods; `deque(maxlen=256)` could silently permanently starve PAIR_DIVERGENCE for correlation_window+1 > 256 (no log, no error, no test), same class for `_daily` 300 vs tsmom_min_history_days.
+- Justification: §9 "no defaults for anything affecting correctness"; derivation beats a cross-check — the failure mode is unrepresentable.
+- Linked: owner external review 2026-07-16 (C1/C2), core/signals/agon.py __init__
+
+## GAP-0055: TSMOM was not TSMOM — evolved dual-EMA ATR stops/targets truncated the right tail the cited century evidence lives in; and no daily-close feed existed so the module could never fire
+- Severity: high
+- Likelihood: high
+- Status: closed at the strategy level, one item RAISED (fixed 2026-07-16, v2.11 — faithful form shipped: sign of k-month returns, NO take-profit (`Signal.take_profit` is now Optional; the published expectancy lives in the tail a target truncates), the only stop is the far §8.6-mandated disaster stop (`tsmom_disaster_stop_atr` = 10× daily ATR, config ≥5, DECLARED deviation), exit on vote flip; daily bars now aggregate LIVE from ticks (rollover-anchored BarAggregator in observe()) with `observe_daily_close` kept as the declared history-seeding API — the module can fire. Every remaining departure from Moskowitz–Ooi–Pedersen is in `declared_deviations` (vol-scaling via the Governor's C16 instead of 40%/σ; continuous evaluation until the phase-7 scheduler; 3-horizon agreement). Regressions: `test_v211_tsmom_is_faithful_no_take_profit_disaster_stop_only`, intraday modules keep evolved targets. **RAISED, NOT APPLIED (human-owned §14 metric semantics): TSMOM needs a §14 average-duration ruling — a 60–360-day position vs the 30min–48h target; recommendation = the GAP-0009 pattern (exclude TSMOM from the metric, report `tsmom_avg_duration` separately). Awaiting explicit owner ratification.**)
+- Area: [DIR:core/signals] agon.py `_tsmom`/`_pipeline`, canonical.py, signal_types.py, SPEC §5.5/§5.6/§14
+- Description: the one module with real published evidence carried a strategy-destroying stop/target geometry evolved by a different strategy at a different horizon, wore the canonical citation anyway (the exact §5.6 failure), and had a dead input (nothing called observe_daily_close).
+- Justification: §5.6 faithful-first is the law; the deviation-declaration mechanism (GAP-0054-adjacent, ACIS-11 v1.1) makes recurrence visible at registration instead of discoverable at phase 11.
+- Linked: owner external review 2026-07-16 (B1–B6), ACIS_SPEC.md v2.11, core/signals/canonical.py tsmom deviations
+
+## GAP-0054: No declared time base — indicator periods were TICK counts, `atr()` was mean-|Δmid| wearing Wilder's name and setting every stop in the system, and QIEA genes were calibrated on BARS but spent on TICKS
+- Severity: high
+- Likelihood: high
+- Status: closed (fixed 2026-07-16, v2.11 — THE RULING: BARS. New `core/data/bars.py` (§1 map) aggregates ticks into OHLC signal bars of `signal_bar_seconds` (60 = the GAP-0009 scalp bar) plus rollover-anchored daily bars; AGON windows/indicators/pair statistics run on COMPLETED bars; pair legs resample onto the shared bar clock (the strong branch of the GAP-0047 fix — one joint sample per bucket both legs barred in); stops/targets use REAL true-range ATR (`indicators.wilder_atr`, reusing the phase-4-tested `fitness.atr_series`); the QIEA fitness bar and the AGON signal bar are declared the same unit (A4 unit mismatch closed); NVMA's tick-window proxies KEPT for regime classification (empirically tuned, self-consistent) but RENAMED to what they are (`mean_abs_delta`, `adx_proxy`) with the trend-conviction proxy use declared in ACIS-04; the Governor's C16 realized-vol estimator documented as a declared proxy. Regressions: tests/unit/test_bars.py (bucketing/OHLC/gaps/stale/daily anchor), all module fixtures re-fed on advancing timestamps — suite 283 green)
+- Area: [DIR:core/data] bars.py (new), [DIR:core/signals] agon.py/indicators.py, [DIR:core/regime] nvma.py renames, SPEC §1/§4/§16, ACIS-03/ACIS-04
+- Description: EMA(50) meant 50 ticks (~seconds at the London open, ~minutes at 03:00); every cited source defines these on uniform bars; every stop and target in the system derived from a proxy that is not ATR; the optimizer calibrated genes in one unit and the arena spent them in another. Every §14 number phase 11 produced would have been generated on this base.
+- Justification: cheap to fix now, structural after phase 7 wires the loops — exactly why the external-referent audit now exists (CLAUDE.md dual-audit constitution).
+- Linked: owner external review 2026-07-16 (A1–A6), ACIS_SPEC.md v2.11 changelog, GAP-0047, GAP-0035
+
 ## GAP-0053: Weekend entry buffer only fires Friday within [close−buffer, close] — a signal at/after the Friday close instant or on Sat/Sun bypasses the no-weekend-holding ban; and `check_group_exits` emits a `GROUP_EXIT_UNKNOWN` event absent from the ACIS-05 §9 event list
 - Severity: low
 - Likelihood: low

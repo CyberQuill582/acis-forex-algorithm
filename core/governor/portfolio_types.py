@@ -81,7 +81,7 @@ class SizedOrder:
     size_units: Decimal
     entry_price: float
     stop_loss: float
-    take_profit: float
+    take_profit: float | None    # None = no target (faithful TSMOM, v2.11)
     reason: str
     factors_snapshot: Mapping
     sized_at: datetime

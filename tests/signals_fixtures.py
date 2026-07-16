@@ -29,6 +29,7 @@ PAIR_RELS = {
 
 def signals_cfg(**overrides) -> SignalsConfig:
     base = dict(
+        signal_bar_seconds=60, atr_period=14, tsmom_disaster_stop_atr=10.0,
         conviction_discard=0.45, medium_vol_discount=0.85,
         valid_for_seconds={"TREND": 300, "BREAKOUT": 120, "MEAN_REVERSION": 300,
                            "MOMENTUM_SCALP": 30, "PAIR_DIVERGENCE": 300, "TSMOM": 86400},
@@ -82,8 +83,15 @@ def make_agon(tmp_path, cfg: SignalsConfig | None = None, pairs=None,
 
 
 def feed_mids(agon: AGON, instrument: str, mids) -> None:
-    for m in mids:
-        agon.observe(mk_state(instrument=instrument, mid=m))
+    """v2.11 bars: one tick per 60s bucket, plus a final bucket-advancing tick so
+    every mid becomes a CLOSED bar close — window closes == mids exactly."""
+    from datetime import timedelta
+
+    for i, m in enumerate(mids):
+        agon.observe(mk_state(instrument=instrument, mid=m,
+                              ts=T0 + timedelta(seconds=60 * i)))
+    agon.observe(mk_state(instrument=instrument, mid=mids[-1],
+                          ts=T0 + timedelta(seconds=60 * len(mids))))
 
 
 def feed_daily(agon: AGON, instrument: str, closes) -> None:
@@ -92,10 +100,17 @@ def feed_daily(agon: AGON, instrument: str, closes) -> None:
 
 
 def feed_pair(agon: AGON, inst_a: str, a_mids, inst_b: str, b_mids) -> None:
-    """Interleaved tick feed — the GAP-0047 joint pair window aligns on arrival."""
-    for ma, mb in zip(a_mids, b_mids):
-        agon.observe(mk_state(instrument=inst_a, mid=ma))
-        agon.observe(mk_state(instrument=inst_b, mid=mb))
+    """Interleaved per-bucket ticks: both legs bar on the SHARED bar clock, so the
+    GAP-0047 joint window gets one aligned sample per bucket (v2.11 strong form)."""
+    from datetime import timedelta
+
+    for i, (ma, mb) in enumerate(zip(a_mids, b_mids)):
+        ts = T0 + timedelta(seconds=60 * i)
+        agon.observe(mk_state(instrument=inst_a, mid=ma, ts=ts))
+        agon.observe(mk_state(instrument=inst_b, mid=mb, ts=ts))
+    ts = T0 + timedelta(seconds=60 * len(a_mids))
+    agon.observe(mk_state(instrument=inst_a, mid=a_mids[-1], ts=ts))
+    agon.observe(mk_state(instrument=inst_b, mid=b_mids[-1], ts=ts))
 
 
 # ------------------- empirically tuned trigger series ------------------------- #

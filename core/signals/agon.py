@@ -14,24 +14,25 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Sequence
 
 from config.schemas import PairRelationship, SignalsConfig
+from core.data.bars import Bar, BarAggregator
 from core.data.errors import DataQualityError
 from core.data.normaliser import MarketState
 from core.optimizer.param_types import ParamSet
 from core.regime.regime_types import LiqState, RegimeContext, RegimeType, VolClass
 from core.signals.canonical import STRATEGY_IDS
 from core.signals.indicators import (
-    adx,
-    atr,
+    adx_proxy,
     bollinger_z,
     clamp01,
     ema_series,
     pair_spread_z,
     rolling_correlation,
     rsi_series,
+    wilder_atr,
 )
 from core.signals.provenance import ProvenanceStore
 from core.signals.signal_types import Signal, StrategyType
@@ -45,7 +46,7 @@ _RANGING_REGIMES = frozenset({
     RegimeType.RANGING_TIGHT, RegimeType.RANGING_WIDE, RegimeType.MEAN_REVERTING,
 })
 _SCALP_LIQ = frozenset({LiqState.DEEP, LiqState.NORMAL})
-_ATR_PERIOD = 14
+_DAILY_S = 86_400
 
 
 @dataclass(frozen=True)
@@ -57,8 +58,10 @@ class _Raw:
     direction: int
     conviction: float          # raw, [0,1]
     entry: float
-    atr_value: float
+    atr_value: float           # REAL true-range ATR over bars (v2.11)
     group_id: str | None = None
+    sl_atr_mult: float | None = None   # None => the evolved ParamSet multiplier
+    has_take_profit: bool = True       # TSMOM: False (published method has none)
 
 
 class AGON:
@@ -80,33 +83,69 @@ class AGON:
         self._prov = provenance
         self._median = session_median
         self._log = logger
-        self._mids: dict[str, deque[float]] = {}
-        self._daily: dict[str, deque[float]] = {}
-        # GAP-0047: pair statistics run on JOINT samples appended only when both
-        # legs have a current mid — time-aligned by construction, never two
-        # independently-indexed deques.
+        # v2.11 time base: windows hold completed OHLC BARS of signal_bar_seconds
+        # (ext-review C2: capacities DERIVED from config — silent starvation is
+        # structurally impossible).
+        pair_need = max((max(rel.correlation_window + 2, rel.zscore_window + 2)
+                         for rel in pair_relationships.values()), default=0)
+        self.window_capacity = max(201, pair_need) + 16   # 201 = ema_slow cap + 1
+        self.daily_capacity = max(cfg.tsmom_min_history_days,
+                                  cfg.tsmom_lookback_days[-1] + 1) + 16
+        self._bars: dict[str, deque[Bar]] = {}
+        self._agg: dict[str, BarAggregator] = {}
+        self._daily_bars: dict[str, deque[Bar]] = {}
+        self._daily_agg: dict[str, BarAggregator] = {}
+        # GAP-0047 (strong branch, v2.11): pair statistics run on JOINT samples
+        # resampled onto the SHARED bar clock — one (a_close, b_close) tuple per
+        # bar bucket in which BOTH legs completed a bar.
         self._pair_samples: dict[str, deque[tuple[float, float]]] = {
-            name: deque(maxlen=256) for name in pair_relationships
+            name: deque(maxlen=self.window_capacity) for name in pair_relationships
         }
+        self._pair_last_sampled: dict[str, object] = {}
+        self._seed_day: dict[str, int] = {}
         self.signals_considered = 0
         self.signals_emitted = 0
 
-    # -- windows (ACIS-04 §8) -------------------------------------------------- #
+    # -- windows (ACIS-04 §8, bars) ---------------------------------------------- #
 
     def observe(self, state: MarketState) -> None:
-        self._mids.setdefault(state.instrument, deque(maxlen=256)).append(state.mid)
+        inst = state.instrument
+        agg = self._agg.setdefault(inst, BarAggregator(self._cfg.signal_bar_seconds))
+        bar = agg.add(state.timestamp, state.mid, state.spread)
+        if bar is not None:
+            self._bars.setdefault(inst, deque(maxlen=self.window_capacity)).append(bar)
+            self._sample_pairs(inst)
+        daily_agg = self._daily_agg.setdefault(
+            inst, BarAggregator(_DAILY_S, anchor_utc="22:00"))   # rollover-anchored
+        daily = daily_agg.add(state.timestamp, state.mid, state.spread)
+        if daily is not None:
+            self._daily_bars.setdefault(
+                inst, deque(maxlen=self.daily_capacity)).append(daily)
+
+    def _sample_pairs(self, instrument: str) -> None:
         for name, rel in self._pairs.items():
-            # one aligned sample per pair-update: the SECOND leg's tick closes the
-            # sample with the latest value of the first (last-value alignment)
-            if state.instrument == rel.legs[1]:
-                a_mids = self._mids.get(rel.legs[0])
-                if a_mids:
-                    self._pair_samples[name].append((a_mids[-1], state.mid))
+            if instrument not in rel.legs:
+                continue
+            a_bars, b_bars = self._bars.get(rel.legs[0]), self._bars.get(rel.legs[1])
+            if not a_bars or not b_bars:
+                continue
+            ts = a_bars[-1].ts_open
+            if ts == b_bars[-1].ts_open and self._pair_last_sampled.get(name) != ts:
+                self._pair_samples[name].append((a_bars[-1].close, b_bars[-1].close))
+                self._pair_last_sampled[name] = ts
 
     def observe_daily_close(self, instrument: str, close: float) -> None:
+        """History seeding (backfill/tests): appends a synthetic one-value daily
+        bar. The LIVE path is the rollover-anchored daily aggregator in observe()."""
         if not math.isfinite(close) or close <= 0:
             raise DataQualityError("close", close, "daily close must be finite and > 0")
-        self._daily.setdefault(instrument, deque(maxlen=300)).append(close)
+        day = self._seed_day.get(instrument, 0)
+        self._seed_day[instrument] = day + 1
+        ts = datetime(2000, 1, 3, 22, 0, tzinfo=timezone.utc) + timedelta(days=day)
+        self._daily_bars.setdefault(
+            instrument, deque(maxlen=self.daily_capacity)).append(
+            Bar(ts_open=ts, open=close, high=close, low=close, close=close,
+                spread=0.0, duration_s=_DAILY_S))
 
     def take_rate(self) -> dict:
         return {"signals_considered": self.signals_considered,
@@ -195,7 +234,10 @@ class AGON:
                                 strategy=raw.strategy_type.value,
                                 conviction=round(conviction, 4))
                 continue
-            sl_mult, tp_mult = params.atr_multiplier_sl, params.atr_multiplier_tp
+            sl_mult = (raw.sl_atr_mult if raw.sl_atr_mult is not None
+                       else params.atr_multiplier_sl)
+            take_profit = ((raw.entry + raw.direction * params.atr_multiplier_tp
+                            * raw.atr_value) if raw.has_take_profit else None)
             try:
                 # GAP-0042: NO clamp — a module emitting conviction > 1 is a bug
                 # and must die on the Signal contract (C-ALP-2), never be masked.
@@ -204,7 +246,7 @@ class AGON:
                     direction=raw.direction, conviction=conviction,
                     entry_price=raw.entry,
                     stop_loss=raw.entry - raw.direction * sl_mult * raw.atr_value,
-                    take_profit=raw.entry + raw.direction * tp_mult * raw.atr_value,
+                    take_profit=take_profit,
                     strategy_type=raw.strategy_type,
                     regime_at_generation=regime.regime,
                     param_set_id=params.param_set_id, generated_at=now,
@@ -267,12 +309,15 @@ class AGON:
 
     # -- the six modules (each a pure function of its inputs, C-ALP-8) ------------- #
 
+    def _window(self, instrument: str) -> tuple[list, list[float]]:
+        bars = list(self._bars.get(instrument, ()))
+        return bars, [b.close for b in bars]
+
     def _trend(self, state: MarketState, regime: RegimeContext,
                params: ParamSet) -> list[_Raw]:
-        mids = self._mids.get(state.instrument)
-        if mids is None or len(mids) < params.ema_slow + 1:
+        bars, seq = self._window(state.instrument)
+        if len(seq) < params.ema_slow + 1:
             return []
-        seq = list(mids)
         ema_f, ema_s = ema_series(seq, params.ema_fast), ema_series(seq, params.ema_slow)
         crossed_up = ema_f[-2] <= ema_s[-2] and ema_f[-1] > ema_s[-1]
         crossed_down = ema_f[-2] >= ema_s[-2] and ema_f[-1] < ema_s[-1]
@@ -283,21 +328,20 @@ class AGON:
             return []
         if crossed_down and rsi <= params.rsi_oversold:
             return []
-        adx_value, _ = adx(seq, _ATR_PERIOD)
+        adx_value, _ = adx_proxy(seq, self._cfg.atr_period)
         return [_Raw(StrategyType.TREND, state.instrument,
                      1 if crossed_up else -1, clamp01(adx_value / 50.0),
-                     state.mid, atr(seq, _ATR_PERIOD))]
+                     state.mid, wilder_atr(bars, self._cfg.atr_period))]
 
     def _breakout(self, state: MarketState, regime: RegimeContext,
                   params: ParamSet) -> list[_Raw]:
-        mids = self._mids.get(state.instrument)
+        bars, seq = self._window(state.instrument)
         lookback = params.momentum_lookback
-        if mids is None or len(mids) < lookback + 1:
+        if len(seq) < max(lookback + 1, self._cfg.atr_period + 2):
             return []
-        seq = list(mids)
         channel_high = max(seq[-lookback - 1:-1])
         channel_low = min(seq[-lookback - 1:-1])
-        a = atr(seq, _ATR_PERIOD)
+        a = wilder_atr(bars, self._cfg.atr_period)
         if a <= 0 or math.isnan(a):
             return []
         threshold = params.breakout_atr_threshold * a
@@ -315,10 +359,9 @@ class AGON:
 
     def _mean_reversion(self, state: MarketState, regime: RegimeContext,
                         params: ParamSet) -> list[_Raw]:
-        mids = self._mids.get(state.instrument)
-        if mids is None or len(mids) < max(20, params.rsi_period + 1):
+        bars, seq = self._window(state.instrument)
+        if len(seq) < max(20, params.rsi_period + 1, self._cfg.atr_period + 2):
             return []
-        seq = list(mids)
         z = bollinger_z(seq, 20)
         if math.isnan(z) or abs(z) < params.mean_rev_zscore_entry:
             return []
@@ -334,14 +377,14 @@ class AGON:
             if max(rsi_window) - rsi_now < 5.0:
                 return []
             direction = -1
-        a = atr(seq, _ATR_PERIOD)
+        a = wilder_atr(bars, self._cfg.atr_period)
         return [_Raw(StrategyType.MEAN_REVERSION, state.instrument, direction,
                      clamp01(abs(z) / 2.0), state.mid, a)]
 
     def _momentum_scalp(self, state: MarketState, regime: RegimeContext,
                         params: ParamSet) -> list[_Raw]:
-        mids = self._mids.get(state.instrument)
-        if mids is None or len(mids) < params.ema_fast + 2:
+        bars, seq = self._window(state.instrument)
+        if len(seq) < max(params.ema_fast + 2, self._cfg.atr_period + 2):
             return []
         median_velocity = self._median(state.instrument, state.session, "velocity")
         if not math.isfinite(median_velocity) or median_velocity <= 0:
@@ -349,14 +392,13 @@ class AGON:
         ratio = state.tick_velocity / median_velocity
         if ratio < self._cfg.momentum_scalp_surge_ratio:
             return []
-        seq = list(mids)
         ema_f = ema_series(seq, params.ema_fast)
         slope = ema_f[-1] - ema_f[-2]
         if slope == 0:
             return []
         return [_Raw(StrategyType.MOMENTUM_SCALP, state.instrument,
                      1 if slope > 0 else -1, clamp01(ratio / 3.0),
-                     state.mid, atr(seq, _ATR_PERIOD))]
+                     state.mid, wilder_atr(bars, self._cfg.atr_period))]
 
     def _pair_divergence(self, state: MarketState, regime: RegimeContext,
                          params: ParamSet) -> list[_Raw]:
@@ -383,7 +425,8 @@ class AGON:
             dir_b = -rel.expected_sign * dir_a
             conviction = clamp01(abs(z) / 3.0) * abs(corr)
             group_id = str(uuid.uuid4())
-            atr_a, atr_b = atr(a_col, _ATR_PERIOD), atr(b_col, _ATR_PERIOD)
+            atr_a = wilder_atr(list(self._bars.get(leg_a, ())), self._cfg.atr_period)
+            atr_b = wilder_atr(list(self._bars.get(leg_b, ())), self._cfg.atr_period)
             out.append(_Raw(StrategyType.PAIR_DIVERGENCE, leg_a, dir_a, conviction,
                             a_col[-1], atr_a, group_id))
             out.append(_Raw(StrategyType.PAIR_DIVERGENCE, leg_b, dir_b, conviction,
@@ -392,10 +435,11 @@ class AGON:
 
     def _tsmom(self, state: MarketState, regime: RegimeContext,
                params: ParamSet) -> list[_Raw]:
-        daily = self._daily.get(state.instrument)
+        daily = self._daily_bars.get(state.instrument)
         if daily is None or len(daily) < self._cfg.tsmom_min_history_days:
             return []
-        seq = list(daily)
+        bars = list(daily)
+        seq = [b.close for b in bars]
         signs = []
         for lb in self._cfg.tsmom_lookback_days:
             r = seq[-1] / seq[-1 - lb] - 1.0
@@ -405,5 +449,12 @@ class AGON:
             return []
         direction = 1 if total > 0 else -1
         agreement = sum(1 for s in signs if s == direction)  # ACIS-04 §6.6: a/3
+        # v2.11 faithful form (Moskowitz-Ooi-Pedersen): NO take-profit -- the
+        # published expectancy lives in the right tail a target would truncate.
+        # The only stop is the §8.6 safety-law disaster stop, a DECLARED
+        # deviation. Exit is the signal flip / re-evaluation, not a target.
         return [_Raw(StrategyType.TSMOM, state.instrument, direction,
-                     agreement / 3.0, state.mid, atr(seq, _ATR_PERIOD))]
+                     agreement / 3.0, state.mid,
+                     wilder_atr(bars, self._cfg.atr_period),
+                     sl_atr_mult=self._cfg.tsmom_disaster_stop_atr,
+                     has_take_profit=False)]

@@ -1,9 +1,10 @@
 """Shared TA for AGON (ACIS-04 §3) — NaN-safe, stdlib, deterministic.
 
-Proven-parts law: ADX comes from core.regime.nvma and EMA/RSI from
-core.optimizer.fitness (both phase-tested); this module adds only what the
-six modules need beyond them: Bollinger z-score, rolling log-return
-correlation, and pair-spread z-score.
+v2.11 time base: AGON indicators run on completed OHLC BARS (core/data/bars.py),
+never bare tick deques. `wilder_atr` is REAL true-range ATR (reusing the
+phase-4-tested fitness.atr_series); `adx_proxy` is the regime layer's
+close-only directional proxy, consumed here ONLY as the trend-conviction
+score and named for what it is (declared deviation, ACIS-04 §6.1).
 """
 
 from __future__ import annotations
@@ -11,8 +12,17 @@ from __future__ import annotations
 import math
 from typing import Sequence
 
-from core.optimizer.fitness import ema_series, rsi_series  # noqa: F401  (re-exported)
-from core.regime.nvma import adx, atr  # noqa: F401  (re-exported)
+from core.data.bars import Bar
+from core.optimizer.fitness import atr_series, ema_series, rsi_series  # noqa: F401
+from core.regime.nvma import adx_proxy  # noqa: F401  (re-exported, proxy by name)
+
+
+def wilder_atr(bars: Sequence[Bar], period: int) -> float:
+    """True-range ATR over completed bars (Wilder smoothing). NaN if unwarmed."""
+    if len(bars) <= period:
+        return float("nan")
+    value = atr_series(bars, period)[-1]
+    return value if value > 0 else float("nan")
 
 
 def bollinger_z(mids: Sequence[float], window: int = 20) -> float:
