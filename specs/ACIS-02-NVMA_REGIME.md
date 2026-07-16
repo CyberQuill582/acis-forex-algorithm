@@ -11,6 +11,9 @@
 | **Blocks** | ACIS-03, ACIS-04 |
 | **Corrections applied** | F1 (cadence lock), F18 (session-median estimator + cold-start), C3/F7 (half-life advisory), veto provability |
 
+
+> **v1.2 honesty note (v2.11 naming law, GAP-0062):** every "ATR"/"ADX" in this document denotes the regime layer’s DECLARED tick-window proxies — `mean_abs_delta` (mean |Δmid| over the trailing window; not Wilder’s true-range ATR) and `adx_proxy` (close-only directional index). The thresholds in `regime:` config were empirically tuned against THESE proxies (phase 3) and are self-consistent; nothing outside the regime layer may treat them as the canonical indicators. Real true-range ATR lives on bars (core/data/bars.py + indicators.wilder_atr, v2.11).
+
 ## Table of contents
 1. Purpose & scope · 2. Entry contract · 3. Architecture & responsibility · 4. Output contract · 5. Data schemas · 6. Algorithm & config · 7. Core logic · 8. State machine & cadence · 9. Persistence & logging · 10. Store schema · 11. MCP contract · 12. Error taxonomy · 13. Logic-flaw registry · 14. Test contract · 15. Integration gate · Changelog
 

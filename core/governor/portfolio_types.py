@@ -24,7 +24,7 @@ class Position:
     size_units: Decimal
     entry_price: float
     stop_loss: float               # broker-side stop (also GAP-0052 rebuild input)
-    take_profit: float
+    take_profit: float | None      # None = no target (faithful TSMOM — GAP-0058)
     opened_at: datetime
     strategy_type: StrategyType
     param_set_id: str
@@ -35,7 +35,9 @@ class Position:
             raise DataQualityError("direction", self.direction, "must be +1 or -1")
         if not isinstance(self.size_units, Decimal) or self.size_units <= 0:
             raise DataQualityError("size_units", self.size_units, "must be positive Decimal")
-        for name in ("entry_price", "stop_loss", "take_profit"):
+        names = ("entry_price", "stop_loss") + (
+            ("take_profit",) if self.take_profit is not None else ())
+        for name in names:
             v = getattr(self, name)
             if not math.isfinite(v) or v <= 0:
                 raise DataQualityError(name, v, "must be finite > 0")

@@ -367,3 +367,41 @@ def test_v211_declared_deviations_exposed_on_snapshot(tmp_path) -> None:
     assert any("take-profit" in d.lower() or "no take" in d.lower()
                for d in tsmom["declared_deviations"])
     assert all(len(s["declared_deviations"]) > 0 for s in snap.values())  # honesty: v1 has none "as published"
+
+
+# ---------------- v2.11 internal-audit triage regressions (GAP-0060/0065) ---------------- #
+
+def test_gap0060_pair_join_survives_legs_out_of_lockstep(tmp_path) -> None:
+    """One leg races whole buckets ahead: the per-bucket join still pairs every
+    bucket both legs eventually barred in — nothing silently dropped."""
+    from datetime import timedelta
+    agon, _, _ = make_agon(tmp_path)
+    # leg A bars buckets 0..4 first (its tick in bucket k+1 closes bar k)
+    for i in range(6):
+        agon.observe(mk_state(instrument="EUR_USD", mid=1.10 + i * 0.0001,
+                              ts=T0 + timedelta(seconds=60 * i)))
+    # leg B arrives late and bars the same buckets afterwards
+    for i in range(6):
+        agon.observe(mk_state(instrument="USD_JPY", mid=155.0 + i * 0.01,
+                              ts=T0 + timedelta(seconds=60 * i)))
+    joint = agon._pair_samples["eurusd_usdjpy"]
+    assert len(joint) == 5                       # buckets 0..4, all joined
+    assert agon.pair_buckets_incomplete["eurusd_usdjpy"] == 0
+
+
+def test_gap0065_daily_series_is_strictly_ascending(tmp_path) -> None:
+    """A seed arriving after live daily bars (or a duplicate day) is dropped and
+    logged — never double-counted into the r63/r126/r252 indices."""
+    agon, log, _ = make_agon(tmp_path)
+    feed_daily(agon, "EUR_USD", [1.1, 1.2, 1.3])     # seeds: year-2000 ts, ascending
+    n_before = len(agon._daily_bars["EUR_USD"])
+    agon.observe_daily_close("EUR_USD", 1.4)          # next seed day: fine
+    assert len(agon._daily_bars["EUR_USD"]) == n_before + 1
+    # simulate a violating append: same-or-earlier ts
+    from core.data.bars import Bar
+    from datetime import datetime, timezone
+    stale = Bar(ts_open=datetime(2000, 1, 3, 22, 0, tzinfo=timezone.utc),
+                open=1.0, high=1.0, low=1.0, close=1.0, spread=0.0, duration_s=86400)
+    agon._append_daily("EUR_USD", stale)
+    assert len(agon._daily_bars["EUR_USD"]) == n_before + 1   # dropped
+    assert len(log.events("DAILY_BAR_ORDER_DROP")) == 1

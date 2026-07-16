@@ -63,6 +63,7 @@ def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0,
         weekend_close_utc="22:00",
         weekend_open_utc="22:00",
         scalp_horizon_s=900,
+        atr_period=14,
         blackout=blackout or (lambda instrument, now: False),
         logger=log,
     )
@@ -269,15 +270,21 @@ def test_vol_norm_exact_vectors() -> None:
 
 
 def test_vol_norm_pinned_until_warm_then_dampens() -> None:
+    from core.data.bars import Bar
+
     gov, log = mk_governor()
     base = gov.allocate(mk_signal(), mk_portfolio(), mk_regime(), T0)
     assert base.factors_snapshot.get("vol_norm_pinned") is True
     assert len(log.events("VOL_NORM_PINNED")) >= 1
-    # feed a hot market: ATR/mid far above the 0.0008 target => smaller size
+    # feed hot BARS (GAP-0059): true-range ATR/close far above the 0.0008 target
     mid = 1.1
     for i in range(40):
-        mid *= 1.004 if i % 2 else 0.996
-        gov.observe_mid("EUR_USD", mid)
+        nxt = mid * (1.004 if i % 2 else 0.996)
+        lo, hi = min(mid, nxt), max(mid, nxt)
+        gov.observe_bar("EUR_USD", Bar(
+            ts_open=T0 + timedelta(minutes=i), open=mid, high=hi, low=lo,
+            close=nxt, spread=0.0002, duration_s=60))
+        mid = nxt
     hot = gov.allocate(mk_signal(), mk_portfolio(), mk_regime(), T0)
     assert hot.factors_snapshot["vol_norm"] < 1.0
     assert hot.size_units < base.size_units
@@ -478,3 +485,17 @@ def test_gap0053_weekend_ban_covers_the_whole_closed_window() -> None:
     after_open = datetime(2026, 7, 12, 22, 30, tzinfo=timezone.utc)  # Sunday, reopened
     sig = mk_signal(generated_at=after_open)
     assert gov.allocate(sig, mk_portfolio(), mk_regime(), after_open).reason == "formula"
+
+
+# ---------------- v2.11 internal-audit triage regressions (GAP-0058) ---------------- #
+
+def test_gap0058_tsmom_position_with_no_target_is_representable() -> None:
+    from core.governor.portfolio_types import Position
+    pos = Position(instrument="EUR_USD", direction=1, size_units=Decimal("100"),
+                   entry_price=1.1, stop_loss=1.05, take_profit=None, opened_at=T0,
+                   strategy_type=StrategyType.TSMOM, param_set_id="ps-1")
+    assert pos.take_profit is None
+    with pytest.raises(DataQualityError):            # stop stays mandatory (§8.6)
+        Position(instrument="EUR_USD", direction=1, size_units=Decimal("100"),
+                 entry_price=1.1, stop_loss=float("nan"), take_profit=None,
+                 opened_at=T0, strategy_type=StrategyType.TSMOM, param_set_id="ps-1")

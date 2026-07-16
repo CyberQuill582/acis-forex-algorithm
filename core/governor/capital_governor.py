@@ -22,12 +22,10 @@ from core.data.errors import DataQualityError
 from core.governor.factors import correlation_factor, liquidity_factor, vol_norm
 from core.governor.marginal_alpha import MarginalAlphaEstimator
 from core.governor.portfolio_types import PortfolioState, SizedOrder
-from core.regime.nvma import mean_abs_delta
+from core.data.bars import Bar
+from core.signals.indicators import wilder_atr
 from core.regime.regime_types import LiqState, RegimeContext
 from core.signals.signal_types import Signal, StrategyType
-
-_ATR_PERIOD = 14
-
 
 class ResumeForbiddenError(Exception):
     """resume() without a human token — no agent self-resume (master §12)."""
@@ -47,6 +45,7 @@ class CapitalGovernor:
         weekend_close_utc: str,
         weekend_open_utc: str,
         scalp_horizon_s: int,
+        atr_period: int,
         blackout: Callable[[str, datetime], bool],
         logger,
     ) -> None:
@@ -61,25 +60,26 @@ class CapitalGovernor:
         self._weekend_close = weekend_close_utc
         self._weekend_open = weekend_open_utc
         self._scalp_horizon_s = scalp_horizon_s
+        self._atr_period = atr_period
         self._blackout = blackout
         self._log = logger
         self.marginal_alpha = MarginalAlphaEstimator(
             cfg.marginal_alpha_window, cfg.marginal_alpha_min_trades,
             cfg.marginal_alpha_min_bucket,
         )
-        self._mids: dict[str, deque[float]] = {}
+        self._bars: dict[str, deque[Bar]] = {}
         self._halts: dict[str, str] = {}          # scope ("all" | instrument) -> reason
         self._session_halt_until: datetime | None = None
         self._taper_factor = 1.0                   # neutral until Risk exists (phase 9)
         self._alpha_decay = False
         self._open_groups: dict[str, tuple[SizedOrder, SizedOrder]] = {}
 
-    # -- market context (vol-norm input) ---------------------------------------- #
+    # -- market context (vol-norm input; GAP-0059: BARS, the v2.11 time base) ---- #
 
-    def observe_mid(self, instrument: str, mid: float) -> None:
-        if not math.isfinite(mid) or mid <= 0:
-            raise DataQualityError("mid", mid, "must be finite > 0")
-        self._mids.setdefault(instrument, deque(maxlen=64)).append(mid)
+    def observe_bar(self, instrument: str, bar: Bar) -> None:
+        """Fed completed signal bars by the loop owner (the same aggregation AGON
+        uses — one declared time base, one aggregator)."""
+        self._bars.setdefault(instrument, deque(maxlen=64)).append(bar)
 
     # -- the single upward edge (risk-restrictive only, GAP-0014) ---------------- #
 
@@ -335,20 +335,20 @@ class CapitalGovernor:
         return None
 
     def _vol_factor(self, instrument: str, snapshot: dict) -> float:
-        mids = self._mids.get(instrument)
-        if mids is None or len(mids) <= _ATR_PERIOD + 1:
+        bars = self._bars.get(instrument)
+        if bars is None or len(bars) <= self._atr_period + 1:
             self._log.event("VOL_NORM_PINNED", instrument=instrument)
             snapshot["vol_norm_pinned"] = True
             return 1.0
-        seq = list(mids)
-        # C16 realized-vol estimator: mean-|Δmid| fraction (declared proxy,
-        # ACIS-05 §6.2) — dampen-only geometry is unaffected by the proxy choice
-        a = mean_abs_delta(seq, _ATR_PERIOD)
+        seq = list(bars)
+        # C16 realized vol = true-range ATR / close over signal BARS (GAP-0059:
+        # same unit as the declared per-bar vol_target_atr_frac target)
+        a = wilder_atr(seq, self._atr_period)
         if not math.isfinite(a) or a <= 0:
             self._log.event("VOL_NORM_PINNED", instrument=instrument)
             snapshot["vol_norm_pinned"] = True
             return 1.0
-        return vol_norm(a / seq[-1], self._vol_targets[instrument])
+        return vol_norm(a / seq[-1].close, self._vol_targets[instrument])
 
     def _delta_contributions(self, signal: Signal,
                              notional: Decimal) -> dict[str, Decimal]:

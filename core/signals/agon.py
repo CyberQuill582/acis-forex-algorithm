@@ -86,9 +86,11 @@ class AGON:
         # v2.11 time base: windows hold completed OHLC BARS of signal_bar_seconds
         # (ext-review C2: capacities DERIVED from config — silent starvation is
         # structurally impossible).
+        from core.optimizer.param_types import GENE_SPECS
         pair_need = max((max(rel.correlation_window + 2, rel.zscore_window + 2)
                          for rel in pair_relationships.values()), default=0)
-        self.window_capacity = max(201, pair_need) + 16   # 201 = ema_slow cap + 1
+        gene_need = int(GENE_SPECS["ema_slow"][1]) + 1   # GAP-0063: derived, not 201
+        self.window_capacity = max(gene_need, pair_need) + 16
         self.daily_capacity = max(cfg.tsmom_min_history_days,
                                   cfg.tsmom_lookback_days[-1] + 1) + 16
         self._bars: dict[str, deque[Bar]] = {}
@@ -101,7 +103,11 @@ class AGON:
         self._pair_samples: dict[str, deque[tuple[float, float]]] = {
             name: deque(maxlen=self.window_capacity) for name in pair_relationships
         }
-        self._pair_last_sampled: dict[str, object] = {}
+        # GAP-0060: joint samples join per BUCKET — a pending half-bucket waits
+        # for its partner; buckets abandoned when a later bucket completes are
+        # counted + logged, never silently dropped.
+        self._pair_pending: dict[str, dict] = {name: {} for name in pair_relationships}
+        self.pair_buckets_incomplete: dict[str, int] = {n: 0 for n in pair_relationships}
         self._seed_day: dict[str, int] = {}
         self.signals_considered = 0
         self.signals_emitted = 0
@@ -119,20 +125,25 @@ class AGON:
             inst, BarAggregator(_DAILY_S, anchor_utc="22:00"))   # rollover-anchored
         daily = daily_agg.add(state.timestamp, state.mid, state.spread)
         if daily is not None:
-            self._daily_bars.setdefault(
-                inst, deque(maxlen=self.daily_capacity)).append(daily)
+            self._append_daily(inst, daily)
 
     def _sample_pairs(self, instrument: str) -> None:
         for name, rel in self._pairs.items():
             if instrument not in rel.legs:
                 continue
-            a_bars, b_bars = self._bars.get(rel.legs[0]), self._bars.get(rel.legs[1])
-            if not a_bars or not b_bars:
-                continue
-            ts = a_bars[-1].ts_open
-            if ts == b_bars[-1].ts_open and self._pair_last_sampled.get(name) != ts:
-                self._pair_samples[name].append((a_bars[-1].close, b_bars[-1].close))
-                self._pair_last_sampled[name] = ts
+            bar = self._bars[instrument][-1]
+            side = 0 if instrument == rel.legs[0] else 1
+            pending = self._pair_pending[name]
+            slot = pending.setdefault(bar.ts_open, [None, None])
+            slot[side] = bar.close
+            if slot[0] is not None and slot[1] is not None:
+                self._pair_samples[name].append((slot[0], slot[1]))
+                for ts in [t for t in pending if t <= bar.ts_open]:
+                    if ts != bar.ts_open:
+                        self.pair_buckets_incomplete[name] += 1
+                        self._log.event("PAIR_BUCKET_INCOMPLETE", relationship=name,
+                                        ts=ts.isoformat())
+                    del pending[ts]
 
     def observe_daily_close(self, instrument: str, close: float) -> None:
         """History seeding (backfill/tests): appends a synthetic one-value daily
@@ -142,10 +153,21 @@ class AGON:
         day = self._seed_day.get(instrument, 0)
         self._seed_day[instrument] = day + 1
         ts = datetime(2000, 1, 3, 22, 0, tzinfo=timezone.utc) + timedelta(days=day)
-        self._daily_bars.setdefault(
-            instrument, deque(maxlen=self.daily_capacity)).append(
-            Bar(ts_open=ts, open=close, high=close, low=close, close=close,
-                spread=0.0, duration_s=_DAILY_S))
+        self._append_daily(instrument, Bar(
+            ts_open=ts, open=close, high=close, low=close, close=close,
+            spread=0.0, duration_s=_DAILY_S))
+
+    def _append_daily(self, instrument: str, bar: Bar) -> None:
+        """GAP-0065: the daily series is strictly ascending in ts_open — a bar at
+        or before the last one (seed-after-live, duplicate day) is dropped+logged,
+        never silently double-counted into the r63/r126/r252 indices."""
+        window = self._daily_bars.setdefault(
+            instrument, deque(maxlen=self.daily_capacity))
+        if window and bar.ts_open <= window[-1].ts_open:
+            self._log.event("DAILY_BAR_ORDER_DROP", instrument=instrument,
+                            ts=bar.ts_open.isoformat())
+            return
+        window.append(bar)
 
     def take_rate(self) -> dict:
         return {"signals_considered": self.signals_considered,

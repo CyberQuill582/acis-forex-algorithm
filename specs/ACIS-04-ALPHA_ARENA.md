@@ -105,7 +105,7 @@ Per evaluation, for each module active in the current regime **and provenance-cl
 
 ## 8. State machine & cadence
 
-FAST loop (tick–5s). Stateless per evaluation except the per-instrument indicator windows maintained by `observe()` (intraday mids/spreads/velocities + daily closes for TSMOM + the GAP-0047 time-aligned joint pair windows, sampled once per pair-update on the second leg's arrival with last-value alignment). Deterministic: same (windows, state, regime, params) ⇒ same signal **content** — direction, conviction, prices, strategy, expiry are all pure functions of the inputs; the only non-derived values are the `signal_id`/`group_id` identifiers (uuid4 — uniqueness, not decisions; GAP-0046 honesty note). No randomness influences any decision in this layer (decision randomness lives only in Execution, ACIS-06).
+FAST loop (tick–5s). Stateless per evaluation except the per-instrument indicator windows maintained by `observe()` (intraday mids/spreads/velocities + daily closes for TSMOM + the GAP-0047 time-aligned joint pair windows — per-BUCKET join: each leg’s completed bar fills its side of the bucket’s slot; the sample appends when both sides are present, and buckets abandoned by a later completion are counted + logged `PAIR_BUCKET_INCOMPLETE`, never silently dropped (GAP-0060/0064 exact algorithm)). Deterministic: same (windows, state, regime, params) ⇒ same signal **content** — direction, conviction, prices, strategy, expiry are all pure functions of the inputs; the only non-derived values are the `signal_id`/`group_id` identifiers (uuid4 — uniqueness, not decisions; GAP-0046 honesty note). No randomness influences any decision in this layer (decision randomness lives only in Execution, ACIS-06).
 
 ## 9. Persistence & logging
 
@@ -122,7 +122,7 @@ CREATE TABLE signal_log (
     conviction    REAL NOT NULL,
     entry_price   REAL NOT NULL,
     stop_loss     REAL NOT NULL,
-    take_profit   REAL NOT NULL,
+    take_profit   REAL,                -- NULL = no target (faithful TSMOM, v1.2)
     strategy_type TEXT NOT NULL,
     regime        TEXT NOT NULL,
     param_set_id  TEXT NOT NULL,
