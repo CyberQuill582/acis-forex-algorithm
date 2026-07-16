@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-ALPHA-004` |
-| **Version** | 1.1 (LOCKED — v2.5–v2.9 consistency pass at phase-5 start, 2026-07-15) |
+| **Version** | 1.2 (LOCKED — v2.11 external-referent correction pass, 2026-07-16) |
 | **Layer / DIR** | Layer 4 · `[DIR:core/signals]` |
 | **Consumes** | `RegimeContext` (ACIS-02) + `ActiveParamSet` (ACIS-03) + `MarketState` + provenance gates (ACIS-11) |
 | **Emits** | `Signal` (frozen; linked groups for Pair Divergence) → Capital Governor (ACIS-05) |
@@ -53,7 +53,7 @@ class Signal:
     conviction: float              # [0.45, 1] for any EMITTED signal (post-discount)
     entry_price: float
     stop_loss: float
-    take_profit: float
+    take_profit: float | None     # None = no target (faithful TSMOM, v1.2/v2.11)
     strategy_type: StrategyType
     regime_at_generation: RegimeType
     param_set_id: str              # links to the ActiveParamSet used (traceability)
@@ -177,5 +177,6 @@ No control tools. Signal rate, discard-reason counts, and the §6 take-rate surf
 **What the Governor (ACIS-05) consumes:** a tuple of frozen `Signal`s with conviction ∈ [0.45,1], validated SL/TP, `param_set_id`, `valid_for_seconds`, and group-complete pair legs. The Governor applies expiry, sizing, atomic group sizing, clusters, and hard overrides. **Owns conflict-table rows:** "two strategies opposite directions → discard both"; producer side of "NVMA no-trade → discard signal." **Done-when (phase 5, master §15, paper signals only):** §14 tests green in a full run; import contract passing; ACIS-11 scaffolding live and gating.
 
 ## Changelog
+- **1.2 (LOCKED, 2026-07-16)** — v2.11 external-referent corrections (owner review; GAP-0054..0057): **time base = BARS** — AGON windows hold completed OHLC bars of `signal_bar_seconds` (60 s, = the GAP-0009 scalp bar) from `core/data/bars.py`; indicator periods mean bars, never ticks; stops/targets use REAL true-range ATR (`indicators.wilder_atr`, period = config `atr_period`); trend conviction's close-only directional score renamed `adx_proxy` (declared deviation); pair statistics resample onto the shared bar clock — one joint sample per bucket both legs barred in (GAP-0047 strong form). **TSMOM made faithful** (§6.6): `Signal.take_profit` Optional and TSMOM emits None; only the far §8.6 disaster stop (`tsmom_disaster_stop_atr`, declared deviation); exit on vote flip; live daily bars aggregate from ticks with `observe_daily_close` as the seeding API; **§14 average-duration ruling RAISED (GAP-0055), never silently resolved by a stop.** `atr_period` + derived window capacities close GAP-0056. Module `declared_deviations` (ACIS-11 v1.1) registration-visible. Suite 283 green.
 - **1.1 (LOCKED, 2026-07-15)** — v2.5–v2.9 consistency pass at phase-5 start: renamed **AGON** with the v2.8 reflex law made §1-binding; **Pair Divergence** added as the fifth module (§5.5: declared relationships with mandatory window+method, linked `group_id` emission, group-integrity law C-ALP-7); **Slow TSMOM** added as the sixth, v2.9-required canonical module (63/126/252-day trailing-return agreement formula, canonical constants not evolved genes, regime-blind but veto-subordinate); **GAP-0009 RESOLVED (owner-ratified 2026-07-15):** scalp bar = 1-minute, 5–15-minute horizon, excluded from the §14 avg-duration metric and reported separately, no expectancy indulgence — C9 at its own horizon or demoted; **GAP-0007 value set:** `fast_loop_decision_budget_ms = 250`, measured + logged + take-rate surfaced, never a guardrail; **ACIS-11 provenance gate** wired into §7 (construction requires registration; frozen strategies emit nothing new); `group_id` field added to `Signal` (required by the §5.5 linked-group law — recorded as the one master-schema extension); SQLite DDL per phase-1 precedent; explicit `now` injection. No guardrail, veto, or conflict-table semantics changed.
 - **1.0 (DRAFT)** — From master §5.5 + `ACIS_Agent_Prompt.md` §3.4 + S2 layer-4 card; C4/F11 ordering encoded as explicit test vectors.
