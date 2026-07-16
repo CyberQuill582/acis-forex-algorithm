@@ -1,0 +1,42 @@
+# Trusted event channels + Tier-1/Tier-G taxonomy (SPEC §3.5–3.6).
+# Adding or re-tiering a source is a human config commit, never a runtime action.
+sources:
+  - name: forex_factory
+    kind: calendar
+    trust_tier: 1
+  - name: fxstreet
+    kind: calendar
+    trust_tier: 1
+  - name: vetted_wire
+    kind: headline
+    trust_tier: 1
+
+tier1_events: [NFP, CPI, RATE_DECISION, GDP]
+
+# Keywords are TOKEN-SEQUENCE phrases (GAP-0034): matched on word boundaries,
+# never raw substrings. Short ambiguous single words (e.g. bare "war",
+# "escalation") are forbidden — they false-positive on routine vocabulary
+# ("warns", "Warsaw", "de-escalation") and would veto live instruments.
+tierg_taxonomy:
+  conflict_escalation:
+    keywords: [invasion, missile strike, mobilization, declares war,
+               war breaks out, armed conflict, airstrikes, military escalation]
+    affected: [XAU_USD, USD_JPY]
+    ttl_seconds: 7200                     # GAP-0015: bounded by construction
+    flatten_eligible: false               # flatten needs a human commit flipping this
+    confirmation_window_seconds: 900
+    min_confirmations_for_flatten: 2      # GAP-0011: never a single source
+  sanctions_package:
+    keywords: [sanctions, embargo, asset freeze]
+    affected: [XAU_USD, EUR_USD]
+    ttl_seconds: 10800
+    flatten_eligible: false
+    confirmation_window_seconds: 900
+    min_confirmations_for_flatten: 2
+  trade_agreement:
+    keywords: [trade deal, trade agreement, tariff deal, accord signed]
+    affected: [EUR_USD, USD_JPY]
+    ttl_seconds: 10800
+    flatten_eligible: false
+    confirmation_window_seconds: 1800
+    min_confirmations_for_flatten: 2

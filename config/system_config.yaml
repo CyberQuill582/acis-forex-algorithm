@@ -1,0 +1,83 @@
+# ACIS system config (SPEC §9). Dev/paper defaults — human-committed.
+mode: paper
+base_unit_usd: 1000.0
+active_account: dev_paper
+# C1: the single source of truth for forex session boundaries (UTC).
+session_boundaries_utc: ["22:00", "00:00", "07:00", "12:00"]
+param_stall_alert_boundaries: 3
+regime:
+  cycle_seconds: 120
+  atr_periods: [14, 50, 200]
+  adx_period: 14
+  adx_strong: 25.0
+  adx_weak: 20.0
+  bb_window: 100
+  bb_squeeze_pct: 0.10
+  bb_release_pct: 0.85
+  hurst_window: 200
+  hurst_trend: 0.55
+  hurst_meanrev: 0.45
+  confidence_veto: 0.55
+  spread_veto_mult: 3.0
+  velocity_veto_mult: 0.5
+  vol_medium_ratio: 0.8
+  vol_high_ratio: 1.3
+  vol_extreme_ratio: 2.0
+  spread_illiquid_sigma: 2.0
+  stability_window: 20
+signals:
+  conviction_discard: 0.45
+  medium_vol_discount: 0.85
+  valid_for_seconds:
+    TREND: 300
+    BREAKOUT: 120
+    MEAN_REVERSION: 300
+    MOMENTUM_SCALP: 30
+    PAIR_DIVERGENCE: 300
+    TSMOM: 86400
+  momentum_scalp_horizon_bars: [5, 15]
+  momentum_scalp_bar_seconds: 60   # GAP-0009 ruling: the scalp bar is the 1-minute bar
+  momentum_scalp_surge_ratio: 1.5
+  fast_loop_decision_budget_ms: 250  # GAP-0007 value (ACIS-04 §6)
+  tsmom_lookback_days: [63, 126, 252]
+  tsmom_min_history_days: 260
+  modules_enabled:
+    TREND: true
+    BREAKOUT: true
+    MEAN_REVERSION: true
+    MOMENTUM_SCALP: true
+    PAIR_DIVERGENCE: true
+    TSMOM: true
+provenance:
+  revalidation_cadence_days: 90
+  challenger_comparison_window_days: 60
+optimizer:
+  population_size: 20
+  generations: 30
+  qbit_resolution: 8
+  rotation_angle_rad: 0.05
+  qiea_cycle_seconds: 14400
+  fitness_bars: 500
+  fitness_min_bars: 300
+  fitness_min_trades: 10
+  holdout_fraction: 0.20
+  holdout_min_trades: 5
+  expectancy_min_r: 0.0
+data:
+  stale_threshold_ms: 2500
+  clock_skew_tolerance_ms: 1500
+  reorder_tolerance_ms: 500
+  tick_velocity_window_s: 10.0
+  queue_max: 1000
+  queue_overflow_policy: drop_oldest
+  macro_lookahead_min: 30
+  calendar_stale_threshold_s: 3600
+  log_sample_rate: 1
+  session_median_window: 500
+  session_median_min_samples: 30
+governor:
+  marginal_alpha_window: 50
+  marginal_alpha_min_trades: 20
+  marginal_alpha_min_bucket: 5
+  weekend_entry_buffer_s: 7200
+  scalp_min_hold_conflict: true

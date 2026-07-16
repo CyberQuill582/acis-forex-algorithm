@@ -1,0 +1,15 @@
+# HARD RISK GUARDRAILS (SPEC §8/§9/§9.5) — HUMAN-COMMIT ONLY.
+# No code path, MCP tool, or test hook may write this file (guard-integrity law).
+# Values below were set with the owner's ratification of 2026-07-15 (SPEC v2.5).
+daily_drawdown_pct: 2.0
+per_instrument_drawdown_pct: 1.0
+alpha_decay_sharpe_mult: 0.5
+var_cap_pct: 3.0
+cluster_cap_pct: 20.0
+single_currency_delta_cap_pct: 30.0  # master §6 exact ratified value (added phase 6, 2026-07-16;
+                                     # schema ceiling 30 — stricter allowed, looser rejected;
+                                     # flagged to the owner for veto, taper-pattern precedent)
+slippage_alert_bps: 8.0
+equity_floor_usd: 9000.0          # dev/paper account assumed 10k start — human-owned
+taper_start_fraction: 0.60        # ratified floor — stricter (smaller) allowed, looser rejected
+entry_halt_fraction: 0.80         # ratified floor — no new entries at/beyond 0.80 x limit

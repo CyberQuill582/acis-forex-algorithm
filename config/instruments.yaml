@@ -1,0 +1,86 @@
+# Instrument universe + §3.7 contract metadata + market calendars + clusters.
+# The enabled set is per-account; extension instruments may be declared disabled
+# and referenced by clusters (C7: inert until enabled; unknown symbol = error).
+calendars:
+  fx_default:
+    type: fx
+    sessions:
+      tokyo: ["00:00", "09:00"]
+      london: ["07:00", "16:00"]
+      new_york: ["12:00", "21:00"]
+    weekend_close_utc: "22:00"   # Friday
+    weekend_open_utc: "22:00"    # Sunday
+  cme_metals:
+    type: exchange
+    open_utc: "13:30"
+    close_utc: "20:00"
+    days: [1, 2, 3, 4, 5]
+    holidays: ["2026-12-25", "2026-07-03"]
+    half_days:
+      "2026-11-27": "17:00"
+
+instruments:
+  EUR_USD:
+    enabled: true
+    asset_class: fx
+    base_ccy: EUR
+    quote_ccy: USD
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0005
+    calendar: fx_default
+    costs:                   # C8 friction, price units; phase-11 OANDA calibration
+      commission_per_side: 0.0
+      slippage_per_side: 0.00002
+    vol_target_atr_frac: 0.0008   # C16 declared target (ACIS-05 §6.2)
+  USD_JPY:
+    enabled: true
+    asset_class: fx
+    base_ccy: USD
+    quote_ccy: JPY
+    tick_size: 0.001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.05
+    calendar: fx_default
+    costs:
+      commission_per_side: 0.0
+      slippage_per_side: 0.002
+    vol_target_atr_frac: 0.0008
+  XAU_USD:                # extension — declared, disabled until mature (SPEC §9)
+    enabled: false
+    asset_class: metal
+    quote_ccy: USD
+    tick_size: 0.01
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_cfd
+    swap_convention: financing_daily
+    max_plausible_spread: 1.2
+    calendar: cme_metals
+
+# §5.5: every relationship declares its window AND method — schema-fatal otherwise.
+pair_relationships:
+  eurusd_usdjpy:
+    legs: [EUR_USD, USD_JPY]
+    expected_sign: -1          # USD on opposite sides — historically opposite movers
+    correlation_window: 50
+    method: pearson_log_returns
+    stability_floor: 0.40
+    zscore_window: 50
+
+clusters:
+  usd_long: [USD_JPY]
+  usd_short: [EUR_USD]
+  commodity: [XAU_USD]     # C7: extension reference, inert while disabled
+  yen_carry: [USD_JPY]
+  risk_on: [EUR_USD]
+  risk_off: [XAU_USD, USD_JPY]
