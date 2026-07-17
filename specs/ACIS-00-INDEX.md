@@ -39,7 +39,7 @@ ACIS-09 Backtest/Validation ──exercises 01–07 end-to-end; owns §14 gate
 | `ACIS-SPEC-BT-009` | `ACIS-09-BACKTEST_VALIDATION.md` | Backtest `[DIR:tests/backtest]` | 01–07 | §14 validation report | DRAFT |
 | `ACIS-SPEC-EVENTS-010` | `ACIS-10-EVENTS_NEWS.md` | Events `[DIR:core/data]` (master §3.5–3.6) | calendar/news feeds + `platform_rules.yaml` | `EventPicture`, blackout windows, Tier-G flags | LOCKED (built, phase 2) |
 | `ACIS-SPEC-PROV-011` | `ACIS-11-STRATEGY_PROVENANCE.md` | Provenance & literature law `[DIR:core/signals]` (master §5.5 Pair Divergence, §5.6) | literature citations, eval history | provenance records, attempt registry, rung ladder | TO AUTHOR |
-| `ACIS-SPEC-SWAN-012` | `ACIS-12-SCENARIO_BOOK.md` | Black-swan replay `[DIR:core/risk + tests/backtest]` (master §8.5) | `scenario_book.yaml`, guardrails | gap-law replay verdicts (release gate) | TO AUTHOR |
+| `ACIS-SPEC-SWAN-012` | `ACIS-12-SCENARIO_BOOK.md` | Black-swan replay + §8.6 watchdog `[DIR:core/risk + tests/backtest + scripts]` (master §8.5–8.6) | `scenario_book.yaml`, guardrails, heartbeat | gap-law replay verdicts (release gate), watchdog flatten | v1.0 LOCKED (authored 2026-07-17, phase-9 gate) |
 | `ACIS-SPEC-VENUE-013` | `ACIS-13-VENUE_ADAPTERS.md` | Platform adapters + attach protocol `[DIR:core/data + core/execution]` (master §7.5, §9.5 rulebook load) | platform APIs, `platform_rules.yaml`, `instruments.yaml` | feed/execution adapter pairs, capability descriptors, conformance verdicts | TO AUTHOR |
 
 Status ladder: `DRAFT` → `REVIEWED` (passed `_SPEC_REVIEW_PASS.md`) → `LOCKED` (ready to build) → `BUILT` (phase complete, tests green).
