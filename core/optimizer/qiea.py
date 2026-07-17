@@ -76,10 +76,16 @@ class _Individual:
 class QIEA:
     """Per-regime evolution. `evolve()` returns a ParamSet or None (§6.3 gates)."""
 
-    def __init__(self, cfg: OptimizerConfig, costs: CostModel, logger) -> None:
+    def __init__(self, cfg: OptimizerConfig, costs: CostModel, logger, *,
+                 signal_bar_seconds: int, atr_period: int) -> None:
+        # GAP-0071: the fitness bar and ATR period are the SAME declared units
+        # AGON spends the evolved genes on (signals.signal_bar_seconds /
+        # signals.atr_period) — wired at composition, refused on mismatch.
         self._cfg = cfg
         self._costs = costs
         self._log = logger
+        self._bar_seconds = signal_bar_seconds
+        self._atr_period = atr_period
 
     # -- decode ------------------------------------------------------------ #
 
@@ -120,6 +126,11 @@ class QIEA:
         now: datetime | None = None,
     ) -> ParamSet | None:
         cfg = self._cfg
+        if history.bar_seconds != self._bar_seconds:
+            raise DataQualityError(
+                "bar_seconds", history.bar_seconds,
+                f"history bar unit must equal the declared signal bar "
+                f"({self._bar_seconds}s) — GAP-0071")
         for bar in history.bars:
             if bar.regime is not regime:
                 raise DataQualityError("bars", bar.regime, f"mislabelled bar (target {regime.value})")
@@ -163,7 +174,9 @@ class QIEA:
 
         # §6.3 holdout gate: the champion must carry expectancy out-of-sample.
         # Indicators warm up on the train bars; only entries in the tail count.
-        hold_pnls = simulate_trades(champion, bars, self._costs, entry_start=len(train))
+        hold_pnls = simulate_trades(champion, bars, self._costs,
+                                    entry_start=len(train),
+                                    atr_period=self._atr_period)
         hold_res = expectancy_r(hold_pnls)
         if not passes_expectancy_gate(hold_res, cfg.holdout_min_trades, cfg.expectancy_min_r):
             self._log.event(
@@ -189,7 +202,8 @@ class QIEA:
         evolved_at: datetime,
     ) -> float:
         probe = self._build_paramset(genes, regime, 0.0, 0, evolved_at)
-        return fitness_of(probe, train, self._costs, self._cfg)
+        return fitness_of(probe, train, self._costs, self._cfg,
+                          atr_period=self._atr_period)
 
     def _build_paramset(
         self,

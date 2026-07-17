@@ -54,7 +54,8 @@ def bars_from_closes(
         o = prev
         bars.append(
             LabelledBar(
-                ts=T0 + timedelta(minutes=5 * i),
+                # GAP-0071: fixtures carry the DECLARED 60s signal-bar spacing
+                ts=T0 + timedelta(seconds=60 * i),
                 open=o, high=max(o, c) + wick, low=min(o, c) - wick, close=c,
                 spread=spread, regime=regime,
             )
@@ -63,10 +64,16 @@ def bars_from_closes(
     return tuple(bars)
 
 
+BAR_SECONDS = 60  # the declared signal bar (signals.signal_bar_seconds)
+ATR_PERIOD = 14   # the declared signals.atr_period, threaded per GAP-0071
+
+
 def zigzag_history(
     n: int = 500, regime: RegimeType = RegimeType.STRONG_TREND_UP, **kw
 ) -> RegimeLabelledHistory:
-    return RegimeLabelledHistory("EUR_USD", bars_from_closes(zigzag_closes(n, **kw), regime))
+    return RegimeLabelledHistory("EUR_USD",
+                                 bars_from_closes(zigzag_closes(n, **kw), regime),
+                                 bar_seconds=BAR_SECONDS)
 
 
 def make_paramset(regime: RegimeType = RegimeType.STRONG_TREND_UP, **overrides) -> ParamSet:

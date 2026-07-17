@@ -47,6 +47,51 @@ Honest negatives (verified SOUND — a first-class result, not a sign-off):
    (one fsync/tick) — the throughput claim's cause is real.
 ============================================================================ -->
 
+<!-- ============================================================================
+EXTERNAL-REFERENT AUDIT MERGE (2026-07-17). Full audit record + verification
+pass: KNOWN_GAPS_EXTERNAL_PENDING.md (GAP-0070..0073 by the auditor;
+GAP-0090/0091 by the verifier; honest negatives incl. ATR/Pearson/RSI/
+Bollinger/QIEA verified-faithful to hand vectors, TSMOM capture >=100%).
+Triage below, same-day. ============================================================================ -->
+
+## GAP-0070: the Hurst estimator is drift-invariant and high-variance — "H>0.55 trending / H<0.45 mean-reverting" carries no external meaning (completes GAP-0066; verifier-confirmed to machine epsilon)
+- Severity: high
+- Likelihood: high
+- Status: open — RAISED TO THE OWNER for ratification (2026-07-17). The finder recommendation (confirmed by the independent verification pass: drift-invariance exact to 1.3e-15; noise false-trips both gates 20–33%; OU detection >90%; multi-window R/S ≈⅓ the variance): (1) NARROW Hurst to the anti-persistence job it can do — the MEAN_REVERTING gate — and drop/discount the `trending_h` confidence term; (2) repair the estimator (multi-window R/S, subseries averaging, small-sample bias correction) and/or add cycle-persistence hysteresis; (3) re-derive `hurst_meanrev` (retire `hurst_trend`) empirically against the repaired estimator, re-tuning the phase-3 AND phase-7 fixtures with it (GAP-0076 is BOUND to this change); (4) correct master §4's "H>0.55 trending" prose — a spec statement wrong about the outside world, requiring a master-spec edit. Regime-classifier semantics + a master edit = owner ratification before applying; nothing applied yet.
+- Area: [DIR:core/regime] nvma.py `hurst_exponent` + classify gates; config hurst_* thresholds; master §4; fixtures (GAP-0076)
+- Linked: KNOWN_GAPS_EXTERNAL_PENDING.md GAP-0070 + Verification pass (2026-07-17), GAP-0066, GAP-0076
+
+## GAP-0071: evolved ATR-multiplier stops were calibrated on a bar series with no declared duration and a hardcoded ATR period — the fitness↔AGON unit coupling was guaranteed by nothing
+- Severity: medium
+- Likelihood: medium
+- Status: closed (fixed 2026-07-17 by the author — the module `ATR_PERIOD` literal is GONE: `atr_series`/`simulate_trades`/`fitness_of` REQUIRE the period (threaded from the one declared `signals.atr_period` via QIEA's constructor), and `RegimeLabelledHistory` now carries a validated `bar_seconds` that `QIEA.evolve` refuses on mismatch with the declared signal bar. Fixtures moved to the declared 60s spacing. A unit divergence is now unrepresentable, not a coincidence of literals)
+- Area: [DIR:core/optimizer] fitness.py, qiea.py, param_types.py; tests/optimizer_fixtures.py
+- Linked: KNOWN_GAPS_EXTERNAL_PENDING.md GAP-0071, GAP-0059
+
+## GAP-0072: TREND's "ADX/50" conviction uses the close-only adx_proxy under the canonical name "ADX" — undeclared deviation
+- Severity: low
+- Likelihood: medium
+- Status: closed (fixed 2026-07-17 — the proxy substitution is now DECLARED in TREND's `declared_deviations` (canonical.py) and annotated at ACIS-04 §6.1; the deviations round-trip test covers the tuple)
+- Linked: KNOWN_GAPS_EXTERNAL_PENDING.md GAP-0072, GAP-0057/0062
+
+## GAP-0073: TSMOM signs raw price returns, not MOP 2012's excess-over-risk-free returns — undeclared (immaterial) deviation
+- Severity: low
+- Likelihood: low
+- Status: closed (fixed 2026-07-17 — declared in TSMOM's `declared_deviations` with the immateriality note; the deviations list is again exhaustive)
+- Linked: KNOWN_GAPS_EXTERNAL_PENDING.md GAP-0073, GAP-0055
+
+## GAP-0090: the TSMOM honest negative "0 disaster-stop hits / 100.00% capture" was not robust — the verifier measured 17 stop hits across 160 replays at low trend-to-noise ratios
+- Severity: low
+- Likelihood: low
+- Status: closed (accepted-corrected 2026-07-17 — the verification-pass section in KNOWN_GAPS_EXTERNAL_PENDING.md is the corrected record: the 10×ATR stop DOES fire at realistic low SNR, but capture stayed ≥100% (101–105%) in every replay because the stop only ever truncated LOSING positions, never a winning trend. The GAP-0055 §14 carve-out conclusion survives, strengthened; any §14-facing use must quote the corrected form, not "0 hits")
+- Linked: KNOWN_GAPS_EXTERNAL_PENDING.md Verification pass (2026-07-17), GAP-0055
+
+## GAP-0091: fitness's `sharpe_component` wore the canonical name "Sharpe" for an un-annualised, zero-risk-free per-trade mean/σ transform (coverage hole the verifier closed: the brief's Sharpe/profit-factor sweep item)
+- Severity: low
+- Likelihood: low
+- Status: closed (fixed 2026-07-17 — renamed `mean_sigma_component` in code and `mean_sigma_c` in ACIS-03 §5 with the naming-law note; profit factor was verified textbook-faithful, no change)
+- Linked: KNOWN_GAPS_EXTERNAL_PENDING.md GAP-0091, §16 naming law
+
 ## GAP-0079: PaperLoop's GAP-0052 boot contract is enforced only by `assert self._booted` — stripped under `python -O`, silently disabling boot/rebuild_groups
 - Severity: low
 - Likelihood: low

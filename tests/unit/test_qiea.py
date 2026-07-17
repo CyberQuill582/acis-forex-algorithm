@@ -1,4 +1,4 @@
-"""QIEA evolution gates + decode/repair + reproducibility (ACIS-03 §6/§14)."""
+﻿"""QIEA evolution gates + decode/repair + reproducibility (ACIS-03 Â§6/Â§14)."""
 
 from __future__ import annotations
 
@@ -23,7 +23,8 @@ REGIME = RegimeType.STRONG_TREND_UP
 
 def make_qiea(cfg=None) -> tuple[QIEA, CapturingLogger]:
     log = CapturingLogger()
-    return QIEA(cfg or opt_cfg(), TEST_COSTS, log), log
+    return QIEA(cfg or opt_cfg(), TEST_COSTS, log,
+                signal_bar_seconds=60, atr_period=14), log
 
 
 # ---------------------------- decode / repair -------------------------------- #
@@ -67,7 +68,7 @@ def test_evolve_returns_valid_paramset_and_logs_run() -> None:
 
 
 def test_same_seed_same_history_identical_champion() -> None:
-    """§3 determinism scope: reproducibility is the binding requirement."""
+    """Â§3 determinism scope: reproducibility is the binding requirement."""
     a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=7, now=T0)
     b = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=7, now=T0)
     assert a is not None and b is not None
@@ -86,7 +87,7 @@ def test_insufficient_bars_no_evolution() -> None:
 def test_champion_failing_holdout_gate_is_not_staged() -> None:
     """C-QIEA-8: trades in train, flat holdout tail => rejected out-of-sample."""
     closes = zigzag_closes(400) + [zigzag_closes(400)[-1]] * 100  # flat last 100
-    history = RegimeLabelledHistory("EUR_USD", bars_from_closes(closes, REGIME))
+    history = RegimeLabelledHistory("EUR_USD", bars_from_closes(closes, REGIME), bar_seconds=60)
     qiea, log = make_qiea()
     assert qiea.evolve(REGIME, history, seed=42, now=T0) is None
     assert len(log.events("EVOLUTION_REJECTED_OOS")) == 1
@@ -97,11 +98,11 @@ def test_mislabelled_bar_raises() -> None:
     bars = bars_from_closes(zigzag_closes(500), RegimeType.RANGING_TIGHT)
     qiea, _ = make_qiea()
     with pytest.raises(DataQualityError):
-        qiea.evolve(REGIME, RegimeLabelledHistory("EUR_USD", bars), seed=1, now=T0)
+        qiea.evolve(REGIME, RegimeLabelledHistory("EUR_USD", bars, bar_seconds=60), seed=1, now=T0)
 
 
 def test_uses_only_last_fitness_bars() -> None:
-    """A 600-bar history evaluates on the trailing fitness_bars=500 (master §5)."""
+    """A 600-bar history evaluates on the trailing fitness_bars=500 (master Â§5)."""
     qiea, log = make_qiea()
     ps = qiea.evolve(REGIME, zigzag_history(600), seed=42, now=T0)
     assert ps is not None
@@ -113,7 +114,7 @@ def test_uses_only_last_fitness_bars() -> None:
 
 def test_gap0036_same_seed_different_params_get_different_ids() -> None:
     """The audit-link id is content-derived: same seed, different history/regime
-    => different champion params => different param_set_id (§4 traceability)."""
+    => different champion params => different param_set_id (Â§4 traceability)."""
     a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=42, now=T0)
     b = make_qiea()[0].evolve(
         RegimeType.RANGING_TIGHT, zigzag_history(500, regime=RegimeType.RANGING_TIGHT, leg=25),
@@ -138,7 +139,7 @@ def test_gap0038_all_train_gated_champion_is_never_staged() -> None:
     """Flat train (zero trades => every individual WORST) + tradeable holdout tail:
     the arbitrary first collapse must NOT sneak out via a lucky small holdout."""
     closes = [1.1] * 400 + zigzag_closes(100, base=1.1)
-    history = RegimeLabelledHistory("EUR_USD", bars_from_closes(closes, REGIME))
+    history = RegimeLabelledHistory("EUR_USD", bars_from_closes(closes, REGIME), bar_seconds=60)
     qiea, log = make_qiea()
     assert qiea.evolve(REGIME, history, seed=42, now=T0) is None
     assert len(log.events("EVOLUTION_REJECTED_TRAIN")) == 1

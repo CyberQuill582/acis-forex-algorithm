@@ -34,7 +34,9 @@ _CANON: list[tuple[StrategyType, str, str, str, str, tuple[str, ...]]] = [
      ("entry/exit parameters (EMA spans, RSI bounds, ATR stop/target multiples) "
       "are QIEA-evolved per regime, not source-published values",
       "regime-gated activation via NVMA rather than always-on",
-      "signals on 1-minute bars (signal_bar_seconds), not daily charts")),
+      "signals on 1-minute bars (signal_bar_seconds), not daily charts",
+      "conviction 'ADX/50' uses the close-only adx_proxy (|delta-close| as the "
+      "true-range stand-in), NOT Wilder's high/low true-range ADX — GAP-0072")),
     (StrategyType.BREAKOUT,
      "Donchian channel breakout (Donchian, 1960s; Turtle rules as published by Faith, "
      "Way of the Turtle, 2007)",
@@ -95,7 +97,9 @@ _CANON: list[tuple[StrategyType, str, str, str, str, tuple[str, ...]]] = [
       "position size via the Governor's C16 vol-norm + formula, not the "
       "published 40%/sigma ex-ante vol scaling",
       "3-horizon sign agreement (63/126/252d) instead of the single published "
-      "12-month lookback")),
+      "12-month lookback",
+      "signs RAW price returns, not excess-over-risk-free returns as in MOP "
+      "2012 (immaterial at 3-12m FX horizons) — GAP-0073")),
 ]
 
 

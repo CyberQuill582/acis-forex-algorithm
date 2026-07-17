@@ -118,3 +118,12 @@ class LabelledBar:
 class RegimeLabelledHistory:
     instrument: str
     bars: tuple[LabelledBar, ...]
+    # GAP-0071: the DECLARED bar unit. The evolved atr_multiplier_sl/tp genes
+    # are risk geometry — they are only meaningful on the same bar AGON spends
+    # them on, so the history carries its unit and QIEA refuses a mismatch.
+    bar_seconds: int
+
+    def __post_init__(self) -> None:
+        if self.bar_seconds <= 0:
+            raise DataQualityError("bar_seconds", self.bar_seconds,
+                                   "history must declare its bar unit (GAP-0071)")

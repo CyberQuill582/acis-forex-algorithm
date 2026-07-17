@@ -18,8 +18,11 @@ from core.optimizer.costs import CostModel
 from core.optimizer.param_types import LabelledBar, ParamSet
 
 WORST_FITNESS = -1.0
-ATR_PERIOD = 14  # canonical Wilder period for the SL/TP multipliers
 E_R_REPORT_CAP = 10.0  # log-reporting cap when no losing trades exist
+# GAP-0071: there is deliberately NO module ATR-period constant — the period
+# is threaded from the ONE declared config value (signals.atr_period) by the
+# caller, so fitness calibrates the SL/TP genes on the same ATR AGON spends
+# them with. A divergence is unrepresentable, not a coincidence of literals.
 
 
 # --------------------------------------------------------------------------- #
@@ -54,7 +57,7 @@ def rsi_series(closes: Sequence[float], period: int) -> list[float]:
     return out
 
 
-def atr_series(bars: Sequence[LabelledBar], period: int = ATR_PERIOD) -> list[float]:
+def atr_series(bars: Sequence[LabelledBar], period: int) -> list[float]:
     """Wilder ATR; index i is the ATR at bar i (0.0 during warm-up)."""
     out = [0.0] * len(bars)
     if len(bars) <= period:
@@ -81,19 +84,22 @@ def simulate_trades(
     bars: Sequence[LabelledBar],
     costs: CostModel,
     entry_start: int = 0,
+    *,
+    atr_period: int,
 ) -> list[float]:
     """Closed-trade net PnLs. `entry_start` supports the §6.3 holdout: indicators
     warm up on the full window, but new entries are only permitted from that
-    index on — no lookahead, and no artificial indicator starvation in the tail."""
+    index on — no lookahead, and no artificial indicator starvation in the tail.
+    `atr_period` is the declared signals.atr_period (GAP-0071)."""
     n = len(bars)
-    warmup = max(params.ema_slow, params.rsi_period + 1, ATR_PERIOD + 1, entry_start)
+    warmup = max(params.ema_slow, params.rsi_period + 1, atr_period + 1, entry_start)
     if n <= warmup + 1:
         return []
     closes = [b.close for b in bars]
     ema_f = ema_series(closes, params.ema_fast)
     ema_s = ema_series(closes, params.ema_slow)
     rsi = rsi_series(closes, params.rsi_period)
-    atr = atr_series(bars)
+    atr = atr_series(bars, atr_period)
 
     pnls: list[float] = []
     direction = 0          # 0 flat, +1 long, -1 short
@@ -192,7 +198,10 @@ def _clamp01(x: float) -> float:
     return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
 
 
-def sharpe_component(pnls: Sequence[float]) -> float:
+def mean_sigma_component(pnls: Sequence[float]) -> float:
+    """Per-trade mean/σ transform clamped to [0,1] — NOT an annualised Sharpe
+    ratio (no time base, no risk-free rate). Renamed from `sharpe_component`
+    under the §16 naming law (external-referent verification, GAP-0091)."""
     n = len(pnls)
     mean = sum(pnls) / n
     var = sum((p - mean) ** 2 for p in pnls) / n
@@ -232,7 +241,7 @@ def evaluate_fitness(pnls: Sequence[float], cfg: OptimizerConfig) -> float:
     wins = sum(1 for p in pnls if p > 0)
     win_rate = wins / len(pnls)
     return (
-        0.40 * sharpe_component(pnls)
+        0.40 * mean_sigma_component(pnls)
         + 0.20 * win_rate
         + 0.20 * profit_factor_component(pnls)
         - 0.20 * max_drawdown_penalty(pnls)
@@ -240,6 +249,8 @@ def evaluate_fitness(pnls: Sequence[float], cfg: OptimizerConfig) -> float:
 
 
 def fitness_of(
-    params: ParamSet, bars: Sequence[LabelledBar], costs: CostModel, cfg: OptimizerConfig
+    params: ParamSet, bars: Sequence[LabelledBar], costs: CostModel,
+    cfg: OptimizerConfig, *, atr_period: int
 ) -> float:
-    return evaluate_fitness(simulate_trades(params, bars, costs), cfg)
+    return evaluate_fitness(simulate_trades(params, bars, costs,
+                                            atr_period=atr_period), cfg)
