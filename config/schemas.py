@@ -67,7 +67,11 @@ class RegimeConfig(_Strict):
     bb_squeeze_pct: float = Field(gt=0, lt=1)
     bb_release_pct: float = Field(gt=0, lt=1)
     hurst_window: int = Field(ge=100)
-    hurst_trend: float = Field(gt=0.5, lt=1)
+    # GAP-0070 (owner-ratified 2026-07-17): hurst_trend is GONE — R/S Hurst is
+    # drift-invariant and can never gate a trend; its only role is the
+    # anti-persistence (mean-reversion) gate below. Value re-derived against
+    # the repaired Anis–Lloyd multi-window estimator (RW FP 7.5%, OU k>=0.2
+    # detection 95-100% at window 201).
     hurst_meanrev: float = Field(gt=0, lt=0.5)
     confidence_veto: float = Field(gt=0, lt=1)
     spread_veto_mult: float = Field(gt=1)

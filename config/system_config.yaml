@@ -15,8 +15,11 @@ regime:
   bb_squeeze_pct: 0.10
   bb_release_pct: 0.85
   hurst_window: 200
-  hurst_trend: 0.55
-  hurst_meanrev: 0.45
+  # GAP-0070 (owner-ratified 2026-07-17): hurst_trend removed (drift-invariant
+  # statistic - no trend meaning); hurst_meanrev re-derived against the
+  # repaired Anis-Lloyd multi-window estimator (was 0.45 on the biased 4-point
+  # fit): random-walk false-positive 7.5%, OU kappa>=0.2 detection 95-100%.
+  hurst_meanrev: 0.35
   confidence_veto: 0.55
   spread_veto_mult: 3.0
   velocity_veto_mult: 0.5

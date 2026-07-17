@@ -6,11 +6,14 @@ the composed pipeline (not at a layer seam), per-gate skip attribution (§10
 C15) observable live, and the GAP-0052 boot contract enforced.
 
 Fixture series are empirically tuned against the real classifier + indicator
-maths (phase-3/5 precedent): 280 flat-noise ticks at 60s cadence warm the
-factory session medians (30) and the NVMA window (201), then classify
-MEAN_REVERTING (tradeable once params are promoted); the TSMOM daily seed
-(300 rising closes) makes the always-on module fire organically through the
-whole stack.
+maths (phase-3/5 precedent): 280 alternating flat-noise ticks at 60s cadence
+warm the factory session medians (30) and the NVMA window (201), then classify
+MEAN_REVERTING — genuinely: a deterministic alternation IS anti-persistent
+price behaviour, and the repaired GAP-0070 estimator reads it H≈-0.10, far
+under the re-derived 0.35 gate (this premise survived the estimator repair
+because the fixture alternates; it is no longer the noise artifact GAP-0076
+flagged). The TSMOM daily seed (300 rising closes) makes the always-on module
+fire organically through the whole stack.
 """
 
 from __future__ import annotations
@@ -281,11 +284,28 @@ async def test_row5_regime_shift_without_params_is_untradeable_and_never_swaps(
     for j in range(40):                              # the shift: a strong trend
         m += 0.0004
         ticks.append(mk_tick(WARMUP + j, m))
+
+    regime_at: dict = {}                             # tick ts -> classified context
+    orig = loop.on_state
+
+    def recording(state):
+        orig(state)
+        regime_at[state.timestamp] = loop.last_context
+    loop.on_state = recording
+
     await loop.run(MockPaperFeed({"EUR_USD": 1.10}, scripted=ticks))
 
     assert len(loop.book.orders) >= 1                # traded while mean-reverting
-    shift_ts = ticks[WARMUP].event_time
-    assert all(o.sized_at < shift_ts for o in loop.book.orders)  # none in the trend
+    # the row's exact claim: an order exists ONLY where the classified regime
+    # was the param'd, tradeable one — never in a paramless regime. (The first
+    # post-shift ticks may legitimately still classify MEAN_REVERTING: a
+    # 201-tick window cannot see one tick of trend.)
+    for o in loop.book.orders:
+        ctx = regime_at[o.sized_at]
+        assert ctx.regime is RegimeType.MEAN_REVERTING and ctx.tradeable
+    trend_ctxs = [c for c in regime_at.values()
+                  if c.regime is RegimeType.STRONG_TREND_UP]
+    assert trend_ctxs and all(not c.tradeable for c in trend_ctxs)
     assert loop.last_context.regime is RegimeType.STRONG_TREND_UP
     assert loop.last_context.tradeable is False
     assert loop.nvma.veto_counters["NO_PARAMS_FOR_REGIME"] >= 1

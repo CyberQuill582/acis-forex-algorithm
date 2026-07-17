@@ -94,21 +94,45 @@ def bollinger_width_percentile(mids: Sequence[float], window: int, band_period: 
     return sum(1 for w in widths if w <= current) / len(widths)
 
 
+def _expected_rs(n: int) -> float:
+    """Anis–Lloyd expected R/S of iid Gaussian increments at chunk size n
+    (Peters' (n-1/2)/n correction; exact lgamma form for small n, the
+    sqrt(2/(n·pi)) asymptotic beyond 340). Pure stdlib, deterministic."""
+    total = sum(math.sqrt((n - i) / i) for i in range(1, n))
+    if n <= 340:
+        lead = math.exp(math.lgamma((n - 1) / 2.0) - 0.5 * math.log(math.pi)
+                        - math.lgamma(n / 2.0))
+    else:
+        lead = 1.0 / math.sqrt(n * math.pi / 2.0)
+    return ((n - 0.5) / n) * lead * total
+
+
 def hurst_exponent(mids: Sequence[float], window: int) -> float:
-    """Rescaled-range (R/S) Hurst estimate over the trailing `window` mids."""
+    """Anis–Lloyd-corrected multi-window rescaled-range Hurst estimate over
+    the trailing `window` mids (GAP-0070 repair, owner-ratified 2026-07-17):
+    >= 8 geometric chunk sizes with subseries AVERAGING at every size (the old
+    4-point fit's largest size was one un-averaged chunk), and H = 0.5 + the
+    slope of log(RS/E[RS]) on log n — the small-sample bias correction that
+    centres an iid walk at 0.5. R/S measures INCREMENT PERSISTENCE and is
+    drift-invariant by construction: it cannot see a price trend, and its only
+    classifier role is the anti-persistence (mean-reversion) gate."""
     series = list(mids[-window:])
     if len(series) < window or window < 100:
         return math.nan
     returns = [series[i] - series[i - 1] for i in range(1, len(series))]
     if all(r == 0 for r in returns):
         return math.nan
-    sizes = [len(returns) // 8, len(returns) // 4, len(returns) // 2, len(returns)]
-    log_n, log_rs = [], []
+    n = len(returns)
+    lo, hi = 16, n // 2
+    n_sizes = 8
+    ratio = (hi / lo) ** (1.0 / (n_sizes - 1))
+    sizes = sorted({int(round(lo * ratio ** k)) for k in range(n_sizes)})
+    log_n, log_ratio = [], []
     for size in sizes:
-        if size < 8:
+        if size < 8 or size > hi:
             continue
         rs_values = []
-        for start in range(0, len(returns) - size + 1, size):
+        for start in range(0, n - size + 1, size):
             chunk = returns[start:start + size]
             mean = sum(chunk) / len(chunk)
             devs = [c - mean for c in chunk]
@@ -122,14 +146,15 @@ def hurst_exponent(mids: Sequence[float], window: int) -> float:
                 rs_values.append(r / s)
         if rs_values:
             log_n.append(math.log(size))
-            log_rs.append(math.log(sum(rs_values) / len(rs_values)))
-    if len(log_n) < 2:
+            log_ratio.append(math.log(sum(rs_values) / len(rs_values))
+                             - math.log(_expected_rs(size)))
+    if len(log_n) < 4:
         return math.nan
     n_mean = sum(log_n) / len(log_n)
-    rs_mean = sum(log_rs) / len(log_rs)
-    num = sum((x - n_mean) * (y - rs_mean) for x, y in zip(log_n, log_rs))
+    r_mean = sum(log_ratio) / len(log_ratio)
+    num = sum((x - n_mean) * (y - r_mean) for x, y in zip(log_n, log_ratio))
     den = sum((x - n_mean) ** 2 for x in log_n)
-    return num / den if den else math.nan
+    return 0.5 + num / den if den else math.nan
 
 
 # --------------------------------------------------------------------------- #
@@ -282,7 +307,11 @@ class NVMA:
         liq = LiqState.NORMAL if med_velocity > 0 and state.tick_velocity >= med_velocity else LiqState.THIN
 
         # 5. Regime resolution — fixed deterministic precedence, exactly one.
-        trending_h = hurst > cfg.hurst_trend
+        # GAP-0070 (owner-ratified 2026-07-17): Hurst's ONLY role is the
+        # anti-persistence gate into MEAN_REVERTING. There is no trending_h —
+        # R/S is drift-invariant (a trend and a random walk read identically,
+        # proven to machine epsilon), so ADX alone carries trend strength and
+        # its confidence; a Hurst term there was a coin flip.
         meanrev_h = hurst < cfg.hurst_meanrev
         agreement: list[float] = []
         if bb_pct <= cfg.bb_squeeze_pct and adx_value < cfg.adx_strong:
@@ -295,12 +324,11 @@ class NVMA:
         elif adx_value >= cfg.adx_strong and direction != 0:
             regime = RegimeType.STRONG_TREND_UP if direction > 0 else RegimeType.STRONG_TREND_DOWN
             direction_out = direction
-            agreement = [min(adx_value / (2 * cfg.adx_strong) + 0.5, 1.0),
-                         1.0 if trending_h else 0.5]
+            agreement = [min(adx_value / (2 * cfg.adx_strong) + 0.5, 1.0)]
         elif adx_value >= cfg.adx_weak and direction != 0:
             regime = RegimeType.WEAK_TREND_UP if direction > 0 else RegimeType.WEAK_TREND_DOWN
             direction_out = direction
-            agreement = [0.7, 1.0 if trending_h else 0.5]
+            agreement = [0.7]
         elif meanrev_h:
             regime, direction_out = RegimeType.MEAN_REVERTING, 0
             agreement = [1.0 - hurst / cfg.hurst_meanrev if cfg.hurst_meanrev else 0.5,

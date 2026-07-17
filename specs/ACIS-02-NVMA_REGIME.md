@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-REGIME-002` |
-| **Version** | 1.1 (LOCKED) |
+| **Version** | 1.3 (LOCKED, 2026-07-17 — v2.12 Hurst correction) |
 | **Layer / DIR** | Layer 2 · `[DIR:core/regime]` · **the sovereign gatekeeper** |
 | **Consumes** | `MarketState` (ACIS-01) + `session_median_cache` |
 | **Emits** | `RegimeContext` (frozen) → QIEA (ACIS-03) & AGON (ACIS-04) via `regime_store` |
@@ -65,7 +65,7 @@ class RegimeContext:
 
 - **`RegimeInputWindow`:** rolling arrays of `mid`, `spread`, `volume`, `tick_velocity`, `timestamp`, per instrument, length = `max_indicator_lookback` (≥200). Backed by a ring buffer; NaN-free (guaranteed by ACIS-01).
 - **Enums:** `VolClass`, `LiqState` as above. `trend_direction` ∈ {-1,0,+1}.
-- **Config (`regime:`):** `cycle_seconds` (60–300, F1), `atr_periods:[14,50,200]`, `adx_period:14`, `adx_strong_threshold`, `adx_weak_threshold`, `bb_window:100`, `hurst_window:200`, `hurst_trend:0.55`, `hurst_meanrev:0.45`, `confidence_veto:0.55`, `spread_veto_mult:3.0`, `velocity_veto_mult:0.5`, `macro_lookahead_min:30` (shared with data), `session_median_window`, `session_median_min_samples`. All required.
+- **Config (`regime:`):** `cycle_seconds` (60–300, F1), `atr_periods:[14,50,200]`, `adx_period:14`, `adx_strong_threshold`, `adx_weak_threshold`, `bb_window:100`, `hurst_window:200`, `hurst_meanrev:0.35` (re-derived v2.12; `hurst_trend` DELETED — see §6), `confidence_veto:0.55`, `spread_veto_mult:3.0`, `velocity_veto_mult:0.5`, `macro_lookahead_min:30` (shared with data), `session_median_window`, `session_median_min_samples`. All required.
 
 ## 6. Algorithm & config set
 
@@ -73,7 +73,7 @@ class RegimeContext:
 - Volatility class ← ATR(14)/ATR(50)/ATR(200) ratios: expanding short/long ratio ⇒ higher class; thresholds config-driven; `EXTREME` above the top band.
 - Trend strength ← ADX(14): ≥ `adx_strong` ⇒ STRONG, between weak/strong ⇒ WEAK, < `adx_weak` ⇒ not-trending. Direction ← sign of DI+ − DI− (or EMA slope).
 - Ranging ← Bollinger-band width percentile over `bb_window`: low percentile + low ADX ⇒ `RANGING_TIGHT`; high width + low ADX ⇒ `RANGING_WIDE`.
-- Mean-reversion vs trending ← Hurst(200): H>0.55 trending bias, H<0.45 mean-reverting, else indeterminate.
+- Anti-persistence ← Hurst(200), Anis–Lloyd-corrected multi-window R/S (v2.12 repair): **H < 0.35 gates MEAN_REVERTING — its ONLY role.** R/S Hurst is drift-invariant (a trend and a random walk read identically), so it carries no trend meaning; ADX alone carries trend strength and trend confidence. Threshold re-derived against the repaired estimator at window 201: random-walk false-positive 7.5%, OU κ≥0.2 detection 95–100% (probe recorded in the v2.12 pass).
 - Breakout ← BB squeeze release / channel proximity ⇒ `BREAKOUT_IMMINENT`; confirmed break + elevated vol ⇒ `POST_BREAKOUT`.
 - `MACRO_EVENT` ← `macro_events_imminent` (from `MarketState`) OR a §3.6 Tier-G shock flag on the instrument (master v2.4+: a headline can only ever make ACIS more conservative — the shock feeds classification as MACRO_EVENT, never a direction).
 - `ILLIQUID` ← spread deviation > `spread_illiquid_sigma` × σ(window spreads) above the **session median** (master §4 — one baseline, shared with the veto rules; a window-median centre would self-track a widening spread and mask sustained illiquidity — GAP-0028), `session == "closed"` (the market is not open — ACIS-01 §4), and exchange halt / limit-lock states (master §3.7). Dead tick-velocity is a **veto** (master §4), not an ILLIQUID classification.
@@ -84,7 +84,7 @@ class RegimeContext:
 
 **Stability score & half-life (`stability.py`):** `regime_stability_score` = fraction of the last `stability_window` classifications equal to the current regime (0..1), optionally weighted by confidence. `estimated_half_life_seconds` = expected dwell time of the current regime, estimated from historical transition rates (exponential-dwell MLE over labelled history). **C3:** half-life is advisory — logged + exposed on `acis://regime/current`, consumed by no sizing formula.
 
-**Confidence:** a bounded aggregate of indicator agreement (e.g. how decisively ADX/Hurst/BB agree on one regime); 0..1; low agreement ⇒ low confidence ⇒ veto.
+**Confidence:** a bounded aggregate of indicator agreement (ADX-derived for the trend regimes — Hurst contributes NO trend term, v2.12; Hurst-distance + ADX-absence for MEAN_REVERTING; BB-based for the ranging/breakout family); 0..1; low agreement ⇒ low confidence ⇒ veto.
 
 ## 7. Core logic (step by step)
 
@@ -160,6 +160,7 @@ Exposes no control tools. Surfaces (via ACIS-08) `acis://regime/current` (latest
 **What QIEA (ACIS-03) & AGON (ACIS-04) consume:** `RegimeContext` from `regime_store`. QIEA keys its param library by `regime`; AGON gates its strategy modules by `regime` + `volatility_class` and reads `tradeable`, `regime_stability_score`, `confidence`. **Owns conflict-table rows:** "NVMA no-trade + high-conviction signal → discard" and "regime shift + no evolved params → tradeable=False". **Done-when (phase 2, master §15):** all §14 tests green; import-linter contract still passing after this layer is added.
 
 ## Changelog
+- **1.3 (LOCKED, 2026-07-17 — master v2.12, GAP-0066/0070 closure)** — Hurst repaired (Anis–Lloyd-corrected multi-window R/S, ≥8 geometric sizes with subseries averaging; an iid walk centres at ≈0.5) and narrowed to its ONLY defensible role: the anti-persistence gate into MEAN_REVERTING at the re-derived `hurst_meanrev = 0.35` (RW false-positive 7.5%, OU κ≥0.2 detection 95–100% at window 201). `hurst_trend` deleted from config/schema — R/S is drift-invariant and carries no trend meaning; trend confidence rides on ADX alone. Ranging fixture generators re-tuned to walk-dominated series (the old zigzag fixtures were themselves anti-persistent — tuned to the broken estimator).
 - **1.2 (LOCKED, 2026-07-15)** — Phases 2–3 subordinate-audit triage: ILLIQUID baseline fixed to session median (GAP-0028); §8/C-REG-5 determinism honestly scoped — pure fields vs declared historical aggregates (GAP-0032); gate-states excluded from stability history (GAP-0031); remaining "Alpha Arena" consumer references renamed AGON (GAP-0029).
 - **1.1 (LOCKED, 2026-07-15)** — v2.8 master consistency pass for the phase-3 build: Tier-G shock (§3.6) added as a MACRO_EVENT input (conservative-only); `session == "closed"` and exchange halt/limit-lock (§3.7) classify ILLIQUID; consumer naming updated (Alpha Arena → AGON, §5.5 reflex law); master-§15 phase renumbering (this layer is build phase 3). Status → LOCKED.
 - **1.0 (DRAFT)** — From master §4 + `ACIS_Agent_Prompt.md` §3.2 + S2 layer-2 card; corrections C-REG-1..6 from `SPEC_AUDIT.md`.

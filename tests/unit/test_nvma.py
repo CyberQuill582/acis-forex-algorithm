@@ -82,20 +82,19 @@ def series_post_breakout(n):
 
 
 def series_ranging(n, late_scale):
-    # Zigzag + small persistent bounded walk: empirically tuned so ADX ~4
-    # (no trend), Hurst ~0.50 (neither trending nor mean-reverting band),
-    # and bb width percentile ~0.26 (late_scale 0.45) / ~0.53 (1.15).
-    rng = random.Random(42)
-    mids, level, direction = [], 0.0, 1
+    # GAP-0070 re-tune: the old zigzag+reflecting-walk was anti-persistent
+    # (repaired-estimator H ~0.26-0.34 < the 0.35 mean-rev gate) — a genuinely
+    # RANGING series must walk, not oscillate. Walk-dominated Gaussian steps
+    # with a late volatility scale; per-branch seeds empirically tuned against
+    # the REAL classifier (phase-3 precedent): late_scale<1 -> seed 19
+    # (RANGING_TIGHT: H .457, adx 8.8, bb .16, conf .75); >=1 -> seed 8
+    # (RANGING_WIDE: H .401, adx 17.7, bb .90, conf .60). Deterministic.
+    rng = random.Random(19 if late_scale < 1.0 else 8)
+    mids, x = [], 0.0
     for i in range(n):
-        if rng.random() > 0.7:
-            direction = -direction
-        if abs(level) > 10e-4:               # soft reflecting bound
-            direction = -1 if level > 0 else 1
-        walk = 0.4e-4 if i < n * 0.6 else 0.4e-4 * late_scale
-        zig = 1.4e-4 if i < n * 0.6 else 1.4e-4 * late_scale
-        level += direction * walk
-        mids.append(1.1 + level + (zig if i % 2 == 0 else -zig))
+        scale = 1.0 if i < n * 0.6 else late_scale
+        x += rng.gauss(0, 1.5e-4) * scale
+        mids.append(1.1 + x)
     return mids
 
 
