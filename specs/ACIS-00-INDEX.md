@@ -28,12 +28,12 @@ ACIS-09 Backtest/Validation ──exercises 01–07 end-to-end; owns §14 gate
 ## 3. Document map & status
 | ID | File | Layer / DIR | Consumes | Emits | Status |
 |---|---|---|---|---|---|
-| `ACIS-SPEC-DATA-001` | `ACIS-01-DATA_INGESTION.md` | Data `[DIR:core/data]` | raw feed | `MarketState` | DRAFT |
-| `ACIS-SPEC-REGIME-002` | `ACIS-02-NVMA_REGIME.md` | NVMA `[DIR:core/regime]` | `MarketState` | `RegimeContext` | LOCKED (built, phase 3) |
-| `ACIS-SPEC-QIEA-003` | `ACIS-03-QIEA_OPTIMIZER.md` | QIEA `[DIR:core/optimizer]` | `RegimeContext` + history | `ActiveParamSet` | DRAFT |
-| `ACIS-SPEC-ALPHA-004` | `ACIS-04-ALPHA_ARENA.md` | Alpha Arena `[DIR:core/signals]` | `RegimeContext` + `ActiveParamSet` | `Signal` | DRAFT |
-| `ACIS-SPEC-GOV-005` | `ACIS-05-CAPITAL_GOVERNOR.md` | Governor `[DIR:core/governor]` | `Signal` + portfolio | `SizedOrder` | DRAFT |
-| `ACIS-SPEC-EXEC-006` | `ACIS-06-EXECUTION_ORCHESTRATOR.md` | Execution `[DIR:core/execution]` | `SizedOrder` | `FillReport` | DRAFT |
+| `ACIS-SPEC-DATA-001` | `ACIS-01-DATA_INGESTION.md` | Data `[DIR:core/data]` | raw feed | `MarketState` | v1.1 LOCKED (built, phase 1) |
+| `ACIS-SPEC-REGIME-002` | `ACIS-02-NVMA_REGIME.md` | NVMA `[DIR:core/regime]` | `MarketState` | `RegimeContext` | v1.2 LOCKED (built, phase 3) |
+| `ACIS-SPEC-QIEA-003` | `ACIS-03-QIEA_OPTIMIZER.md` | QIEA `[DIR:core/optimizer]` | `RegimeContext` + history | `ActiveParamSet` | v1.2 LOCKED (built, phase 4) |
+| `ACIS-SPEC-ALPHA-004` | `ACIS-04-ALPHA_ARENA.md` | Alpha Arena `[DIR:core/signals]` | `RegimeContext` + `ActiveParamSet` | `Signal` | v1.2 LOCKED (built, phase 5; AGON) |
+| `ACIS-SPEC-GOV-005` | `ACIS-05-CAPITAL_GOVERNOR.md` | Governor `[DIR:core/governor]` | `Signal` + portfolio | `SizedOrder` | v1.2 LOCKED (built, phase 6) |
+| `ACIS-SPEC-EXEC-006` | `ACIS-06-EXECUTION_ORCHESTRATOR.md` | Execution `[DIR:core/execution]` | `SizedOrder` | `FillReport` | v1.1 LOCKED (phase-8 build started 2026-07-17) |
 | `ACIS-SPEC-RISK-007` | `ACIS-07-RISK_MONITOR.md` | Risk `[DIR:core/risk]` | `FillReport` + all stores | `RiskSnapshot`, `HALT` | DRAFT |
 | `ACIS-SPEC-MCP-008` | `ACIS-08-MONITORING_MCP.md` | Monitoring `[DIR:monitoring]` | all resources | MCP resources/tools | DRAFT |
 | `ACIS-SPEC-BT-009` | `ACIS-09-BACKTEST_VALIDATION.md` | Backtest `[DIR:tests/backtest]` | 01–07 | §14 validation report | DRAFT |

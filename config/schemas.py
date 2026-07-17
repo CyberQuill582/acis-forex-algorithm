@@ -191,6 +191,41 @@ class GovernorConfig(_Strict):
         return self
 
 
+class ExecutionConfig(_Strict):
+    """Execution Orchestrator config (ACIS-06 v1.1 §5). All required — the
+    block is schema-fatal if missing. `dispatch_budget_ms` is the v2.10(c)
+    observability value (GAP-0007 pattern): measured + logged, never a
+    guardrail. Slippage alert level is NOT duplicated here — the orchestrator
+    consumes `guardrails.slippage_alert_bps` (single source). The F10
+    auto-throttle knob is deliberately absent: raised, never applied."""
+
+    fragment_threshold_lots: float = Field(gt=0)
+    fragment_size_jitter: tuple[float, float]
+    fragment_time_jitter_s: tuple[float, float]
+    min_fragment_lots: float = Field(gt=0)
+    vwap_threshold_lots: float = Field(gt=0)
+    vwap_window_s: int = Field(gt=0)
+    fast_decay_seconds: int = Field(gt=0)
+    signature_lot_variance: float = Field(gt=0, lt=1)
+    dispatch_budget_ms: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _bounds(self) -> "ExecutionConfig":
+        lo, hi = self.fragment_size_jitter
+        if not (0 < lo < 1 < hi):
+            raise ValueError("fragment_size_jitter must straddle 1.0 with lo > 0")
+        tlo, thi = self.fragment_time_jitter_s
+        if not (0 < tlo < thi):
+            raise ValueError("fragment_time_jitter_s must be ascending and > 0")
+        if self.min_fragment_lots > self.fragment_threshold_lots:
+            raise ValueError("min_fragment_lots must be <= fragment_threshold_lots "
+                             "(a fragmentable order must allow >= 1 fragment)")
+        if self.vwap_threshold_lots < self.fragment_threshold_lots:
+            raise ValueError("vwap_threshold_lots must be >= fragment_threshold_lots "
+                             "(scheduling is the LARGE-order path, ACIS-06 §6)")
+        return self
+
+
 class SystemConfig(_Strict):
     mode: Literal["backtest", "paper", "live"]
     base_unit_usd: float = Field(gt=0)
@@ -203,6 +238,7 @@ class SystemConfig(_Strict):
     signals: SignalsConfig
     provenance: ProvenanceConfig
     governor: GovernorConfig
+    execution: ExecutionConfig
 
     @field_validator("session_boundaries_utc")
     @classmethod

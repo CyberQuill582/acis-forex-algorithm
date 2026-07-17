@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-EXEC-006` |
-| **Version** | 1.0 (DRAFT) |
+| **Version** | 1.1 (**LOCKED** 2026-07-17, phase-8 start) |
 | **Layer / DIR** | Layer 6 · `[DIR:core/execution]` |
 | **Consumes** | `SizedOrder` (ACIS-05) |
 | **Emits** | `FillReport` (frozen) → Risk Monitor (ACIS-07); order flow → broker/venue |
-| **Depends On** | `../ACIS_SPEC.md` §7, §2 · `ACIS-05`, `ACIS-00` |
+| **Depends On** | `../ACIS_SPEC.md` §7, §7.5, §2 · `ACIS-05`, `ACIS-00` |
 | **Blocks** | ACIS-07 |
-| **Corrections applied** | F10 (slippage auto-throttle — raised to human; dark-pool dropped), fragment/jitter bounds, partial-fill/reject handling |
+| **Corrections applied** | F10 (slippage auto-throttle — raised to human; dark-pool dropped), fragment/jitter bounds, partial-fill/reject handling · v1.1: v2.10(c) dispatch-latency observability value, §7.5 execution-face contract + capability descriptor + conformance + flat-or-decide attach (GAP-0013/GAP-0018), v2.11 VWAP time-base honesty, injectable RNG/clock |
 
 ## Table of contents
 1. Purpose & scope · 2. Entry contract · 3. Architecture & responsibility · 4. Output contract · 5. Data schemas · 6. Fragmentation & routing config · 7. Core logic · 8. State machine · 9. Persistence & logging · 10. Store schema · 11. MCP contract · 12. Error taxonomy · 13. Logic-flaw registry · 14. Test contract · 15. Integration gate · Changelog
@@ -66,12 +66,14 @@ Every fill (including partials and rejections) produces a `FillReport` — the R
 - **`FillStatus`** enum as above.
 - **`VenueQuality`:** per-instrument rolling `spread`, `fill_rate`, `avg_slippage_bps`, `reject_rate` → a scalar `quality_score`. Updated from `FillReport`s (this layer's own feedback, internal — not upstream to signals).
 - **`Fragment`:** `fragment_id`, `parent_order_id`, `units`, `scheduled_at`, `venue`.
-- **Config (`execution:`):** `fragment_threshold_lots`, `fragment_size_jitter:[0.85,1.15]`, `fragment_time_jitter_s:[0.5,3.0]`, `min_fragment_lots`, `vwap_threshold`, `vwap_window_min:5`, `fast_decay_seconds:30`, `signature_lot_variance:0.15`, `random_seed` (test-only; production uses a CSPRNG), `slippage_alert_bps:8.0` (mirrors guardrail), optional `slippage_throttle` (see F10, default **off**).
+- **Config (`execution:`):** `fragment_threshold_lots`, `fragment_size_jitter:[0.85,1.15]`, `fragment_time_jitter_s:[0.5,3.0]`, `min_fragment_lots`, `vwap_threshold_lots`, `vwap_window_s:300`, `fast_decay_seconds:30`, `signature_lot_variance:0.15`, `dispatch_budget_ms:100` (v2.10 item c, below), `slippage_alert_bps:8.0` (mirrors guardrail), optional `slippage_throttle` (see F10, default **off**). Required block; schema-fatal if missing.
+- **Randomness & time are injected (v1.1):** the orchestrator takes an RNG (`random.Random` seeded in tests; `random.SystemRandom` in production — signature randomisation must not be replayable from logs) and a clock/sleep pair (`now_fn`/`sleep_fn`) so the C-EXE-2 statistical tests are seeded and instant. No wall-clock or module-level RNG inside logic.
+- **Dispatch-latency observability (v2.10 item c — the value is set HERE, mirroring GAP-0007):** `dispatch_budget_ms = 100` covers `submit()` entry → every fragment dispatched or scheduled (ACIS-side processing only; venue round-trip is measured separately as `venue_rtt_ms` on each fill log record). Exceeding the budget logs `EXEC_BUDGET_EXCEEDED{elapsed_ms, budget_ms}` and increments a counter surfaced with the §10 loop-health numbers on `acis://status`. **Observability + tuning only — never a guardrail; no veto, HALT, or freeze weakens or waits on it.**
 
 ## 6. Fragmentation & routing config
 
 - **Fragmentation:** orders > `fragment_threshold_lots` split into `n` sub-orders each sized `uniform(0.85,1.15) × (total/n)`, renormalised so the fragments sum **exactly** to the total (no size created/destroyed — a critical invariant; the Governor's quantity is preserved to the unit); inter-fragment delay `uniform(0.5s,3.0s)`; no fragment below `min_fragment_lots` (merge dust).
-- **VWAP:** orders > `vwap_threshold` scheduled over a rolling `vwap_window_min` (5 min).
+- **VWAP (v2.11 time-base honesty):** orders > `vwap_threshold_lots` are scheduled across a rolling `vwap_window_s` (300 s = 5 signal bars). **Declared deviation from exchange-VWAP semantics:** v1's venue set (retail FX, one venue per account) has no consolidated volume tape, so the schedule is time-sliced across the window, volume-weighted only when the feed supplies per-tick volume (the mock does). No function or log field may call the unweighted form "VWAP" — the path is named `scheduled` with `weighting: "volume" | "time"` recorded per plan (§16 naming law).
 - **Fast-decay:** `SizedOrder` whose originating signal had `valid_for_seconds < fast_decay_seconds` (30) → aggressive **IOC** market order, no fragmentation (speed over stealth).
 - **Venue routing:** route fragments proportional to live `quality_score`; log the routing reason per order; rotate venue order across fragments (signature randomisation).
 - **Signature randomisation:** ±15% lot micro-variance (within the summing invariant), randomised timing, rotated venue order, never identical consecutive patterns. Randomness uses a CSPRNG in production; tests seed it for reproducible distribution checks.
@@ -88,6 +90,14 @@ Every fill (including partials and rejections) produces a `FillReport` — the R
 8. Emit all `FillReport`s to the Risk Monitor.
 
 **F10 (slippage) — raised, not silently added:** each fill computes `slippage_bps`; if `> slippage_alert_bps (8)` → emit `SLIPPAGE_ALERT` (this is the *alert* the master spec already mandates). An **automatic per-instrument allocation throttle** on repeated slippage breaches is **config-gated and OFF by default** pending human ratification (`SPEC_AUDIT.md` F10) — because an auto-throttle is a sizing/guardrail action owned by the Governor + a human, not something Execution may impose unilaterally. Dark-pool routing from the v1.0 brief is **dropped** (not meaningful in retail forex). Execution *reports* slippage; it does not resize.
+
+## 7.5 Execution-face adapter contract (master §7.5 — the CONTRACT is phase 8; platform adapters beyond mock are ACIS-13/phase 12)
+
+- **`ExecutionFace` (ABC in `venue.py`):** `submit_order(fragment) -> FillReport` · `cancel(fragment_id)` · `open_positions() -> tuple[BrokerPosition, ...]` · `account_snapshot() -> BrokerAccount` (equity/balance/margin — read downstream by Risk for reconciliation, never by any layer above). Async; every method idempotent by `fragment_id`/request id.
+- **`CapabilityDescriptor` (data, mandatory):** order types (market/limit/stop, IOC), netting-vs-hedging model, partial-close support, min lot / lot step / max order size, symbol map (the §13 suffix problem solved here, once), quote-depth availability, served asset classes. The orchestrator rejects loudly (`EXEC_CAPABILITY_REJECT`) any order needing a capability the descriptor lacks — never silent emulation.
+- **GAP-0013 split (structural):** the feed face (ACIS-01 `feeds.py`) exposes no account/position surface; the execution face exposes them only downward to Risk. A shared session object carries transport+auth only. The conformance suite asserts both structurally.
+- **Conformance suite (release gate per adapter):** one shared `tests/integration` suite every adapter must pass — round-trip lifecycle, partial fill, reject, cancel, reconnect-mid-order reconciliation (broker authoritative), idempotent duplicate-submit, symbol-map completeness for the enabled universe, capability-descriptor honesty (a declared capability must work; an undeclared one must be rejected). **v1: the mock adapter passes conformance in phase 8.** OANDA/MT5 faces run the same suite at phase 12 attach (ACIS-13).
+- **Attach protocol incl. flat-or-decide (GAP-0018):** select adapter → verify symbol map/contract metadata vs `instruments.yaml` → load rulebook (missing = fatal) → **if the account holds open positions, attach HALTS and requires an explicit human decision (flatten via platform, or manage manually until flat)** → start paper-always. Paper mode never gains a real-order path.
 
 ## 8. State machine
 
@@ -152,7 +162,8 @@ No independent control tools; execution obeys the Governor + Risk. `acis_flatten
 
 ## 15. Integration gate
 
-**What Risk (ACIS-07) consumes:** a stream of `FillReport`s (fills, partials, rejects) from which it maintains `PortfolioState`, PnL, drawdown, and its risk metrics, and against which it evaluates HALT conditions. **Owns conflict-table rows:** none directly (it never sizes), but it *executes* the flatten that a HALT/equity-breaker demands. **Done-when (phase 7, master §15):** §14 green; import contract passing; reconnect/partial/reject/weekend-gap glitch tests present.
+**What Risk (ACIS-07) consumes:** a stream of `FillReport`s (fills, partials, rejects) from which it maintains `PortfolioState`, PnL, drawdown, and its risk metrics, and against which it evaluates HALT conditions. **Owns conflict-table rows:** none directly (it never sizes), but it *executes* the flatten that a HALT/equity-breaker demands. **Done-when (phase 8, master §15):** §14 green; import contract passing; reconnect/partial/reject glitch tests present (the weekend-gap-through-stop joint test lands with ACIS-07's accounting at phase 9); mock adapter conformant.
 
 ## Changelog
+- **1.1 (LOCKED, 2026-07-17 — phase-8 start consistency update)** — v2.10 item (c) applied: `dispatch_budget_ms = 100` set as the execution-layer latency observability value (GAP-0007 pattern — measured, logged `EXEC_BUDGET_EXCEEDED`, surfaced, never a guardrail; venue RTT observed separately). Master §7.5 execution-side contract concretised for phase 8 (new §7.5): `ExecutionFace` ABC, mandatory `CapabilityDescriptor` with loud `EXEC_CAPABILITY_REJECT`, GAP-0013 transport-only session split restated structurally, per-adapter conformance suite as the release gate (mock conformant in phase 8; platform adapters are ACIS-13/phase 12), flat-or-decide attach (GAP-0018). v2.11 time-base honesty: the "VWAP" path renamed `scheduled` with declared `weighting` (no consolidated volume tape in v1 retail FX — §16 naming law). RNG (`SystemRandom` prod / seeded tests) and clock/sleep made injected dependencies. Config keys normalised (`vwap_threshold_lots`, `vwap_window_s`), block schema-fatal if missing. Done-when moved to the renumbered phase 8; weekend-gap joint test explicitly deferred to phase 9 with ACIS-07. No guardrail, HALT, veto, or sizing semantics changed.
 - **1.0 (DRAFT)** — From master §7 + `ACIS_Agent_Prompt.md` §3.6 + S2 layer-6 card; F10 slippage auto-throttle deliberately raised-not-applied; fragment exact-sum invariant made explicit; dark-pool dropped for forex.

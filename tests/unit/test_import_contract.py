@@ -42,7 +42,13 @@ ALLOWED: dict[str, set[str]] = {
     # DataQualityError), and reuses the proven ATR for C16 vol-norm — hence
     # "data" (widened at phase 6 with this citation, GAP-0021 ruling pattern).
     "governor": {"signals", "regime", "data"},
-    "execution": {"governor"},
+    # §7 + ACIS-06 v1.1 (LOCKED): Execution consumes SizedOrder and shares the
+    # data-layer error/logging vocabulary (FillReport validates on construction
+    # raising DataQualityError, ACIS-00 §4 error base; JSONL envelope §11) —
+    # hence "data" (widened at phase 8 with this citation, GAP-0021 ruling
+    # pattern). NO market-state/feed import: quotes reach execution only as
+    # prices on orders; the feed face stays ACIS-01's (GAP-0013).
+    "execution": {"governor", "data"},
     "risk": {"execution"},
 }
 
