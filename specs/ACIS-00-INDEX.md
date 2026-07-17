@@ -34,7 +34,7 @@ ACIS-09 Backtest/Validation ──exercises 01–07 end-to-end; owns §14 gate
 | `ACIS-SPEC-ALPHA-004` | `ACIS-04-ALPHA_ARENA.md` | Alpha Arena `[DIR:core/signals]` | `RegimeContext` + `ActiveParamSet` | `Signal` | v1.2 LOCKED (built, phase 5; AGON) |
 | `ACIS-SPEC-GOV-005` | `ACIS-05-CAPITAL_GOVERNOR.md` | Governor `[DIR:core/governor]` | `Signal` + portfolio | `SizedOrder` | v1.2 LOCKED (built, phase 6) |
 | `ACIS-SPEC-EXEC-006` | `ACIS-06-EXECUTION_ORCHESTRATOR.md` | Execution `[DIR:core/execution]` | `SizedOrder` | `FillReport` | v1.1 LOCKED (phase-8 build started 2026-07-17) |
-| `ACIS-SPEC-RISK-007` | `ACIS-07-RISK_MONITOR.md` | Risk `[DIR:core/risk]` | `FillReport` + all stores | `RiskSnapshot`, `HALT` | DRAFT |
+| `ACIS-SPEC-RISK-007` | `ACIS-07-RISK_MONITOR.md` | Risk `[DIR:core/risk]` | `FillReport` + broker account state + all stores | `RiskSnapshot`, `HALT`/taper/decay (upward edge), heartbeat | v1.1 LOCKED (phase-9 gate cleared 2026-07-17) |
 | `ACIS-SPEC-MCP-008` | `ACIS-08-MONITORING_MCP.md` | Monitoring `[DIR:monitoring]` | all resources | MCP resources/tools | DRAFT |
 | `ACIS-SPEC-BT-009` | `ACIS-09-BACKTEST_VALIDATION.md` | Backtest `[DIR:tests/backtest]` | 01–07 | §14 validation report | DRAFT |
 | `ACIS-SPEC-EVENTS-010` | `ACIS-10-EVENTS_NEWS.md` | Events `[DIR:core/data]` (master §3.5–3.6) | calendar/news feeds + `platform_rules.yaml` | `EventPicture`, blackout windows, Tier-G flags | LOCKED (built, phase 2) |
