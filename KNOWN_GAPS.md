@@ -13,6 +13,93 @@ Format — one entry per gap, newest first. Never delete entries; close them wit
 - Linked: commits / test names / halt-postmortems
 ```
 
+<!-- ============================================================================
+PHASE-7 INTERNAL-CONSISTENCY AUDIT (2026-07-17, commit e8582f4; suite 337 green
+after phase 8 landed out-of-scope). Findings GAP-0074..0079 below (finder-only).
+Honest negatives (verified SOUND — a first-class result, not a sign-off):
+ • Row-6 opposite conflict is genuinely ORGANIC and load-bearing, NOT vacuous:
+   reproduced disabling TSMOM (modules_enabled) → opposite_skips 4→0 and the row-6
+   asserts (opp>=2, DISCARD_OPPOSITE) FAIL. TSMOM-long vs mean-rev-short fire in the
+   SAME generate() call; conflict resolution is correctly WITHIN one tick (opposite
+   signals in different ticks are different decisions, not a conflict — correct
+   reflex semantics per §2).
+ • Row-3b currency_delta_cap is a TRUE hard gate with no upstream softener; genuinely
+   reached with an otherwise-positive size (base=EUR/quote=USD long, USD −2900→over
+   −3000, abs increasing → fires). Real proof.
+ • Row-4 drawdown session-halt genuinely OUTLIVES the reading (auto-clears only at the
+   next boundary; the fixture's 5h of ticks from 00:10 never reach 07:00, so the halt
+   persists post-recovery → drawdown_halt counted ≥2). Real.
+ • check_group_exits closes carry action="close" and are EXCLUDED from take_rate
+   (orders_placed/zeroed count only action=="open") — no double-count. Sound.
+ • rebuild_groups: 1-leg AND >2-leg groups both hit GROUP_REBUILD_ORPHAN (handled,
+   diagnosable via legs=N); an already-open gid is skipped; duplicate gid across
+   instruments joins correctly. on_state's group routing does NOT silently ignore a
+   !=2-leg group — `a,b=signals` would RAISE (fail-loud); AGON's group integrity keeps
+   it at exactly 2.
+ • veto_counters / agon.skips / governor.skips grow in VALUE over a BOUNDED key set
+   (fixed veto-reason / gate strings) — not unbounded growth.
+ • agon.observe()'s new `Bar|None` return and take_rate()'s new "skips" key are additive
+   / non-breaking; every other caller (test_agon, signals_fixtures) ignores the return.
+ • Governor gate-key `reason.rsplit(":",1)[-1]` is LOSSLESS for every real zero-reason
+   (only "group_blocked:X" carries a colon; base reasons have none). A group block
+   counts 2× (one per leg) at ORDER granularity — coherent with placed-order counting.
+ • GAP-0067 mechanism verified: store.py:69 `write()` does a per-row `commit()`
+   (one fsync/tick) — the throughput claim's cause is real.
+============================================================================ -->
+
+## GAP-0079: PaperLoop's GAP-0052 boot contract is enforced only by `assert self._booted` — stripped under `python -O`, silently disabling boot/rebuild_groups
+- Severity: low
+- Likelihood: low
+- Status: closed (fixed 2026-07-17 by the author — `run()` raises an explicit RuntimeError, -O-proof; the boot test now expects RuntimeError. The same pattern applied proactively to the phase-8 production invariants: fragmenter C-EXE-1 and orchestrator C-EXE-6 asserts converted to DataQualityError raises)
+- Area: [DIR:tests/integration] paper_loop.py `run()` (line 134); test_paper_trading_pipeline.py `test_boot_is_mandatory_before_the_first_tick`
+- Description: `run()` refuses to start unbooted via `assert self._booted, "...GAP-0052"`. Python run with `-O`/`-OO` (or `PYTHONOPTIMIZE`) strips `assert` statements, so under optimisation `run()` proceeds WITHOUT `governor.rebuild_groups(portfolio)` ever being called — the exact GAP-0052 hazard (pre-restart pair legs orphaned, `check_group_exits` unable to close them) silently returns, and `test_boot_is_mandatory` (which catches the AssertionError) would itself fail to demonstrate the guarantee. Today PaperLoop is a test-only harness so blast radius is nil, but the composed-loop pattern is the template the phase-8..10 production three-loop runtime will follow; a boot precondition that vanishes under `-O` is a fragile pattern to carry forward.
+- Justification: contract-integrity should not depend on an assert for a state whose absence corrupts restart reconciliation. Fix (if promoted to the runtime): raise an explicit exception (e.g. a `BootRequiredError`), not `assert`.
+- Linked: tests/integration/paper_loop.py:134, GAP-0052
+
+## GAP-0078: `skip_attribution()`'s three per-layer buckets OVERLAP — one physical vetoed tick is counted in BOTH `nvma[reason]` and `agon["vetoed_regime"]`, so the layers are not a partition and any cross-layer sum overcounts
+- Severity: low
+- Likelihood: medium
+- Status: mitigated (2026-07-17 — the non-partition semantics are now DECLARED in `skip_attribution()`'s docstring: three per-layer VIEWS, never summed across layers; an NVMA veto reason EXPLAINS AGON's `vetoed_regime`. The phase-10 `acis://status` implementation must consume per-layer, per this declared contract — carried as a phase-10 build note)
+- Area: [DIR:tests/integration] paper_loop.py `skip_attribution` (158-160); [DIR:core/signals] agon.py generate() `vetoed_regime` (192-196); [DIR:core/regime] nvma.py `veto_counters` (361-364)
+- Description: A single regime-vetoed tick increments NVMA's `veto_counters[<specific reason>]` (e.g. SPREAD_VETO, NO_PARAMS_FOR_REGIME) AND AGON's `skips["vetoed_regime"]` (generate() sees `not regime.tradeable` and counts it). `skip_attribution()` returns `{"nvma": …, "agon": …, "governor": …}` — coherent as PER-LAYER views, but the same physical skip appears in two buckets, so summing the three dicts to get "total skips" double-counts every veto. The §10 C15 framing ("every skip attributed to THE gate that killed it") implies a partition the structure does not provide — the "gate that killed it" is genuinely NVMA's veto; AGON's `vetoed_regime` is a redundant re-count of the same event one layer down. A phase-10 `acis://status` consumer that aggregates naively will mis-report take-rate. (Symmetric note: the warm-up count `nvma[REGIME_WARMING]==200` in test_per_gate_skip_attribution is asserted `== skips["nvma"]` against the log — but both counter and VETO_APPLIED log are incremented in the SAME loop in nvma.classify, so that equality is structurally tautological and cannot fail even if the mechanism drifted.)
+- Justification: not wrong as designed (per-layer buckets are legitimate), but the completeness/partition claim is stronger than the data supports; document that the three buckets are non-disjoint views of the same funnel, or attribute each physical skip to exactly one owning layer.
+- Linked: tests/integration/paper_loop.py:157-160, core/signals/agon.py:192-196, core/regime/nvma.py:361-364
+
+## GAP-0077: AGON.generate's `if params is None: return ()` is a discard path with NO C15 skip counter and NO log event — the one un-attributed drop; unreachable in the composed loop ONLY by an external NVMA/library coupling, not self-evidently
+- Severity: low
+- Likelihood: low
+- Status: closed (fixed 2026-07-17 by the author — the branch now counts `skips["no_params"]` and logs `DISCARD_NO_PARAMS`; attribution completeness no longer depends on the out-of-module NVMA/library coupling. Regression `test_gap0077_params_none_drop_is_attributed_and_logged`)
+- Area: [DIR:core/signals] agon.py generate() (197-198)
+- Description: Every other discard in generate()/_pipeline calls `self._skip(gate)` and logs (vetoed_regime, entry_frozen, nan, subthreshold, construction_error, opposite, group_incomplete, duplicate_group_leg). The `params is None` early return does NEITHER — the tick vanishes with no counter and no JSONL event, contradicting the C15 "every skip attributable to the gate that killed it" claim the phase advertises. It is unreachable in the phase-7 loop only because NVMA is wired `has_params_for=lib.has_active` and, when there are no active params for the regime, NVMA raises NO_PARAMS_FOR_REGIME → `tradeable=False` → generate() hits the `vetoed_regime` branch FIRST (so the params-None branch is dead in-loop). That unreachability rests on the loop wiring NVMA's has_active and generate()'s params source to the SAME ParamLibrary instant — a coupling AGON itself does not enforce. Any future/alternate wiring (a different has_params_for than the library feeding generate, or a de-promotion racing between classify and get_active) would pass a tradeable ctx with None params, and the tick would be silently, unattributably dropped.
+- Justification: latent (dead in the current composition) but it is a genuine hole in the "no silent starvation" invariant AGON claims; make the branch self-attributing (`self._skip("no_active_params")` + a DISCARD log) so completeness does not depend on an out-of-module coupling.
+- Linked: core/signals/agon.py:197-198, core/optimizer/param_library.py has_active/get_active, tests/integration/paper_loop.py:108-113
+
+## GAP-0076: Phase-7 e2e's regime premise ("classify MEAN_REVERTING", assert `param_set_id == ps-MEAN_REVERTING`) is an ARTIFACT of the GAP-0066 broken Hurst estimator reading H≈0.22 for flat near-random-walk noise — a corrected estimator flips the regime and breaks the test
+- Severity: medium
+- Likelihood: high
+- Status: accepted-risk, resolution BOUND to the GAP-0066/GAP-0070 triage (2026-07-17 — the finding is correct: the flat fixture's MEAN_REVERTING classification rides on the broken estimator. Deliberately NOT patched independently: the estimator decision (repair + threshold re-derivation, owner-facing per GAP-0070's recommendation) and the fixture re-tune must land as ONE change or the fixtures get re-tuned twice against two different estimators. The GAP-0070 triage item now explicitly includes re-tuning the phase-3 AND phase-7 fixtures and updating the e2e docstring/param_set_id assertion)
+- Area: [DIR:tests/integration] test_paper_trading_pipeline.py (module docstring, `test_e2e_...` line 102, WARMUP fixture); coupling to [DIR:core/regime] nvma.py `hurst_exponent` (GAP-0066/0070)
+- Description: The e2e docstring states the 280-tick flat-noise warm-up "classify[s] MEAN_REVERTING (tradeable once params are promoted)" and the test asserts `first.param_set_id == "ps-MEAN_REVERTING"`. Reproduced (scratchpad probe2): the flat fixture classifies MEAN_REVERTING solely because `hurst=0.2195 < hurst_meanrev=0.45` — i.e. it relies on the exact GAP-0066 defect (the estimator reads ~0.22 for a near-random walk instead of the textbook ≈0.5). The mean-reversion branch in nvma.classify fires on `meanrev_h = hurst < 0.45`. When GAP-0066/0070 is triaged (the finder-recommended repair raises a random walk's H toward ~0.5, i.e. NOT < 0.45), the flat fixture will fall through to RANGING_TIGHT/RANGING_WIDE, the active regime for the TSMOM order's `param_set_id` becomes `ps-RANGING_*`, and the e2e assertion breaks. The phase-7 fixtures therefore BAKE IN the very estimator defect the external audit has flagged for change — the "MEAN_REVERTING" property is presented in the docstring as sound when it is an estimator artifact. (Mitigant already present: the fixtures stage params for MEAN_REVERTING + RANGING_TIGHT + RANGING_WIDE so tradeability survives a regime flip; but the param_set_id-specific and docstring claims do not.)
+- Justification: a known-broken, scheduled-for-change estimator is load-bearing for a phase-7 e2e assertion and its stated premise; flag now so the GAP-0066 triage explicitly re-tunes the phase-7 fixtures (the finder already warned "NVMA phase-3 fixtures may need re-tuning" — this extends that to the phase-7 integration fixtures) and so the e2e does not silently regress on the fix.
+- Linked: scratchpad probe2 (H=0.2195, regime=MEAN_REVERTING, orders all ps-MEAN_REVERTING), test_paper_trading_pipeline.py:102, GAP-0066, external GAP-0070
+
+## GAP-0075: The phase-7 composed loop opens a NEW position on EVERY tradeable tick (no position/dedup/holding management) — one TSMOM long spawns 67–71 identical orders; `take_rate()["orders_placed"]` conflates sizing decisions with positions and no test guards the spam
+- Severity: medium
+- Likelihood: medium
+- Status: mitigated (2026-07-17 — the duplication is now PINNED, not masked: the e2e asserts `orders_placed == 67` with an explicit "one order per tradeable tick, sizing decisions not positions" comment, so any change to the spam rate breaks a test; the semantics are documented at the metric. The missing position/holding layer is real engine work, NOT harness work: assigned to the phase-9 build (PortfolioState maintained from FillReports gates re-entry) — added to the phase-9 TODO item. orders_placed keeps decision-count semantics and phase 10 must label it as such)
+- Description: `on_state` calls `agon.generate()` every tick and, for each surviving signal, appends the sized order to `book.orders` unconditionally. TSMOM is unconditional in every tradeable regime and re-fires the SAME long every tick once the daily seed is present, so the composed loop accumulates one identical EUR_USD TSMOM long PER tradeable tick — reproduced: 67 orders (flat e2e fixture), 71 (row-6 fixture), all `ps-MEAN_REVERTING` TSMOM longs. The e2e's `assert len(loop.book.orders) >= 1` and the row tests' count-agnostic assertions mask this entirely; `take_rate()["orders_placed"]` (surfaced as a §10 C15 metric that phase-10 `acis://status` will expose) is thereby not a count of POSITIONS but of per-tick sizing decisions, inflated ~1-per-tick. The real three-loop runtime + Execution Orchestrator (phase 8) supplies the missing position/holding/dedup layer, so this is a harness-scope artifact rather than a decision-path bug — but the phase-7 tests present orders_placed and "orders came out the bottom with the full audit chain" (e2e) without acknowledging that "71 duplicate positions" is what actually came out, and no assertion pins the expected count or flags the duplication.
+- Justification: honesty/coverage gap in the phase advertised as the full paper-trading integration; either the harness should model position-existence (so a re-fire is a no-op/adjustment, matching the real engine) or the tests/ledger should state that orders_placed here counts sizing decisions, not positions, and that dedup is deferred to phase 8.
+- Linked: scratchpad probe (row6 orders=71 all TSMOM; e2e orders=67), tests/integration/paper_loop.py:104-128
+
+## GAP-0074: Row-3's "hard cluster_cap guard is unreachable / group backstop only" holds ONLY for `base_unit_usd ≤ cluster cap` — the schema permits `base_unit_usd` with no upper bound, and at base_unit ≥ 3000 the SOLO hard cluster_cap guard fires with an otherwise-positive size, untested through the pipeline
+- Severity: medium
+- Likelihood: low
+- Status: closed (fixed 2026-07-17 by the author — the solo hard cluster_cap path now has a direct regression (`test_gap0074_solo_hard_cluster_cap_fires_when_base_unit_exceeds_cap`: base_unit 5000 > cap 2000 on an empty book ⇒ size 0, reason cluster_cap, C15-attributed, CLUSTER_CAP_ZERO logged). The `base_unit ≤ cap` relationship stays UN-bounded in the schema deliberately: the hard guard is the enforcement for any config the schema admits, and it is now tested live rather than made unrepresentable — bounding base_unit against a guardrail value in the schema would couple an operational knob to guardrail semantics. SPEC_AUDIT.md summary annotated)
+- Area: [DIR:core/governor] capital_governor.py `_allocate_one` (287-296 solo `_exposure_breach`) + factors.py `correlation_factor`; config/schemas.py `SystemConfig.base_unit_usd: Field(gt=0)`; test_row3_cluster_cap_sizes_to_zero_never_splits
+- Description: `test_row3` proves the cluster cap by the SOFT `correlation_factor` reaching exactly 0.0 at the cap (raw_usd→0 → `formula_zero`), and its honest docstring says the hard solo `cluster_cap` guard is merely "the aggregate backstop, proven at group level (GAP-0049)". Algebra: for a solo order the hard cluster_cap (`exposure + notional > cap` with `size>0`) is reachable iff `base_unit_usd × (∏ factors ≤ 1) > cap` — since the correlation factor's `(1−exposure/cap)` term cancels the residual headroom, the necessary condition is `base_unit_usd > cap`. With the shipped config (`base_unit_usd=1000`, `cluster_cap_pct=20` → cap=2000 at 10k NAV) that is impossible, so the solo hard guard is DEAD in the pipeline and the honest note is correct FOR THIS CONFIG. But `SystemConfig.base_unit_usd` is bounded only `Field(gt=0)` — a schema-valid `base_unit_usd=3000` (or 5000) makes the solo hard cluster_cap guard live: reproduced by driving the real Governor with usd_short loaded to 10% (< cap), base_unit 1000 → `size=454.55 reason=formula`; base_unit 3000 and 5000 → `size=0 reason=cluster_cap` (a hard-guard zero on a would-be-positive order). No pipeline OR unit test exercises the solo hard cluster_cap zero (it is only ever pre-empted by the soft factor at the shipped config), so a config change that raises base_unit above the cap would activate an entirely untested guard path.
+- Justification: the guard is CORRECT (it zeroes, never splits/clamps) and no guardrail value is weakened; the finding is (a) the row-3 proof proves the SOFT-factor zero, not the hard guard, and silently depends on `base_unit ≤ cap`, and (b) the schema does not enforce that relationship, leaving a hard-guard path untested and config-activatable. Fix: add a solo-path hard-cluster_cap regression test with `base_unit > cap`, and/or bound `base_unit_usd` in the schema relative to the cluster cap (or document the invariant).
+- Linked: scratchpad probe (base_unit 1000→formula 454.55; 3000/5000→cluster_cap 0), core/governor/capital_governor.py:287-296, core/governor/factors.py:24-40, config/schemas.py base_unit_usd
+
 ## GAP-0067: MarketStateStore commits per row (~10–30 writes/s fsync-bound on the dev box) — at real feed rates the bounded queue overflows and drop-oldest sheds most ticks from the audit/replay store
 - Severity: low
 - Likelihood: medium

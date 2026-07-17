@@ -131,7 +131,8 @@ class PaperLoop:
         """drain=True runs the async writer to completion (the e2e persistence
         test); default enqueue-only — the bounded queue holds a test feed and
         the writer's own behaviour is phase-1-tested."""
-        assert self._booted, "boot() must run before the first tick (GAP-0052)"
+        if not self._booted:   # GAP-0079: a real raise — assert dies under -O
+            raise RuntimeError("boot() must run before the first tick (GAP-0052)")
         pipeline = IngestionPipeline(
             feed, self._factory, self._writer, self._log,
             subscribers=[self.on_state])
@@ -155,6 +156,10 @@ class PaperLoop:
                 "orders_zeroed": gov["orders_zeroed"]}
 
     def skip_attribution(self) -> dict:
+        """§10 C15 per-gate counters as three PER-LAYER VIEWS of the loop —
+        deliberately NOT a partition (GAP-0078): one vetoed tick appears both
+        as its NVMA reason and as AGON's `vetoed_regime` (the reason explains
+        the discard). Never sum across layers; read each layer's dict alone."""
         return {"nvma": dict(self.nvma.veto_counters),
                 "agon": dict(self.agon.skips),
                 "governor": dict(self.governor.skips)}

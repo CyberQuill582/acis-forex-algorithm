@@ -195,6 +195,12 @@ class AGON:
                             regime=regime.regime.value)
             return ()
         if params is None:
+            # GAP-0077: normally unreachable (NVMA vetoes NO_PARAMS_FOR_REGIME
+            # upstream) but that coupling is external — if it ever breaks, the
+            # drop is attributed and logged, never silent (§10 C15).
+            self._skip("no_params")
+            self._log.event("DISCARD_NO_PARAMS", instrument=state.instrument,
+                            regime=regime.regime.value)
             return ()
 
         raws: list[_Raw] = []

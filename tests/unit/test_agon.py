@@ -405,3 +405,15 @@ def test_gap0065_daily_series_is_strictly_ascending(tmp_path) -> None:
     agon._append_daily("EUR_USD", stale)
     assert len(agon._daily_bars["EUR_USD"]) == n_before + 1   # dropped
     assert len(log.events("DAILY_BAR_ORDER_DROP")) == 1
+
+
+# ---------------- phase-7 audit triage regression (GAP-0077) ---------------- #
+
+def test_gap0077_params_none_drop_is_attributed_and_logged(tmp_path) -> None:
+    """The params-None early return is a discard path like any other: counted
+    under the C15 gate that killed it and logged, never silent."""
+    agon, log, _ = make_agon(tmp_path)
+    out = agon.generate(mk_state(), mk_regime(), None, T0)
+    assert out == ()
+    assert agon.skips["no_params"] == 1
+    assert len(log.events("DISCARD_NO_PARAMS")) == 1

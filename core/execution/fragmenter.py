@@ -112,7 +112,9 @@ def plan(order_id: str, total_units: Decimal, *, fast_decay: bool,
             venue=venues[i % len(venues)],
         ))
 
-    assert sum(f.units for f in fragments) == total_units, \
-        "C-EXE-1 violated: fragment sum != parent total"
+    if sum(f.units for f in fragments) != total_units:
+        # GAP-0079 pattern: invariant enforced by a real raise, alive under -O
+        raise DataQualityError("fragments", order_id,
+                               "C-EXE-1 violated: fragment sum != parent total")
     return FragmentPlan(path=path, weighting="time" if path == "scheduled" else "none",
                         fragments=tuple(fragments))

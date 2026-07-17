@@ -126,7 +126,9 @@ class ExecutionOrchestrator:
         for fragment in fragment_plan.fragments:
             reports.extend(await self._dispatch(order, fragment, fragment_plan))
         filled = sum((r.filled_units for r in reports), Decimal("0"))
-        assert filled <= order.size_units, "C-EXE-6 violated: filled > sized"
+        if filled > order.size_units:   # GAP-0079 pattern: alive under -O
+            raise DataQualityError("filled_units", str(filled),
+                                   "C-EXE-6 violated: filled > sized")
         return tuple(reports)
 
     # -- internals --------------------------------------------------------------- #

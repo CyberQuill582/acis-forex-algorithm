@@ -107,6 +107,11 @@ async def test_e2e_mock_feed_to_sized_paper_orders(tmp_path, acis_config, factor
     tr = loop.take_rate()
     assert tr["signals_considered"] >= tr["signals_emitted"] == tr["orders_placed"]
     assert tr["orders_placed"] == len(loop.book.orders)
+    # GAP-0075 pinned VISIBLY: the harness opens one order per tradeable tick —
+    # `orders_placed` counts SIZING DECISIONS, not positions. Position-aware
+    # dedup/holding arrives with phase-9 accounting (PortfolioState from
+    # FillReports); until then the spam is asserted, not masked.
+    assert tr["orders_placed"] == 67
     # observable outcomes in the JSONL audit trail, not exit codes
     assert len(log_events(tmp_path, "SIZED")) == tr["orders_placed"]
     assert len(log_events(tmp_path, "SIGNAL_EMITTED")) == tr["signals_emitted"]
@@ -349,7 +354,7 @@ async def test_boot_is_mandatory_before_the_first_tick(
     loop = make_loop(tmp_path, acis_config, factory, flat_portfolio)
     try:
         await loop.run(MockPaperFeed({"EUR_USD": 1.10}, scripted=flat_ticks(5)))
-    except AssertionError as exc:
+    except RuntimeError as exc:              # GAP-0079: a real raise, -O-proof
         assert "GAP-0052" in str(exc)
     else:
         raise AssertionError("run() must refuse to start unbooted (GAP-0052)")

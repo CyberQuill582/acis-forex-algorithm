@@ -499,3 +499,18 @@ def test_gap0058_tsmom_position_with_no_target_is_representable() -> None:
         Position(instrument="EUR_USD", direction=1, size_units=Decimal("100"),
                  entry_price=1.1, stop_loss=float("nan"), take_profit=None,
                  opened_at=T0, strategy_type=StrategyType.TSMOM, param_set_id="ps-1")
+
+
+# ---------------- phase-7 audit triage regression (GAP-0074) ---------------- #
+
+def test_gap0074_solo_hard_cluster_cap_fires_when_base_unit_exceeds_cap() -> None:
+    """The hard SOLO cluster_cap guard is the backstop for configs where
+    base_unit_usd exceeds the cluster cap (schema allows it): the soft
+    correlation factor is 1.0 on an empty book, yet the order's own notional
+    breaches the cap -> hard zero, never a clamp, attributed to the gate."""
+    gov, log = mk_governor(base_unit=5000.0)  # raw ~2430 USD > 20% x 10k cap
+    order = gov.allocate(mk_signal(), mk_portfolio(), mk_regime(), T0)
+    assert order.size_units == 0
+    assert order.reason == "cluster_cap"
+    assert gov.skips["cluster_cap"] == 1      # SPEC 10 C15 attribution
+    assert any(e["event_type"] == "CLUSTER_CAP_ZERO" for e in log.events())
