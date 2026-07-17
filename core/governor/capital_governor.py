@@ -73,6 +73,16 @@ class CapitalGovernor:
         self._taper_factor = 1.0                   # neutral until Risk exists (phase 9)
         self._alpha_decay = False
         self._open_groups: dict[str, tuple[SizedOrder, SizedOrder]] = {}
+        # §10 per-gate skip attribution (C15): every zero-sized order increments
+        # the gate that killed it; placed vs zeroed is the layer's take-rate.
+        self.skips: dict[str, int] = {}
+        self.orders_placed = 0
+        self.orders_zeroed = 0
+
+    def take_rate(self) -> dict:
+        return {"orders_placed": self.orders_placed,
+                "orders_zeroed": self.orders_zeroed,
+                "skips": dict(self.skips)}
 
     # -- market context (vol-norm input; GAP-0059: BARS, the v2.11 time base) ---- #
 
@@ -434,6 +444,14 @@ class CapitalGovernor:
         )
 
     def _log_order(self, order: SizedOrder) -> None:
+        if order.action == "open":
+            if order.size_units > 0:
+                self.orders_placed += 1
+            else:
+                # attribution key = the gate in the reason ("group_blocked:x" -> x)
+                gate = order.reason.rsplit(":", 1)[-1]
+                self.skips[gate] = self.skips.get(gate, 0) + 1
+                self.orders_zeroed += 1
         self._log.event(
             "SIZED", order_id=order.order_id, instrument=order.instrument,
             direction=order.direction, size_units=str(order.size_units),

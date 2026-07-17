@@ -111,10 +111,19 @@ class AGON:
         self._seed_day: dict[str, int] = {}
         self.signals_considered = 0
         self.signals_emitted = 0
+        # §10 per-gate skip attribution (C15): every discard increments the gate
+        # that killed it, so starvation is diagnosable, never silent.
+        self.skips: dict[str, int] = {}
+
+    def _skip(self, gate: str) -> None:
+        self.skips[gate] = self.skips.get(gate, 0) + 1
 
     # -- windows (ACIS-04 §8, bars) ---------------------------------------------- #
 
-    def observe(self, state: MarketState) -> None:
+    def observe(self, state: MarketState) -> Bar | None:
+        """Returns the completed signal bar, if this tick closed one, so the loop
+        owner can feed the SAME bar to the Governor's C16 (GAP-0059: one declared
+        aggregation, never two)."""
         inst = state.instrument
         agg = self._agg.setdefault(inst, BarAggregator(self._cfg.signal_bar_seconds))
         bar = agg.add(state.timestamp, state.mid, state.spread)
@@ -126,6 +135,7 @@ class AGON:
         daily = daily_agg.add(state.timestamp, state.mid, state.spread)
         if daily is not None:
             self._append_daily(inst, daily)
+        return bar
 
     def _sample_pairs(self, instrument: str) -> None:
         for name, rel in self._pairs.items():
@@ -171,7 +181,8 @@ class AGON:
 
     def take_rate(self) -> dict:
         return {"signals_considered": self.signals_considered,
-                "signals_emitted": self.signals_emitted}
+                "signals_emitted": self.signals_emitted,
+                "skips": dict(self.skips)}
 
     # -- the reflex (ACIS-04 §7) ------------------------------------------------ #
 
@@ -179,6 +190,7 @@ class AGON:
                  params: ParamSet | None, now: datetime) -> tuple[Signal, ...]:
         t0 = time.perf_counter()
         if not regime.tradeable:
+            self._skip("vetoed_regime")
             self._log.event("DISCARD_VETOED_REGIME", instrument=state.instrument,
                             regime=regime.regime.value)
             return ()
@@ -199,6 +211,7 @@ class AGON:
             if not self._module_gate(stype, regime):
                 continue
             if not self._prov.entry_allowed(STRATEGY_IDS[stype], now):
+                self._skip("entry_frozen")
                 self._log.event("DISCARD_ENTRY_FROZEN", instrument=state.instrument,
                                 strategy=stype.value)
                 continue
@@ -207,6 +220,7 @@ class AGON:
                 self.signals_considered += 1
                 if any(not math.isfinite(v) for v in
                        (raw.conviction, raw.entry, raw.atr_value)) or raw.atr_value <= 0:
+                    self._skip("nan")
                     self._log.event("SIGNAL_NAN_SKIP", instrument=raw.instrument,
                                     strategy=stype.value)
                     continue
@@ -252,6 +266,7 @@ class AGON:
             if regime.volatility_class is VolClass.MEDIUM:   # 1. discount FIRST
                 conviction *= self._cfg.medium_vol_discount
             if conviction < self._cfg.conviction_discard:    # 2. THEN discard
+                self._skip("subthreshold")
                 self._log.event("DISCARD_SUBTHRESHOLD", instrument=raw.instrument,
                                 strategy=raw.strategy_type.value,
                                 conviction=round(conviction, 4))
@@ -276,6 +291,7 @@ class AGON:
                     group_id=raw.group_id,
                 )
             except DataQualityError as exc:
+                self._skip("construction_error")
                 self._log.event("SIGNAL_CONSTRUCTION_ERROR", instrument=raw.instrument,
                                 strategy=raw.strategy_type.value, reason=str(exc))
                 continue
@@ -291,6 +307,7 @@ class AGON:
             if directions == {1, -1}:
                 for s in sigs:
                     dead.add(s.signal_id)
+                    self._skip("opposite")
                 self._log.event("DISCARD_OPPOSITE", instrument=instrument,
                                 count=len(sigs))
         # group integrity (C-ALP-7): a dead leg kills its whole group
@@ -299,6 +316,7 @@ class AGON:
         for s in candidates:
             if s.group_id in dead_groups and s.signal_id not in dead:
                 dead.add(s.signal_id)
+                self._skip("group_incomplete")
                 self._log.event("DISCARD_GROUP_INCOMPLETE", instrument=s.instrument,
                                 group_id=s.group_id)
         survivors = [s for s in candidates if s.signal_id not in dead]
@@ -315,6 +333,7 @@ class AGON:
                 continue
             key = (s.instrument, s.direction)
             if key in leg_keys:
+                self._skip("duplicate_group_leg")
                 self._log.event("DISCARD_DUPLICATES_GROUP_LEG", instrument=s.instrument,
                                 strategy=s.strategy_type.value)
                 continue

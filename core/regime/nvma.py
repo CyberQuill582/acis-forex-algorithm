@@ -336,6 +336,9 @@ class NVMAEngine:
         self._windows: dict[str, RegimeInputWindow] = {}
         self._previous: dict[str, RegimeType] = {}
         self.regime_store: dict[str, RegimeContext] = {}
+        # §10 per-gate skip attribution (C15): NVMA's veto reasons counted at the
+        # gate, so "which hand is on the throat" is answerable from counters.
+        self.veto_counters: dict[str, int] = {}
 
     def window(self, instrument: str) -> RegimeInputWindow:
         if instrument not in self._windows:
@@ -356,6 +359,7 @@ class NVMAEngine:
             if self._notify is not None:
                 self._notify(state.instrument, ctx.regime)
         for reason in ctx.inputs_snapshot.get("veto_reasons", ()):
+            self.veto_counters[reason] = self.veto_counters.get(reason, 0) + 1
             self._log.event("VETO_APPLIED", instrument=state.instrument, reason=reason,
                             regime=ctx.regime.value)
         self._previous[state.instrument] = ctx.regime

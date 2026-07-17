@@ -13,6 +13,15 @@ Format — one entry per gap, newest first. Never delete entries; close them wit
 - Linked: commits / test names / halt-postmortems
 ```
 
+## GAP-0067: MarketStateStore commits per row (~10–30 writes/s fsync-bound on the dev box) — at real feed rates the bounded queue overflows and drop-oldest sheds most ticks from the audit/replay store
+- Severity: low
+- Likelihood: medium
+- Status: open (owned: phase 11 backtest-loader work and the pre-phase-12 VPS gate — TimescaleDB is already the declared prod store, §16)
+- Area: [DIR:core/data] store.py `MarketStateStore.write` (per-row `commit()`), AsyncBoundedWriter sizing (`data.queue_max: 1000`)
+- Description: observed while building the phase-7 composed-loop tests: draining 280 MarketStates through the writer took ~30s (~9 rows/s; each `write()` issues its own `commit()`, i.e. one fsync per tick on Windows). A live feed at 10–100 ticks/s would fill the 1000-slot queue within seconds-to-minutes and the declared drop-oldest policy would then shed the majority of ticks permanently — logged as DATA_BACKPRESSURE (by design, the fast loop is protected), but the SQLite copy is the audit/replay record, and "audit copy mostly holes" is not what §3/§11 intend for paper mode. Not a correctness bug in any decision path (decisions never read the store in-loop).
+- Justification: dev-SQLite is explicitly the dev-only store (§16: TimescaleDB in production) and no phase up to 7 runs a sustained real-rate feed; recorded now so the phase-11 loader and the pre-phase-12 deployment gate treat write throughput (batched transactions or the prod store) as a named requirement, not a surprise. The phase-7 tests sidestep it honestly: only the e2e persistence test drains the writer.
+- Linked: tests/integration/paper_loop.py `run(drain=)`, tests/integration/test_paper_trading_pipeline.py, core/data/store.py:48-69
+
 ## GAP-0065: TSMOM daily-bar series has no dedup/ordering guard at the seed→live boundary — a day counted twice silently shifts every r63/r126/r252 lookback
 - Severity: medium
 - Likelihood: low
