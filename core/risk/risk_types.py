@@ -122,7 +122,7 @@ class RiskSnapshot:
     total_drawdown_pct: float          # daily + open
     portfolio_var_1pct: float          # 1% VaR as % NAV
     max_correlated_cluster_pct: float
-    rolling_sharpe_50t: float
+    rolling_mean_sigma_50t: float      # per-trade mean/σ, NOT an annualised Sharpe (P9E-05)
     rolling_win_rate_50t: float
     alpha_decay_flag: bool
     alpha_decay_state: str             # inactive_warming | active | flagged  (C5)
@@ -142,7 +142,7 @@ class RiskSnapshot:
         for name in ("daily_drawdown_pct", "open_drawdown_pct", "total_drawdown_pct",
                      "portfolio_var_1pct", "max_correlated_cluster_pct"):
             _finite(name, getattr(self, name), lo=0.0)
-        for name in ("rolling_sharpe_50t", "rolling_win_rate_50t"):
+        for name in ("rolling_mean_sigma_50t", "rolling_win_rate_50t"):
             _finite(name, getattr(self, name))
         if self.alpha_decay_state not in ("inactive_warming", "active", "flagged"):
             raise DataQualityError("alpha_decay_state", self.alpha_decay_state,

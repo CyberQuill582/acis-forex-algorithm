@@ -48,7 +48,7 @@ class RiskSnapshot:
     total_drawdown_pct: float          # daily + open
     portfolio_var_1pct: float          # 1% VaR as % NAV
     max_correlated_cluster_pct: float
-    rolling_sharpe_50t: float
+    rolling_mean_sigma_50t: float      # per-trade mean/σ — NOT an annualised Sharpe (GAP-P9E-05)
     rolling_win_rate_50t: float
     alpha_decay_flag: bool
     alpha_decay_state: str             # inactive_warming | active | flagged  (C5)
@@ -76,7 +76,7 @@ class PlatformDrawdownState:           # one per rule in the stricter-of set (§
 
 - **`Trade`** (closed round-trip, reconstructed from FillReports): entry/exit price+time, direction, units, realised PnL (Decimal), instrument, `param_set_id`.
 - **Rolling windows:** last-50-trade window (Sharpe, win-rate); baseline window `trades[-200:-50]`.
-- **Config split (shipped key names):** *guardrail_limits.yaml (human-only, as committed):* `daily_drawdown_pct:2.0`, `per_instrument_drawdown_pct:1.0`, `alpha_decay_sharpe_mult:0.5`, `var_cap_pct:3.0`, `cluster_cap_pct:20.0`, `single_currency_delta_cap_pct:30.0`, `slippage_alert_bps:8.0`, **`equity_floor_usd`** (absolute), **`taper_start_fraction:0.60` / `entry_halt_fraction:0.80`** (the RATIFIED floor — schema rejects looser). *system_config `risk:` (operational, required):* `alpha_decay_recent_window:50`, `alpha_decay_min_trades:30`, `alpha_decay_baseline_min_trades:50` (C5), `alpha_decay_recovery_trades:20`, `alpha_decay_recovery_mult:0.8`, `var_method`, `eval_cadence_s`, `heartbeat_path`, `heartbeat_interval_s (≤10, §12)`.
+- **Config split (shipped key names):** *guardrail_limits.yaml (human-only, as committed):* `daily_drawdown_pct:2.0`, `per_instrument_drawdown_pct:1.0`, `alpha_decay_sharpe_mult:0.5`, `var_cap_pct:3.0`, `cluster_cap_pct:20.0`, `single_currency_delta_cap_pct:30.0`, `slippage_alert_bps:8.0`, **`equity_floor_usd`** (absolute), **`taper_start_fraction:0.60` / `entry_halt_fraction:0.80`** (the RATIFIED floor — schema rejects looser). *system_config `risk:` (operational, required):* `alpha_decay_recent_window:50`, `alpha_decay_min_trades:30`, `alpha_decay_baseline_min_trades:50` (C5), `alpha_decay_recovery_trades:20`, `alpha_decay_recovery_mult:0.8`, `var_method`, `var_window`, `var_horizon_seconds` (GAP-0103: the DECLARED VaR holding-period, σ scaled √(horizon/eval_cadence) to it), `slippage_window`, `eval_cadence_s`, `heartbeat_path`, `heartbeat_interval_s (≤10, §12)`.
 - **§9.5 taper (ratified — computed HERE, consumed by the Governor):** per hard drawdown limit in the stricter-of set, with `d = measured/limit`: `taper(d) = 1.0` for `d ≤ taper_start_fraction`; linear down to `0.0` at `entry_halt_fraction`; `0.0` beyond. The delivered factor = **min across all limits** (engine daily + per-instrument + every platform rule, each measured under its own semantics). Delivered via `apply_risk_state(taper_factor=…)`; the limit itself keeps full HALT semantics at 1.0. Per-account stricter overrides come composed from ACIS-10 §7 (`min(engine, account)` — already schema-floored).
 
 ## 6. Guardrail config & limits (human-only — never weakened by code)
@@ -134,7 +134,7 @@ CREATE TABLE risk_snapshot (
     daily_pnl NUMERIC NOT NULL, daily_dd_pct DOUBLE PRECISION NOT NULL,
     open_dd_pct DOUBLE PRECISION NOT NULL, total_dd_pct DOUBLE PRECISION NOT NULL,
     var_1pct DOUBLE PRECISION NOT NULL, max_cluster_pct DOUBLE PRECISION NOT NULL,
-    sharpe_50t DOUBLE PRECISION NOT NULL, win_rate_50t DOUBLE PRECISION NOT NULL,
+    mean_sigma_50t DOUBLE PRECISION NOT NULL, win_rate_50t DOUBLE PRECISION NOT NULL,
     alpha_decay_flag BOOLEAN NOT NULL, alpha_decay_state TEXT NOT NULL,
     slippage_alert BOOLEAN NOT NULL, equity NUMERIC NOT NULL,
     equity_floor_breached BOOLEAN NOT NULL, instruments_halted JSONB NOT NULL,
@@ -165,7 +165,7 @@ Surfaces `acis://risk/snapshot` (latest `RiskSnapshot` incl. `alpha_decay_state`
 | attempt to write a guardrail limit | impossible (read-only); attempt is a caught bug |
 
 ## 13. Logic-flaw registry
-- **C-RSK-1 (C5/F13):** alpha-decay requires `alpha_decay_baseline_min_trades` in the baseline window; `inactive_warming` surfaced; test with 40 baseline trades → never flags; with 60 → can flag.
+- **C-RSK-1 (C5/F13):** alpha-decay requires `alpha_decay_baseline_min_trades` in the baseline window; `inactive_warming` surfaced; test with 40 baseline trades → never flags; with 60 → can flag. **(GAP-0093 correction, 2026-07-18):** the master-§8 formula `s_recent < mult·s_baseline` is only meaningful for a POSITIVE baseline — it inverts when `s_baseline ≤ 0` (an improving-but-still-negative recent would wrongly flag). Decay is erosion of a positive edge, so the flag additionally requires `s_baseline > 0`; a strategy with no positive edge cannot "decay". The compared quantity is a per-trade mean/σ (`mean_sigma`), NOT an annualised Sharpe (GAP-0105 naming law) — used only as a same-units ratio, so the missing annualisation/rf cancels.
 - **C-RSK-2 (NaN-safe Sharpe):** σ≈0 baseline → defined sentinel, no divide-by-zero, no spurious flag; injected test.
 - **C-RSK-3 (equity breaker):** `equity < floor` → flatten+HALT, human-only resume; isolated test; unthrottleable (cannot be masked by alpha-decay throttle).
 - **C-RSK-4 (racing HALTs):** two simultaneous conditions → single coalesced halt, most-severe scope; deterministic test.

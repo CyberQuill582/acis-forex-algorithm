@@ -79,6 +79,22 @@ def test_equity_breaker_fires_even_with_taper_pressure() -> None:
     assert ("all", "equity_floor") in sink.flattens
 
 
+def test_equity_breaker_re_fires_after_human_rearm() -> None:
+    # GAP-P9I-06: the equity breaker is a one-shot PER ARMED CYCLE, not for the
+    # process lifetime. After a human resume (rearm), a deeper re-breach must
+    # flatten AGAIN — the idempotency latch must never become a permanent
+    # suppressor of the upward edge.
+    cfg, sink = load_cfg(), RecordingSink()
+    _, g, _, _ = build_monitor(cfg, sink)
+    g.check(_ctx(equity=8500.0))
+    assert sink.flattens.count(("all", "equity_floor")) == 1
+    g.check(_ctx(equity=8400.0))               # deeper, but latched → no re-fire
+    assert sink.flattens.count(("all", "equity_floor")) == 1
+    g.rearm()                                  # human resume
+    g.check(_ctx(equity=8300.0))               # a NEW breach after re-arm
+    assert sink.flattens.count(("all", "equity_floor")) == 2
+
+
 # -- C-RSK-4: racing HALTs coalesce to one, most-severe scope wins ----------- #
 
 def test_racing_halts_coalesce_to_single_global() -> None:
@@ -157,3 +173,34 @@ def test_trailing_intraday_equity_uses_high_water_not_eod() -> None:
     # high-water 10500 → (10500-10200)/10500 = 2.857%; an EOD/open anchor (10000)
     # would report 0% — the fixture proves the high-water anchor.
     assert abs(trailing.measured_pct - 2.857142857) < 1e-3
+
+
+def test_trailing_highwater_survives_a_day_boundary() -> None:
+    # GAP-P9E-01: a peak on day 1, a fall on day 2 — the trailing high-water must
+    # NOT reset at the boundary (the original defect read this genuine breach as
+    # 0%). prop trailing limit 5% → the 12.5% drawdown must HALT.
+    from datetime import timedelta
+    cfg, sink = load_cfg(), RecordingSink()
+    _, g, _, _ = build_monitor(cfg, sink, account="prop_demo")
+    d1 = T0.replace(hour=10)
+    d2 = d1 + timedelta(days=1)
+    g.check(_ctx(equity=12000.0, nav=12000.0, now=d1))          # peak
+    out = g.check(_ctx(equity=10500.0, nav=10500.0, now=d2))    # next day, down
+    trailing = [s for s in out.platform_drawdown if "trailing" in s.rule_key][0]
+    assert trailing.measured_pct == pytest.approx(12.5, abs=1e-3)   # NOT 0
+    assert trailing.distance_fraction >= 1.0
+    assert any(scope == "all" for scope, _ in sink.halts)          # HALT fired
+
+
+def test_daily_loss_straddling_midnight_still_trips() -> None:
+    # GAP-P9I-03: the engine daily loss limit anchors at the 22:00 FX rollover,
+    # not 00:00 UTC — a loss straddling calendar midnight is one trading day and
+    # must trip the 2.0% daily limit (auto-session halt).
+    from datetime import timedelta
+    cfg, sink = load_cfg(), RecordingSink()
+    _, g, _, _ = build_monitor(cfg, sink)
+    before = T0.replace(hour=23, minute=0)                # 23:00 (after 22:00 open)
+    after = before + timedelta(hours=2)                   # 01:00 next calendar day
+    g.check(_ctx(equity=10000.0, nav=10000.0, now=before))   # day-open anchor
+    g.check(_ctx(equity=9790.0, nav=9790.0, now=after))      # 2.1% down, same day
+    assert sink.session_halts == ["daily_drawdown"]      # not forgotten at midnight

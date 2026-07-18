@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from core.risk.alpha_decay import AlphaDecayDetector, sharpe_nan_safe
+from core.risk.alpha_decay import AlphaDecayDetector, mean_sigma
 from tests.risk_fixtures import load_cfg, mk_alpha, mk_trade
 
 
@@ -36,15 +36,28 @@ def test_sixty_baseline_trades_can_flag() -> None:
     trades = _strong_baseline(60) + _weak_recent(50)
     r = _detector().evaluate(trades)
     assert r.state == "flagged" and r.flag is True
-    assert r.sharpe_recent < 0.5 * r.sharpe_baseline
+    assert r.mean_sigma_recent < 0.5 * r.mean_sigma_baseline
 
 
-# -- C-RSK-2 (F13): NaN-safe Sharpe ------------------------------------------ #
+# -- C-RSK-2 (F13): NaN-safe mean/σ ------------------------------------------ #
 
-def test_zero_dispersion_sharpe_is_defined_sentinel() -> None:
+def test_zero_dispersion_mean_sigma_is_defined_sentinel() -> None:
     identical = [mk_trade(10.0) for _ in range(50)]      # σ = 0
-    assert sharpe_nan_safe(identical) == 0.0             # no divide-by-zero
-    assert sharpe_nan_safe([]) == 0.0
+    assert mean_sigma(identical) == 0.0                  # no divide-by-zero
+    assert mean_sigma([]) == 0.0
+
+
+# -- GAP-P9I-01: a negative baseline must not flag a RECOVERING strategy ------ #
+
+def test_negative_baseline_does_not_flag_improving_recent() -> None:
+    # baseline mean/σ < 0 (no positive edge to decay from); recent IMPROVED but
+    # still negative. `s_recent < 0.5·s_baseline` would invert and wrongly flag;
+    # the fix requires s_baseline > 0, so a strategy with no edge never "decays".
+    baseline = [mk_trade(-12.0 if i % 2 else -8.0) for i in range(60)]   # ≈ -1.0
+    recent = [mk_trade(-7.0 if i % 2 else -5.0) for i in range(50)]      # ≈ -0.6, better
+    r = _detector().evaluate(baseline + recent)
+    assert r.mean_sigma_baseline < 0
+    assert r.flag is False and r.state == "active"
 
 
 def test_flat_baseline_never_spuriously_flags() -> None:

@@ -95,6 +95,8 @@ risk:                            # ACIS-07 v1.1 (SPEC 8) - required block, opera
   alpha_decay_recovery_mult: 0.8
   var_method: delta_normal_undiversified  # conservative: no diversification credit
   var_window: 50
+  var_horizon_seconds: 86400   # 1-day VaR horizon (GAP-P9E-03 declared; the 3%
+                               # cap re-confirmation against this is raised to owner)
   slippage_window: 20
   eval_cadence_s: 10
   heartbeat_path: logs/heartbeat.json

@@ -22,7 +22,7 @@ class RiskStore:
         ts TEXT PRIMARY KEY, daily_pnl TEXT NOT NULL, daily_dd_pct REAL NOT NULL,
         open_dd_pct REAL NOT NULL, total_dd_pct REAL NOT NULL,
         var_1pct REAL NOT NULL, max_cluster_pct REAL NOT NULL,
-        sharpe_50t REAL NOT NULL, win_rate_50t REAL NOT NULL,
+        mean_sigma_50t REAL NOT NULL, win_rate_50t REAL NOT NULL,
         alpha_decay_flag INTEGER NOT NULL, alpha_decay_state TEXT NOT NULL,
         slippage_alert INTEGER NOT NULL, equity TEXT NOT NULL,
         equity_floor_breached INTEGER NOT NULL, instruments_halted TEXT NOT NULL,
@@ -48,7 +48,7 @@ class RiskStore:
             "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (s.timestamp.isoformat(), str(s.daily_pnl), s.daily_drawdown_pct,
              s.open_drawdown_pct, s.total_drawdown_pct, s.portfolio_var_1pct,
-             s.max_correlated_cluster_pct, s.rolling_sharpe_50t, s.rolling_win_rate_50t,
+             s.max_correlated_cluster_pct, s.rolling_mean_sigma_50t, s.rolling_win_rate_50t,
              int(s.alpha_decay_flag), s.alpha_decay_state, int(s.slippage_slope_alert),
              str(s.equity), int(s.equity_floor_breached),
              json.dumps(list(s.instruments_halted)), s.taper_factor, s.session_id))

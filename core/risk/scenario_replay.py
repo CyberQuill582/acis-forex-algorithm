@@ -41,7 +41,8 @@ class ScenarioReplay:
     def __init__(self, book: ScenarioBook, guardrails: GuardrailLimits,
                  instruments: dict[str, InstrumentSpec], logger, *,
                  nav: Decimal, equity_floor_usd: float,
-                 atr_multiplier_sl_cap: float) -> None:
+                 atr_multiplier_sl_cap: float,
+                 clusters: dict[str, list[str]] | None = None) -> None:
         self._book = book
         self._g = guardrails
         self._instruments = instruments
@@ -49,12 +50,31 @@ class ScenarioReplay:
         self._nav = nav
         self._floor = Decimal(str(equity_floor_usd))
         self._sl_cap = atr_multiplier_sl_cap
+        self._clusters = clusters or {}
 
-    def _worst_notional(self) -> Decimal:
-        """C-SWN-1: the largest single-instrument exposure the Governor could
-        ever legally hold against the shock = min(cluster_cap, delta_cap) × NAV."""
-        frac = min(self._g.cluster_cap_pct, self._g.single_currency_delta_cap_pct) / 100.0
-        return Decimal(str(frac)) * self._nav
+    def _worst_frac(self, instrument: str | None) -> float:
+        """GAP-P9I-02: the caps that ACTUALLY bound a single instrument. The
+        cluster cap (20%) only constrains an instrument that IS in a cluster; a
+        cluster-less instrument is bounded ONLY by the single-currency delta cap
+        (30%). Taking `min(cluster, delta)` unconditionally under-states the
+        worst legal book for a cluster-less instrument — the gate must not
+        flatter sizing (C-SWN-1)."""
+        caps = [self._g.single_currency_delta_cap_pct]
+        if instrument is None:
+            # broker outage (no instrument): worst over the ENABLED universe —
+            # the least-constrained enabled instrument bounds the outage loss.
+            enabled = [s for s, sp in self._instruments.items() if sp.enabled]
+            fracs = [self._worst_frac(s) for s in enabled] or [
+                self._g.single_currency_delta_cap_pct / 100.0]
+            return max(fracs)
+        if any(instrument in members for members in self._clusters.values()):
+            caps.append(self._g.cluster_cap_pct)
+        return min(caps) / 100.0
+
+    def _worst_notional(self, instrument: str | None) -> Decimal:
+        """C-SWN-1: the largest legal single-instrument exposure against the
+        shock, using the caps that actually apply to `instrument`."""
+        return Decimal(str(self._worst_frac(instrument))) * self._nav
 
     def _worst_book_gap_pct(self) -> float:
         """The book's worst same-instrument gap magnitude — the §8.5 allowance
@@ -64,10 +84,10 @@ class ScenarioReplay:
         return max(gaps) if gaps else 0.0
 
     def replay_one(self, sc: Scenario) -> ReplayVerdict:
-        worst = self._worst_notional()
         inst = sc.params.get("instrument")
         if isinstance(inst, str) and inst not in self._instruments:
             raise ScenarioReplayError(f"scenario {sc.name!r}: unknown instrument {inst!r}")
+        worst = self._worst_notional(inst if isinstance(inst, str) else None)
 
         if sc.kind == "gap_through_stop":
             loss = worst * Decimal(str(abs(float(sc.params["gap_pct"])) / 100.0))

@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from statistics import NormalDist, pstdev
+from statistics import NormalDist, stdev
 
 from config.schemas import RiskConfig, GuardrailLimits
 from core.execution.venue import BrokerAccount, BrokerPosition, FillReport, FillStatus
@@ -110,8 +110,9 @@ class RiskMonitor:
         # opposite side: close up to the existing size, book realised PnL
         closing = min(abs(incoming), abs(pos.signed_units))
         pos_dir = 1 if pos.signed_units > 0 else -1
-        realised = (Decimal(str(fill.fill_price)) - Decimal(str(pos.avg_price))) \
+        realised_quote = (Decimal(str(fill.fill_price)) - Decimal(str(pos.avg_price))) \
             * closing * Decimal(pos_dir)
+        realised = self._to_usd(inst, realised_quote, fill.fill_price)  # GAP-P9E-04
         self._book_trade(inst, pos, closing, pos_dir, fill, realised)
         remaining_pos = abs(pos.signed_units) - closing
         leftover_incoming = abs(incoming) - closing
@@ -175,12 +176,12 @@ class RiskMonitor:
         # alpha decay — explicit set/clear on the upward edge (GAP-0050, C-RSK-9)
         reading = self._alpha.evaluate(self._trades)
         if reading.flag and not self._alpha_armed_prev:
-            self._log.event("ALPHA_DECAY_DETECTED", s_recent=reading.sharpe_recent,
-                            s_baseline=reading.sharpe_baseline, n=reading.n_recent)
+            self._log.event("ALPHA_DECAY_DETECTED", s_recent=reading.mean_sigma_recent,
+                            s_baseline=reading.mean_sigma_baseline, n=reading.n_recent)
             self._sink.apply_risk_state(alpha_decay=True)
         elif not reading.flag and self._alpha_armed_prev:
-            self._log.event("ALPHA_DECAY_RECOVERED", s_recent=reading.sharpe_recent,
-                            s_baseline=reading.sharpe_baseline)
+            self._log.event("ALPHA_DECAY_RECOVERED", s_recent=reading.mean_sigma_recent,
+                            s_baseline=reading.mean_sigma_baseline)
             self._sink.apply_risk_state(alpha_decay=False)
         self._alpha_armed_prev = reading.flag
 
@@ -195,7 +196,7 @@ class RiskMonitor:
             daily_drawdown_pct=engine_daily_dd, open_drawdown_pct=open_dd,
             total_drawdown_pct=engine_daily_dd + open_dd,
             portfolio_var_1pct=var_pct, max_correlated_cluster_pct=cluster_pct,
-            rolling_sharpe_50t=reading.sharpe_recent, rolling_win_rate_50t=win_rate,
+            rolling_mean_sigma_50t=reading.mean_sigma_recent, rolling_win_rate_50t=win_rate,
             alpha_decay_flag=reading.flag, alpha_decay_state=reading.state,
             slippage_slope_alert=outcome.slippage_slope_alert,
             equity=account.equity, equity_floor_breached=outcome.equity_floor_breached,
@@ -207,6 +208,32 @@ class RiskMonitor:
             self._store.write_snapshot(snap)
         return snap
 
+    # -- quote→USD conversion (GAP-P9E-04 / rescoped GAP-0092) ---------------- #
+
+    def _usd_factor(self, instrument: str, price: float) -> float | None:
+        """Convert a QUOTE-currency amount for `instrument` to USD at `price`.
+        XXX_USD (quote is USD) → 1.0; USD_XXX (USD base) → 1/price (the quote
+        YYY→USD rate is 1/(USD_YYY)). A true CROSS pair (neither side USD) has
+        no derivable rate here → None; the caller falls back to quote-ccy and
+        logs CONVERSION_UNAVAILABLE (a phase-11 FX-rate-table job). This covers
+        the entire enabled universe (EUR_USD, USD_JPY) exactly, so the
+        per-instrument DD HALT/taper, VaR, and cluster caps are no longer
+        contaminated by a quote-vs-account currency mismatch."""
+        base, _, quote = instrument.partition("_")
+        if quote == "USD":
+            return 1.0
+        if base == "USD":
+            return (1.0 / price) if price else 1.0
+        return None
+
+    def _to_usd(self, instrument: str, amount_quote: Decimal, price: float) -> Decimal:
+        factor = self._usd_factor(instrument, price)
+        if factor is None:
+            self._log.event("CONVERSION_UNAVAILABLE", instrument=instrument,
+                            note="cross pair — quote-ccy used, phase-11 FX table owed")
+            return amount_quote
+        return amount_quote * Decimal(str(factor))
+
     # -- metrics -------------------------------------------------------------- #
 
     def _unrealised(self, marks: dict[str, float]) -> Decimal:
@@ -216,8 +243,9 @@ class RiskMonitor:
             if mark is None:
                 continue
             pos_dir = 1 if pos.signed_units > 0 else -1
-            total += (Decimal(str(mark)) - Decimal(str(pos.avg_price))) \
+            upnl_quote = (Decimal(str(mark)) - Decimal(str(pos.avg_price))) \
                 * abs(pos.signed_units) * Decimal(pos_dir)
+            total += self._to_usd(inst, upnl_quote, mark)
         return total
 
     def _per_instrument_drawdown(self, marks, nav) -> dict[str, float]:
@@ -227,19 +255,31 @@ class RiskMonitor:
             if mark is None:
                 continue
             pos_dir = 1 if pos.signed_units > 0 else -1
-            upnl = (Decimal(str(mark)) - Decimal(str(pos.avg_price))) \
+            upnl_quote = (Decimal(str(mark)) - Decimal(str(pos.avg_price))) \
                 * abs(pos.signed_units) * Decimal(pos_dir)
+            upnl = self._to_usd(inst, upnl_quote, mark)
             loss = max(0.0, -float(upnl))
             out[inst] = loss / float(nav) * 100.0
         return out
 
     def _notional(self, inst, pos, marks) -> float:
+        """USD notional (GAP-P9E-04): quote-notional × the quote→USD factor."""
         mark = marks.get(inst, pos.avg_price)
-        return abs(float(pos.signed_units)) * mark
+        quote_notional = Decimal(str(abs(float(pos.signed_units)) * mark))
+        return float(self._to_usd(inst, quote_notional, mark))
 
     def _var_pct(self, marks, nav) -> float:
         """Delta-normal, UNDIVERSIFIED (no correlation credit — conservative
-        sum of per-position VaR). σ from the rolling log-return of marks."""
+        sum of per-position VaR), scaled to a DECLARED holding-period horizon
+        (GAP-P9E-03: a VaR without a stated horizon is meaningless — the raw
+        per-mark σ is a ~`eval_cadence_s`-horizon VaR, ~93× smaller than the
+        1-day VaR the 3% cap presumes). σ from the rolling log-return of marks,
+        scaled by √(var_horizon_seconds / eval_cadence_s) to the declared
+        horizon. (The 3% cap's re-confirmation against this horizon is RAISED
+        to the owner — GAP-P9E-03 — as the horizon was previously undeclared;
+        VaR is not yet wired in-loop, GAP-0091b, so nothing live changes.)"""
+        horizon_scale = math.sqrt(self._cfg.var_horizon_seconds
+                                  / self._cfg.eval_cadence_s)
         total = 0.0
         for inst, pos in self._positions.items():
             hist = self._marks.get(inst)
@@ -249,7 +289,7 @@ class RiskMonitor:
                     if hist[i - 1] > 0 and hist[i] > 0]
             if len(rets) < 2:
                 continue
-            sigma = pstdev(rets)
+            sigma = stdev(rets) * horizon_scale        # sample σ, horizon-scaled
             total += self._notional(inst, pos, marks) * _Z_99 * sigma
         return total / float(nav) * 100.0
 
@@ -290,9 +330,22 @@ class RiskMonitor:
 
     def restore_restrictive_state(self, *, alpha_armed: bool) -> None:
         """Persisted risk-restrictive state is restored BEFORE the first
-        evaluate — a restart is never a relaxation (GAP-0050)."""
+        evaluate — a restart is never a relaxation (GAP-0050). GAP-P9I-05: the
+        restored throttle must be RE-PUSHED to the (fresh) Governor over the
+        upward edge — restoring the detector's flag alone leaves a rebooted
+        Governor un-throttled."""
         self._alpha.restore_armed(alpha_armed)
         self._alpha_armed_prev = alpha_armed
+        if alpha_armed:
+            self._sink.apply_risk_state(alpha_decay=True)
+            self._log.event("ALPHA_DECAY_RESTORED", armed=True)
+
+    def on_human_resume(self) -> None:
+        """A human resume (via the MCP/Governor layer, phase 10) re-arms the
+        guardrail latches so a later re-breach fires again — the equity breaker
+        is a one-shot per armed cycle, never a process-lifetime suppressor
+        (GAP-P9I-06). Human-only by construction (no agent path calls this)."""
+        self._guards.rearm()
 
     def reconcile_on_restart(self, broker_positions: tuple[BrokerPosition, ...],
                              now: datetime) -> bool:

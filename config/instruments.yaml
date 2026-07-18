@@ -91,7 +91,11 @@ pair_relationships:
     zscore_window: 50
 
 clusters:
-  usd_long: [USD_JPY]
+  # USD_CHF is a USD-base pair — it belongs in the long-USD cluster. Membership
+  # bounds its worst legal book by the 20% cluster cap (GAP-P9I-02: a
+  # cluster-less instrument would be bounded only by the 30% delta cap, which
+  # the §8.5 chf_depeg scenario's worst-book construction must reflect honestly).
+  usd_long: [USD_JPY, USD_CHF]
   usd_short: [EUR_USD]
   commodity: [XAU_USD]     # C7: extension reference, inert while disabled
   yen_carry: [USD_JPY]

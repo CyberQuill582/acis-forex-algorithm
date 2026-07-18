@@ -93,17 +93,20 @@ class Watchdog:
         self._log = logger
         self._marker = Path(marker_path)
         self._started_at = started_at
-        self._last_good_ts: float | None = None
+        # GAP-P9E-07: staleness is measured on the WATCHDOG's OWN timeline — the
+        # local time at which the heartbeat CONTENT last changed — never
+        # local-now minus the engine-written timestamp (an engine clock running
+        # ahead would make stale beats look fresh and defeat the switch).
+        self._sig: tuple | None = None            # last observed (ts_utc, seq)
+        self._last_change_local: float | None = None
         self._last_good_positions = 0
         self._flattened = self._marker.exists()   # idempotent across restart
 
     def _read_heartbeat(self) -> dict | None:
         try:
-            raw = self._heartbeat_path.read_text(encoding="utf-8")
-            beat = json.loads(raw)
-            ts = datetime.fromisoformat(beat["ts_utc"])
-            beat["_epoch"] = ts.timestamp()
+            beat = json.loads(self._heartbeat_path.read_text(encoding="utf-8"))
             beat["open_positions"] = int(beat["open_positions"])
+            _ = beat["ts_utc"]                     # presence check (part of the sig)
             return beat
         except (OSError, ValueError, KeyError, TypeError):
             return None                            # unreadable/malformed = silence
@@ -111,10 +114,20 @@ class Watchdog:
     def poll(self, now: float) -> str:
         beat = self._read_heartbeat()
         if beat is not None:
-            self._last_good_ts = beat["_epoch"]
             self._last_good_positions = beat["open_positions"]
+            sig = (beat["ts_utc"], beat.get("fast_loop_seq"))
+            if sig != self._sig:                   # the engine wrote a NEW beat
+                self._sig = sig
+                self._last_change_local = now
+                if self._flattened:                # engine recovered → re-arm
+                    self._flattened = False        # (GAP-P9I-04: a SECOND outage
+                    try:                           #  must flatten again)
+                        self._marker.unlink()
+                    except FileNotFoundError:
+                        pass
+                    self._log.event("WATCHDOG_REARMED")
 
-        if self._last_good_ts is None:
+        if self._last_change_local is None:
             # never seen a good beat — cannot confirm positions; after the
             # timeout, alert (never assume alive, never flatten blind).
             if now - self._started_at >= self._timeout:
@@ -122,7 +135,7 @@ class Watchdog:
                 return "alert"
             return "ok"
 
-        age = now - self._last_good_ts
+        age = now - self._last_change_local        # observer's own timeline
         if age <= self._timeout:
             return "ok"                            # fresh — no action
 

@@ -12,8 +12,12 @@
 # ref_price (liquidity_vacuum, C-SWN-5): converts worst notional to units.
 scenarios:
   - name: chf_depeg_2015
+    # ⚠ GAP-P9E-08 (raised to owner): the modelled -20% is roughly the daily
+    # close; actual 2015 worst fills were ~-30% to -40% (USD/CHF fell ~-27%
+    # intraday). A faithful -30% would breach this 4.5% ceiling — a human
+    # ceiling/gap re-ratification (C-SWN-7). -20% retained pending that ruling.
     kind: gap_through_stop
-    description: SNB floor removal 2015-01-15 — EUR/CHF gap ~-20% through all stops.
+    description: SNB floor removal 2015-01-15 — USD/CHF gap ~-20% through all stops.
     params: {instrument: USD_CHF, gap_pct: -20.0}
     max_loss_pct_nav: 4.5
   - name: flash_crash_2010

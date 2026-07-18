@@ -88,7 +88,8 @@ def test_stale_but_flat_alerts_only(tmp_path) -> None:
     wd, plugin, hb, log = _make(tmp_path, timeout=30, started_at=0.0)
     beat_time = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
     _write_beat(hb, beat_time, positions=0)
-    assert wd.poll(beat_time.timestamp() + 40) == "alert"
+    assert wd.poll(beat_time.timestamp()) == "ok"          # establish the baseline
+    assert wd.poll(beat_time.timestamp() + 40) == "alert"  # no update → stale + flat
     assert plugin.calls == 0
     assert any(e["event_type"] == "WATCHDOG_ALERT"
                and e["data"]["reason"] == "stale_but_flat" for e in _events(log))
@@ -123,12 +124,44 @@ def test_flatten_failure_retries(tmp_path) -> None:
                                 started_at=0.0)
     beat_time = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
     _write_beat(hb, beat_time, positions=1)
+    assert wd.poll(beat_time.timestamp()) == "ok"       # establish the baseline
     stale = beat_time.timestamp() + 40
     assert wd.poll(stale) == "flatten_failed"           # first attempt refused
     assert wd.poll(stale + 5) == "flatten"              # retried, succeeded
     assert plugin.calls == 2
     kinds = [e["event_type"] for e in _events(log)]
     assert "WATCHDOG_FLATTEN_FAILED" in kinds and "WATCHDOG_FLATTEN" in kinds
+
+
+# -- GAP-P9E-07: clock skew (engine ahead) must not defeat the switch --------- #
+
+def test_clock_skew_engine_ahead_still_flattens(tmp_path) -> None:
+    # The engine's embedded ts_utc runs 10 min AHEAD of the watchdog's clock.
+    # Staleness is measured on the WATCHDOG's own timeline (content-change), so a
+    # future-timestamped-but-frozen heartbeat still goes stale and flattens.
+    wd, plugin, hb, log = _make(tmp_path, timeout=30, started_at=0.0)
+    engine_clock = datetime(2026, 7, 15, 12, 10, tzinfo=timezone.utc)  # +10 min ahead
+    _write_beat(hb, engine_clock, positions=1)          # ts_utc is in the "future"
+    assert wd.poll(0.0) == "ok"                          # observed now (local t=0)
+    assert wd.poll(40.0) == "flatten"                    # content frozen 40s → stale
+    assert plugin.calls == 1
+
+
+# -- GAP-P9I-04: a SECOND outage after recovery must flatten again ------------ #
+
+def test_second_outage_after_recovery_flattens_again(tmp_path) -> None:
+    wd, plugin, hb, log = _make(tmp_path, timeout=30, started_at=0.0)
+    t = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+    _write_beat(hb, t, positions=1)
+    assert wd.poll(0.0) == "ok"
+    assert wd.poll(40.0) == "flatten"                   # first outage → flatten
+    # engine recovers: a NEW beat (fresh ts_utc → changed content) → re-arm
+    _write_beat(hb, t.replace(minute=1), positions=1)
+    assert wd.poll(45.0) == "ok"
+    assert any(e["event_type"] == "WATCHDOG_REARMED" for e in _events(log))
+    # engine hangs AGAIN → the second outage flattens again (not "already")
+    assert wd.poll(90.0) == "flatten"
+    assert plugin.calls == 2
 
 
 # -- heartbeat writer emits atomically + monotonically (engine side, ACIS-07) - #

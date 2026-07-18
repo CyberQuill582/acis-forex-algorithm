@@ -13,7 +13,7 @@ most-severe scope winning (global flatten > session halt > instrument halt).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from config.schemas import DrawdownRule, GuardrailLimits, RiskConfig
@@ -32,27 +32,57 @@ def taper_factor(distance: float, start: float, halt: float) -> float:
     return (halt - distance) / (halt - start)
 
 
+def _trading_day(now: datetime, reset_hhmm: str):
+    """The FX trading day that `now` falls in, where each day starts at
+    `reset_hhmm` UTC (the rollover). A day runs reset→reset, so a loss
+    straddling 00:00 UTC stays inside one trading day (GAP-P9I-03)."""
+    utc = now.astimezone(timezone.utc)
+    h, m = map(int, reset_hhmm.split(":"))
+    boundary = utc.replace(hour=h, minute=m, second=0, microsecond=0)
+    return utc.date() if utc >= boundary else (utc - timedelta(days=1)).date()
+
+
 @dataclass
 class _RuleAnchor:
-    """Running anchor for one drawdown rule under its declared semantics."""
+    """Running anchor for one drawdown rule under its declared semantics
+    (GAP-P9E-01 corrected).
+
+    - **trailing** (the prop account-killer, §9.5): the high-water mark trails
+      the peak basis since INCEPTION and NEVER resets on a calendar boundary —
+      it only ever ratchets up. Resetting it daily (the original defect) forgot
+      the multi-day peak and let a real breach read as 0%.
+    - **static, non-daily**: a fixed reference at the first observed basis
+      (account-start / overall max-drawdown reference), never reset.
+    - **daily loss limit** (`resets_daily`, the engine's per-session limit,
+      master §8): anchored at the day-open basis, reset each UTC day, measured
+      from that open — it is a per-day limit by definition.
+
+    v1 samples the basis on EVERY observation (intraday) for all rules — the
+    risk-conservative choice: it can HALT earlier than a platform that measures
+    only end-of-day, never later, so it never MISSES a platform-enforced breach
+    (stricter-of law, §9.5). True eod-only sampling (looser, platform-faithful)
+    is a phase-11 adapter refinement — recorded as GAP-P9E-02. Halts are cheap
+    (CLAUDE.md), so erring strict is safe."""
 
     anchor: float | None = None
-    period_id: object | None = None
+    day: object | None = None
 
-    def _period(self, rule: DrawdownRule, now: datetime) -> object:
-        # intraday resets each UTC trading day; eod anchors to the day too — the
-        # discriminator the §14 fixture proves is trailing (high-water) vs
-        # static (period-open), not the reset cadence.
-        return now.astimezone(timezone.utc).date()
-
-    def update(self, rule: DrawdownRule, basis: float, now: datetime) -> float:
-        pid = self._period(rule, now)
-        if self.period_id != pid or self.anchor is None:
-            self.period_id = pid
-            self.anchor = basis                       # period open
-        if rule.type == "trailing":
-            self.anchor = max(self.anchor, basis)     # high-water (C-RSK-8)
-        # static: anchor stays the period-open value
+    def update(self, rule: DrawdownRule, basis: float, now: datetime, *,
+               resets_daily: bool, reset_hhmm: str) -> float:
+        # GAP-P9I-03: the trading day for the daily loss limit starts at the FX
+        # rollover (reset_hhmm, e.g. 22:00 UTC), NOT calendar midnight — a
+        # drawdown straddling 00:00 UTC must not be forgotten.
+        today = _trading_day(now, reset_hhmm)
+        if resets_daily:
+            if self.day != today or self.anchor is None:
+                self.day = today
+                self.anchor = basis                   # day-open (per-day loss limit)
+        else:
+            if self.anchor is None:
+                self.anchor = basis                   # inception reference
+            if rule.type == "trailing":
+                self.anchor = max(self.anchor, basis)  # high-water since inception
+            # static non-daily: the inception anchor is fixed
         if self.anchor <= 0:
             return 0.0
         return max(0.0, (self.anchor - basis) / self.anchor * 100.0)
@@ -65,16 +95,18 @@ class DrawdownSeries:
     each keeps its own key and taper."""
 
     limits: GuardrailLimits
-    rules: tuple[tuple[str, str, DrawdownRule], ...]  # (key, origin, rule)
+    rules: tuple[tuple[str, str, DrawdownRule, bool], ...]  # (key, origin, rule, resets_daily)
+    daily_reset_utc: str = "22:00"       # FX rollover / trading-day start (GAP-P9I-03)
     _anchors: dict[str, _RuleAnchor] = field(default_factory=dict)
 
     def measure(self, *, equity: float, balance: float, now: datetime,
                 start: float, halt: float) -> list[PlatformDrawdownState]:
         out: list[PlatformDrawdownState] = []
-        for key, _origin, rule in self.rules:
+        for key, _origin, rule, resets_daily in self.rules:
             basis = equity if rule.basis == "equity" else balance
             anchor = self._anchors.setdefault(key, _RuleAnchor())
-            measured = anchor.update(rule, basis, now)
+            measured = anchor.update(rule, basis, now, resets_daily=resets_daily,
+                                     reset_hhmm=self.daily_reset_utc)
             distance = measured / rule.limit_pct if rule.limit_pct > 0 else 0.0
             out.append(PlatformDrawdownState(
                 rule_key=key, measured_pct=measured, limit_pct=rule.limit_pct,
@@ -85,23 +117,23 @@ class DrawdownSeries:
 
 def build_drawdown_series(limits: GuardrailLimits,
                           platform_rules: list[DrawdownRule],
-                          account_name: str) -> DrawdownSeries:
-    """The engine daily limit (static/intraday/equity) + every platform rule,
-    each with a stable rule_key. Per-instrument drawdown is handled separately
-    (it needs per-instrument PnL, not account state)."""
-    rules: list[tuple[str, str, DrawdownRule]] = [
+                          account_name: str,
+                          daily_reset_utc: str = "22:00") -> DrawdownSeries:
+    """The engine daily loss limit (resets at the FX trading-day rollover,
+    master §8) + every platform rule under its own semantics (trailing
+    ratchets, static is a fixed inception reference — neither resets daily).
+    Per-instrument drawdown is handled separately (it needs per-instrument
+    PnL, not account state)."""
+    rules: list[tuple[str, str, DrawdownRule, bool]] = [
         ("engine:daily", "engine",
          DrawdownRule(type="static", anchor="intraday", basis="equity",
-                      limit_pct=limits.daily_drawdown_pct)),
+                      limit_pct=limits.daily_drawdown_pct), True),
     ]
     for r in platform_rules:
         key = f"{account_name}:{r.type}:{r.anchor}:{r.basis}"
-        rules.append((key, "platform", r))
-    return DrawdownSeries(limits=limits, rules=tuple(rules))
-
-
-# scope severity for racing-HALT coalescing (C-RSK-4)
-_SEVERITY = {"instrument": 1, "session": 2, "all": 3, "flatten": 4}
+        rules.append((key, "platform", r, False))     # platform rules never reset daily
+    return DrawdownSeries(limits=limits, rules=tuple(rules),
+                          daily_reset_utc=daily_reset_utc)
 
 
 @dataclass
@@ -143,6 +175,21 @@ class Guardrails:
         self._session_halted = False
         self._equity_flattened = False
         self._last_taper: float | None = None
+
+    # -- re-arm on human resume (GAP-P9I-06) --------------------------------- #
+
+    def rearm(self) -> None:
+        """A human resume clears the Governor's halts; the Risk layer must drop
+        its idempotency latches too, or a later re-breach (a NEW equity-floor
+        hit, a fresh drawdown) would be silently suppressed as 'already issued'.
+        The equity breaker is a one-shot PER ARMED CYCLE, never for the process
+        lifetime. Only a human resume calls this (never any agent path)."""
+        self._halted_scopes.clear()
+        self._flattened_scopes.clear()
+        self._instruments_halted.clear()
+        self._session_halted = False
+        self._equity_flattened = False
+        self._log.event("GUARDRAILS_REARMED")
 
     # -- racing-HALT coalescing (C-RSK-4) ------------------------------------ #
     # Idempotent + serialized: a scope already covered by an equal-or-more-severe

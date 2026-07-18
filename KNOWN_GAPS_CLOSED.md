@@ -5,6 +5,97 @@ same newest-first order, same never-delete rule. Audit-run banners are kept with
 the findings they describe. The LIVE ledger is `KNOWN_GAPS.md`.
 
 <!-- ============================================================================
+PHASE-9 DUAL AUDIT — CLOSED (FIXED) findings (2026-07-18; suite 413 green after
+triage). Internal-consistency + external-referent Opus 4.8 audits; live entries
+(GAP-0092/0099/0102/0103/0108) stay in KNOWN_GAPS.md. Each fixed item carries its
+regression test. No guardrail VALUE, HALT, veto, or equity-floor semantic was
+weakened — every fix tightens a guard or makes a named quantity honest.
+============================================================================= -->
+
+## GAP-0093 (P9I-01): alpha-decay flagged a RECOVERING strategy on a negative baseline — CLOSED
+- Severity: medium · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:core/risk] alpha_decay.py `evaluate`, ACIS-07 §7, master §8 (spec-formula correction)
+- Description: `s_recent < mult·s_baseline` INVERTS when `s_baseline ≤ 0`: baseline −1.0, recent −0.6 (improved) → flagged. Decay is only meaningful as erosion of a POSITIVE edge.
+- Fix: `flag = s_baseline > 0.0 and s_recent < mult·s_baseline` — a strategy with no positive edge can never "decay". Spec-formula correction (master §8 formula assumes a positive baseline; noted in ACIS-07 §13 C-RSK-1). Regression: `test_negative_baseline_does_not_flag_improving_recent`.
+- Linked: core/risk/alpha_decay.py, tests/unit/test_alpha_decay.py
+
+## GAP-0094 (P9I-02): scenario worst-book understated for a cluster-less instrument — CLOSED — **SPEC_AUDIT.md**
+- Severity: medium · Likelihood: low (USD_CHF disabled) · Status: closed (2026-07-18, FIXED + regression + config)
+- Area: [DIR:core/risk] scenario_replay.py `_worst_frac`, [DIR:config] instruments.yaml clusters, master §8.5 C-SWN-1
+- Description: `min(cluster_cap, delta_cap)` was applied unconditionally, but the 20% cluster cap only bounds an instrument IN a cluster; a cluster-less instrument (USD_CHF, the chf_depeg instrument) is bounded only by the 30% delta cap → true worst book 30% → 6.0% loss > the 4.5% ceiling. The gate was flattering sizing.
+- Fix: `_worst_frac(instrument)` uses only the caps that ACTUALLY apply (delta cap always; cluster cap iff clustered); outage = worst across the enabled universe. Config: USD_CHF added to the `usd_long` cluster (a USD-base pair — legitimate modelling that ADDS a constraint), bounding it at 20% so the gate passes honestly at 4.0%. Regressions: `test_cluster_less_instrument_uses_delta_cap_not_cluster_cap`, updated release gate.
+- Linked: core/risk/scenario_replay.py, config/instruments.yaml, tests/backtest/test_scenario_replay.py
+
+## GAP-0095 (P9I-03): engine daily-drawdown anchor reset at 00:00 UTC, not the 22:00 FX rollover — CLOSED — **SPEC_AUDIT.md**
+- Severity: high · Likelihood: high · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:core/risk] guardrails.py `_RuleAnchor`/`_trading_day`, master §8
+- Description: a drawdown straddling calendar midnight was forgotten — a cumulative 3.76% loss never tripped the 2.0% daily limit (the #1-priority guardrail, under-protected).
+- Fix: the daily loss limit anchors at the FX trading-day rollover (`daily_reset_utc=22:00`, threaded from the fx calendar) via `_trading_day`; a loss reset→reset stays in one day. Regression: `test_daily_loss_straddling_midnight_still_trips`.
+- Linked: core/risk/guardrails.py, tests/unit/test_guardrails.py
+
+## GAP-0096 (P9I-04): watchdog flatten-marker never re-armed — a SECOND outage was not flattened — CLOSED — **SPEC_AUDIT.md**
+- Severity: high · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:scripts] acis_watchdog.py `Watchdog.poll`, master §8.6, ACIS-12 C-SWN-6
+- Description: once the marker existed (a prior flatten or a leftover file), `poll` returned `already_flattened` forever — a genuine second outage with open positions was not flattened.
+- Fix: when a NEW heartbeat (changed content signature) arrives the engine has demonstrably recovered → the marker is cleared and the watchdog re-arms (`WATCHDOG_REARMED`), so a subsequent outage flattens again. (Re-arm on recovery ≠ agent reconfiguration; config re-arm still needs a human restart.) Regression: `test_second_outage_after_recovery_flattens_again`.
+- Linked: scripts/acis_watchdog.py, tests/unit/test_watchdog.py
+
+## GAP-0097 (P9I-05): a restored alpha-decay throttle was never re-pushed to the Governor on restart — CLOSED — **SPEC_AUDIT.md**
+- Severity: medium · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:core/risk] monitor.py `restore_restrictive_state`, GAP-0050
+- Description: the detector's armed flag was restored but `apply_risk_state(alpha_decay=True)` was never re-sent, so a fresh Governor booted un-throttled — the relaxation-on-restart GAP-0050 exists to prevent.
+- Fix: `restore_restrictive_state` re-pushes `apply_risk_state(alpha_decay=True)` over the upward edge and logs `ALPHA_DECAY_RESTORED`. Regression: `test_restart_restores_persisted_throttle_before_evaluate` (now asserts the re-push).
+- Linked: core/risk/monitor.py, tests/unit/test_risk_monitor.py
+
+## GAP-0098 (P9I-06): Guardrails latches never reset — the equity breaker was a process-lifetime one-shot — CLOSED — **SPEC_AUDIT.md**
+- Severity: medium · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:core/risk] guardrails.py `rearm`, monitor.py `on_human_resume`, master §12
+- Description: after recover-then-rebreach, a DEEPER equity-floor breach was not flattened — the idempotency latch became a permanent suppressor of the upward edge, with no re-arm synchronized to a human resume.
+- Fix: `Guardrails.rearm()` clears the halt/flatten/session/equity latches; `RiskMonitor.on_human_resume()` calls it (human-only path). The breaker is a one-shot PER ARMED CYCLE. Regression: `test_equity_breaker_re_fires_after_human_rearm`.
+- Linked: core/risk/guardrails.py, core/risk/monitor.py, tests/unit/test_guardrails.py
+
+## GAP-0100 (P9I-08): dead `_SEVERITY` table in guardrails.py — CLOSED
+- Severity: low · Likelihood: n/a · Status: closed (2026-07-18, removed)
+- Area: [DIR:core/risk] guardrails.py
+- Description: the `_SEVERITY` dict was left over from a first coalescing design and unused after the `_covered`/severity-set rewrite. Removed (the coalescing severity is expressed structurally in `_covered`).
+- Linked: core/risk/guardrails.py
+
+## GAP-0101 (P9E-01): platform TRAILING drawdown reset its high-water anchor every UTC day — CLOSED — **SPEC_AUDIT.md**
+- Severity: high · Likelihood: high · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:core/risk] guardrails.py `_RuleAnchor`, master §9.5, §13 trailing-anchor glitch class, C-RSK-8
+- Description: `_period` reset the anchor to the day-open before the trailing `max()`, so the multi-day peak was forgotten — a genuine 12.5% trailing breach (the prop account-killer §9.5 names) read as 0.0%. The §14 fixture passed only because it stayed within one UTC day.
+- Fix: `_RuleAnchor` — trailing high-water ratchets since inception and NEVER resets on a calendar boundary; static is a fixed inception reference; only the engine daily loss limit resets (at the 22:00 rollover, GAP-0095). Regression: `test_trailing_highwater_survives_a_day_boundary` (2-day path, 12.5% breach HALTs).
+- Linked: core/risk/guardrails.py, tests/unit/test_guardrails.py
+
+## GAP-0104 (P9E-04): quote-ccy PnL reached the per-instrument DD HALT/taper, VaR, and cluster caps — CLOSED (for the enabled universe) — **SPEC_AUDIT.md**
+- Severity: medium · Likelihood: high · Status: closed (2026-07-18, FIXED + regression; residual cross-pair → live GAP-0092)
+- Area: [DIR:core/risk] monitor.py `_usd_factor`/`_to_usd`/`_per_instrument_drawdown`/`_var_pct`/`_max_cluster_pct`
+- Description: quote-ccy loss ÷ USD NAV fed the per-instrument HALT+taper, VaR, and cluster caps — USD_JPY (enabled) reported 5.0% DD on a ~$4.55 (0.0455%) loss (spurious early HALT); a quote ccy stronger than USD would fire guards LATE (a weakening). GAP-0092's "HALT arithmetic is exact" was self-contradictory.
+- Fix: `_to_usd` converts quote→USD for every derivable case (XXX_USD → 1.0; USD_XXX → 1/price) — the whole enabled universe exactly; a true cross pair logs `CONVERSION_UNAVAILABLE` and falls back (residual tracked on the rescoped live GAP-0092, phase-11 FX table). Regressions: `test_quote_ccy_pnl_converted_to_usd_for_enabled_universe`, `test_usd_quoted_pnl_unchanged_by_conversion`.
+- Linked: core/risk/monitor.py, tests/unit/test_risk_monitor.py, KNOWN_GAPS.md GAP-0092
+
+## GAP-0105 (P9E-05): `rolling_sharpe_50t`/`sharpe_nan_safe` wore the canonical "Sharpe" name for a per-trade mean/σ — CLOSED
+- Severity: low · Likelihood: high · Status: closed (2026-07-18, renamed per the GAP-0091 naming law)
+- Area: [DIR:core/risk] alpha_decay.py, risk_types.py, store.py, specs/ACIS-07 §4/§10
+- Description: an un-annualised, zero-rf per-trade mean/σ is not a Sharpe ratio (§16 naming law; GAP-0091 set the precedent in fitness.py). The exposed `RiskSnapshot.rolling_sharpe_50t` field would read to a human as an annualised Sharpe.
+- Fix: `sharpe_nan_safe → mean_sigma`; `RiskSnapshot.rolling_sharpe_50t → rolling_mean_sigma_50t`; DDL `sharpe_50t → mean_sigma_50t`; `AlphaDecayReading.mean_sigma_recent/baseline`; ACIS-07 §4/§10 updated. The ratio math (recent vs baseline) is unchanged — the throttle logic was always sound; only the name is now honest.
+- Linked: core/risk/alpha_decay.py, core/risk/risk_types.py, core/risk/store.py, specs/ACIS-07-RISK_MONITOR.md
+
+## GAP-0106 (P9E-06): alpha-decay used population σ on differently-sized windows — CLOSED
+- Severity: low · Likelihood: medium · Status: closed (2026-07-18, FIXED)
+- Area: [DIR:core/risk] alpha_decay.py `mean_sigma`
+- Description: `pstdev` (÷N) inflates the ratio by √(N/(N−1)), ~0.68% more for the recent (N=50) than the baseline (N≤150), biasing `s_recent < 0.5·s_baseline` against firing.
+- Fix: sample σ (`stdev`) throughout `mean_sigma` (and the VaR σ) removes the window-size dependence; <2 trades → 0.0 sentinel unchanged.
+- Linked: core/risk/alpha_decay.py, core/risk/monitor.py
+
+## GAP-0107 (P9E-07): watchdog measured staleness as local-now minus the ENGINE-written timestamp — clock skew defeated the switch — CLOSED — **SPEC_AUDIT.md**
+- Severity: medium · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:scripts] acis_watchdog.py `Watchdog.poll`, master §8.6, §13 clock-skew glitch class
+- Description: `age = now − engine_ts_utc` trusts the watched process's own clock; an engine clock running AHEAD keeps a stale beat looking fresh → the watchdog never flattens (the exact failure it exists to prevent).
+- Fix: staleness is measured on the WATCHDOG's OWN timeline — the local time at which the heartbeat CONTENT (ts_utc, fast_loop_seq) last changed — never a remote timestamp differenced against the local clock. Regression: `test_clock_skew_engine_ahead_still_flattens`.
+- Linked: scripts/acis_watchdog.py, tests/unit/test_watchdog.py
+
+<!-- ============================================================================
 PHASE-7 INTERNAL-CONSISTENCY AUDIT (2026-07-17, commit e8582f4; suite 337 green
 after phase 8 landed out-of-scope). Findings GAP-0074..0079 below (finder-only).
 Honest negatives (verified SOUND — a first-class result, not a sign-off):

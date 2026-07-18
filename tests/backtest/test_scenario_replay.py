@@ -24,11 +24,11 @@ _NAV = Decimal("10000")            # the dev-account base (equity_floor 9000 ass
 _SL_CAP = GENE_SPECS["atr_multiplier_sl"][1]   # 3.5
 
 
-def _replay(book, guardrails, instruments, *, nav=_NAV):
+def _replay(book, guardrails, instruments, *, nav=_NAV, clusters=None):
     return ScenarioReplay(
         book, guardrails, instruments, CapturingLogger(),
         nav=nav, equity_floor_usd=guardrails.equity_floor_usd,
-        atr_multiplier_sl_cap=_SL_CAP)
+        atr_multiplier_sl_cap=_SL_CAP, clusters=clusters or {})
 
 
 @pytest.fixture
@@ -47,7 +47,8 @@ def instruments(cfg):
 def test_release_gate_every_scenario_passes(cfg, instruments) -> None:
     """THE GATE: every shipped scenario is within its ceiling AND survives the
     equity floor against the current guardrails."""
-    verdicts = _replay(cfg.scenario_book, cfg.guardrails, instruments).replay_all()
+    verdicts = _replay(cfg.scenario_book, cfg.guardrails, instruments,
+                       clusters=cfg.instruments.clusters).replay_all()
     assert len(verdicts) == len(cfg.scenario_book.scenarios)
     failing = [v for v in verdicts if not v.passed]
     assert not failing, "scenario-replay ceiling/floor breach:\n" + "\n".join(
@@ -63,7 +64,8 @@ def test_gate_can_fail_on_oversized_caps(cfg, instruments) -> None:
     # 60% NAV × 20% gap = 12% NAV, breaching both the 4.5% ceiling and the floor.
     limits = cfg.guardrails.model_copy(
         update={"cluster_cap_pct": 60.0, "single_currency_delta_cap_pct": 80.0})
-    verdicts = _replay(cfg.scenario_book, limits, instruments).replay_all()
+    verdicts = _replay(cfg.scenario_book, limits, instruments,
+                       clusters=cfg.instruments.clusters).replay_all()
     chf = next(v for v in verdicts if v.scenario == "chf_depeg_2015")
     assert not chf.passed
     assert chf.loss_pct_nav > chf.ceiling_pct_nav
@@ -74,7 +76,8 @@ def test_gap_loss_uses_post_gap_price(cfg, instruments) -> None:
     """C-SWN-2: loss scales with the gap, not the (irrelevant-by-law) stop level.
     A stop 10 pips above the gap floor changes nothing — the loss is worst ×
     |gap|, exactly."""
-    replay = _replay(cfg.scenario_book, cfg.guardrails, instruments)
+    replay = _replay(cfg.scenario_book, cfg.guardrails, instruments,
+                     clusters=cfg.instruments.clusters)
     chf = next(sc for sc in cfg.scenario_book.scenarios if sc.name == "chf_depeg_2015")
     v = replay.replay_one(chf)
     worst = float(v.worst_book_notional)
@@ -86,7 +89,8 @@ def test_outage_bound_exceeds_plain_stop_distance(cfg, instruments) -> None:
     """C-SWN-4: the outage bound = stop geometry + gap allowance, strictly
     greater than a plain stop-distance loss (the gap allowance is real, never
     'fills at level')."""
-    replay = _replay(cfg.scenario_book, cfg.guardrails, instruments)
+    replay = _replay(cfg.scenario_book, cfg.guardrails, instruments,
+                     clusters=cfg.instruments.clusters)
     outage = next(sc for sc in cfg.scenario_book.scenarios
                   if sc.kind == "broker_outage")
     v = replay.replay_one(outage)
@@ -104,10 +108,23 @@ def test_vacuum_cost_scales_with_spread_mult(cfg, instruments) -> None:
     doubled = base.model_copy(update={
         "params": {**base.params, "spread_mult": float(base.params["spread_mult"]) * 2}})
     book2 = ScenarioBook(scenarios=[base, doubled])
-    replay = _replay(book2, cfg.guardrails, instruments)
+    replay = _replay(book2, cfg.guardrails, instruments, clusters=cfg.instruments.clusters)
     v_base = replay.replay_one(base)
     v_double = replay.replay_one(doubled)
     assert v_double.loss_pct_nav == pytest.approx(2 * v_base.loss_pct_nav)
+
+
+def test_cluster_less_instrument_uses_delta_cap_not_cluster_cap(cfg, instruments) -> None:
+    """GAP-P9I-02: a cluster-less instrument's worst legal book is bounded ONLY
+    by the 30% delta cap (the 20% cluster cap does not apply). The gate must not
+    flatter sizing by assuming a cluster cap that isn't there."""
+    replay = _replay(cfg.scenario_book, cfg.guardrails, instruments, clusters={})  # none clustered
+    chf = next(sc for sc in cfg.scenario_book.scenarios if sc.name == "chf_depeg_2015")
+    v = replay.replay_one(chf)
+    # cluster-less → 30% × NAV worst book (not 20%): 30% × 20% gap = 6% NAV
+    assert float(v.worst_book_notional) == pytest.approx(0.30 * float(_NAV))
+    assert v.loss_pct_nav == pytest.approx(6.0)
+    assert not v.passed                       # exceeds the 4.5% ceiling when unclustered
 
 
 def test_missing_ceiling_is_config_fatal() -> None:

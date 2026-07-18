@@ -20,10 +20,69 @@ Format — one entry per gap, newest first. Never delete entries; close them wit
 > open / mitigated / accepted-risk only. Ledger discipline is unchanged — new findings
 > land here first; closure moves the entry to the archive with its closing note.
 
+<!-- ============================================================================
+PHASE-9 DUAL ADVERSARIAL AUDIT (2026-07-18, both Opus 4.8 subagents, deploy-and-
+continue). Internal-consistency (GAP-P9I-01..09) + external-referent
+(GAP-P9E-01..08) run in parallel, each to its own pending file, merged here.
+Real IDs GAP-0093..0108. Suite 413 green after triage (was 404; +9 regressions).
+Author≠auditor; every finding reproduced by the finder and re-verified by the
+author before triage. FIXED entries archived to KNOWN_GAPS_CLOSED.md; the live
+entries below are mitigated / raised-to-owner only. Guardrail-adjacent findings
+summarised in SPEC_AUDIT.md. NO guardrail VALUE, HALT, veto, or equity-floor
+semantic was weakened — every fix either TIGHTENS a guard (trailing high-water,
+daily-anchor, re-arm, clock-skew) or makes a named quantity honest; the two
+human-owned value questions (VaR cap horizon, CHF gap magnitude) are RAISED, not
+changed. Internal honest-negatives (verified SOUND): the single upward edge
+(risk imports nothing from governor; the sink schema cannot express a size
+increase); equity breaker checked-first + unthrottleable within an evaluate;
+taper hand-vectors + min-across + prop-stricter; taper-only never clears a
+throttle; C5 baseline validity; restart-drift adopts broker + halts; all config
+schema gates fire; scenario gate provably can fail; watchdog silence semantics +
+zero-core-imports. External honest-negatives: z(0.99)=2.326 exact; undiversified
+VaR is a provable conservative upper bound; gap/flash/vacuum/outage loss formulas
+dimensionally correct; the taper is exactly the ratified linear schedule.
+============================================================================= -->
+
+## GAP-0108 (P9E-08): CHF de-peg scenario models a −20% gap; the actual 2015 worst fills were ~−30% to −40% — the release-gate ceiling is calibrated against an optimistic gap — **RAISED TO OWNER (also SPEC_AUDIT.md)**
+- Severity: low
+- Likelihood: medium
+- Status: open (RAISED to owner — book values are human-commit, C-SWN-7; −20% retained pending the ruling)
+- Area: [DIR:config] scenario_book.yaml `chf_depeg_2015`, [DIR:core/risk] scenario_replay.py, master §8.5
+- Description: On 2015-01-15 EUR/CHF fell from the 1.20 floor to ~0.85 intraday (~−29%) with retail stops filling as deep as ~0.70 (~−40%); USD/CHF fell ~−27% intraday. The book models `gap_pct: -20.0` (≈ the daily close, not the worst fill). At the honest worst-legal-book (USD_CHF now clustered → 20% NAV, GAP-0094), a −20% gap = 4.0% NAV < the 4.5% ceiling; a faithful −30% would be 6.0% NAV and BREACH the ceiling (a human ceiling re-ratification, C-SWN-7). The description/instrument mismatch (said EUR/CHF, coded USD_CHF) is FIXED. The gap magnitude + ceiling are human-owned: the owner must raise the gap toward the observed worst fill and re-ratify the ceiling (or accept −20% as the modelling choice with a recorded rationale). Not changed unilaterally — a guardrail-adjacent value.
+- Justification: C-SWN-7 — a gap-law modelling value + its ceiling are human-commit. Surfaced for the owner's next ratification pass; the gate is green at the committed −20%/20%-book/4.5%-ceiling meanwhile.
+- Linked: config/scenario_book.yaml `chf_depeg_2015` (annotated ⚠), core/risk/scenario_replay.py, KNOWN_GAPS_CLOSED.md GAP-0094
+
+## GAP-0103 (P9E-03): `portfolio_var_1pct` horizon — declared + scaled to 1 day; the 3% VaR cap re-confirmation against that horizon is RAISED to the owner — **also SPEC_AUDIT.md**
+- Severity: medium
+- Likelihood: high
+- Status: mitigated (2026-07-18 — the VaR horizon was UNDECLARED (a ~10s per-mark VaR gated by a 3%-NAV cap, ~93× loose). FIXED: `risk.var_horizon_seconds` (86400) now declares a 1-day horizon and `_var_pct` scales σ by √(horizon/eval_cadence); the field is an honest 1-day VaR. RAISED: the 3% cap was ratified against an unstated horizon — the owner should re-confirm 3% against the now-declared 1-day horizon. VaR is not yet wired in-loop (GAP-0091b), so nothing live changes; the fix only makes the guard meaningful/stronger)
+- Area: [DIR:core/risk] monitor.py `_var_pct`, config `risk.var_horizon_seconds`, ACIS-07 §4, master §8
+- Description: a VaR is defined only against a stated horizon; the original per-mark σ made "1% VaR as % NAV" a ~`eval_cadence_s` figure, ~90× smaller than a reader/ratifier of the 3% cap would assume. The horizon is now first-class config and scaled; the cap-value re-confirmation is the owner's (guard-integrity: cap values are human-owned).
+- Justification: the fix declares+scales (strengthens the guard); the residual is a human value re-confirmation, raised not applied.
+- Linked: core/risk/monitor.py `_var_pct`, config/system_config.yaml `risk.var_horizon_seconds`, ACIS-07 §4/§6
+
+## GAP-0102 (P9E-02): `DrawdownRule.anchor` (eod vs intraday) — v1 samples INTRADAY for all rules (the risk-conservative choice); true eod-only sampling deferred
+- Severity: low
+- Likelihood: medium
+- Status: mitigated (2026-07-18 — declared deviation, not a silent one: `_RuleAnchor` samples the basis on EVERY observation (intraday) for all rules, which can HALT earlier than a platform measuring only end-of-day but NEVER later, so it never MISSES a platform-enforced breach (stricter-of, §9.5; halts are cheap, CLAUDE.md). True eod-only sampling (prior-session close, once-daily) is a phase-11 adapter refinement. The reset-cadence defect that made this material — daily reset of the trailing high-water — is separately FIXED, GAP-0101)
+- Area: [DIR:core/risk] guardrails.py `_RuleAnchor`, config schema `DrawdownRule.anchor`
+- Description: the schema offers eod/intraday but v1 measures both intraday. The choice is conservative-by-construction (stricter, never looser) and now documented in `_RuleAnchor`'s docstring; phase-11 adapters implement platform-faithful eod sampling.
+- Justification: erring strict is safe under the stricter-of law; recorded as a declared deviation per §5.6.
+- Linked: core/risk/guardrails.py `_RuleAnchor`, config/schemas.py `DrawdownRule`
+
+## GAP-0099 (P9I-07): the equity breaker's per-FILL fast path is not wired in the monitor — it fires on each `evaluate`, not on each `ingest`
+- Severity: medium
+- Likelihood: medium
+- Status: mitigated (2026-07-18 — ACIS-07 §7 says the fast breakers run "every eval_cadence_s AND on each fill"; the monitor's `ingest` updates state but does not itself call `evaluate`. The equity/drawdown breakers therefore fire on the evaluate cadence, not intra-fill. The production three-loop runtime (phase 10) owns the fast-loop cadence and drives `evaluate` on the fast path — the same lean-build split as GAP-0091b/paper_loop. Equity is broker-account truth (fetched by the loop, not carried on a fill), so a per-fill check is inherently a loop-owner responsibility. Carried as a phase-10 wiring requirement)
+- Area: [DIR:core/risk] monitor.py `ingest`/`evaluate`, ACIS-07 §7
+- Description: between evaluate ticks, a fill that drops equity below the floor is not caught until the next evaluate. Bounded by `eval_cadence_s` (10s) in v1; phase-10 wires the fast-path evaluate on the fill edge.
+- Justification: lean-build — the runtime that owns loop cadence lands at phase 10; recorded so it treats fast-path evaluate-on-fill as a named requirement.
+- Linked: core/risk/monitor.py, ACIS-07 §7, [[gap-0091b]] pattern
+
 ## GAP-0092: Risk Monitor books realised PnL in the instrument's QUOTE currency and treats it as account currency — exact only for USD-quoted pairs
 - Severity: medium
 - Likelihood: high
-- Status: open (declared limitation, owned by phase 11 — the OANDA cost-calibration/adapter pass, master §13/v2.9)
+- Status: mitigated (2026-07-18 — RESCOPED + partially fixed by GAP-0104: quote→USD conversion now covers the entire ENABLED universe exactly (XXX_USD → 1.0; USD_XXX → 1/price), so the per-instrument DD HALT/taper, VaR, and cluster caps are no longer contaminated for EUR_USD/USD_JPY. The self-contradictory "HALT arithmetic is exact" claim is withdrawn. RESIDUAL: a true CROSS pair (neither side USD, e.g. EUR_GBP) still has no derivable rate → falls back to quote-ccy with a logged CONVERSION_UNAVAILABLE; none are enabled. Full FX→USD rate table owned by phase 11)
 - Area: [DIR:core/risk] monitor.py `_apply_fill`/`_book_trade`/`_unrealised`, ACIS-07 §5
 - Description: `RiskMonitor` computes realised/unrealised PnL as `(price_diff) × units × direction` in the instrument's QUOTE currency and treats that number as account (USD) currency. This is exact for USD-quoted instruments (EUR_USD, XAU_USD, GBP_USD…) but wrong for non-USD-quoted pairs (USD_JPY books JPY, EUR_GBP books GBP) — the daily_pnl/open-drawdown/per-instrument-drawdown figures for those instruments are off by the quote→USD rate. Broker `equity` remains authoritative for the equity breaker and the §9.5 drawdown series (those read broker truth, unaffected), so no guardrail is weakened; the affected quantities are the ENGINE's own internal PnL view (snapshot fields + per-instrument dd taper input). Consistent with the phase-6 Governor simplification (per-currency deltas as "USD-notional terms"). Reproduced by construction: USD_JPY 1000 units 110.00→110.50 books pnl=500 (JPY) surfaced as $500.
 - Justification: honest scoping — a correct multi-quote FX→USD conversion layer needs live cross rates, which arrive with the phase-11 loader + OANDA calibration and the phase-12 adapters (master §13, v2.9). Recorded so per-instrument drawdown/daily-PnL for non-USD-quoted instruments is not trusted as account-ccy until then; the phase-9 tests use USD-quoted EUR_USD where the identity holds. The taper/HALT arithmetic is exact; only the currency scale of the internal PnL view is approximate.

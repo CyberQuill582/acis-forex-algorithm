@@ -6,6 +6,8 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
+import pytest
+
 from core.execution.venue import BrokerPosition, FillStatus
 from core.risk.sink import HaltSink
 from core.risk.store import RiskStore
@@ -117,15 +119,39 @@ def test_restart_drift_starts_halted() -> None:
 
 def test_restart_restores_persisted_throttle_before_evaluate() -> None:
     # GAP-0050: a restart is never a relaxation — a persisted armed throttle is
-    # restored, and warming afterward does not clear it.
+    # restored, and warming afterward does not clear it. GAP-P9I-05: the restore
+    # must RE-PUSH the throttle to the (fresh) Governor, not just set the flag.
     cfg, sink = load_cfg(), RecordingSink()
     mon, _, alpha, _ = build_monitor(cfg, sink)
     mon.restore_restrictive_state(alpha_armed=True)
     assert alpha.armed
+    assert (None, True) in sink.risk_states          # re-pushed over the edge
     mon.evaluate(acct(10000.0), T0)                   # no trades → warming
     # the throttle stays armed; no explicit clear was sent
     assert alpha.armed
     assert (None, False) not in sink.risk_states
+
+
+def test_quote_ccy_pnl_converted_to_usd_for_enabled_universe() -> None:
+    # GAP-P9E-04: USD_JPY books PnL in JPY; the per-instrument drawdown must be
+    # in USD, not treat JPY as USD (which reported 5% on a ~$4.55 / 0.0455% loss).
+    cfg, sink = load_cfg(), RecordingSink()
+    mon, _, _, _ = build_monitor(cfg, sink)
+    mon.ingest(mk_fill(order_id="j1", instrument="USD_JPY", direction=1, units=1000,
+                       price=110.00))
+    # mark down to 109.50: loss = 500 JPY ≈ $4.566 → 0.0455% of $10k NAV
+    dd = mon._per_instrument_drawdown({"USD_JPY": 109.50}, Decimal("10000"))
+    assert dd["USD_JPY"] == pytest.approx(0.04566, abs=1e-4)   # NOT 5.0
+
+
+def test_usd_quoted_pnl_unchanged_by_conversion() -> None:
+    # EUR_USD is USD-quoted → factor 1.0; the identity still holds exactly.
+    cfg, sink = load_cfg(), RecordingSink()
+    mon, _, _, _ = build_monitor(cfg, sink)
+    mon.ingest(mk_fill(order_id="e1", instrument="EUR_USD", direction=1, units=1000,
+                       price=1.10))
+    dd = mon._per_instrument_drawdown({"EUR_USD": 1.095}, Decimal("10000"))
+    assert dd["EUR_USD"] == pytest.approx(0.05, abs=1e-6)      # (1.10-1.095)*1000=$5
 
 
 # -- C-RSK-7: the upward edge cannot resume or raise size -------------------- #

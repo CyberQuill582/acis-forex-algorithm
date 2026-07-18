@@ -16,25 +16,31 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from decimal import Decimal
-from statistics import fmean, pstdev
+from statistics import fmean, stdev
 
 from core.risk.risk_types import Trade
 
 # σ below this (in return-fraction terms) is treated as "no dispersion": the
-# Sharpe is undefined, so we return a defined sentinel instead of dividing.
+# ratio is undefined, so we return a defined sentinel instead of dividing.
 _SIGMA_FLOOR = 1e-12
 
 
-def sharpe_nan_safe(trades: list[Trade]) -> float:
-    """Mean/σ of per-trade returns. σ≈0 ⇒ 0.0 (no dispersion = no measurable
-    risk-adjusted edge), never a divide-by-near-zero blow-up (C-RSK-2/F13).
-    An empty window ⇒ 0.0."""
-    if not trades:
+def mean_sigma(trades: list[Trade]) -> float:
+    """Mean/σ of per-trade returns — a SAMPLE-σ transform, NOT an annualised,
+    risk-free-adjusted Sharpe ratio (GAP-P9E-05: it may not wear the canonical
+    'Sharpe' name — the GAP-0091 naming law, §16). SAMPLE σ (`stdev`, not
+    `pstdev`) so the ratio has no window-size bias when comparing the recent
+    window to the differently-sized baseline (GAP-P9E-06). σ≈0 ⇒ 0.0 (no
+    dispersion = no measurable edge), never a divide-by-near-zero blow-up
+    (C-RSK-2/F13). Fewer than 2 trades or an empty window ⇒ 0.0.
+
+    Used only as a RATIO (recent vs baseline) where the missing annualisation
+    and risk-free rate cancel — the throttle logic is sound; the name is honest."""
+    if len(trades) < 2:
         return 0.0
     rets = [_ret(t) for t in trades]
     mu = fmean(rets)
-    sigma = pstdev(rets) if len(rets) > 1 else 0.0
+    sigma = stdev(rets)
     if sigma < _SIGMA_FLOOR or not math.isfinite(sigma):
         return 0.0
     s = mu / sigma
@@ -54,8 +60,8 @@ def _ret(t: Trade) -> float:
 class AlphaDecayReading:
     state: str                 # inactive_warming | active | flagged
     flag: bool
-    sharpe_recent: float
-    sharpe_baseline: float
+    mean_sigma_recent: float   # per-trade mean/σ, NOT an annualised Sharpe (P9E-05)
+    mean_sigma_baseline: float
     n_recent: int
     n_baseline: int
 
@@ -94,14 +100,18 @@ class AlphaDecayDetector:
             # Insufficient data: never FLAG, but an armed throttle stays armed —
             # warming after a restart does not clear a real decay (GAP-0050).
             return AlphaDecayReading("inactive_warming", self._armed,
-                                     sharpe_nan_safe(recent),
-                                     sharpe_nan_safe(baseline), n_recent, n_baseline)
+                                     mean_sigma(recent),
+                                     mean_sigma(baseline), n_recent, n_baseline)
 
-        s_recent = sharpe_nan_safe(recent)
-        s_baseline = sharpe_nan_safe(baseline)
+        s_recent = mean_sigma(recent)
+        s_baseline = mean_sigma(baseline)
 
         if not self._armed:
-            flag = s_recent < self._mult * s_baseline
+            # GAP-P9I-01: `s_recent < mult·s_baseline` INVERTS when the baseline
+            # is ≤ 0 (a strategy with no positive edge to decay from) — an
+            # IMPROVING recent (−0.6 > −1.0) would wrongly flag. Decay is only
+            # meaningful as erosion of a positive edge, so require s_baseline > 0.
+            flag = s_baseline > 0.0 and s_recent < self._mult * s_baseline
             if flag:
                 self._armed = True
                 return AlphaDecayReading("flagged", True, s_recent, s_baseline,
@@ -110,11 +120,11 @@ class AlphaDecayDetector:
                                      n_recent, n_baseline)
 
         # Armed: clear ONLY on confirmed recovery (GAP-0050) — the last
-        # `recovery_trades` closed trades' rolling Sharpe must exceed
-        # recovery_mult × baseline. Otherwise the throttle stays armed.
+        # `recovery_trades` closed trades' mean/σ must exceed recovery_mult ×
+        # baseline. Otherwise the throttle stays armed.
         recovery = trades[-self._recovery_trades:]
         recovered = (len(recovery) >= self._recovery_trades
-                     and sharpe_nan_safe(recovery) > self._recovery_mult * s_baseline)
+                     and mean_sigma(recovery) > self._recovery_mult * s_baseline)
         if recovered:
             self._armed = False
             return AlphaDecayReading("active", False, s_recent, s_baseline,

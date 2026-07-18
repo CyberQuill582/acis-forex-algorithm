@@ -244,6 +244,8 @@ class RiskConfig(_Strict):
     var_method: Literal["delta_normal_undiversified"]    # declared method (§18: no
     # diversification credit — conservative sum of per-position VaR)
     var_window: int = Field(gt=2)                        # marks per instrument for σ
+    var_horizon_seconds: int = Field(gt=0)               # GAP-P9E-03: the DECLARED
+    # VaR holding-period horizon; per-mark σ is scaled √(horizon/eval_cadence) to it
     slippage_window: int = Field(gt=0)                   # fills in the rolling mean
     eval_cadence_s: float = Field(gt=0)
     heartbeat_path: str
