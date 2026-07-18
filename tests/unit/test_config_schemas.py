@@ -204,3 +204,45 @@ def test_conviction_discard_cannot_undercut_signal_floor(tmp_path: Path) -> None
         d["signals"]["conviction_discard"] = 0.30
     with pytest.raises(ConfigError):
         load_config(_mutated_config(tmp_path, "system_config.yaml", mutate))
+
+
+# --------------------------------------------------------------------------- #
+# Phase 9 — risk block + scenario-book gates (ACIS-07 §5, ACIS-12 §2/§12)
+# --------------------------------------------------------------------------- #
+
+def test_missing_risk_block_is_fatal(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError):
+        load_config(_mutated_config(tmp_path, "system_config.yaml",
+                                    lambda d: d.pop("risk")))
+
+
+def test_heartbeat_interval_ceiling_enforced(tmp_path: Path) -> None:
+    # §12: the heartbeat may never be slower than 10 s — the watchdog's
+    # silence detection depends on it (ACIS-12 §4).
+    def mutate(d):
+        d["risk"]["heartbeat_interval_s"] = 30
+    with pytest.raises(ConfigError):
+        load_config(_mutated_config(tmp_path, "system_config.yaml", mutate))
+
+
+def test_scenario_missing_ceiling_is_fatal(tmp_path: Path) -> None:
+    # ACIS-12 §14: max_loss_pct_nav is the human-committed ceiling — required.
+    def mutate(d):
+        d["scenarios"][0].pop("max_loss_pct_nav")
+    with pytest.raises(ConfigError):
+        load_config(_mutated_config(tmp_path, "scenario_book.yaml", mutate))
+
+
+def test_scenario_unknown_instrument_is_fatal(tmp_path: Path) -> None:
+    def mutate(d):
+        d["scenarios"][0]["params"]["instrument"] = "NO_SUCH"
+    with pytest.raises(ConfigError):
+        load_config(_mutated_config(tmp_path, "scenario_book.yaml", mutate))
+
+
+def test_scenario_kind_params_enforced(tmp_path: Path) -> None:
+    # A gap scenario without its gap_pct is fatal at load (ACIS-12 §12).
+    def mutate(d):
+        d["scenarios"][0]["params"].pop("gap_pct")
+    with pytest.raises(ConfigError):
+        load_config(_mutated_config(tmp_path, "scenario_book.yaml", mutate))

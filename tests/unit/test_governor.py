@@ -514,3 +514,21 @@ def test_gap0074_solo_hard_cluster_cap_fires_when_base_unit_exceeds_cap() -> Non
     assert order.reason == "cluster_cap"
     assert gov.skips["cluster_cap"] == 1      # SPEC 10 C15 attribution
     assert any(e["event_type"] == "CLUSTER_CAP_ZERO" for e in log.events())
+
+
+def test_apply_session_halt_upward_edge_autoclears_and_never_shortens() -> None:
+    # ACIS-07 §7 (phase 9): Risk's daily-drawdown halt lands session-scoped —
+    # blocks new entries, auto-clears at the next boundary (master §8), and a
+    # second call can only ever extend, never shorten, the halt in force.
+    gov, log = mk_governor()
+    gov.apply_session_halt(T0, "daily_drawdown")          # T0 10:00 -> until 12:00
+    assert gov.allocate(mk_signal(), mk_portfolio(), mk_regime(),
+                        T0).reason == "drawdown_halt"
+    assert any(e["data"]["scope"] == "session"
+               for e in log.events("HALT_APPLIED"))
+    at_11 = T0.replace(hour=11)
+    gov.apply_session_halt(at_11, "daily_drawdown")       # same boundary — no shorten
+    past_boundary = T0.replace(hour=12, minute=1)
+    fresh = mk_signal(generated_at=past_boundary)
+    assert gov.allocate(fresh, mk_portfolio(), mk_regime(),
+                        past_boundary).reason == "formula"

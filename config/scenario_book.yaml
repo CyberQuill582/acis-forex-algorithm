@@ -1,23 +1,38 @@
-# Black-swan scenario book (SPEC §8.5) — grows by human commit;
+# Black-swan scenario book (SPEC §8.5, ACIS-12) — grows by human commit;
 # halt-postmortem (§12) proposes additions after every real risk event.
+#
+# max_loss_pct_nav (ACIS-12 §2, added at phase 9): the HUMAN-COMMITTED ceiling
+# each scenario may ever cost, asserted by the replay release gate together
+# with equity-floor survival. ⚠ FLAGGED TO OWNER FOR VETO (phase-6
+# single_currency_delta_cap precedent): values below were derived from the
+# C-SWN-1 worst-legal-book arithmetic (min(cluster_cap 20, delta_cap 30)% of
+# NAV positioned against the shock) plus headroom — e.g. chf_depeg loss is
+# 20% NAV book × 20% gap = 4.0% NAV, ceiling set 4.5. Tightening is always
+# allowed; loosening is a human decision.
+# ref_price (liquidity_vacuum, C-SWN-5): converts worst notional to units.
 scenarios:
   - name: chf_depeg_2015
     kind: gap_through_stop
     description: SNB floor removal 2015-01-15 — EUR/CHF gap ~-20% through all stops.
     params: {instrument: USD_CHF, gap_pct: -20.0}
+    max_loss_pct_nav: 4.5
   - name: flash_crash_2010
     kind: flash_crash
     description: 2010-05-06 style liquidity vacuum with V-recovery.
     params: {instrument: EUR_USD, drop_pct: -6.0, recovery_s: 900}
+    max_loss_pct_nav: 1.5
   - name: weekend_war_gap
     kind: gap_through_stop
     description: Hostilities open over a weekend; Sunday open gaps through stops.
     params: {instrument: XAU_USD, gap_pct: 5.0}
+    max_loss_pct_nav: 1.5
   - name: broker_outage_mid_position
     kind: broker_outage
     description: Feed and order channel lost with open positions for 10 minutes.
-    params: {duration_s: 600}
+    params: {duration_s: 600}   # no instrument = worst across enabled (C-SWN-4)
+    max_loss_pct_nav: 4.7      # stop geometry + the book's worst gap allowance
   - name: rollover_liquidity_vacuum
     kind: liquidity_vacuum
     description: Spread explosion at 22:00 UTC rollover, 50x normal spread.
-    params: {instrument: EUR_USD, spread_mult: 50}
+    params: {instrument: EUR_USD, spread_mult: 50, ref_price: 1.10}
+    max_loss_pct_nav: 1.0

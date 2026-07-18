@@ -49,7 +49,15 @@ ALLOWED: dict[str, set[str]] = {
     # pattern). NO market-state/feed import: quotes reach execution only as
     # prices on orders; the feed face stays ACIS-01's (GAP-0013).
     "execution": {"governor", "data"},
-    "risk": {"execution"},
+    # §8 + ACIS-07 v1.1 / ACIS-12 (LOCKED): the Risk Monitor consumes
+    # `FillReport` + broker account/position state (ACIS-06 §7.5, the ONLY
+    # layer that reads it) and shares the data-layer error vocabulary
+    # (RiskSnapshot/Trade validate on construction raising DataQualityError,
+    # ACIS-00 §4 error base; JSONL envelope §11) — hence "data" (widened at
+    # phase 9 with this citation, GAP-0021 ruling pattern). The single upward
+    # Risk→Governor edge is a RUNTIME channel (the injected HaltSink), never an
+    # import: `core/risk` imports nothing from `core/governor`.
+    "risk": {"execution", "data"},
 }
 
 

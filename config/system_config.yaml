@@ -87,6 +87,18 @@ governor:
   marginal_alpha_min_bucket: 5
   weekend_entry_buffer_s: 7200
   scalp_min_hold_conflict: true
+risk:                            # ACIS-07 v1.1 (SPEC 8) - required block, operational only
+  alpha_decay_recent_window: 50  # master SPEC 8 rolling window
+  alpha_decay_min_trades: 30     # master SPEC 8 minimum
+  alpha_decay_baseline_min_trades: 50   # C5 baseline validity
+  alpha_decay_recovery_trades: 20       # GAP-0050 confirmed-recovery gate
+  alpha_decay_recovery_mult: 0.8
+  var_method: delta_normal_undiversified  # conservative: no diversification credit
+  var_window: 50
+  slippage_window: 20
+  eval_cadence_s: 10
+  heartbeat_path: logs/heartbeat.json
+  heartbeat_interval_s: 10       # SPEC 12 ceiling - schema-enforced <= 10
 execution:                       # ACIS-06 v1.1 (SPEC 7) - required block
   fragment_threshold_lots: 1.0
   fragment_size_jitter: [0.85, 1.15]

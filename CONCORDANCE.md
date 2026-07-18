@@ -4,46 +4,46 @@ Regenerate with `python scripts/concordance.py`. Maps every rule/finding ID
 to each file:line citing it, so cross-document contradictions are visible as
 diffs instead of hiding in prose. Not normative — the specs and ledgers are.
 
-- **GAP-0001** (7) — KNOWN_GAPS.md:121 · _SPEC_REVIEW_PASS.md:33 · specs/ACIS-09-BACKTEST_VALIDATION.md:12,53,67,127,141
-- **GAP-0002** (3) — KNOWN_GAPS.md:112 · _SPEC_REVIEW_PASS.md:15,54
+- **GAP-0001** (7) — KNOWN_GAPS.md:139 · _SPEC_REVIEW_PASS.md:33 · specs/ACIS-09-BACKTEST_VALIDATION.md:12,53,67,127,141
+- **GAP-0002** (3) — KNOWN_GAPS.md:130 · _SPEC_REVIEW_PASS.md:15,54
 - **GAP-0003** (11) — ACIS_SPEC.md:298,408,408,422 · KNOWN_GAPS_CLOSED.md:588,589,627 · SPEC_AUDIT.md:199,255 · TODO.md:17 · specs/ACIS-07-RISK_MONITOR.md:173
-- **GAP-0004** (4) — KNOWN_GAPS.md:103 · SPEC_AUDIT.md:266 · TODO.md:59 · specs/ACIS-07-RISK_MONITOR.md:99
+- **GAP-0004** (6) — KNOWN_GAPS.md:121 · SPEC_AUDIT.md:266 · TODO.md:60 · core/risk/guardrails.py:244 · specs/ACIS-07-RISK_MONITOR.md:99 · tests/unit/test_guardrails.py:139
 - **GAP-0005** (13) — KNOWN_GAPS_CLOSED.md:618 · SPEC_AUDIT.md:324 · TODO.md:39,39 · _SPEC_REVIEW_PASS.md:50 · core/governor/marginal_alpha.py:1,21 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,39,85,166,189 · tests/unit/test_marginal_alpha.py:1
 - **GAP-0006** (12) — KNOWN_GAPS_CLOSED.md:362,363,609 · SPEC_AUDIT.md:294 · TODO.md:36,36 · core/optimizer/fitness.py:164 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,112,114,197,212
 - **GAP-0007** (12) — ACIS_SPEC.md:397 · KNOWN_GAPS_CLOSED.md:600 · TODO.md:37 · config/schemas.py:146,201 · config/system_config.yaml:47 · specs/ACIS-04-ALPHA_ARENA.md:12,79,92,181 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:71,168
-- **GAP-0008** (16) — KNOWN_GAPS.md:94 · KNOWN_GAPS_CLOSED.md:363,370 · SPEC_AUDIT.md:292,294 · TODO.md:36,36 · config/schemas.py:113,115 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,23,85,118,122,198,212
-- **GAP-0009** (25) — ACIS_SPEC.md:395,395 · KNOWN_GAPS_CLOSED.md:224,233,591 · SPEC_AUDIT.md:266,328 · TODO.md:37,41,42,42,59 · config/schemas.py:144,170 · config/system_config.yaml:32,45 · core/signals/canonical.py:64,70 · specs/ACIS-04-ALPHA_ARENA.md:12,79,86,88,167,180,181
-- **GAP-0010** (20) — ACIS_SPEC.md:298,408,408,428 · KNOWN_GAPS_CLOSED.md:553,582,630,630 · SPEC_AUDIT.md:199,225,232,255,255 · TODO.md:67 · config/account_doctrine.py:49 · specs/ACIS-00-INDEX.md:81 · specs/ACIS-07-RISK_MONITOR.md:12,173,191 · specs/ACIS-10-EVENTS_NEWS.md:56
-- **GAP-0011** (21) — ACIS_SPEC.md:132,409,428 · KNOWN_GAPS_CLOSED.md:543,544,573 · SPEC_AUDIT.md:203,226,256 · config/event_sources.yaml:28 · config/schemas.py:473 · core/data/events.py:131 · specs/ACIS-07-RISK_MONITOR.md:12,23,97,176,191 · specs/ACIS-10-EVENTS_NEWS.md:11,56,66 · tests/unit/test_events.py:186
+- **GAP-0008** (16) — KNOWN_GAPS.md:112 · KNOWN_GAPS_CLOSED.md:363,370 · SPEC_AUDIT.md:292,294 · TODO.md:36,36 · config/schemas.py:113,115 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,23,85,118,122,198,212
+- **GAP-0009** (25) — ACIS_SPEC.md:395,395 · KNOWN_GAPS_CLOSED.md:224,233,591 · SPEC_AUDIT.md:266,328 · TODO.md:37,41,42,42,60 · config/schemas.py:144,170 · config/system_config.yaml:32,45 · core/signals/canonical.py:64,70 · specs/ACIS-04-ALPHA_ARENA.md:12,79,86,88,167,180,181
+- **GAP-0010** (20) — ACIS_SPEC.md:298,408,408,428 · KNOWN_GAPS_CLOSED.md:553,582,630,630 · SPEC_AUDIT.md:199,225,232,255,255 · TODO.md:68 · config/account_doctrine.py:49 · specs/ACIS-00-INDEX.md:81 · specs/ACIS-07-RISK_MONITOR.md:12,173,191 · specs/ACIS-10-EVENTS_NEWS.md:56
+- **GAP-0011** (23) — ACIS_SPEC.md:132,409,428 · KNOWN_GAPS_CLOSED.md:543,544,573 · SPEC_AUDIT.md:203,226,256 · config/event_sources.yaml:28 · config/schemas.py:501 · core/data/events.py:131 · core/risk/guardrails.py:5,238 · specs/ACIS-07-RISK_MONITOR.md:12,23,97,176,191 · specs/ACIS-10-EVENTS_NEWS.md:11,56,66 · tests/unit/test_events.py:186
 - **GAP-0012** (9) — ACIS_SPEC.md:256,257,410,428 · KNOWN_GAPS_CLOSED.md:517,564 · SPEC_AUDIT.md:207,227,257
-- **GAP-0013** (17) — ACIS_SPEC.md:251,407,413 · KNOWN_GAPS_CLOSED.md:555 · SPEC_AUDIT.md:236,239,258 · TODO.md:66 · core/data/feeds.py:5 · core/execution/venue.py:8,136 · specs/ACIS-01-DATA_INGESTION.md:174 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:12,98,168 · tests/unit/test_import_contract.py:50,114
-- **GAP-0014** (23) — ACIS_SPEC.md:296,412 · KNOWN_GAPS_CLOSED.md:266,270,272,273,546 · SPEC_AUDIT.md:238,259,316,319 · TODO.md:39 · core/governor/capital_governor.py:6,94 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,21,106,174,189 · specs/ACIS-07-RISK_MONITOR.md:9,12,37,191
-- **GAP-0015** (15) — ACIS_SPEC.md:131,414 · KNOWN_GAPS_CLOSED.md:397,399,436,537 · SPEC_AUDIT.md:240,260,282 · config/event_sources.yaml:25 · config/schemas.py:470 · core/data/events.py:130,172 · specs/ACIS-10-EVENTS_NEWS.md:11 · tests/unit/test_events.py:125
-- **GAP-0016** (8) — ACIS_SPEC.md:133,415 · KNOWN_GAPS_CLOSED.md:528 · SPEC_AUDIT.md:241,261 · config/schemas.py:483 · specs/ACIS-10-EVENTS_NEWS.md:11 · tests/unit/test_config_schemas.py:120
+- **GAP-0013** (17) — ACIS_SPEC.md:251,407,413 · KNOWN_GAPS_CLOSED.md:555 · SPEC_AUDIT.md:236,239,258 · TODO.md:67 · core/data/feeds.py:5 · core/execution/venue.py:8,136 · specs/ACIS-01-DATA_INGESTION.md:174 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:12,98,168 · tests/unit/test_import_contract.py:50,122
+- **GAP-0014** (24) — ACIS_SPEC.md:296,412 · KNOWN_GAPS_CLOSED.md:266,270,272,273,546 · SPEC_AUDIT.md:238,259,316,319 · TODO.md:39 · core/governor/capital_governor.py:6,94 · core/risk/sink.py:1 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,21,106,174,189 · specs/ACIS-07-RISK_MONITOR.md:9,12,37,191
+- **GAP-0015** (15) — ACIS_SPEC.md:131,414 · KNOWN_GAPS_CLOSED.md:397,399,436,537 · SPEC_AUDIT.md:240,260,282 · config/event_sources.yaml:25 · config/schemas.py:498 · core/data/events.py:130,172 · specs/ACIS-10-EVENTS_NEWS.md:11 · tests/unit/test_events.py:125
+- **GAP-0016** (8) — ACIS_SPEC.md:133,415 · KNOWN_GAPS_CLOSED.md:528 · SPEC_AUDIT.md:241,261 · config/schemas.py:511 · specs/ACIS-10-EVENTS_NEWS.md:11 · tests/unit/test_config_schemas.py:120
 - **GAP-0017** (5) — ACIS_SPEC.md:297,416 · KNOWN_GAPS_CLOSED.md:519 · SPEC_AUDIT.md:243,262
 - **GAP-0018** (12) — ACIS_SPEC.md:255,417 · KNOWN_GAPS_CLOSED.md:510 · SPEC_AUDIT.md:242,263 · TODO.md:49 · core/execution/venue.py:243,258 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:12,100,168 · tests/unit/test_execution.py:357
 - **GAP-0019** (19) — ACIS_SPEC.md:213,418 · KNOWN_GAPS_CLOSED.md:501 · SPEC_AUDIT.md:245,264 · TODO.md:37 · core/signals/provenance.py:5,232 · specs/ACIS-04-ALPHA_ARENA.md:96,148 · specs/ACIS-11-STRATEGY_PROVENANCE.md:12,23,63,77,147,155,165 · tests/integration/test_agon_pipeline.py:67 · tests/unit/test_provenance.py:87
-- **GAP-0020** (2) — KNOWN_GAPS.md:85 · TODO.md:24
-- **GAP-0021** (11) — KNOWN_GAPS.md:76 · SPEC_AUDIT.md:270,274,310,324 · TODO.md:25,49 · tests/unit/test_import_contract.py:8,38,43,48
+- **GAP-0020** (2) — KNOWN_GAPS.md:103 · TODO.md:24
+- **GAP-0021** (12) — KNOWN_GAPS.md:94 · SPEC_AUDIT.md:270,274,310,324 · TODO.md:25,49 · tests/unit/test_import_contract.py:8,38,43,48,57
 - **GAP-0022** (4) — KNOWN_GAPS_CLOSED.md:492 · core/data/normaliser.py:129,231 · tests/unit/test_normaliser.py:136
-- **GAP-0023** (1) — KNOWN_GAPS.md:67
+- **GAP-0023** (1) — KNOWN_GAPS.md:85
 - **GAP-0024** (3) — KNOWN_GAPS_CLOSED.md:483 · core/data/ingestion.py:36 · tests/integration/test_ingestion_pipeline.py:69
-- **GAP-0025** (24) — KNOWN_GAPS_CLOSED.md:401,404,405,406,406,406,406,407,408,408,474 · SPEC_AUDIT.md:283,283,283,294 · TODO.md:36,36 · config/schemas.py:530,542 · core/optimizer/param_library.py:36 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,98,212 · tests/unit/test_config_schemas.py:84
-- **GAP-0026** (6) — KNOWN_GAPS_CLOSED.md:465 · SPEC_AUDIT.md:272,294 · tests/unit/test_import_contract.py:6,58,103
+- **GAP-0025** (24) — KNOWN_GAPS_CLOSED.md:401,404,405,406,406,406,406,407,408,408,474 · SPEC_AUDIT.md:283,283,283,294 · TODO.md:36,36 · config/schemas.py:594,606 · core/optimizer/param_library.py:36 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,98,212 · tests/unit/test_config_schemas.py:84
+- **GAP-0026** (6) — KNOWN_GAPS_CLOSED.md:465 · SPEC_AUDIT.md:272,294 · tests/unit/test_import_contract.py:6,66,111
 - **GAP-0027** (5) — KNOWN_GAPS_CLOSED.md:456 · core/data/normaliser.py:108 · tests/integration/test_ingestion_pipeline.py:95 · tests/unit/test_normaliser.py:86,94
 - **GAP-0028** (7) — KNOWN_GAPS_CLOSED.md:447 · SPEC_AUDIT.md:280 · TODO.md:29 · core/regime/nvma.py:271 · specs/ACIS-02-NVMA_REGIME.md:79,164 · tests/unit/test_nvma.py:154
 - **GAP-0029** (2) — KNOWN_GAPS_CLOSED.md:438 · specs/ACIS-02-NVMA_REGIME.md:164
 - **GAP-0030** (4) — KNOWN_GAPS_CLOSED.md:429 · core/data/events.py:178 · specs/ACIS-10-EVENTS_NEWS.md:65 · tests/unit/test_events.py:157
 - **GAP-0031** (6) — KNOWN_GAPS_CLOSED.md:420 · core/regime/nvma.py:221 · specs/ACIS-02-NVMA_REGIME.md:102,149,164 · tests/unit/test_nvma.py:240
 - **GAP-0032** (9) — KNOWN_GAPS_CLOSED.md:298,300,410 · SPEC_AUDIT.md:308 · core/regime/nvma.py:224 · specs/ACIS-02-NVMA_REGIME.md:102,149,164 · tests/unit/test_nvma.py:226
-- **GAP-0033** (7) — KNOWN_GAPS_CLOSED.md:401,477 · SPEC_AUDIT.md:283 · config/schemas.py:544,555 · specs/ACIS-03-QIEA_OPTIMIZER.md:98 · tests/unit/test_config_schemas.py:95
+- **GAP-0033** (7) — KNOWN_GAPS_CLOSED.md:401,477 · SPEC_AUDIT.md:283 · config/schemas.py:608,619 · specs/ACIS-03-QIEA_OPTIMIZER.md:98 · tests/unit/test_config_schemas.py:95
 - **GAP-0034** (8) — KNOWN_GAPS_CLOSED.md:392 · SPEC_AUDIT.md:282 · config/event_sources.yaml:16 · core/data/events.py:115,132 · specs/ACIS-10-EVENTS_NEWS.md:40,65 · tests/unit/test_events.py:135
-- **GAP-0035** (4) — KNOWN_GAPS.md:58 · KNOWN_GAPS_CLOSED.md:237 · TODO.md:36 · specs/ACIS-04-ALPHA_ARENA.md:88
+- **GAP-0035** (4) — KNOWN_GAPS.md:76 · KNOWN_GAPS_CLOSED.md:237 · TODO.md:36 · specs/ACIS-04-ALPHA_ARENA.md:88
 - **GAP-0036** (16) — KNOWN_GAPS_CLOSED.md:299,383 · SPEC_AUDIT.md:289,291,296,296 · TODO.md:35 · core/optimizer/param_library.py:143,168 · core/optimizer/qiea.py:216 · specs/ACIS-03-QIEA_OPTIMIZER.md:96,170,211,211 · tests/unit/test_param_library.py:178 · tests/unit/test_qiea.py:113
 - **GAP-0037** (9) — CLAUDE.md:39 · KNOWN_GAPS_CLOSED.md:374 · KNOWN_GAPS_EXTERNAL_PENDING.md:93 · SPEC_AUDIT.md:296 · _EXTERNAL_AUDIT_BRIEF.md:30 · core/optimizer/qiea.py:35 · specs/ACIS-03-QIEA_OPTIMIZER.md:80,93,211
 - **GAP-0038** (7) — KNOWN_GAPS_CLOSED.md:365 · SPEC_AUDIT.md:292,296 · core/optimizer/qiea.py:163 · specs/ACIS-03-QIEA_OPTIMIZER.md:94,142,211
 - **GAP-0039** (6) — KNOWN_GAPS_CLOSED.md:356 · SPEC_AUDIT.md:296 · core/optimizer/fitness.py:153 · specs/ACIS-03-QIEA_OPTIMIZER.md:102,211 · tests/unit/test_fitness.py:168
-- **GAP-0040** (19) — KNOWN_GAPS_CLOSED.md:253,253,255,280,282,347 · SPEC_AUDIT.md:318 · TODO.md:39,39 · core/governor/capital_governor.py:187 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,23,31,59,62,117,175,185,189
+- **GAP-0040** (19) — KNOWN_GAPS_CLOSED.md:253,253,255,280,282,347 · SPEC_AUDIT.md:318 · TODO.md:39,39 · core/governor/capital_governor.py:198 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,23,31,59,62,117,175,185,189
 - **GAP-0041** (8) — KNOWN_GAPS_CLOSED.md:338 · SPEC_AUDIT.md:300,302,312,312 · TODO.md:38 · core/signals/agon.py:331 · tests/unit/test_agon.py:279
 - **GAP-0042** (4) — KNOWN_GAPS_CLOSED.md:329 · SPEC_AUDIT.md:303,312 · core/signals/agon.py:285
 - **GAP-0043** (5) — KNOWN_GAPS_CLOSED.md:320 · SPEC_AUDIT.md:304,312 · config/schemas.py:137 · tests/unit/test_config_schemas.py:202
@@ -51,18 +51,18 @@ diffs instead of hiding in prose. Not normative — the specs and ledgers are.
 - **GAP-0045** (10) — KNOWN_GAPS_CLOSED.md:302 · SPEC_AUDIT.md:305,312,324 · core/signals/provenance.py:34,208,217,277 · tests/unit/test_provenance.py:81,185
 - **GAP-0046** (4) — KNOWN_GAPS_CLOSED.md:293 · SPEC_AUDIT.md:308,312 · specs/ACIS-04-ALPHA_ARENA.md:108
 - **GAP-0047** (16) — ACIS_SPEC.md:395 · KNOWN_GAPS_CLOSED.md:138,167,172,174,233,237,284 · SPEC_AUDIT.md:308,312 · TODO.md:41 · core/signals/agon.py:100,457 · specs/ACIS-04-ALPHA_ARENA.md:108,180 · tests/signals_fixtures.py:104
-- **GAP-0048** (7) — KNOWN_GAPS.md:49 · SPEC_AUDIT.md:306,312,312,324 · TODO.md:38 · core/signals/provenance.py:96
-- **GAP-0049** (21) — KNOWN_GAPS_CLOSED.md:118,259,262,263,264,275 · SPEC_AUDIT.md:316,318,320,320,326,348 · TODO.md:40,45 · core/governor/capital_governor.py:155,288 · specs/ACIS-05-CAPITAL_GOVERNOR.md:188,188 · tests/integration/test_paper_trading_pipeline.py:203 · tests/unit/test_governor.py:379,383
-- **GAP-0050** (15) — KNOWN_GAPS_CLOSED.md:266 · SPEC_AUDIT.md:319,326 · TODO.md:50,50 · core/governor/capital_governor.py:98 · specs/ACIS-05-CAPITAL_GOVERNOR.md:188 · specs/ACIS-07-RISK_MONITOR.md:12,23,37,115,119,175,182,191
-- **GAP-0051** (5) — KNOWN_GAPS_CLOSED.md:257 · SPEC_AUDIT.md:320,326 · core/governor/capital_governor.py:374 · specs/ACIS-05-CAPITAL_GOVERNOR.md:188
-- **GAP-0052** (21) — KNOWN_GAPS_CLOSED.md:86,91,91,93,248 · SPEC_AUDIT.md:322,326 · TODO.md:45 · core/governor/capital_governor.py:213 · core/governor/portfolio_types.py:26 · specs/ACIS-05-CAPITAL_GOVERNOR.md:188 · specs/ACIS-07-RISK_MONITOR.md:33,119,191 · tests/integration/paper_loop.py:17,89,135 · tests/integration/test_paper_trading_pipeline.py:6,343,378,380
-- **GAP-0053** (5) — KNOWN_GAPS_CLOSED.md:239 · SPEC_AUDIT.md:322,326 · core/governor/capital_governor.py:395 · specs/ACIS-05-CAPITAL_GOVERNOR.md:188
+- **GAP-0048** (7) — KNOWN_GAPS.md:67 · SPEC_AUDIT.md:306,312,312,324 · TODO.md:38 · core/signals/provenance.py:96
+- **GAP-0049** (21) — KNOWN_GAPS_CLOSED.md:118,259,262,263,264,275 · SPEC_AUDIT.md:316,318,320,320,326,348 · TODO.md:40,45 · core/governor/capital_governor.py:166,299 · specs/ACIS-05-CAPITAL_GOVERNOR.md:188,188 · tests/integration/test_paper_trading_pipeline.py:203 · tests/unit/test_governor.py:379,383
+- **GAP-0050** (30) — KNOWN_GAPS_CLOSED.md:266 · SPEC_AUDIT.md:319,326 · TODO.md:51 · config/schemas.py:242 · config/system_config.yaml:94 · core/governor/capital_governor.py:98 · core/risk/alpha_decay.py:8,65,77,85,95,112 · core/risk/monitor.py:175,293 · core/risk/sink.py:32 · core/risk/store.py:3 · specs/ACIS-05-CAPITAL_GOVERNOR.md:188 · specs/ACIS-07-RISK_MONITOR.md:12,23,37,115,119,175,182,191 · tests/unit/test_alpha_decay.py:58 · tests/unit/test_risk_monitor.py:67,119 · tests/unit/test_spec_constants.py:96
+- **GAP-0051** (5) — KNOWN_GAPS_CLOSED.md:257 · SPEC_AUDIT.md:320,326 · core/governor/capital_governor.py:385 · specs/ACIS-05-CAPITAL_GOVERNOR.md:188
+- **GAP-0052** (21) — KNOWN_GAPS_CLOSED.md:86,91,91,93,248 · SPEC_AUDIT.md:322,326 · TODO.md:45 · core/governor/capital_governor.py:224 · core/governor/portfolio_types.py:26 · specs/ACIS-05-CAPITAL_GOVERNOR.md:188 · specs/ACIS-07-RISK_MONITOR.md:33,119,191 · tests/integration/paper_loop.py:17,89,135 · tests/integration/test_paper_trading_pipeline.py:6,343,378,380
+- **GAP-0053** (5) — KNOWN_GAPS_CLOSED.md:239 · SPEC_AUDIT.md:322,326 · core/governor/capital_governor.py:406 · specs/ACIS-05-CAPITAL_GOVERNOR.md:188
 - **GAP-0054** (9) — KNOWN_GAPS_CLOSED.md:154,156,181,183,227,230 · TODO.md:41 · _EXTERNAL_AUDIT_BRIEF.md:13 · specs/ACIS-04-ALPHA_ARENA.md:180
 - **GAP-0055** (27) — KNOWN_GAPS_CLOSED.md:72,77,78,129,201,221,224 · KNOWN_GAPS_EXTERNAL_PENDING.md:52,79,94,94,172,176,180,182,203 · SPEC_AUDIT.md:328,338 · TODO.md:41,42,42,43,44,47 · _EXTERNAL_AUDIT_BRIEF.md:24 · specs/ACIS-04-ALPHA_ARENA.md:88,180
 - **GAP-0056** (15) — KNOWN_GAPS_CLOSED.md:140,143,144,145,145,147,180,181,183,212 · KNOWN_GAPS_EXTERNAL_PENDING.md:59,61 · SPEC_AUDIT.md:336 · TODO.md:41 · specs/ACIS-04-ALPHA_ARENA.md:180
 - **GAP-0057** (8) — KNOWN_GAPS_CLOSED.md:66,153,156,203 · KNOWN_GAPS_EXTERNAL_PENDING.md:68,70,90 · TODO.md:41
 - **GAP-0058** (9) — KNOWN_GAPS_CLOSED.md:194 · SPEC_AUDIT.md:333,335,341 · TODO.md:43 · _EXTERNAL_AUDIT_BRIEF.md:11,13 · core/governor/portfolio_types.py:27 · tests/unit/test_governor.py:490
-- **GAP-0059** (12) — KNOWN_GAPS_CLOSED.md:60,176 · KNOWN_GAPS_EXTERNAL_PENDING.md:61,86 · SPEC_AUDIT.md:336 · TODO.md:45 · core/governor/capital_governor.py:87,354 · core/signals/agon.py:125 · tests/integration/paper_loop.py:15,107 · tests/unit/test_governor.py:279
+- **GAP-0059** (12) — KNOWN_GAPS_CLOSED.md:60,176 · KNOWN_GAPS_EXTERNAL_PENDING.md:61,86 · SPEC_AUDIT.md:336 · TODO.md:45 · core/governor/capital_governor.py:87,365 · core/signals/agon.py:125 · tests/integration/paper_loop.py:15,107 · tests/unit/test_governor.py:279
 - **GAP-0060** (8) — KNOWN_GAPS_CLOSED.md:136,138,167 · KNOWN_GAPS_EXTERNAL_PENDING.md:89 · _EXTERNAL_AUDIT_BRIEF.md:21 · core/signals/agon.py:106 · specs/ACIS-04-ALPHA_ARENA.md:108 · tests/unit/test_agon.py:372
 - **GAP-0061** (1) — KNOWN_GAPS_CLOSED.md:158
 - **GAP-0062** (3) — KNOWN_GAPS_CLOSED.md:149 · KNOWN_GAPS_EXTERNAL_PENDING.md:70 · specs/ACIS-02-NVMA_REGIME.md:15
@@ -70,65 +70,66 @@ diffs instead of hiding in prose. Not normative — the specs and ledgers are.
 - **GAP-0064** (3) — KNOWN_GAPS_CLOSED.md:131,170,174
 - **GAP-0065** (5) — KNOWN_GAPS_CLOSED.md:122 · KNOWN_GAPS_EXTERNAL_PENDING.md:88,95 · _EXTERNAL_AUDIT_BRIEF.md:24 · core/signals/agon.py:171
 - **GAP-0066** (27) — ACIS_SPEC.md:393 · KNOWN_GAPS_CLOSED.md:48,53,104,108,109,109,110,111,185 · KNOWN_GAPS_EXTERNAL_PENDING.md:31,42,45,48,51,52,144,201 · SPEC_AUDIT.md:341,352 · TODO.md:44,47 · _EXTERNAL_AUDIT_BRIEF.md:4,13,28,34 · specs/ACIS-02-NVMA_REGIME.md:163
-- **GAP-0067** (3) — KNOWN_GAPS.md:40 · KNOWN_GAPS_CLOSED.md:37 · TODO.md:45
+- **GAP-0067** (3) — KNOWN_GAPS.md:58 · KNOWN_GAPS_CLOSED.md:37 · TODO.md:45
 - **GAP-0070** (25) — KNOWN_GAPS_CLOSED.md:43,48,53,107,111,188 · KNOWN_GAPS_EXTERNAL_PENDING.md:5,16,25,42,144,163,202,202 · TODO.md:44,45,47,47 · _EXTERNAL_AUDIT_BRIEF.md:34 · config/schemas.py:70 · config/system_config.yaml:18 · core/regime/nvma.py:112,310 · tests/integration/test_paper_trading_pipeline.py:12 · tests/unit/test_nvma.py:85
 - **GAP-0071** (17) — KNOWN_GAPS_CLOSED.md:55,60 · KNOWN_GAPS_EXTERNAL_PENDING.md:4,33,54,88,138,164 · TODO.md:44 · core/optimizer/fitness.py:22,93 · core/optimizer/param_types.py:121,129 · core/optimizer/qiea.py:81,133 · tests/optimizer_fixtures.py:57,68
 - **GAP-0072** (11) — KNOWN_GAPS_CLOSED.md:62,66 · KNOWN_GAPS_EXTERNAL_PENDING.md:63,87,96,143,143,165 · TODO.md:44 · core/signals/canonical.py:39 · specs/ACIS-04-ALPHA_ARENA.md:83
 - **GAP-0073** (9) — KNOWN_GAPS_CLOSED.md:68,72 · KNOWN_GAPS_EXTERNAL_PENDING.md:72,95,141,141,166 · TODO.md:44 · core/signals/canonical.py:102
 - **GAP-0074** (7) — KNOWN_GAPS_CLOSED.md:9,113 · SPEC_AUDIT.md:346,348,352 · TODO.md:47 · tests/unit/test_governor.py:504
-- **GAP-0075** (3) — KNOWN_GAPS.md:32 · TODO.md:50 · tests/integration/test_paper_trading_pipeline.py:113
+- **GAP-0075** (6) — KNOWN_GAPS.md:50 · TODO.md:51 · tests/integration/test_paper_trading_pipeline.py:113 · tests/integration/test_risk_pipeline.py:7,176,181
 - **GAP-0076** (6) — ACIS_SPEC.md:393 · KNOWN_GAPS_CLOSED.md:52,53,104 · KNOWN_GAPS_EXTERNAL_PENDING.md:7 · tests/integration/test_paper_trading_pipeline.py:14
 - **GAP-0077** (3) — KNOWN_GAPS_CLOSED.md:95 · core/signals/agon.py:198 · tests/unit/test_agon.py:410
-- **GAP-0078** (2) — KNOWN_GAPS.md:23 · tests/integration/paper_loop.py:160
+- **GAP-0078** (2) — KNOWN_GAPS.md:41 · tests/integration/paper_loop.py:160
 - **GAP-0079** (5) — KNOWN_GAPS_CLOSED.md:86 · core/execution/fragmenter.py:116 · core/execution/orchestrator.py:129 · tests/integration/paper_loop.py:134 · tests/integration/test_paper_trading_pipeline.py:377
 - **GAP-0090** (9) — KNOWN_GAPS_CLOSED.md:44,74 · KNOWN_GAPS_EXTERNAL_PENDING.md:113,129,142,172,203,206 · TODO.md:47
 - **GAP-0091** (9) — KNOWN_GAPS_CLOSED.md:80,84 · KNOWN_GAPS_EXTERNAL_PENDING.md:151,184,201,206 · TODO.md:47 · core/optimizer/fitness.py:204 · specs/ACIS-03-QIEA_OPTIMIZER.md:105
-- **C1** (73) — ACIS_SPEC.md:6,140,140,174,421,447 · KNOWN_GAPS_CLOSED.md:219,405,406,407,408,474,477,478,479,479,479,479,480,481,506 · SPEC_AUDIT.md:61,63,144,194,195,245,283,283,294,338 · TODO.md:29,36,62 · _SPEC_AUTHORING_GUIDE.md:3,13,54 · _SPEC_REVIEW_PASS.md:28,44,45 · config/schemas.py:135,237,530,542,555 · config/system_config.yaml:5 · core/data/asset_classes.py:5 · core/data/bars.py:48 · core/optimizer/param_library.py:36 · specs/ACIS-00-INDEX.md:50,66,68,81 · specs/ACIS-01-DATA_INGESTION.md:12,34,35,97,97,171 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,12,85,98,98,98,191,212,213 · tests/integration/test_paper_trading_pipeline.py:36 · tests/unit/test_asset_classes.py:1 · tests/unit/test_config_schemas.py:84,95 · tests/unit/test_param_library.py:44
-- **C2** (31) — ACIS_SPEC.md:176,213,418,448 · KNOWN_GAPS.md:116,119 · KNOWN_GAPS_CLOSED.md:219,504,506,507,508 · SPEC_AUDIT.md:38,40,70,72,245,264 · TODO.md:37 · _SPEC_REVIEW_PASS.md:46 · core/optimizer/param_library.py:178 · core/signals/agon.py:87 · specs/ACIS-00-INDEX.md:68 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,131,192,213 · specs/ACIS-11-STRATEGY_PROVENANCE.md:63,77,165 · tests/integration/paper_loop.py:12 · tests/unit/test_agon.py:349
+- **GAP-0092** (2) — KNOWN_GAPS.md:23 · TODO.md:51
+- **C1** (73) — ACIS_SPEC.md:6,140,140,174,421,447 · KNOWN_GAPS_CLOSED.md:219,405,406,407,408,474,477,478,479,479,479,479,480,481,506 · SPEC_AUDIT.md:61,63,144,194,195,245,283,283,294,338 · TODO.md:29,36,63 · _SPEC_AUTHORING_GUIDE.md:3,13,54 · _SPEC_REVIEW_PASS.md:28,44,45 · config/schemas.py:135,264,594,606,619 · config/system_config.yaml:5 · core/data/asset_classes.py:5 · core/data/bars.py:48 · core/optimizer/param_library.py:36 · specs/ACIS-00-INDEX.md:50,66,68,81 · specs/ACIS-01-DATA_INGESTION.md:12,34,35,97,97,171 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,12,85,98,98,98,191,212,213 · tests/integration/test_paper_trading_pipeline.py:36 · tests/unit/test_asset_classes.py:1 · tests/unit/test_config_schemas.py:84,95 · tests/unit/test_param_library.py:44
+- **C2** (31) — ACIS_SPEC.md:176,213,418,448 · KNOWN_GAPS.md:134,137 · KNOWN_GAPS_CLOSED.md:219,504,506,507,508 · SPEC_AUDIT.md:38,40,70,72,245,264 · TODO.md:37 · _SPEC_REVIEW_PASS.md:46 · core/optimizer/param_library.py:178 · core/signals/agon.py:87 · specs/ACIS-00-INDEX.md:68 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,131,192,213 · specs/ACIS-11-STRATEGY_PROVENANCE.md:63,77,165 · tests/integration/paper_loop.py:12 · tests/unit/test_agon.py:349
 - **C3** (19) — ACIS_SPEC.md:231,449 · KNOWN_GAPS_CLOSED.md:426 · SPEC_AUDIT.md:47,53,66,68 · TODO.md:28 · _SPEC_REVIEW_PASS.md:47 · core/regime/regime_types.py:57 · core/regime/stability.py:1 · specs/ACIS-00-INDEX.md:67 · specs/ACIS-02-NVMA_REGIME.md:12,55,85,147 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,108,171
-- **C4** (28) — ACIS_SPEC.md:196,450 · KNOWN_GAPS_CLOSED.md:314,316,324,326,335 · SPEC_AUDIT.md:43,45,85,87,304 · TODO.md:37 · _SPEC_REVIEW_PASS.md:48 · config/schemas.py:137 · core/signals/agon.py:246,265 · specs/ACIS-00-INDEX.md:69 · specs/ACIS-04-ALPHA_ARENA.md:12,25,29,72,73,94,158,182 · tests/unit/test_agon.py:149,303
-- **C5** (19) — ACIS_SPEC.md:265,451 · SPEC_AUDIT.md:93,95 · TODO.md:50 · _SPEC_REVIEW_PASS.md:49 · specs/ACIS-00-INDEX.md:72 · specs/ACIS-07-RISK_MONITOR.md:12,27,54,73,79,100,103,108,115,160,168,192
+- **C4** (29) — ACIS_SPEC.md:196,450 · KNOWN_GAPS_CLOSED.md:314,316,324,326,335 · SPEC_AUDIT.md:43,45,85,87,304 · TODO.md:37,50 · _SPEC_REVIEW_PASS.md:48 · config/schemas.py:137 · core/signals/agon.py:246,265 · specs/ACIS-00-INDEX.md:69 · specs/ACIS-04-ALPHA_ARENA.md:12,25,29,72,73,94,158,182 · tests/unit/test_agon.py:149,303
+- **C5** (28) — ACIS_SPEC.md:265,451 · SPEC_AUDIT.md:93,95 · TODO.md:51 · _SPEC_REVIEW_PASS.md:49 · config/schemas.py:241 · config/system_config.yaml:93 · core/risk/alpha_decay.py:1,5 · core/risk/risk_types.py:128,149 · specs/ACIS-00-INDEX.md:72 · specs/ACIS-07-RISK_MONITOR.md:12,27,54,73,79,100,103,108,115,160,168,192 · tests/unit/test_alpha_decay.py:1,24 · tests/unit/test_spec_constants.py:102
 - **C6** (13) — ACIS_SPEC.md:184,229,233,452 · KNOWN_GAPS_CLOSED.md:614 · SPEC_AUDIT.md:97,99,160 · _SPEC_REVIEW_PASS.md:50 · specs/ACIS-00-INDEX.md:70 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,166,190
-- **C7** (20) — ACIS_SPEC.md:6,289,453 · SPEC_AUDIT.md:36,89,91,144 · TODO.md:62 · _SPEC_AUTHORING_GUIDE.md:3 · _SPEC_REVIEW_PASS.md:28,44,51 · config/instruments.yaml:3,83 · config/schemas.py:372,525 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,68,168 · tests/unit/test_config_schemas.py:62
-- **C8** (43) — ACIS_SPEC.md:182,184,349,399,431 · KNOWN_GAPS_CLOSED.md:360,596,616 · SPEC_AUDIT.md:154,156,289,294 · TODO.md:35,36,36,64 · config/instruments.yaml:36 · config/schemas.py:301,332 · core/optimizer/costs.py:1,1 · core/optimizer/fitness.py:1,5 · core/optimizer/param_types.py:93 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,23,25,39,83,84,100,102,114,196,202,212 · specs/ACIS-04-ALPHA_ARENA.md:86 · tests/optimizer_fixtures.py:4 · tests/unit/test_config_schemas.py:133,150 · tests/unit/test_fitness.py:1,32,35
-- **C9** (74) — ACIS_SPEC.md:184,207,213,432 · KNOWN_GAPS.md:97 · KNOWN_GAPS_CLOSED.md:361,362,365,369,370,370,371,371,371,372,594,609,613,614,616 · SPEC_AUDIT.md:139,158,160,289,292,292,292,292,292,292,292,294,296 · TODO.md:35,35,36,36,64 · config/schemas.py:103,105,117 · core/optimizer/fitness.py:1,1,7,164 · core/optimizer/qiea.py:163 · core/signals/canonical.py:67 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,23,27,39,85,94,110,112,116,121,183,197,198,202,211,212,212 · specs/ACIS-04-ALPHA_ARENA.md:86,88,181 · specs/ACIS-11-STRATEGY_PROVENANCE.md:12,74,74 · tests/unit/test_config_schemas.py:142 · tests/unit/test_fitness.py:1,76,96
-- **C10** (9) — ACIS_SPEC.md:421 · SPEC_AUDIT.md:193,195,224 · TODO.md:65 · specs/ACIS-00-INDEX.md:81 · specs/ACIS-01-DATA_INGESTION.md:12,97,175
+- **C7** (21) — ACIS_SPEC.md:6,289,453 · SPEC_AUDIT.md:36,89,91,144 · TODO.md:63 · _SPEC_AUTHORING_GUIDE.md:3 · _SPEC_REVIEW_PASS.md:28,44,51 · config/instruments.yaml:3,57,96 · config/schemas.py:400,583 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,68,168 · tests/unit/test_config_schemas.py:62
+- **C8** (43) — ACIS_SPEC.md:182,184,349,399,431 · KNOWN_GAPS_CLOSED.md:360,596,616 · SPEC_AUDIT.md:154,156,289,294 · TODO.md:35,36,36,65 · config/instruments.yaml:36 · config/schemas.py:329,360 · core/optimizer/costs.py:1,1 · core/optimizer/fitness.py:1,5 · core/optimizer/param_types.py:93 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,23,25,39,83,84,100,102,114,196,202,212 · specs/ACIS-04-ALPHA_ARENA.md:86 · tests/optimizer_fixtures.py:4 · tests/unit/test_config_schemas.py:133,150 · tests/unit/test_fitness.py:1,32,35
+- **C9** (74) — ACIS_SPEC.md:184,207,213,432 · KNOWN_GAPS.md:115 · KNOWN_GAPS_CLOSED.md:361,362,365,369,370,370,371,371,371,372,594,609,613,614,616 · SPEC_AUDIT.md:139,158,160,289,292,292,292,292,292,292,292,294,296 · TODO.md:35,35,36,36,65 · config/schemas.py:103,105,117 · core/optimizer/fitness.py:1,1,7,164 · core/optimizer/qiea.py:163 · core/signals/canonical.py:67 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,23,27,39,85,94,110,112,116,121,183,197,198,202,211,212,212 · specs/ACIS-04-ALPHA_ARENA.md:86,88,181 · specs/ACIS-11-STRATEGY_PROVENANCE.md:12,74,74 · tests/unit/test_config_schemas.py:142 · tests/unit/test_fitness.py:1,76,96
+- **C10** (9) — ACIS_SPEC.md:421 · SPEC_AUDIT.md:193,195,224 · TODO.md:66 · specs/ACIS-00-INDEX.md:81 · specs/ACIS-01-DATA_INGESTION.md:12,97,175
 - **C11** (10) — ACIS_SPEC.md:422 · KNOWN_GAPS_CLOSED.md:523,550 · SPEC_AUDIT.md:197,199,225 · specs/ACIS-00-INDEX.md:81 · specs/ACIS-07-RISK_MONITOR.md:12,191 · specs/ACIS-10-EVENTS_NEWS.md:11
 - **C12** (8) — ACIS_SPEC.md:423 · KNOWN_GAPS_CLOSED.md:532,541 · SPEC_AUDIT.md:201,203,226 · specs/ACIS-00-INDEX.md:81 · specs/ACIS-10-EVENTS_NEWS.md:11
 - **C13** (6) — ACIS_SPEC.md:424 · KNOWN_GAPS_CLOSED.md:559 · SPEC_AUDIT.md:205,207,227 · specs/ACIS-01-DATA_INGESTION.md:12
 - **C14** (7) — ACIS_SPEC.md:425 · KNOWN_GAPS_CLOSED.md:505 · SPEC_AUDIT.md:209,211,228 · specs/ACIS-00-INDEX.md:81 · specs/ACIS-11-STRATEGY_PROVENANCE.md:12
-- **C15** (24) — ACIS_SPEC.md:426 · KNOWN_GAPS.md:28,36 · KNOWN_GAPS_CLOSED.md:95,100,116 · SPEC_AUDIT.md:213,215,229,352 · TODO.md:45,65 · core/governor/capital_governor.py:76 · core/regime/nvma.py:367 · core/signals/agon.py:114,200 · specs/ACIS-00-INDEX.md:81 · tests/integration/paper_loop.py:19,148,159 · tests/integration/test_paper_trading_pipeline.py:6,124 · tests/unit/test_agon.py:414 · tests/unit/test_governor.py:515
-- **C16** (46) — ACIS_SPEC.md:233,399 · KNOWN_GAPS_CLOSED.md:176,179,181,181,182,224,233 · KNOWN_GAPS_EXTERNAL_PENDING.md:77,86,97,97,136,150,189,201 · SPEC_AUDIT.md:324,336,336,341 · TODO.md:30,31,39,43 · _EXTERNAL_AUDIT_BRIEF.md:13,17,24,30 · config/instruments.yaml:39 · config/schemas.py:324,337 · core/governor/capital_governor.py:354 · core/governor/factors.py:1,44 · core/signals/agon.py:125 · core/signals/canonical.py:97 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,23,39,69,80,99,173,189 · tests/unit/test_import_contract.py:42
+- **C15** (24) — ACIS_SPEC.md:426 · KNOWN_GAPS.md:46,54 · KNOWN_GAPS_CLOSED.md:95,100,116 · SPEC_AUDIT.md:213,215,229,352 · TODO.md:45,66 · core/governor/capital_governor.py:76 · core/regime/nvma.py:367 · core/signals/agon.py:114,200 · specs/ACIS-00-INDEX.md:81 · tests/integration/paper_loop.py:19,148,159 · tests/integration/test_paper_trading_pipeline.py:6,124 · tests/unit/test_agon.py:414 · tests/unit/test_governor.py:515
+- **C16** (46) — ACIS_SPEC.md:233,399 · KNOWN_GAPS_CLOSED.md:176,179,181,181,182,224,233 · KNOWN_GAPS_EXTERNAL_PENDING.md:77,86,97,97,136,150,189,201 · SPEC_AUDIT.md:324,336,336,341 · TODO.md:30,31,39,43 · _EXTERNAL_AUDIT_BRIEF.md:13,17,24,30 · config/instruments.yaml:39 · config/schemas.py:352,365 · core/governor/capital_governor.py:365 · core/governor/factors.py:1,44 · core/signals/agon.py:125 · core/signals/canonical.py:97 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,23,39,69,80,99,173,189 · tests/unit/test_import_contract.py:42
 - **F2** (1) — SPEC_AUDIT.md:33
 - **F3** (8) — SPEC_AUDIT.md:38,71 · _SPEC_REVIEW_PASS.md:46 · specs/ACIS-00-INDEX.md:68 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,131,193,213
 - **F4** (1) — SPEC_AUDIT.md:43
 - **F5** (5) — SPEC_AUDIT.md:47,67,132 · _SPEC_REVIEW_PASS.md:41 · specs/ACIS-00-INDEX.md:70
 - **F6** (6) — SPEC_AUDIT.md:61 · specs/ACIS-00-INDEX.md:66,68 · specs/ACIS-01-DATA_INGESTION.md:171 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,191
 - **F7** (10) — SPEC_AUDIT.md:66,132 · _SPEC_REVIEW_PASS.md:60 · specs/ACIS-00-INDEX.md:67,70 · specs/ACIS-02-NVMA_REGIME.md:12,147 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,108,171
-- **F8** (11) — KNOWN_GAPS.md:116,119 · SPEC_AUDIT.md:41,41,70,133 · _SPEC_REVIEW_PASS.md:54 · specs/ACIS-00-INDEX.md:68 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,192,213
+- **F8** (11) — KNOWN_GAPS.md:134,137 · SPEC_AUDIT.md:41,41,70,133 · _SPEC_REVIEW_PASS.md:54 · specs/ACIS-00-INDEX.md:68 · specs/ACIS-03-QIEA_OPTIMIZER.md:12,192,213
 - **F9** (19) — ACIS_SPEC.md:298,408,422 · KNOWN_GAPS_CLOSED.md:588,589,631,634 · SPEC_AUDIT.md:55,75,134,199,255 · _SPEC_REVIEW_PASS.md:54 · specs/ACIS-00-INDEX.md:72 · specs/ACIS-07-RISK_MONITOR.md:12,173,173,191,192
-- **F10** (19) — KNOWN_GAPS.md:107,110 · SPEC_AUDIT.md:54,80,135 · TODO.md:49 · _SPEC_REVIEW_PASS.md:54 · config/schemas.py:203 · core/execution/orchestrator.py:7 · specs/ACIS-00-INDEX.md:71 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:12,69,92,92,145,152,169 · tests/unit/test_execution.py:3,316
+- **F10** (20) — KNOWN_GAPS.md:125,128 · SPEC_AUDIT.md:54,80,135 · TODO.md:49 · _SPEC_REVIEW_PASS.md:54 · config/schemas.py:203 · core/execution/orchestrator.py:7 · core/risk/guardrails.py:244 · specs/ACIS-00-INDEX.md:71 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:12,69,92,92,145,152,169 · tests/unit/test_execution.py:3,316
 - **F11** (6) — SPEC_AUDIT.md:85 · specs/ACIS-00-INDEX.md:69 · specs/ACIS-04-ALPHA_ARENA.md:12,99,158,182
 - **F12** (2) — SPEC_AUDIT.md:36,89
-- **F13** (6) — SPEC_AUDIT.md:93 · specs/ACIS-00-INDEX.md:72 · specs/ACIS-07-RISK_MONITOR.md:12,103,168,192
+- **F13** (12) — SPEC_AUDIT.md:93 · TODO.md:51 · core/risk/alpha_decay.py:1,6,31 · specs/ACIS-00-INDEX.md:72 · specs/ACIS-07-RISK_MONITOR.md:12,103,168,192 · tests/unit/test_alpha_decay.py:1,42
 - **F14** (9) — KNOWN_GAPS_CLOSED.md:622,625 · SPEC_AUDIT.md:97,136,266 · specs/ACIS-00-INDEX.md:70 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,166,190
 - **F15** (11) — KNOWN_GAPS_CLOSED.md:622,625 · SPEC_AUDIT.md:101,136,266 · core/governor/marginal_alpha.py:5 · specs/ACIS-00-INDEX.md:70 · specs/ACIS-05-CAPITAL_GOVERNOR.md:12,97,167,190
 - **F16** (13) — SPEC_AUDIT.md:105,137 · TODO.md:24 · _SPEC_REVIEW_PASS.md:57 · core/data/normaliser.py:27,98,100 · specs/ACIS-00-INDEX.md:49,66 · specs/ACIS-01-DATA_INGESTION.md:12,67,70,169
-- **F17** (29) — KNOWN_GAPS_CLOSED.md:362 · SPEC_AUDIT.md:109 · TODO.md:24,39,49 · _SPEC_REVIEW_PASS.md:62 · core/execution/venue.py:39,61,64 · core/governor/marginal_alpha.py:48 · core/governor/portfolio_types.py:3,69,99 · core/optimizer/fitness.py:79 · specs/ACIS-00-INDEX.md:66 · specs/ACIS-01-DATA_INGESTION.md:12,119,170 · specs/ACIS-03-QIEA_OPTIMIZER.md:43,43,212 · specs/ACIS-05-CAPITAL_GOVERNOR.md:33,50,172,189 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:62 · specs/ACIS-07-RISK_MONITOR.md:73 · specs/ACIS-09-BACKTEST_VALIDATION.md:128 · tests/integration/test_adapter_conformance.py:107
-- **F18** (17) — KNOWN_GAPS_CLOSED.md:452 · SPEC_AUDIT.md:112,138,266 · TODO.md:62 · _SPEC_REVIEW_PASS.md:32 · core/data/normaliser.py:174 · core/regime/nvma.py:248 · specs/ACIS-00-INDEX.md:67 · specs/ACIS-01-DATA_INGESTION.md:12,76,172 · specs/ACIS-02-NVMA_REGIME.md:12,36,38,83,146
-- **F19** (7) — ACIS_SPEC.md:430,431 · KNOWN_GAPS_CLOSED.md:596 · SPEC_AUDIT.md:148,154,163 · TODO.md:64
+- **F17** (36) — KNOWN_GAPS_CLOSED.md:362 · SPEC_AUDIT.md:109 · TODO.md:24,39,49,51 · _SPEC_REVIEW_PASS.md:62 · core/execution/venue.py:39,61,64 · core/governor/marginal_alpha.py:48 · core/governor/portfolio_types.py:3,69,99 · core/optimizer/fitness.py:79 · core/risk/monitor.py:4 · core/risk/risk_types.py:4,29,51,141 · specs/ACIS-00-INDEX.md:66 · specs/ACIS-01-DATA_INGESTION.md:12,119,170 · specs/ACIS-03-QIEA_OPTIMIZER.md:43,43,212 · specs/ACIS-05-CAPITAL_GOVERNOR.md:33,50,172,189 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:62 · specs/ACIS-07-RISK_MONITOR.md:73 · specs/ACIS-09-BACKTEST_VALIDATION.md:128 · tests/integration/test_adapter_conformance.py:107 · tests/unit/test_risk_monitor.py:16
+- **F18** (17) — KNOWN_GAPS_CLOSED.md:452 · SPEC_AUDIT.md:112,138,266 · TODO.md:63 · _SPEC_REVIEW_PASS.md:32 · core/data/normaliser.py:174 · core/regime/nvma.py:248 · specs/ACIS-00-INDEX.md:67 · specs/ACIS-01-DATA_INGESTION.md:12,76,172 · specs/ACIS-02-NVMA_REGIME.md:12,36,38,83,146
+- **F19** (7) — ACIS_SPEC.md:430,431 · KNOWN_GAPS_CLOSED.md:596 · SPEC_AUDIT.md:148,154,163 · TODO.md:65
 - **F20** (7) — ACIS_SPEC.md:432 · KNOWN_GAPS_CLOSED.md:613,616 · SPEC_AUDIT.md:139,158,183,266
 - **F21** (7) — ACIS_SPEC.md:437 · KNOWN_GAPS_CLOSED.md:595,598 · SPEC_AUDIT.md:140,162,183,266
 - **F22** (7) — ACIS_SPEC.md:436 · KNOWN_GAPS_CLOSED.md:604,607 · SPEC_AUDIT.md:141,166,183,266
-- **F23** (7) — ACIS_SPEC.md:437 · KNOWN_GAPS.md:98,101 · SPEC_AUDIT.md:142,170,183,266
-- **F24** (5) — ACIS_SPEC.md:430,434 · SPEC_AUDIT.md:148,174 · TODO.md:64
-- **F25** (6) — ACIS_SPEC.md:420,421 · SPEC_AUDIT.md:187,193,224 · TODO.md:65
+- **F23** (7) — ACIS_SPEC.md:437 · KNOWN_GAPS.md:116,119 · SPEC_AUDIT.md:142,170,183,266
+- **F24** (5) — ACIS_SPEC.md:430,434 · SPEC_AUDIT.md:148,174 · TODO.md:65
+- **F25** (6) — ACIS_SPEC.md:420,421 · SPEC_AUDIT.md:187,193,224 · TODO.md:66
 - **F26** (11) — ACIS_SPEC.md:422 · KNOWN_GAPS_CLOSED.md:523,526,550,553,586,589 · SPEC_AUDIT.md:197,225,255 · specs/ACIS-00-INDEX.md:81
 - **F27** (11) — ACIS_SPEC.md:423 · KNOWN_GAPS_CLOSED.md:532,535,541,544,577,580 · SPEC_AUDIT.md:201,226,256 · specs/ACIS-00-INDEX.md:81
 - **F28** (10) — ACIS_SPEC.md:424 · KNOWN_GAPS_CLOSED.md:514,517,559,562,568,571 · SPEC_AUDIT.md:205,227,257
 - **F29** (10) — ACIS_SPEC.md:425 · KNOWN_GAPS_CLOSED.md:505,508 · SPEC_AUDIT.md:209,228 · core/signals/provenance.py:7,335 · specs/ACIS-11-STRATEGY_PROVENANCE.md:12,67,165
 - **F30** (3) — ACIS_SPEC.md:426 · SPEC_AUDIT.md:213,229
-- **F31** (7) — ACIS_SPEC.md:420,427 · SPEC_AUDIT.md:187,217,230 · TODO.md:65 · specs/ACIS-00-INDEX.md:81
+- **F31** (7) — ACIS_SPEC.md:420,427 · SPEC_AUDIT.md:187,217,230 · TODO.md:66 · specs/ACIS-00-INDEX.md:81
 - **C-ALP-1** (6) — KNOWN_GAPS_CLOSED.md:315,318 · SPEC_AUDIT.md:310 · specs/ACIS-04-ALPHA_ARENA.md:158,171 · tests/unit/test_agon.py:149
 - **C-ALP-10** (1) — specs/ACIS-04-ALPHA_ARENA.md:167
 - **C-ALP-2** (11) — KNOWN_GAPS_CLOSED.md:329,332,333,334,335,335,336 · SPEC_AUDIT.md:303,303 · core/signals/agon.py:286 · specs/ACIS-04-ALPHA_ARENA.md:159
@@ -150,7 +151,7 @@ diffs instead of hiding in prose. Not normative — the specs and ledgers are.
 - **C-DATA-3** (2) — specs/ACIS-01-DATA_INGESTION.md:171 · tests/unit/test_asset_classes.py:1
 - **C-DATA-4** (4) — core/data/normaliser.py:174 · specs/ACIS-01-DATA_INGESTION.md:172 · tests/integration/paper_loop.py:10,208
 - **C-DATA-5** (1) — specs/ACIS-01-DATA_INGESTION.md:173
-- **C-DATA-6** (6) — core/data/feeds.py:5 · specs/ACIS-01-DATA_INGESTION.md:23,174,203 · tests/unit/test_import_contract.py:19,114
+- **C-DATA-6** (6) — core/data/feeds.py:5 · specs/ACIS-01-DATA_INGESTION.md:23,174,203 · tests/unit/test_import_contract.py:19,122
 - **C-DATA-7** (2) — core/data/asset_classes.py:1 · specs/ACIS-01-DATA_INGESTION.md:175
 - **C-EVT-1** (5) — core/data/events.py:37,91 · specs/ACIS-10-EVENTS_NEWS.md:36,56,66
 - **C-EVT-2** (3) — core/data/events.py:235 · specs/ACIS-10-EVENTS_NEWS.md:37,56
@@ -160,7 +161,7 @@ diffs instead of hiding in prose. Not normative — the specs and ledgers are.
 - **C-EVT-6** (4) — KNOWN_GAPS_CLOSED.md:397,399 · core/data/events.py:144 · specs/ACIS-10-EVENTS_NEWS.md:56
 - **C-EXE-1** (6) — KNOWN_GAPS_CLOSED.md:89 · TODO.md:49 · core/execution/fragmenter.py:3,118 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:150 · tests/unit/test_execution.py:72
 - **C-EXE-2** (2) — specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:70,151
-- **C-EXE-3** (2) — KNOWN_GAPS.md:110 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:152
+- **C-EXE-3** (2) — KNOWN_GAPS.md:128 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:152
 - **C-EXE-4** (2) — core/execution/venue.py:164 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:153
 - **C-EXE-5** (1) — specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:154
 - **C-EXE-6** (6) — KNOWN_GAPS_CLOSED.md:89 · core/execution/orchestrator.py:4,131 · specs/ACIS-06-EXECUTION_ORCHESTRATOR.md:155 · tests/integration/test_execution_pipeline.py:73 · tests/unit/test_execution.py:176
@@ -182,8 +183,8 @@ diffs instead of hiding in prose. Not normative — the specs and ledgers are.
 - **C-MCP-6** (1) — specs/ACIS-08-MONITORING_MCP.md:126
 - **C-PRV-1** (7) — core/signals/agon.py:76 · core/signals/provenance.py:125 · specs/ACIS-04-ALPHA_ARENA.md:96,147 · specs/ACIS-11-STRATEGY_PROVENANCE.md:146,157 · tests/unit/test_provenance.py:29
 - **C-PRV-2** (3) — KNOWN_GAPS_CLOSED.md:309 · specs/ACIS-11-STRATEGY_PROVENANCE.md:147 · tests/unit/test_provenance.py:87
-- **C-PRV-3** (11) — KNOWN_GAPS.md:53,54,54,54,55,56 · SPEC_AUDIT.md:306,306 · core/signals/provenance.py:9 · specs/ACIS-11-STRATEGY_PROVENANCE.md:148 · tests/unit/test_provenance.py:63
-- **C-PRV-4** (8) — KNOWN_GAPS.md:53,56 · SPEC_AUDIT.md:306 · core/signals/provenance.py:98,100,153 · specs/ACIS-11-STRATEGY_PROVENANCE.md:149 · tests/unit/test_provenance.py:140
+- **C-PRV-3** (11) — KNOWN_GAPS.md:71,72,72,72,73,74 · SPEC_AUDIT.md:306,306 · core/signals/provenance.py:9 · specs/ACIS-11-STRATEGY_PROVENANCE.md:148 · tests/unit/test_provenance.py:63
+- **C-PRV-4** (8) — KNOWN_GAPS.md:71,74 · SPEC_AUDIT.md:306 · core/signals/provenance.py:98,100,153 · specs/ACIS-11-STRATEGY_PROVENANCE.md:149 · tests/unit/test_provenance.py:140
 - **C-PRV-5** (3) — core/signals/provenance.py:300 · specs/ACIS-11-STRATEGY_PROVENANCE.md:150 · tests/unit/test_provenance.py:122
 - **C-PRV-6** (3) — core/signals/provenance.py:335 · specs/ACIS-11-STRATEGY_PROVENANCE.md:151 · tests/unit/test_provenance.py:157
 - **C-QIEA-1** (8) — TODO.md:36 · core/optimizer/param_library.py:5,128 · specs/ACIS-03-QIEA_OPTIMIZER.md:191,213 · tests/unit/test_param_library.py:1,20,58
@@ -200,21 +201,21 @@ diffs instead of hiding in prose. Not normative — the specs and ledgers are.
 - **C-REG-4** (4) — _SPEC_REVIEW_PASS.md:61 · core/regime/nvma.py:6,283 · specs/ACIS-02-NVMA_REGIME.md:148
 - **C-REG-5** (11) — KNOWN_GAPS_CLOSED.md:410,414,415,416,417,418 · TODO.md:29 · core/regime/nvma.py:5 · specs/ACIS-02-NVMA_REGIME.md:149,164 · tests/unit/test_nvma.py:226
 - **C-REG-6** (1) — specs/ACIS-02-NVMA_REGIME.md:150
-- **C-RSK-1** (1) — specs/ACIS-07-RISK_MONITOR.md:168
-- **C-RSK-10** (1) — specs/ACIS-07-RISK_MONITOR.md:176
-- **C-RSK-11** (1) — specs/ACIS-07-RISK_MONITOR.md:177
-- **C-RSK-2** (2) — _SPEC_REVIEW_PASS.md:61 · specs/ACIS-07-RISK_MONITOR.md:169
-- **C-RSK-3** (1) — specs/ACIS-07-RISK_MONITOR.md:170
-- **C-RSK-4** (1) — specs/ACIS-07-RISK_MONITOR.md:171
-- **C-RSK-5** (1) — specs/ACIS-07-RISK_MONITOR.md:172
-- **C-RSK-6** (4) — KNOWN_GAPS.md:110 · KNOWN_GAPS_CLOSED.md:634 · specs/ACIS-07-RISK_MONITOR.md:173,191
-- **C-RSK-7** (1) — specs/ACIS-07-RISK_MONITOR.md:178
-- **C-RSK-8** (3) — TODO.md:50 · specs/ACIS-07-RISK_MONITOR.md:174,191
-- **C-RSK-9** (1) — specs/ACIS-07-RISK_MONITOR.md:175
-- **C-SWN-1** (4) — TODO.md:56 · specs/ACIS-12-SCENARIO_BOOK.md:42,63,78
-- **C-SWN-2** (2) — specs/ACIS-12-SCENARIO_BOOK.md:43,64
+- **C-RSK-1** (3) — specs/ACIS-07-RISK_MONITOR.md:168 · tests/unit/test_alpha_decay.py:1,24
+- **C-RSK-10** (2) — specs/ACIS-07-RISK_MONITOR.md:176 · tests/unit/test_guardrails.py:102
+- **C-RSK-11** (2) — specs/ACIS-07-RISK_MONITOR.md:177 · tests/unit/test_risk_monitor.py:52
+- **C-RSK-2** (4) — _SPEC_REVIEW_PASS.md:61 · core/risk/alpha_decay.py:31 · specs/ACIS-07-RISK_MONITOR.md:169 · tests/unit/test_alpha_decay.py:42
+- **C-RSK-3** (4) — TODO.md:51 · specs/ACIS-07-RISK_MONITOR.md:170 · tests/unit/test_guardrails.py:1,62
+- **C-RSK-4** (5) — core/risk/guardrails.py:5,103,147 · specs/ACIS-07-RISK_MONITOR.md:171 · tests/unit/test_guardrails.py:82
+- **C-RSK-5** (5) — TODO.md:51 · core/risk/monitor.py:278 · specs/ACIS-07-RISK_MONITOR.md:172 · tests/unit/test_risk_monitor.py:2,94
+- **C-RSK-6** (5) — KNOWN_GAPS.md:128 · KNOWN_GAPS_CLOSED.md:634 · specs/ACIS-07-RISK_MONITOR.md:173,191 · tests/unit/test_guardrails.py:24
+- **C-RSK-7** (2) — specs/ACIS-07-RISK_MONITOR.md:178 · tests/unit/test_risk_monitor.py:131
+- **C-RSK-8** (4) — core/risk/guardrails.py:54 · specs/ACIS-07-RISK_MONITOR.md:174,191 · tests/unit/test_guardrails.py:149
+- **C-RSK-9** (5) — core/risk/monitor.py:175 · specs/ACIS-07-RISK_MONITOR.md:175 · tests/unit/test_alpha_decay.py:58 · tests/unit/test_guardrails.py:45 · tests/unit/test_risk_monitor.py:67
+- **C-SWN-1** (8) — TODO.md:51,57 · config/scenario_book.yaml:8 · core/risk/scenario_replay.py:4,54 · specs/ACIS-12-SCENARIO_BOOK.md:42,63,78
+- **C-SWN-2** (3) — specs/ACIS-12-SCENARIO_BOOK.md:43,64 · tests/backtest/test_scenario_replay.py:74
 - **C-SWN-3** (2) — specs/ACIS-12-SCENARIO_BOOK.md:44,65
-- **C-SWN-4** (2) — specs/ACIS-12-SCENARIO_BOOK.md:45,66
-- **C-SWN-5** (2) — specs/ACIS-12-SCENARIO_BOOK.md:46,67
-- **C-SWN-6** (2) — specs/ACIS-12-SCENARIO_BOOK.md:48,68
-- **C-SWN-7** (1) — specs/ACIS-12-SCENARIO_BOOK.md:69
+- **C-SWN-4** (7) — config/scenario_book.yaml:32 · config/schemas.py:548 · core/risk/scenario_replay.py:61,77 · specs/ACIS-12-SCENARIO_BOOK.md:45,66 · tests/backtest/test_scenario_replay.py:86
+- **C-SWN-5** (5) — config/scenario_book.yaml:12 · config/schemas.py:552 · specs/ACIS-12-SCENARIO_BOOK.md:46,67 · tests/backtest/test_scenario_replay.py:101
+- **C-SWN-6** (4) — specs/ACIS-12-SCENARIO_BOOK.md:48,68 · tests/unit/test_watchdog.py:1,54
+- **C-SWN-7** (2) — core/risk/scenario_replay.py:7 · specs/ACIS-12-SCENARIO_BOOK.md:69

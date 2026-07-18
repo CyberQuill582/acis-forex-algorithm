@@ -118,6 +118,17 @@ class CapitalGovernor:
         self._halts[scope] = reason
         self._log.event("HALT_APPLIED", scope=scope, reason=reason)
 
+    def apply_session_halt(self, now: datetime, reason: str) -> None:
+        """Upward-edge session-scoped halt (ACIS-07 §7, phase 9): no new entries
+        until the next session boundary, then auto-clears — the master §8
+        daily-drawdown semantics. Risk-restrictive only: it can only ever set
+        or extend the halt, never shorten one already in force."""
+        until = self._next_boundary(now)
+        if self._session_halt_until is None or until > self._session_halt_until:
+            self._session_halt_until = until
+        self._log.event("HALT_APPLIED", scope="session", reason=reason,
+                        until=until.isoformat())
+
     def resume(self, human_token: str) -> None:
         if not isinstance(human_token, str) or not human_token.strip():
             raise ResumeForbiddenError("resume requires a human token (master §12)")

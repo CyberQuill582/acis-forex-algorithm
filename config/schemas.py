@@ -230,6 +230,33 @@ class ExecutionConfig(_Strict):
         return self
 
 
+class RiskConfig(_Strict):
+    """Risk Monitor operational config (ACIS-07 §5). All required — the block
+    is schema-fatal if missing. Guardrail LIMITS are not here: they live in
+    guardrail_limits.yaml under the guard-integrity law. `heartbeat_interval_s`
+    is capped at 10 by the §12/§8.6 heartbeat contract (ACIS-12 §4)."""
+
+    alpha_decay_recent_window: int = Field(gt=1)
+    alpha_decay_min_trades: int = Field(gt=0)
+    alpha_decay_baseline_min_trades: int = Field(gt=0)   # C5
+    alpha_decay_recovery_trades: int = Field(gt=0)       # GAP-0050 recovery gate
+    alpha_decay_recovery_mult: float = Field(gt=0, lt=1)
+    var_method: Literal["delta_normal_undiversified"]    # declared method (§18: no
+    # diversification credit — conservative sum of per-position VaR)
+    var_window: int = Field(gt=2)                        # marks per instrument for σ
+    slippage_window: int = Field(gt=0)                   # fills in the rolling mean
+    eval_cadence_s: float = Field(gt=0)
+    heartbeat_path: str
+    heartbeat_interval_s: float = Field(gt=0, le=10.0)   # §12: never slower than 10s
+
+    @model_validator(mode="after")
+    def _windows(self) -> "RiskConfig":
+        if self.alpha_decay_min_trades > self.alpha_decay_recent_window:
+            raise ValueError(
+                "alpha_decay_min_trades must be <= alpha_decay_recent_window")
+        return self
+
+
 class SystemConfig(_Strict):
     mode: Literal["backtest", "paper", "live"]
     base_unit_usd: float = Field(gt=0)
@@ -243,6 +270,7 @@ class SystemConfig(_Strict):
     provenance: ProvenanceConfig
     governor: GovernorConfig
     execution: ExecutionConfig
+    risk: RiskConfig
 
     @field_validator("session_boundaries_utc")
     @classmethod
@@ -495,6 +523,36 @@ class Scenario(_Strict):
     kind: Literal["gap_through_stop", "flash_crash", "broker_outage", "liquidity_vacuum"]
     description: str
     params: dict[str, float | str] = Field(default_factory=dict)
+    # ACIS-12 §2: the human-committed ceiling this scenario may ever cost.
+    # Missing = config-fatal; the replay gate asserts loss <= ceiling AND
+    # equity-floor survival for every scenario.
+    max_loss_pct_nav: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _kind_params(self) -> "Scenario":
+        """ACIS-12 §12: a missing/invalid scenario field is fatal at load."""
+        def need(key: str, numeric: bool = True) -> None:
+            v = self.params.get(key)
+            if v is None:
+                raise ValueError(f"scenario {self.name!r} ({self.kind}) requires params.{key}")
+            if numeric and not isinstance(v, (int, float)):
+                raise ValueError(f"scenario {self.name!r}: params.{key} must be numeric")
+
+        if self.kind == "gap_through_stop":
+            need("instrument", numeric=False)
+            need("gap_pct")
+        elif self.kind == "flash_crash":
+            need("instrument", numeric=False)
+            need("drop_pct")
+        elif self.kind == "broker_outage":
+            need("duration_s")   # instrument optional: None = worst across enabled (C-SWN-4)
+        elif self.kind == "liquidity_vacuum":
+            need("instrument", numeric=False)
+            need("spread_mult")
+            need("ref_price")    # units = worst_notional / ref_price (C-SWN-5)
+            if float(self.params["spread_mult"]) <= 1:
+                raise ValueError(f"scenario {self.name!r}: spread_mult must exceed 1")
+        return self
 
 
 class ScenarioBook(_Strict):
@@ -527,6 +585,12 @@ class AcisConfig(_Strict):
             for sym in entry.affected:
                 if sym not in self.instruments.instruments:
                     raise ValueError(f"tierg_taxonomy[{cls}]: unknown instrument {sym!r}")
+        # ACIS-12 §12: a scenario naming an undeclared instrument is fatal
+        # (mirrors the Tier-G taxonomy rule above; disabled/extension = inert-ok).
+        for sc in self.scenario_book.scenarios:
+            sym = sc.params.get("instrument")
+            if sym is not None and sym not in self.instruments.instruments:
+                raise ValueError(f"scenario {sc.name!r}: unknown instrument {sym!r}")
         # GAP-0025 (C1 cross-check): every session boundary must coincide with a
         # declared fx session start or the weekend close/rollover — the staging
         # boundary list and the session-tagging windows may not silently diverge.

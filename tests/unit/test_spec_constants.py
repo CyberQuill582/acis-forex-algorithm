@@ -91,6 +91,18 @@ def test_hurst_meanrev_matches_v212_ratified_value(acis_config) -> None:
     assert acis_config.system.regime.hurst_meanrev == spec_h
 
 
+def test_alpha_decay_recovery_matches_master_spec(acis_config) -> None:
+    # master §8: "restore only after confirmed recovery (20 trades with Sharpe
+    # > 0.8× baseline)" — the GAP-0050 clear contract, now in the risk config.
+    r = acis_config.system.risk
+    assert r.alpha_decay_recovery_trades == _extract(
+        r"confirmed recovery \((\d+) trades with Sharpe")
+    assert r.alpha_decay_recovery_mult == _extract(
+        r"Sharpe > (0\.\d+)× baseline\)")
+    # the baseline-validity minimum (C5) and the fire minimum (§8)
+    assert r.alpha_decay_min_trades == _extract(r"minimum (\d+) trades → flag")
+
+
 def test_decision_budget_matches_acis04(acis_config) -> None:
     spec_ms = _extract(
         r"`fast_loop_decision_budget_ms = (\d+)`", _ACIS04, "specs/ACIS-04-ALPHA_ARENA.md"

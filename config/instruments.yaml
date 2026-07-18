@@ -54,6 +54,19 @@ instruments:
       commission_per_side: 0.0
       slippage_per_side: 0.002
     vol_target_atr_frac: 0.0008
+  USD_CHF:                # extension — declared for the §8.5 scenario book (C7:
+    enabled: false        # inert until enabled; unknown symbol = config error)
+    asset_class: fx
+    base_ccy: USD
+    quote_ccy: CHF
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0008
+    calendar: fx_default
   XAU_USD:                # extension — declared, disabled until mature (SPEC §9)
     enabled: false
     asset_class: metal

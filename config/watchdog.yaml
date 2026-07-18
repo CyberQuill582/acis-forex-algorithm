@@ -1,0 +1,11 @@
+# Watchdog process config (SPEC §8.6 v2.10, ACIS-12 §2) — HUMAN-COMMIT ONLY.
+# Read ONCE at watchdog start by scripts/acis_watchdog.py (own interpreter,
+# zero core/ imports). The engine never reads or writes this file;
+# acis_stage_config rejects this path at the schema level exactly like a
+# guardrail path (phase 10). Re-arm after edit = human restart of the process.
+heartbeat_path: logs/heartbeat.json
+watchdog_timeout_s: 30      # heartbeat older than this = engine is SILENT
+poll_interval_s: 5
+platform: mock              # flatten plugin selector; real platforms at phase 12 (ACIS-13)
+flatten_plugin: mock
+credentials_ref: env:ACIS_WATCHDOG_CREDENTIALS   # reference only — never a secret in config
