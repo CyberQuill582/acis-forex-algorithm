@@ -12,10 +12,17 @@ A deterministic, LLM-free-at-runtime trading engine with an MCP monitoring/contr
 Write only into the directory whose `[DIR:...]` tag matches the spec section (SPEC §1). The Layer Communication Law (SPEC §2) is absolute: downward-only data flow, one layer at a time, single upward HALT edge from Risk Monitor to Governor. The import-direction contract test must exist before layer 2 is started and must stay green forever.
 
 ## Build order (binding)
-SPEC §15, in order, no phase started before the previous phase's tests pass. Everything runs in paper mode until phase 11; live trading requires §14 minimum targets out-of-sample plus explicit human sign-off — never enable it yourself.
+SPEC §15, in order, no phase started before the previous phase's tests pass. Everything runs in paper mode through phase 11; live is the phase-12 gate and requires §14 minimum targets out-of-sample plus explicit human sign-off — never enable it yourself.
 
 ## Never touch without a human
 `config/guardrail_limits.yaml`, the equity-floor value, and HALT/veto semantics. No code path, config flag, MCP tool, or "temporary" test hook may weaken them. There is no force flag in this codebase. Halts are cheap; resumes are human-only. **Guard-integrity law (SPEC §9): if an agent can edit the guard, it is not a guard.** These are safe because the guarded code *cannot reach them* — schema-level `acis_stage_config` rejection, host deny-by-default, the downward-only layer law, human-commit-only — not because anyone promises to be careful. A change that makes a guardrail reachable is the bug: halt and raise it.
+
+## Documentation hygiene (binding, recurring — keep the read path short and TRUE)
+Do this **at every phase/milestone completion**, as part of finishing — not as a separate "housekeeping project" someone has to authorise later. Bloat is a defect, same as dead code (§18 lean-build law); a stale doc in the read path is worse than none because a fresh session trusts it.
+- **The orienting read path is `README.md → STATUS.md → TODO.md → CLAUDE.md → ACIS_SPEC.md → specs/ACIS-00-INDEX.md → KNOWN_GAPS.md`.** Every one of these must be short, current, and true after your change. If you make a phase ✅, update `STATUS.md`, `TODO.md`, `README.md`, and the CLAUDE.md status line **in the same session** — a lie in the read path (e.g. "no code implemented yet" after 11 phases) is a bug you fix on sight.
+- **Safe to compress/relocate:** verbose forensic prose in `KNOWN_GAPS_CLOSED.md`, repeated audit-run banners, superseded spec drafts, spent instruction/scratch files. Once an item is closed and has a regression test, **the test is the permanent record** — keep only ID + one-line description + resolution + **test name**. Move bulky superseded scratch to `archive/` (a `git mv`, never a delete — append-only ledger law; `archive/` is out of the read path by definition).
+- **NEVER, when tidying:** remove a doc from the orienting read path; compress away the **pointer to the proof** (gap ID, correction ID, test name, spec §); touch `ACIS_SPEC.md`/locked layer specs, `config/guardrail_limits.yaml`, the live `KNOWN_GAPS.md` open items, `CLAUDE.md` rules, or tests; or "reset/rewrite" a ledger from scratch (a cold rewrite drops accepted-risk justifications and owner-ratified "never re-open" rulings). The risk is never "compression breaks code" — it is **losing traceability**. Compress prose; never the pointer to the proof.
+- If a tidy would touch anything in the NEVER list, stop and raise it instead. Housekeeping is additive-and-relocating, never authority-altering.
 
 ## Non-negotiable engineering rules
 1. No LLM calls, network reasoning, or human prompts in the fast loop. Deterministic Python only.

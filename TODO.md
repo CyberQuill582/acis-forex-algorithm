@@ -8,6 +8,7 @@
 
 ## Standing rules (owner-directed)
 - **Always maintain this to-do list.** Every session: check items off with date, add newly discovered work, never delete (strike through with date instead).
+- **Documentation hygiene every milestone (owner-directed 2026-07-18; see CLAUDE.md "Documentation hygiene").** Keep the orienting read path (README → STATUS.md → TODO.md → CLAUDE.md → ACIS_SPEC.md → specs → KNOWN_GAPS.md) short, current, and TRUE — update `STATUS.md`/README/CLAUDE status line in the SAME session a phase goes ✅. Compress closed-archive prose and relocate spent scratch to `archive/` (`git mv`, never delete), but NEVER drop a read-path doc or the pointer to the proof (gap ID + test name), and never touch specs/guardrails/open-ledger-items/tests/rules. Housekeeping is additive-and-relocating, not a deferred project.
 - **§18 build doctrine (SPEC v2.6, owner-directed 2026-07-15):** build ruthlessly on what works (proven-parts law — mature stack, canonical literature, existing tested code; no single-channel fixation; spec principles supreme) and stay lean (lean-build law — scope creep/over-engineering/speculative complexity are defects; every module names the spec requirement it serves). Applies to every phase, always.
 - Build order is SPEC §15, strict — a phase starts only after the previous phase's tests pass.
 - Per CLAUDE.md: while building each phase, spawn the subordinate-model adversarial audit in the background; findings → `KNOWN_GAPS.md`.
