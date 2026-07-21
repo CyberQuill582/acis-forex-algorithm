@@ -5,12 +5,215 @@ same newest-first order, same never-delete rule. Audit-run banners are kept with
 the findings they describe. The LIVE ledger is `KNOWN_GAPS.md`.
 
 <!-- ============================================================================
+PHASE-11 DUAL AUDIT — CLOSED (FIXED) findings (2026-07-18; suite green after
+triage: 515 passed). Two parallel Opus 4.8 adversarial audits of the phase-11
+backtest harness + §14 validation: internal-consistency (GAP-P11I-01..10) +
+external-referent (GAP-P11E-01..07). 14 fixed with regression tests (below); 2
+remain in the live ledger (GAP-P11I-02 mitigated, GAP-P11I-10 accepted-risk);
+GAP-P11E-07 is informational confirmations (kept live). Full findings text is in
+git history + the live-ledger banner; condensed closed entries carry the
+resolution + regression per the phase-9/10 archive precedent. ACIS-09 → v1.1
+LOCKED with the honesty-guard corrections. NO guardrail VALUE, HALT, veto,
+resume, or equity-floor semantic weakened — every fix TIGHTENS an honesty gate
+(data-derived period, intraday drawdown, min-trade floor, real VaR tally,
+self-enforced rules, continuous equity) or makes a named quantity/claim honest.
+The two audits heavily overlapped: P11E-01≈P11I-08 (VaR stub), P11E-02≈P11I-03
+(discontinuous equity), P11E-04≈P11I-05 (carry unwired) — closed together.
+============================================================================= -->
+
+## GAP-P11E-01 / GAP-P11I-08 (MEDIUM/LOW): `var_breach_frequency` was a 0.0 stub + rate-vs-cap conflation — CLOSED — **SPEC_AUDIT.md**
+- Severity: medium · Likelihood: high · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:tests/backtest] harness.py `Backtest.run`, metrics.py, master §8/GAP-0103, ACIS-09 §4/§6
+- Description: `run(..., var_breach_frequency=0.0)` was a defaulted pass-through the harness never computed, so every report read a reassuring "0.0 breaches"; and the field conflated a 1%-VaR exceedance RATE (referent: the 1% confidence LEVEL) with the 3%-of-NAV magnitude cap (a different quantity).
+- Fix: added `rolling_var_breach_rate(returns, z=2.326)` — an expanding-window delta-normal Kupiec POF backtest (per day t, forecast VaR_t = z·σ_{<t} from prior returns; a breach is a realised loss exceeding VaR_t) — and `Backtest.run` now computes it from the real OOS return series, never a stub. The docstring pins it as a RATE (vs the 1% level), explicitly distinct from the 3% magnitude cap. Regression: `test_rolling_var_breach_rate_is_kupiec_backtest` (crash day breaches; zero-variance ⇒ no breach; <3 returns ⇒ 0.0).
+- Linked: tests/backtest/metrics.py `rolling_var_breach_rate`, tests/backtest/harness.py `run`, tests/backtest/test_metrics_and_grader.py
+
+## GAP-P11E-02 / GAP-P11I-03 (MEDIUM/HIGH): walk-forward equity concatenation injected fabricated fold-boundary jumps — CLOSED
+- Severity: high · Likelihood: high · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:tests/backtest] harness.py `_replay`/`run`, metrics.py, master §14
+- Description: each `_replay` reset `realised=0` and rebuilt equity from `nav0`, and `run` concatenated per-fold curves whose levels teleported back to nav0 at every boundary — manufacturing a spurious return/drawdown that contaminated Sharpe, max-drawdown, and positive-months.
+- Fix: the OOS book is now ONE continuous `_BookState` that PERSISTS across folds — realised PnL and open positions thread through, equity is one curve, never reset per fold. Regression: `test_oos_book_is_continuous_across_folds` (two OOS folds each realise a winner ⇒ BOTH land in the graded record; a per-fold reset would keep only the last).
+- Linked: tests/backtest/harness.py `_BookState`/`run`, tests/backtest/test_harness_regressions.py
+
+## GAP-P11E-03 (MEDIUM): daily mark-to-market marked ONLY the just-ticked instrument — CLOSED
+- Severity: medium · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:tests/backtest] harness.py `_unrealised`/`_replay`, master §14
+- Description: `_unrealised` added PnL only for `pos.instrument == st.instrument`, so on a multi-instrument book any position not on the day's sampling tick was frozen at entry price — understating drawdown/volatility for any concurrent book.
+- Fix: `_BookState.last_price` carries each instrument's last-seen mid; `_unrealised` marks EVERY open position off its own last price at each equity sample. Regression: `test_all_open_positions_marked_each_day` (EUR_USD underwater is visible on a day only USD_JPY ticks).
+- Linked: tests/backtest/harness.py `_unrealised`/`last_price`, tests/backtest/test_harness_regressions.py
+
+## GAP-P11E-04 / GAP-P11I-05 (MEDIUM): overnight carry/swap (triple-swap Wednesday) was not wired into harness PnL — CLOSED
+- Severity: medium · Likelihood: high · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:tests/backtest] harness.py `_close_at`, carry.py, master §13
+- Description: `carry.py` (correct triple-swap-Wednesday) was imported only by the isolated glitch test; `_close_at` charged only C8 spread+commission, so held-position PnL omitted financing entirely and the omission was not even in `fidelity_caveats`.
+- Fix: `_close_at` now charges `carry_charge` over the nights held (`_nights` counts 22:00-UTC rollover crossings; Wednesday triple) when a per-instrument `daily_swap` is supplied; `fidelity_caveats` discloses the carry model and the rates-default-to-0-pending-calibration assumption. Regression: `test_overnight_carry_reduces_pnl_of_a_held_position` (a Tue→Thu hold at −5.0/night over 4 swap-nights flips a +10 winner to a net loss). The `financing_daily`/Friday-triple metals convention stays deferred to phase-12 (XAU disabled) — noted in GAP-0109.
+- Linked: tests/backtest/harness.py `_close_at`/`_nights`, tests/backtest/carry.py, tests/backtest/test_harness_regressions.py
+
+## GAP-P11E-05 (LOW): `annual_sharpe` rf=0 was an undeclared deviation — CLOSED
+- Severity: low · Likelihood: high · Status: closed (2026-07-18, FIXED — declared deviation)
+- Area: [DIR:tests/backtest] metrics.py `annual_sharpe`, master §5.6/§16 naming law
+- Description: the metric used raw returns (implicit rf=0), not the textbook mean-EXCESS-return Sharpe, with no declared deviation — a named "Sharpe" grading against the §14 >1.5 bar without stating the assumption.
+- Fix: `annual_sharpe` now carries an explicit DECLARED-DEVIATION docstring (§5.6): rf=0 current-regime simplification, biases the metric slightly HIGH, a per-day rf is a phase-11 data-ops loader input when live. Naming law satisfied.
+- Linked: tests/backtest/metrics.py `annual_sharpe`
+
+## GAP-P11E-06 (LOW): `generate_folds` allowed overlapping OOS test windows — CLOSED
+- Severity: low · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:tests/backtest] walk_forward.py `generate_folds`, ACIS-09 §5/§6
+- Description: only positivity was checked, so `step < test_window` produced overlapping test windows that double-counted OOS periods in the concatenated record.
+- Fix: `generate_folds` rejects `step < test_window` (non-overlapping OOS folds) at construction. Regression: `test_generate_folds_rejects_overlapping_oos`.
+- Linked: tests/backtest/walk_forward.py, tests/backtest/test_metrics_and_grader.py
+
+## GAP-P11I-01 (HIGH): ≥2-year / >1-fold gates trusted a caller-supplied `period`, disconnected from the realised OOS span — CLOSED
+- Severity: high · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:tests/backtest] report.py `build_report`, harness.py `run`, ACIS-09 §7/§12/§13 C-BT-2
+- Description: `build_report` graded `years` off a FREE `period` param never cross-checked against the OOS data; a 5-day run declaring `period=2yr` passed.
+- Fix: `Backtest.run` DERIVES `period` from the concatenated OOS equity span (`oos.equity[0][0]..[-1][0]`); no data ⇒ zero-length span ⇒ cannot clear ≥2yr. The honesty gate now binds the record, not the claim. Regression: `test_period_is_derived_from_oos_data_not_fold_claim` (bogus all-identical Fold dates ignored; period == true state-timestamp span).
+- Linked: tests/backtest/harness.py `run`, tests/backtest/test_harness_regressions.py
+
+## GAP-P11I-04 (MEDIUM): graded max-drawdown was EOD-sampled — intraday drawdown invisible — CLOSED
+- Severity: medium · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:tests/backtest] harness.py `_replay`, metrics.py `compute_metrics`, ACIS-09 §13
+- Description: equity was sampled once per calendar day, so `max_drawdown_pct` (a §14-graded metric) missed an intraday plunge that recovered by the next daily sample — the exact "EOD approximation understates the breach" the §13 trailing-DD glitch class condemns, applied to the harness's own equity.
+- Fix: `_BookState` now tracks an INTRADAY high-water (`peak`) and worst peak-to-trough (`max_dd_pct`) updated EVERY tick; `compute_metrics` takes a `max_drawdown_pct_override` fed that intraday figure, while the daily curve still drives the daily-return metrics (Sharpe base unchanged). Regression: `test_intraday_drawdown_is_not_understated_by_daily_sampling` (same-day dip-and-recover surfaces a real DD, not ~0).
+- Linked: tests/backtest/harness.py `_BookState`/`_mark_drawdown`, tests/backtest/metrics.py `compute_metrics`, tests/backtest/test_harness_regressions.py
+
+## GAP-P11I-06 (MEDIUM): C-BT-1 "in-sample cannot reach the grader BY TYPE" was overstated — CLOSED — **SPEC_AUDIT.md**
+- Severity: medium · Likelihood: low · Status: closed (2026-07-18, FIXED — spec/code reconciled)
+- Area: [DIR:tests/backtest] report.py, ACIS-09 §7/§13 C-BT-1
+- Description: `in_sample`/`out_of_sample` are the SAME `MetricBlock` type; `grade_out_of_sample(in_sample_block)` runs fine, so the spec's "impossible by type" claim was not backed by code.
+- Fix: reworded ACIS-09 §7 + C-BT-1 and the `report.py` docstring to a FLOW guarantee — `build_report` is the sole grade path and routes only `out_of_sample`; proven by `test_grader_uses_out_of_sample_only`, not a type barrier. Spec and code now agree (honest claim, not a false one).
+- Linked: tests/backtest/report.py, specs/ACIS-09 §7/§13, tests/backtest/test_metrics_and_grader.py
+
+## GAP-P11I-07 (MEDIUM): no minimum-trade floor — a single PF=+inf winner could grade §14 — CLOSED
+- Severity: medium · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:tests/backtest] report.py `build_report`, ACIS-09 §4/§14
+- Description: the grader had no floor on `n_trades`, so one all-winning trade (PF=+inf, win_rate=1.0) cleared the §14 thresholds on a statistically meaningless sample.
+- Fix: `passed` now additionally requires `out_of_sample.n_trades >= _MIN_TRADES` (30 — mirrors master §8 `alpha_decay_min_trades`); a thin sample cannot pass however stellar its ratios. Regression: `test_thin_sample_cannot_pass` (every metric passes at n_trades=5, yet `passed is False`).
+- Linked: tests/backtest/report.py `_MIN_TRADES`, tests/backtest/test_metrics_and_grader.py
+
+## GAP-P11I-09 (MEDIUM): two glitch-class tests were tautological (asserted constructor args) — CLOSED
+- Severity: medium · Likelihood: low · Status: closed (2026-07-18, FIXED — real guards driven)
+- Area: [DIR:tests/backtest] test_glitch_classes.py, ACIS-09 §13 C-BT-10, CLAUDE.md testing bar
+- Description: `test_symbol_suffix_mismatch_not_merged` re-asserted a dict literal and `test_tierg_shock_during_blackout` asserted the `flatten_condition=True` it just passed — neither exercised a guard (CLAUDE.md rule 4/6).
+- Fix: rewritten to drive REAL guards — the suffix test calls `verify_attach(face, {"EUR_USD","GBP_USD_UNMAPPED"}, logger)` and asserts a `DataQualityError` (an unmapped symbol dies once at attach); the Tier-G test drives the real `TierGClassifier.observe(Headline(...))` and asserts a real taxonomy keyword arms Tier-G while gibberish arms nothing (C-EVT-6 untrusted-input). Regression: the two rewritten tests themselves (observable outcomes, not tautologies).
+- Linked: tests/backtest/test_glitch_classes.py, core/execution/venue.py `verify_attach`, core/data/events.py `TierGClassifier`
+
+<!-- ============================================================================
+PHASE-10 DUAL AUDIT — CLOSED (FIXED) findings (2026-07-18; suite green after
+triage). Internal-consistency (GAP-P10I-01..09) + external-referent
+(GAP-P10E-01..06) Opus 4.8 audits of the MCP monitoring/control plane. 13 fixed
+with regression tests (below); 2 remain in the live ledger (GAP-P10I-06
+mitigated, GAP-P10E-03 accepted-risk). Full findings text is preserved in git
+history; condensed closed entries here carry the resolution + regression per the
+phase-9 archive precedent. ACIS-08 → v1.2 LOCKED. NO guardrail VALUE, HALT,
+veto, resume, or equity-floor semantic weakened — every fix TIGHTENS a guard or
+makes a named quantity/claim honest.
+============================================================================= -->
+
+## GAP-P10I-01 / GAP-P10E-04 (HIGH/LOW): stage_config value guard was a fragile substring "multiplier" heuristic — CLOSED — **SPEC_AUDIT.md**
+- Severity: high · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:monitoring] tools.py `_validate_patch`, [DIR:config] schemas.py `TunableParam`, ACIS-08 §5
+- Description: the `>1.0` marker set omitted "size" (a `governor.position_size_scale=3.0` staged); master §12/GAP-0016 requires a (0,1]-style bound but only the upper bound was checked, and detection was substring-based so a non-keyword scaler escaped.
+- Fix: replaced with a BOUNDED allowlist — `tunable_paths` is now `list[TunableParam{path, min, max}]`, pydantic-validated (a guardrail/equity path in the allowlist is load-fatal), and the tool boundary rejects any value that is not a real finite number inside its declared `[min,max]` (no substring heuristic; over-cap/negative/zero/NaN/inf/string/bool all rejected). Safe by construction. Regression: `test_stage_config_bounded_allowlist_is_safe_by_construction`, `test_stage_config_accepts_allowlisted_tunable_in_bounds`, `test_tunable_bounds_min_le_max_enforced`.
+- Linked: monitoring/tools.py, config/schemas.py `TunableParam`/`MonitoringConfig`, tests/unit/test_mcp_control_plane.py, tests/unit/test_mcp_config.py
+
+## GAP-P10I-02 (MEDIUM): string-typed value evaded the numeric guard — CLOSED
+- Severity: medium · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:monitoring] tools.py `_validate_patch`, ACIS-08 §5
+- Description: a scaler supplied as `"1.5"` skipped the `isinstance(value,(int,float))`-gated check and staged.
+- Fix: `_validate_patch` now requires a real numeric TYPE (bool rejected as an int subclass; strings rejected outright as `non_numeric`, never coerced-and-staged) before the bounds check. Regression: `test_stage_config_bounded_allowlist_is_safe_by_construction` (string cases).
+- Linked: monitoring/tools.py, tests/unit/test_mcp_control_plane.py
+
+## GAP-P10I-03 (MEDIUM): dual-hash live gate `None==None` coincidence — CLOSED — **SPEC_AUDIT.md**
+- Severity: medium · Likelihood: low · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:monitoring] mode.py `ModeController`, ACIS-08 §5 C-MCP-8
+- Description: `ModeController` did not validate its reference hashes; wired with `None` refs + a `None` ack, `None != None` was False → live with zero acknowledgement.
+- Fix: the constructor now rejects empty/None `guardrail_hash`/`rulebook_hash`, so a reference is always non-empty and an absent ack (`None`) can never match — the coincidence is structurally impossible. Regression: `test_mode_controller_rejects_empty_reference_hashes`, `test_live_with_none_acks_cannot_pass_even_conceptually`.
+- Linked: monitoring/mode.py, tests/unit/test_mcp_triage_regressions.py
+
+## GAP-P10I-04 / GAP-P10E-01 (MEDIUM): idempotency was check-then-act, not crash-safe/exactly-once — CLOSED — **SPEC_AUDIT.md**
+- Severity: medium · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:monitoring] tools.py `call_tool`, store.py `record_once`, ACIS-08 §5/§10 C-MCP-3
+- Description: a crash after `_dispatch` (side effect done) but before `record` left zero audit rows → a same-id replay re-executed; and a concurrent duplicate raised an unhandled `sqlite3.IntegrityError`.
+- Fix: `call_tool` wraps `_dispatch` and records an `error:*` outcome on exception (so a replay returns the error, never re-executes); pure pre-dispatch rejections (no side effect) are NOT cached, so a legitimate retry with the same id is allowed; `store.record_once` returns False on the PK collision and the caller returns the winner's stored result (single-threaded stdio model declared, PK is the backstop). Regression: `test_crash_mid_dispatch_is_recorded_and_never_re_executes`, `test_pure_rejection_is_not_cached_and_retry_is_allowed`, plus the existing idempotency test.
+- Linked: monitoring/tools.py, monitoring/store.py, tests/unit/test_mcp_triage_regressions.py
+
+## GAP-P10I-05 / GAP-P10E-05 (MEDIUM): C-MCP-6 heartbeat/missed-beat rule advertised but unbuilt/untested — CLOSED — **SPEC_AUDIT.md**
+- Severity: medium · Likelihood: medium · Status: closed (2026-07-18, BUILT + regression)
+- Area: [DIR:monitoring] heartbeat.py (new), resources.py `_status`, ACIS-08 §8 C-MCP-6
+- Description: §8/§1/§13 + README claimed a heartbeat SLA the layer did not implement; `missed_beats_flatten`/`heartbeat_fast_s` were never read; no C-MCP-6 test existed.
+- Fix: `monitoring/heartbeat.py::HeartbeatMonitor` computes the missed-beat picture (from the injected §8.6 last-beat + now + config) and surfaces it on `acis://status` under `heartbeat` (`missed_beats`, `healthy`, `flatten_recommended`, `reason`); `flatten_recommended` only when stale past `missed_beats_flatten` AND positions open; stale-but-flat is alert-only; never-synced is maximally stale. Regression: `test_fresh_heartbeat_is_healthy_no_flatten`, `test_three_missed_beats_with_positions_recommends_flatten`, `test_missed_beats_but_flat_is_alert_only`, `test_never_synced_with_positions_recommends_flatten`.
+- Linked: monitoring/heartbeat.py, monitoring/resources.py, tests/unit/test_mcp_triage_regressions.py
+
+## GAP-P10I-07 (LOW): guardrails resource returned the internal view by reference — CLOSED
+- Severity: low · Likelihood: low · Status: closed (2026-07-18, FIXED + regression)
+- Area: [DIR:monitoring] resources.py `read`, ACIS-08 §7
+- Description: a caller mutating the returned `limits` changed what the next reader saw.
+- Fix: `acis://config/guardrails` deep-copies on read (and the stored view is deep-copied at construction). Regression: `test_guardrails_resource_mutation_does_not_leak`.
+- Linked: monitoring/resources.py, tests/unit/test_mcp_triage_regressions.py
+
+## GAP-P10I-08 (LOW): guardrail-path guards used naive substring normalization — CLOSED
+- Severity: low · Likelihood: low · Status: closed (2026-07-18, FIXED)
+- Area: [DIR:config] schemas.py `TunableParam`, [DIR:monitoring] tools.py `_validate_patch`
+- Description: a leading-space allowlist entry could evade the `startswith("guardrail_limits")` guard.
+- Fix: both guards `.strip()` (and lower) the path before the prefix/substring test; `TunableParam` normalizes at validation and `_validate_patch` normalizes each patched path. (Never reached the guardrail file — human-commit-only — but defense-in-depth restored.) Covered by `test_tunable_allowlist_cannot_name_a_guardrail_path`.
+- Linked: config/schemas.py, monitoring/tools.py
+
+## GAP-P10I-09 (LOW): rejected outcomes cached under request_id could swallow a retry — CLOSED
+- Severity: low · Likelihood: low · Status: closed (2026-07-18, FIXED + regression, folded into the P10I-04 fix)
+- Area: [DIR:monitoring] tools.py `call_tool`
+- Description: a prior `rejected:*` replayed on a same-id retry, so a later legitimate call was silently swallowed.
+- Fix: pure pre-dispatch rejections are no longer persisted (no side effect occurred), so a retry with the same id re-evaluates; only side-effecting/errored outcomes are cached. Regression: `test_pure_rejection_is_not_cached_and_retry_is_allowed`.
+- Linked: monitoring/tools.py, tests/unit/test_mcp_triage_regressions.py
+
+## GAP-P10E-02 (LOW): "schema-level" stage_config rejection was a handler check — CLOSED (spec-honesty)
+- Severity: low · Likelihood: low · Status: closed (2026-07-18, spec corrected)
+- Area: ACIS-08 §5/§7/§12, [DIR:monitoring] tools.py
+- Description: §5 claimed an incoming-patch JSON-Schema "before any handler runs"; the real mechanism is a schema-enforced allowlist (config) + imperative boundary validation before any side effect.
+- Fix: ACIS-08 §5 reworded to describe the actual two-layer mechanism honestly (schema-enforced bounded allowlist + tool-boundary value validation before any staging), recorded as a mechanism-honesty correction. Outcome was already correct/tested (guardrail file byte-identical).
+- Linked: specs/ACIS-08 §5, monitoring/tools.py
+
+## GAP-P10E-06 (LOW): "MCP server" facade vs the MCP wire standard — CLOSED (spec-honesty)
+- Severity: low · Likelihood: low · Status: closed (2026-07-18, spec corrected)
+- Area: ACIS-08 §1/§11, [DIR:monitoring] server.py/prompts.py
+- Description: §1's flat "IS: an MCP server" overclaimed vs the MCP standard (facade returns `{status,result}` not `CallToolResult`; prompts are metadata descriptors).
+- Fix: ACIS-08 §1 now says "IS the transport-independent MCP CONTRACT (`ControlPlane`)" with the wire transport (`CallToolResult`/`GetPromptResult`, prompt bodies) a deployment adapter per the §3 scope note — matching the already-honest §3. `serve()` remains a declared not-yet-implemented binding point.
+- Linked: specs/ACIS-08 §1/§3/§11
+
+<!-- ============================================================================
 PHASE-9 DUAL AUDIT — CLOSED (FIXED) findings (2026-07-18; suite 413 green after
-triage). Internal-consistency + external-referent Opus 4.8 audits; live entries
-(GAP-0092/0099/0102/0103/0108) stay in KNOWN_GAPS.md. Each fixed item carries its
-regression test. No guardrail VALUE, HALT, veto, or equity-floor semantic was
+triage). Internal-consistency + external-referent Opus 4.8 audits; the remaining
+live entries (GAP-0092/0099/0102) stay in KNOWN_GAPS.md. Each fixed item carries
+its regression test. No guardrail VALUE, HALT, veto, or equity-floor semantic was
 weakened — every fix tightens a guard or makes a named quantity honest.
 ============================================================================= -->
+
+<!-- ============================================================================
+OWNER RATIFICATION PASS (2026-07-18, in-chat) — the two human-owned value
+questions the phase-9 dual audit RAISED are now closed by the owner:
+  GAP-0103 (VaR 3% cap horizon) — RATIFIED AS-IS: 3% = 1-day 1% VaR, no change;
+    phase 11 reports the binding frequency.
+  GAP-0108 (CHF de-peg gap magnitude) — RESOLVED: the CHF gap made faithful
+    (-35%), the chf + outage ceilings raised to 7.5% together, applied ONLY after
+    confirming equity-floor survival (chf 9300, outage 9294.40 > 9000 floor) and a
+    green replay gate; the outage-allowance-source refinement is deferred to
+    phase 11. Guardrail-adjacent VALUES are human-commit (C-SWN-7) — this is that
+    human commit, recorded not silently changed.
+============================================================================= -->
+
+## GAP-0108 (P9E-08): CHF de-peg scenario modelled a -20% gap vs the actual ~-30/-40% worst fills — CLOSED — **SPEC_AUDIT.md**
+- Severity: low · Likelihood: medium · Status: closed (2026-07-18, RESOLVED by owner ratification + applied + regression)
+- Area: [DIR:config] scenario_book.yaml `chf_depeg_2015` + `broker_outage_mid_position`, [DIR:core/risk] scenario_replay.py, master §8.5
+- Description: On 2015-01-15 USD/CHF fell ~-27% intraday with retail stops filling as deep as ~-40%. The book modelled `gap_pct: -20.0` (≈ the daily close, not the worst fill); at the clustered 20%-NAV worst book that was 4.0% NAV, under the 4.5% ceiling — a ceiling calibrated against an optimistic gap. The gap magnitude + ceiling are human-owned (C-SWN-7), so the phase-9 audit RAISED rather than changed them.
+- Resolution: OWNER-RATIFIED 2026-07-18 — `gap_pct` set to the faithful worst fill `-35.0` (inside the observed -30/-40% band); the chf ceiling raised 4.5→7.5 and the broker-outage ceiling raised 4.7→7.5 together (the outage inherits the book's worst gap allowance, C-SWN-4). Verified BEFORE commit: replay gate green (chf 7.00% ≤ 7.5%, outage 7.056% ≤ 7.5%) and equity-floor survival (chf equity 9300, outage 9294.40 > the 9000 floor). Test constants updated (`test_scenario_replay.py`: gap-loss 0.35, cluster-less 10.5%, oversized-cap comment). The outage-allowance-source refinement (source the outage gap allowance from the worst ENABLED-instrument gap rather than any book scenario — the -35% CHF is on a disabled extension) is deferred to phase 11 (conservative meanwhile: it over-states, never under-states, the outage loss).
+- Linked: config/scenario_book.yaml `chf_depeg_2015`/`broker_outage_mid_position`, core/risk/scenario_replay.py, tests/backtest/test_scenario_replay.py, KNOWN_GAPS_CLOSED.md GAP-0094
+
+## GAP-0103 (P9E-03): `portfolio_var_1pct` horizon — the 3% VaR cap re-confirmation against the now-declared 1-day horizon — CLOSED — **SPEC_AUDIT.md**
+- Severity: medium · Likelihood: high · Status: closed (2026-07-18, RATIFIED AS-IS by owner; the declare+scale fix already landed)
+- Area: [DIR:core/risk] monitor.py `_var_pct`, config `risk.var_horizon_seconds`, ACIS-07 §4, master §8
+- Description: a VaR is defined only against a stated horizon; the original per-mark σ made "1% VaR as % NAV" a ~`eval_cadence_s` figure, ~90× smaller than a reader/ratifier of the 3% cap would assume. The phase-9 fix declared `risk.var_horizon_seconds=86400` (1 day) and scales σ by √(horizon/eval_cadence) — an honest 1-day VaR — and RAISED the cap-value re-confirmation to the owner (cap values are human-owned).
+- Resolution: OWNER-RATIFIED 2026-07-18 — the 3% cap stands AS-IS against the now-declared 1-day 1% VaR (no change). Phase 11 reports the binding VaR breach frequency once VaR is wired in-loop (GAP-0091b); until then VaR is correct-but-inert, so nothing live changes. The config comment's "raised to owner" note is superseded by this ratification.
+- Linked: core/risk/monitor.py `_var_pct`, config/system_config.yaml `risk.var_horizon_seconds`, ACIS-07 §4/§6
 
 ## GAP-0093 (P9I-01): alpha-decay flagged a RECOVERING strategy on a negative baseline — CLOSED
 - Severity: medium · Likelihood: medium · Status: closed (2026-07-18, FIXED + regression)

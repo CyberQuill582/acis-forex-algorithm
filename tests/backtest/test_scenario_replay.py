@@ -61,7 +61,7 @@ def test_gate_can_fail_on_oversized_caps(cfg, instruments) -> None:
     chf_depeg breach — the gate provably can fail (ACIS-12 §14)."""
     # both caps oversized (model_copy bypasses the schema ceilings by design —
     # this is a TEST-LOCAL construction, never the real config): worst book
-    # 60% NAV × 20% gap = 12% NAV, breaching both the 4.5% ceiling and the floor.
+    # 60% NAV × 35% gap = 21% NAV, breaching both the 7.5% ceiling and the floor.
     limits = cfg.guardrails.model_copy(
         update={"cluster_cap_pct": 60.0, "single_currency_delta_cap_pct": 80.0})
     verdicts = _replay(cfg.scenario_book, limits, instruments,
@@ -81,7 +81,7 @@ def test_gap_loss_uses_post_gap_price(cfg, instruments) -> None:
     chf = next(sc for sc in cfg.scenario_book.scenarios if sc.name == "chf_depeg_2015")
     v = replay.replay_one(chf)
     worst = float(v.worst_book_notional)
-    expected_pct = worst * 0.20 / float(_NAV) * 100.0
+    expected_pct = worst * 0.35 / float(_NAV) * 100.0   # faithful -35% gap (GAP-0108)
     assert v.loss_pct_nav == pytest.approx(expected_pct)
 
 
@@ -121,10 +121,35 @@ def test_cluster_less_instrument_uses_delta_cap_not_cluster_cap(cfg, instruments
     replay = _replay(cfg.scenario_book, cfg.guardrails, instruments, clusters={})  # none clustered
     chf = next(sc for sc in cfg.scenario_book.scenarios if sc.name == "chf_depeg_2015")
     v = replay.replay_one(chf)
-    # cluster-less → 30% × NAV worst book (not 20%): 30% × 20% gap = 6% NAV
+    # cluster-less → 30% × NAV worst book (not 20%): 30% × 35% gap = 10.5% NAV
     assert float(v.worst_book_notional) == pytest.approx(0.30 * float(_NAV))
-    assert v.loss_pct_nav == pytest.approx(6.0)
-    assert not v.passed                       # exceeds the 4.5% ceiling when unclustered
+    assert v.loss_pct_nav == pytest.approx(10.5)
+    assert not v.passed                       # exceeds the 7.5% ceiling when unclustered
+
+
+def test_outage_gap_allowance_prefers_enabled_instrument(cfg, instruments) -> None:
+    """GAP-0108 refinement: the broker-outage gap allowance sources from the worst
+    ENABLED-instrument gap, not a disabled extension. A test-local book where
+    EUR_USD (enabled) gaps 5% and USD_CHF (disabled) gaps 35% ⇒ the allowance is
+    5%, not the 35% CHF."""
+    book = ScenarioBook(scenarios=[
+        {"name": "eur_gap", "kind": "gap_through_stop", "description": "d",
+         "params": {"instrument": "EUR_USD", "gap_pct": -5.0}, "max_loss_pct_nav": 5.0},
+        {"name": "chf_gap", "kind": "gap_through_stop", "description": "d",
+         "params": {"instrument": "USD_CHF", "gap_pct": -35.0}, "max_loss_pct_nav": 7.5},
+    ])
+    r = _replay(book, cfg.guardrails, instruments, clusters=cfg.instruments.clusters)
+    assert r._worst_book_gap_pct() == 5.0            # enabled EUR_USD, not disabled CHF
+
+
+def test_outage_gap_allowance_falls_back_to_worst_when_none_enabled(cfg, instruments) -> None:
+    """Conservative fallback: with NO enabled gap scenario (the shipped config —
+    CHF + XAU both disabled), the outage retains the overall worst gap so it never
+    under-provisions. The shipped gate is unchanged by the refinement."""
+    r = _replay(cfg.scenario_book, cfg.guardrails, instruments,
+                clusters=cfg.instruments.clusters)
+    # shipped book: chf −35 (disabled), weekend_war +5 (disabled) ⇒ fallback 35
+    assert r._worst_book_gap_pct() == 35.0
 
 
 def test_missing_ceiling_is_config_fatal() -> None:

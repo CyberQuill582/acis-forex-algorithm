@@ -35,8 +35,8 @@ ACIS-09 Backtest/Validation ──exercises 01–07 end-to-end; owns §14 gate
 | `ACIS-SPEC-GOV-005` | `ACIS-05-CAPITAL_GOVERNOR.md` | Governor `[DIR:core/governor]` | `Signal` + portfolio | `SizedOrder` | v1.2 LOCKED (built, phase 6) |
 | `ACIS-SPEC-EXEC-006` | `ACIS-06-EXECUTION_ORCHESTRATOR.md` | Execution `[DIR:core/execution]` | `SizedOrder` | `FillReport` | v1.1 LOCKED (phase-8 build started 2026-07-17) |
 | `ACIS-SPEC-RISK-007` | `ACIS-07-RISK_MONITOR.md` | Risk `[DIR:core/risk]` | `FillReport` + broker account state + all stores | `RiskSnapshot`, `HALT`/taper/decay (upward edge), heartbeat | v1.1 LOCKED (phase-9 gate cleared 2026-07-17) |
-| `ACIS-SPEC-MCP-008` | `ACIS-08-MONITORING_MCP.md` | Monitoring `[DIR:monitoring]` | all resources | MCP resources/tools | DRAFT |
-| `ACIS-SPEC-BT-009` | `ACIS-09-BACKTEST_VALIDATION.md` | Backtest `[DIR:tests/backtest]` | 01–07 | §14 validation report | DRAFT |
+| `ACIS-SPEC-MCP-008` | `ACIS-08-MONITORING_MCP.md` | Monitoring `[DIR:monitoring]` | all resources | MCP resources/tools | v1.2 LOCKED (phase-10 BUILT + dual audits triaged 2026-07-18) |
+| `ACIS-SPEC-BT-009` | `ACIS-09-BACKTEST_VALIDATION.md` | Backtest `[DIR:tests/backtest]` | 01–07 | §14 validation report | v1.1 LOCKED (phase 11 ✅ 2026-07-18 — built + dual-audited + triaged, 515 green) |
 | `ACIS-SPEC-EVENTS-010` | `ACIS-10-EVENTS_NEWS.md` | Events `[DIR:core/data]` (master §3.5–3.6) | calendar/news feeds + `platform_rules.yaml` | `EventPicture`, blackout windows, Tier-G flags | LOCKED (built, phase 2) |
 | `ACIS-SPEC-PROV-011` | `ACIS-11-STRATEGY_PROVENANCE.md` | Provenance & literature law `[DIR:core/signals]` (master §5.5 Pair Divergence, §5.6) | literature citations, eval history | provenance records, attempt registry, rung ladder | TO AUTHOR |
 | `ACIS-SPEC-SWAN-012` | `ACIS-12-SCENARIO_BOOK.md` | Black-swan replay + §8.6 watchdog `[DIR:core/risk + tests/backtest + scripts]` (master §8.5–8.6) | `scenario_book.yaml`, guardrails, heartbeat | gap-law replay verdicts (release gate), watchdog flatten | v1.0 LOCKED (authored 2026-07-17, phase-9 gate) |

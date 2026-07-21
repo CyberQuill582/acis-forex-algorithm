@@ -78,10 +78,29 @@ class ScenarioReplay:
 
     def _worst_book_gap_pct(self) -> float:
         """The book's worst same-instrument gap magnitude — the §8.5 allowance
-        applied on top of the outage stop geometry (C-SWN-4)."""
-        gaps = [abs(float(s.params["gap_pct"])) for s in self._book.scenarios
-                if s.kind == "gap_through_stop"]
-        return max(gaps) if gaps else 0.0
+        applied on top of the outage stop geometry (C-SWN-4).
+
+        GAP-0108 refinement (owner-deferred to phase 11): source the outage gap
+        allowance from the worst gap on an ENABLED instrument for this account's
+        universe — a disabled EXTENSION (e.g. the −35% USD_CHF) should not inflate
+        an all-majors account's outage. CONSERVATIVE fallback: if no enabled
+        instrument has a gap scenario, retain the overall worst — the refinement
+        only ever makes the outage MORE per-account-accurate, never UNDER-provisions
+        below the committed book (guard-integrity; the ceiling is unchanged)."""
+        gaps_all: list[float] = []
+        gaps_enabled: list[float] = []
+        for s in self._book.scenarios:
+            if s.kind != "gap_through_stop":
+                continue
+            g = abs(float(s.params["gap_pct"]))
+            gaps_all.append(g)
+            inst = s.params.get("instrument")
+            spec = self._instruments.get(inst) if isinstance(inst, str) else None
+            if spec is not None and spec.enabled:
+                gaps_enabled.append(g)
+        if gaps_enabled:
+            return max(gaps_enabled)
+        return max(gaps_all) if gaps_all else 0.0
 
     def replay_one(self, sc: Scenario) -> ReplayVerdict:
         inst = sc.params.get("instrument")

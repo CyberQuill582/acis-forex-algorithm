@@ -24,6 +24,16 @@ def rulebook_hash(rulebook: AccountRulebook) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def guardrail_hash(limits: GuardrailLimits) -> str:
+    """Content hash of the hard guardrail limits (SPEC §12/§8, ACIS-08 §5):
+    exposed on acis://config/guardrails and acknowledged (together with the
+    rulebook hash) before live mode — the human attests to the EXACT limits in
+    force. Same canonicalisation as rulebook_hash; guard-integrity law means
+    this is READ ONLY here — no code path writes guardrail_limits.yaml."""
+    canonical = json.dumps(limits.model_dump(mode="json"), sort_keys=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 @dataclass(frozen=True)
 class TaggedDrawdownRule:
     origin: str  # "engine" | "platform"

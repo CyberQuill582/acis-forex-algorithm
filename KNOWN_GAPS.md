@@ -13,12 +13,97 @@ Format — one entry per gap, newest first. Never delete entries; close them wit
 - Linked: commits / test names / halt-postmortems
 ```
 
-
 > **Archive note (2026-07-17, owner-ratified surface-area reduction):** entries with
 > `Status: closed` and historical audit-run banners are moved VERBATIM (never edited,
 > never deleted) to `KNOWN_GAPS_CLOSED.md` when closed. This file is the LIVE ledger:
 > open / mitigated / accepted-risk only. Ledger discipline is unchanged — new findings
 > land here first; closure moves the entry to the archive with its closing note.
+
+<!-- ============================================================================
+PHASE-11 DUAL AUDIT — TRIAGE COMPLETE (2026-07-18; suite green: 515 passed). Two
+parallel Opus 4.8 adversarial audits of the phase-11 backtest harness + §14
+validation: external-referent (GAP-P11E-01..07) + internal-consistency
+(GAP-P11I-01..10). 14 findings FIXED with regression tests (archived
+VERBATIM-condensed to KNOWN_GAPS_CLOSED.md), 2 remain LIVE below (GAP-P11I-02
+mitigated, GAP-P11I-10 accepted-risk), and GAP-P11E-07 is informational
+confirmations (kept below). ACIS-09 → v1.1 LOCKED with the honesty-guard
+corrections. NO guardrail VALUE, HALT, veto, resume, or equity-floor semantic
+weakened — every fix TIGHTENS an honesty gate (data-derived ≥2yr period, intraday
+drawdown, min-trade floor, real Kupiec VaR tally, self-enforced per-account rules,
+continuous cross-fold equity, non-overlapping OOS folds, real-guard glitch tests)
+or makes a named quantity/claim honest (rf=0 declared, VaR rate≠3% cap, C-BT-1
+flow-not-type). The two audits heavily overlapped and closed together:
+P11E-01≈P11I-08, P11E-02≈P11I-03, P11E-04≈P11I-05. Author≠auditor; a clean report
+is never a sign-off — ✅ still requires a peer/superior model or the human. Repro:
+scratchpad/p11e_repro.py, scratchpad/probe*.py.
+============================================================================= -->
+
+## GAP-P11E-07: External-referent CONFIRMATIONS (NOT sign-offs) — phase-11 backtest metrics vs their standard definitions
+- Severity: n/a (confirmations)
+- Likelihood: n/a
+- Status: informational (external-referent audit 2026-07-18 — a clean check is never a sign-off; author≠auditor)
+- Area: [DIR:tests/backtest], core/risk/scenario_replay.py; master §14
+- Description: Referents checked and found FAITHFUL, recorded as honest negatives: (1) **§14 grader constants EXACTLY match master §14** (report.py:26-33 vs spec table: Sharpe>1.5, DD<15%, win>0.48, PF>1.4, pos-months>70%, SPX<0.25, duration 1800–172800s; strict `>`/`<` on the open bounds, inclusive on the duration band — no drift). (2) **`positive_months_pct` == industry "months with positive return"**: `b > a` on consecutive month-end equities is identically the sign of the monthly return `(b−a)/a` (repro D) — correct, first month excluded, denominator = transitions. (3) **`max_drawdown_pct`**: standard running-peak-to-trough, positive percent basis — correct. (4) **Triple-swap Wednesday** (`carry.py`): Wednesday=3× under tom_next is the correct T+2 spot-FX rollover convention for the enabled majors (Wed→Thu roll settles over the weekend) — correct where it fires (but see GAP-P11E-04: not wired into PnL). (5) **`spx_correlation`**: textbook Pearson on paired finite returns, degenerate-variance→0 (no spurious correlation) — sound; alignment is positional (assumes pre-aligned same-clock returns, which the harness owes it). (6) **Sharpe annualisation** uses sample std (n−1) and √periods_per_year — the standard form (but see GAP-P11E-05 rf, GAP-P11E-02 curve). (7) **Data provenance** (data_loader.py): Dukascopy-primary/TrueFX-cross-check characterised faithfully (TrueFX validator-not-primary; OANDA candle-grade excluded as a tick source), drift check on mids with nearest-time alignment FLAGS and never averages — matches master §13/v2.9. (8) **GAP-0108 outage refinement** (scenario_replay.py:79-103): worst ENABLED-instrument gap with a conservative fallback to the overall worst — the refinement only ever makes the per-account outage MORE accurate, never under-provisions below the committed book; the ceiling is unchanged. These are confirmations of faithfulness to the referent, NOT a phase sign-off — the six findings above stand and ✅ still requires a peer/superior model or the human.
+- Linked: tests/backtest/report.py:26-33; tests/backtest/metrics.py; tests/backtest/data_loader.py; core/risk/scenario_replay.py:79-103; scratchpad/p11e_repro.py
+
+<!-- ============================================================================
+PHASE-10 DUAL AUDIT — TRIAGE COMPLETE (2026-07-18). Two parallel Opus 4.8
+adversarial audits of the MCP monitoring/control plane: internal-consistency
+(GAP-P10I-01..09) + external-referent (GAP-P10E-01..06), deploy-and-continue.
+ALL findings triaged: 13 FIXED with regression tests (archived VERBATIM-condensed
+to KNOWN_GAPS_CLOSED.md), 2 remain LIVE below (GAP-P10I-06 mitigated, GAP-P10E-03
+accepted-risk). ACIS-08 → v1.2 LOCKED with the mechanism-honesty corrections.
+Suite green after triage. NO guardrail VALUE, HALT, veto, resume, or equity-floor
+semantic weakened — every fix TIGHTENS a guard (bounded staging, crash-safe
+idempotency, safe-by-construction live gate, built heartbeat) or makes a named
+quantity/claim honest. The confirmations (both audits) are archived with the
+closed findings. Author≠auditor; a clean report is never a sign-off.
+============================================================================= -->
+
+## GAP-P11I-02 (P11I): §9.5 "platform rules ACTIVE during the run" (C-BT-7) — self-enforced + per-account PROVEN for the trade-evaluable rules; full drawdown-series/lot-cap/enabled-universe enforcement scoped to phase-12
+- Severity: high
+- Likelihood: medium
+- Status: mitigated (2026-07-18 — core finding FIXED, scoped remainder deferred)
+- Area: [DIR:tests/backtest] harness.py `_rule_violations`, specs/ACIS-09 §1/§2/§6/§13 C-BT-7, master §9.5/§14
+- Description: the core defect is CLOSED — `rule_violations` is no longer a caller free param. `Backtest.__init__` takes a per-account `rulebook`, and `_rule_violations` computes breaches FROM THE RUN'S closed trades (min-hold, weekend-holding), forcing `passed=False`; per-account independence is proven (`test_rule_enforcement_is_per_account`: the SAME 60s trade is a min-hold violation for a strict account and clean for a lax one). News-blackout is already enforced upstream by the REAL Governor's two-layer §3.5 gate during the replay. REMAINING (scoped, mitigated): (a) the full §9.5 series rules NOT expressible from closed trades — live-tracked trailing/daily drawdown-SERIES and lot-cap enforcement inside `_replay` — are not yet run as their own metric-path checks (drawdown IS measured off the intraday high-water for the §14 metric, GAP-P11I-04; the guardrail layer enforces the series live during the real-engine replay); (b) replayed states are not filtered to a per-account enabled universe (the caller supplies per-account fold states); (c) the §14-mandated SECOND REAL prop universe (XAU-only) independence test lands with futures/metals enablement at phase-12, since XAU is disabled now.
+- Justification: mitigated — the honesty guard is now self-enforcing and per-account for the rules a forex-phase-11 run can evaluate, and stricter enforcement (the guardrail layer, the real Governor blackout gate) runs live in the integration harness. The scoped remainder cannot bite the shipped single-universe forex config; it is real work tied to phase-12 (real second universe + in-metric-path series enforcement). Linked to GAP-P11I-10 (per-account universe into ScenarioReplay) and GAP-0109 (phase-12 futures/metals).
+- Linked: tests/backtest/harness.py `_rule_violations`, tests/backtest/test_harness_regressions.py, specs/ACIS-09 §14 Integration, master §9.5/§14, [[GAP-P11I-10]]
+
+## GAP-P11I-10 (P11I): GAP-0108 outage-gap refinement keys "enabled" off the GLOBAL instruments flag, not a per-account universe — "per-account accurate" is aspirational; shipped gate unchanged & sound
+- Severity: low
+- Likelihood: low
+- Status: accepted-risk (2026-07-18 — latent, no effect on the shipped single-universe config; per-account universe parameterisation deferred to phase-12 with GAP-P11I-02)
+- Area: [DIR:core/risk] scenario_replay.py `_worst_book_gap_pct`, specs/ACIS-09 §6 (GAP-0108), master §8.5
+- Description: `_worst_book_gap_pct` sources the outage gap allowance from gap scenarios whose named instrument is `spec.enabled` in `self._instruments` — the GLOBAL `instruments.yaml` enabled flag. ACIS-09 §6 / the docstring frame this as "the worst gap on an ENABLED instrument for THIS ACCOUNT'S universe", but `ScenarioReplay` is not parameterised by a per-account universe, so every account gets the same global-flag-derived allowance; two accounts with different enabled universes would not be distinguished. VERIFIED not to weaken the shipped release gate: with the shipped config (CHF + XAU disabled) the refinement falls back to `max(gaps_all)=35.0`, and the gate numbers are UNCHANGED — chf_depeg 7.0000% (ceiling 7.5%), broker_outage 7.0560% (ceiling 7.5%), all scenarios pass with floor survival. VERIFIED no under-provision path in the shipped semantics: an instrument-less "systemic" gap scenario is REJECTED by the schema (every gap scenario must name an instrument), and dropping a DISABLED instrument's gap is legitimate because a disabled instrument cannot be held during an outage. Recorded as a precision/observability gap, not a guard weakening.
+- Justification: FINDER-only, guard-integrity-adjacent (→ SPEC_AUDIT). Fix = when per-account grading is actually implemented (GAP-P11I-02), pass the account's enabled universe into `ScenarioReplay` and key the refinement off THAT, so the "per-account" claim is real; until then, note in the docstring that "enabled" means the global config flag. The conservative fallback + schema instrument-requirement keep the shipped gate sound.
+- Linked: core/risk/scenario_replay.py:79-103, tests/backtest/test_scenario_replay.py:130-152, specs/ACIS-09 §6 (GAP-0108), master §8.5
+
+## GAP-0109: two §13 futures-lifecycle glitch classes (contract-roll gap, expiry-with-open-position) have no backtest test yet — they need the unbuilt futures roll-or-flatten policy
+- Severity: low
+- Likelihood: low
+- Status: open (owned by phase 12 futures enablement — inert in phase-11 forex validation)
+- Area: [DIR:tests/backtest] test_glitch_classes.py, specs/ACIS-09 §13 C-BT-10, master §13/§3.7
+- Description: master §13 names nine glitch classes; ACIS-09 C-BT-10 requires backtest-level tests. SEVEN (triple-swap Wednesday carry, holiday half-day session-end, trailing-drawdown anchor, symbol-suffix non-merge, limit-lock→ILLIQUID gap-law, weekend-ban fencepost, Tier-G-shock-during-blackout) are tested now (`tests/backtest/test_glitch_classes.py`). The remaining TWO — contract-roll gap (a futures position held into its roll window → roll-or-flatten fires, never silent expiry; continuous-contract stitch never fabricates a tradeable price) and expiry-with-open-position (must be structurally unreachable given the roll policy) — depend on a futures roll-or-flatten POLICY that is not yet built (`grep roll_window|continuous_contract core/` is empty of an implementation). No futures instrument is enabled (`instruments.yaml` has none), so these paths are inert in phase-11 forex validation.
+- Justification: per master §3.7, futures go live only on futures-specific gates + a SEPARATE human sign-off at phase 12; the roll-or-flatten policy + its two glitch-class tests are legitimately owned by that futures-enablement work, not phase-11 forex §14 validation. Recorded (not silently skipped) so phase 12 treats the roll policy + these two tests as a named requirement; ACIS-09 C-BT-10 is amended to the 7-now / 2-at-phase-12 split.
+- Linked: tests/backtest/test_glitch_classes.py, specs/ACIS-09 §13 C-BT-10, master §13/§3.7, TODO.md phase 12
+
+## GAP-P10E-03 (P10E): human-token verifier is an unsalted single-round SHA-256 bearer-secret equality check with no rate-limit — sound compare, but not password-grade
+- Severity: medium
+- Likelihood: low
+- Status: accepted-risk (2026-07-18 — the compare is cryptographically sound (constant-time `hmac.compare_digest` over a sha256 digest, blank refused, genuinely closes GAP-0048); the SCHEME is a BEARER-SECRET equality model (the API-key pattern), NOT a password KDF. ACCEPTED with a DECLARED assumption + spec scoping (ACIS-08 §6): the deployment MUST provision a high-entropy human token (≥128-bit); salting is inapplicable to a single injected secret compared by digest; an in-process attempt-lockout is deliberately NOT added — it would let an attacker DoS the human out of their only resume/go-live path; online-guess throttling, if required, is a TRANSPORT/gateway responsibility at deployment (the same layer that binds stdio/SSE). "Genuine credential" is scoped to mean "a real constant-time secret check a fabricated string cannot pass", not password-grade brute-force hardening. A phase-12 deployment gate should verify the token's entropy + transport throttling before live.)
+- Area: [DIR:monitoring] auth.py `HumanTokenVerifier`, ACIS-08 §6/§13 C-MCP-10, master §12 safety asymmetry
+- Description: unsalted single-round SHA-256 with no rate-limit/lockout gates `acis_resume` and `acis_set_mode(live)` — the two human-only actions. Reproduced: 8 wrong online guesses, none throttled. Strength = the injected secret's entropy alone. Not a guardrail-value weakening; the token still gates every human-only action.
+- Justification: the residual is a deployment-time property (secret entropy + transport throttling), not a code defect in the constant-time compare; recorded as a declared deviation from a full NIST-800-63B verifier per §5.6, with a named phase-12 gate. Adding a KDF/salt/lockout in-process buys little against a single high-entropy injected secret and risks locking out the human.
+- Linked: monitoring/auth.py, ACIS-08 §6/§13 C-MCP-10, master §12, SPEC_AUDIT.md (phase-10 external-referent), KNOWN_GAPS_CLOSED.md (phase-10 fixed set)
+
+## GAP-P10I-06 (P10I): §14 integration contract under-covered — three of five mandated end-to-end cases now added; two joint cases deferred to the phase-12 runtime
+- Severity: medium
+- Likelihood: low
+- Status: mitigated (2026-07-18 — FIXED three of the five: the dual-hash live gate is now proven against the REAL config hashes (`guardrail_hash(cfg.guardrails)` + `rulebook_hash(active)`, and a tampered hash rejects — no longer only mock "GHASH"/"RHASH" strings); a `BLACKOUT_OVERRIDE_ENFORCED` near-miss is surfaced on `acis://status`; a staged tunable is proven not to mutate the live config file mid-session. DEFERRED to the phase-12 always-on runtime under the ACIS-08 §15 lean-build scope note: (b) staged-config-promotes-at-the-next-session-boundary jointly with ACIS-03 (the config-staging-to-boundary mechanism is owned by the runtime that owns boundary cadence — the same split as GAP-0091b/0075/0099), and (c) the real composed-paper-loop take-rate/skip surfacing (the surfacing CONTRACT is unit-proven under the C-MCP-9 non-partition test; wiring the live loop's counters is the runtime's job). The equity-floor-specific resume rejection (a) is covered by the non-human-resume-rejected + halt-persists integration test through the real Governor.)
+- Area: [DIR:tests/integration] test_mcp_pipeline.py, specs/ACIS-08 §14 (Integration)
+- Description: the suite is green, but green over a reduced surface. ACIS-08 §14 "Integration" enumerates cases the phase-10 integration test does NOT cover: (a) "agent tries to resume an **equity-floor** HALT → rejected (jointly with ACIS-07)" — the test resumes a generic MCP-initiated global halt, never an equity-floor-triggered HALT specifically; (b) "staged tunable config promotes only at the next session boundary (jointly with ACIS-03)" — no ParamLibrary/boundary test at all; (c) "`acis://status` reflects the paper-loop's take-rate + per-gate skip counters (jointly with the phase-7 skip_attribution)" — only a MOCK-provider unit test exists, the real composed loop is never wired; (d) "a `BLACKOUT_OVERRIDE_ENFORCED` event is surfaced on `acis://status`" — untested and unhandled; (e) "`acis://account/rules` surfaces the rulebook hash the `set_mode(live)` ack must match" — the fixture hard-codes `RULEBOOK_HASH="RHASH"` for BOTH the surfaced resource and the mode controller, so they match by construction; the REAL `account_doctrine.rulebook_hash(active_rulebook)` is never tied end-to-end to the `set_mode(live)` requirement. The dual-hash live gate is only ever exercised with matching short mock strings ("GHASH"/"RHASH"), so its real-64-hex behaviour is unproven (compounds GAP-P10I-03).
+- Justification: fix = add the five §14 integration cases with real fixtures (real hashes, real paper-loop status, an equity-floor HALT path, an ACIS-03 boundary promotion, a BLACKOUT_OVERRIDE_ENFORCED surfacing). Postcondition discipline (CLAUDE.md rule 4/6): the §14 contract is the bar, and the current tests do not meet it. Finder-only.
+- Linked: tests/integration/test_mcp_pipeline.py, tests/mcp_fixtures.py:14-15, specs/ACIS-08 §14
 
 <!-- ============================================================================
 PHASE-9 DUAL ADVERSARIAL AUDIT (2026-07-18, both Opus 4.8 subagents, deploy-and-
@@ -31,8 +116,10 @@ entries below are mitigated / raised-to-owner only. Guardrail-adjacent findings
 summarised in SPEC_AUDIT.md. NO guardrail VALUE, HALT, veto, or equity-floor
 semantic was weakened — every fix either TIGHTENS a guard (trailing high-water,
 daily-anchor, re-arm, clock-skew) or makes a named quantity honest; the two
-human-owned value questions (VaR cap horizon, CHF gap magnitude) are RAISED, not
-changed. Internal honest-negatives (verified SOUND): the single upward edge
+human-owned value questions (VaR cap horizon, CHF gap magnitude) were RAISED, not
+changed, and were subsequently CLOSED by the owner's 2026-07-18 ratification pass
+(GAP-0103 ratified as-is; GAP-0108 resolved to a faithful -35% gap + 7.5%
+ceilings — both moved to KNOWN_GAPS_CLOSED.md). Internal honest-negatives (verified SOUND): the single upward edge
 (risk imports nothing from governor; the sink schema cannot express a size
 increase); equity breaker checked-first + unthrottleable within an evaluate;
 taper hand-vectors + min-across + prop-stricter; taper-only never clears a
@@ -42,24 +129,6 @@ zero-core-imports. External honest-negatives: z(0.99)=2.326 exact; undiversified
 VaR is a provable conservative upper bound; gap/flash/vacuum/outage loss formulas
 dimensionally correct; the taper is exactly the ratified linear schedule.
 ============================================================================= -->
-
-## GAP-0108 (P9E-08): CHF de-peg scenario models a −20% gap; the actual 2015 worst fills were ~−30% to −40% — the release-gate ceiling is calibrated against an optimistic gap — **RAISED TO OWNER (also SPEC_AUDIT.md)**
-- Severity: low
-- Likelihood: medium
-- Status: open (RAISED to owner — book values are human-commit, C-SWN-7; −20% retained pending the ruling)
-- Area: [DIR:config] scenario_book.yaml `chf_depeg_2015`, [DIR:core/risk] scenario_replay.py, master §8.5
-- Description: On 2015-01-15 EUR/CHF fell from the 1.20 floor to ~0.85 intraday (~−29%) with retail stops filling as deep as ~0.70 (~−40%); USD/CHF fell ~−27% intraday. The book models `gap_pct: -20.0` (≈ the daily close, not the worst fill). At the honest worst-legal-book (USD_CHF now clustered → 20% NAV, GAP-0094), a −20% gap = 4.0% NAV < the 4.5% ceiling; a faithful −30% would be 6.0% NAV and BREACH the ceiling (a human ceiling re-ratification, C-SWN-7). The description/instrument mismatch (said EUR/CHF, coded USD_CHF) is FIXED. The gap magnitude + ceiling are human-owned: the owner must raise the gap toward the observed worst fill and re-ratify the ceiling (or accept −20% as the modelling choice with a recorded rationale). Not changed unilaterally — a guardrail-adjacent value.
-- Justification: C-SWN-7 — a gap-law modelling value + its ceiling are human-commit. Surfaced for the owner's next ratification pass; the gate is green at the committed −20%/20%-book/4.5%-ceiling meanwhile.
-- Linked: config/scenario_book.yaml `chf_depeg_2015` (annotated ⚠), core/risk/scenario_replay.py, KNOWN_GAPS_CLOSED.md GAP-0094
-
-## GAP-0103 (P9E-03): `portfolio_var_1pct` horizon — declared + scaled to 1 day; the 3% VaR cap re-confirmation against that horizon is RAISED to the owner — **also SPEC_AUDIT.md**
-- Severity: medium
-- Likelihood: high
-- Status: mitigated (2026-07-18 — the VaR horizon was UNDECLARED (a ~10s per-mark VaR gated by a 3%-NAV cap, ~93× loose). FIXED: `risk.var_horizon_seconds` (86400) now declares a 1-day horizon and `_var_pct` scales σ by √(horizon/eval_cadence); the field is an honest 1-day VaR. RAISED: the 3% cap was ratified against an unstated horizon — the owner should re-confirm 3% against the now-declared 1-day horizon. VaR is not yet wired in-loop (GAP-0091b), so nothing live changes; the fix only makes the guard meaningful/stronger)
-- Area: [DIR:core/risk] monitor.py `_var_pct`, config `risk.var_horizon_seconds`, ACIS-07 §4, master §8
-- Description: a VaR is defined only against a stated horizon; the original per-mark σ made "1% VaR as % NAV" a ~`eval_cadence_s` figure, ~90× smaller than a reader/ratifier of the 3% cap would assume. The horizon is now first-class config and scaled; the cap-value re-confirmation is the owner's (guard-integrity: cap values are human-owned).
-- Justification: the fix declares+scales (strengthens the guard); the residual is a human value re-confirmation, raised not applied.
-- Linked: core/risk/monitor.py `_var_pct`, config/system_config.yaml `risk.var_horizon_seconds`, ACIS-07 §4/§6
 
 ## GAP-0102 (P9E-02): `DrawdownRule.anchor` (eod vs intraday) — v1 samples INTRADAY for all rules (the risk-conservative choice); true eod-only sampling deferred
 - Severity: low

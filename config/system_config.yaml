@@ -95,8 +95,10 @@ risk:                            # ACIS-07 v1.1 (SPEC 8) - required block, opera
   alpha_decay_recovery_mult: 0.8
   var_method: delta_normal_undiversified  # conservative: no diversification credit
   var_window: 50
-  var_horizon_seconds: 86400   # 1-day VaR horizon (GAP-P9E-03 declared; the 3%
-                               # cap re-confirmation against this is raised to owner)
+  var_horizon_seconds: 86400   # 1-day VaR horizon (GAP-0103 declared+scaled; the
+                               # 3% var_cap_pct was owner-ratified AS-IS against
+                               # this 1-day horizon 2026-07-18. Phase 11 reports
+                               # the binding VaR breach frequency once wired in-loop.)
   slippage_window: 20
   eval_cadence_s: 10
   heartbeat_path: logs/heartbeat.json
@@ -111,3 +113,14 @@ execution:                       # ACIS-06 v1.1 (SPEC 7) - required block
   fast_decay_seconds: 30
   signature_lot_variance: 0.15
   dispatch_budget_ms: 100        # v2.10(c) observability value - never a guardrail
+monitoring:                      # ACIS-08 v1.1 (SPEC 12) - required block
+  transport: stdio
+  heartbeat_fast_s: 10           # SPEC 12 fast-loop SLA ceiling
+  heartbeat_other_s: 60
+  missed_beats_flatten: 3        # SPEC 12: 3 missed fast beats + open positions -> flatten rec
+  log_tail_max: 500
+  tunable_paths:                 # BOUNDED allowlist acis_stage_config may touch (NEVER guardrails);
+                                 # a staged value must fall in [min,max] — safe by construction
+    - {path: signals.conviction_discard, min: 0.45, max: 0.95}
+    - {path: governor.marginal_alpha_window, min: 10, max: 500}
+    - {path: regime.stability_window, min: 5, max: 200}
