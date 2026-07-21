@@ -1,0 +1,48 @@
+# ACIS local/VPS supervision via Compose (pre-phase-12 deployment-readiness gate).
+#
+# Two SEPARATE processes, by design (SPEC §8.6): the watchdog must not die with
+# the engine, so it is its own container with its own restart policy. They share
+# ONE volume — the logs dir — so the engine's heartbeat file (logs/heartbeat.json)
+# is visible to the watchdog, which flattens from outside the blast radius on
+# silence-with-open-positions.
+#
+# Today only the `watchdog` service is runnable and starts by default. The
+# `engine` service is scaffolded behind the `engine` profile because the
+# production three-loop runtime entrypoint lands with the phase-12 runtime item
+# (TODO "Three-loop production runtime + in-loop wiring"). Bare-VPS (non-Docker)
+# supervision equivalents live in deploy/systemd/.
+
+services:
+  watchdog:
+    build: .
+    image: acis:latest
+    container_name: acis-watchdog
+    command: ["python", "scripts/acis_watchdog.py"]
+    restart: unless-stopped
+    environment:
+      # A reference only — the real secret is injected by the deploy environment,
+      # never committed (see config/watchdog.yaml credentials_ref).
+      - ACIS_WATCHDOG_CREDENTIALS=${ACIS_WATCHDOG_CREDENTIALS:-}
+    volumes:
+      - acis-logs:/app/logs
+    read_only: true          # the engine cannot reach the watchdog's config/blast radius
+    tmpfs:
+      - /tmp
+
+  engine:
+    build: .
+    image: acis:latest
+    container_name: acis-engine
+    profiles: ["engine"]     # not started until the phase-12 runtime entrypoint exists
+    # TODO(phase-12 runtime): replace with the real three-loop entrypoint,
+    #   e.g. ["python", "-m", "core.runtime"] — the loop owner that writes
+    #   logs/heartbeat.json each fast loop. Until then this service is a
+    #   placeholder so the topology (engine + watchdog + shared heartbeat) is
+    #   reviewable now.
+    command: ["python", "-c", "raise SystemExit('engine runtime entrypoint lands with the phase-12 three-loop runtime')"]
+    restart: unless-stopped
+    volumes:
+      - acis-logs:/app/logs
+
+volumes:
+  acis-logs:

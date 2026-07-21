@@ -205,7 +205,7 @@ async def test_capability_reject_ioc_unsupported(tmp_path) -> None:
         account_model="netting", partial_close=True, min_lot=0.01,
         lot_step=0.01, max_order_lots=100.0,
         symbol_map={"EUR_USD": "EUR_USD"}, quote_depth=False,
-        asset_classes=frozenset({"fx"}))
+        asset_classes=frozenset({"fx"}), server_side_stops=True)
     face.descriptor = no_ioc
     orch, log, _, _ = mk_orchestrator(tmp_path, faces={"mock": face})
     reports = await orch.submit(mk_order("100000"), valid_for_seconds=10)  # fast decay
@@ -220,7 +220,7 @@ async def test_capability_reject_exceeds_max_order_lots(tmp_path) -> None:
         account_model="netting", partial_close=True, min_lot=0.01,
         lot_step=0.01, max_order_lots=1.0,
         symbol_map={"EUR_USD": "EUR_USD"}, quote_depth=False,
-        asset_classes=frozenset({"fx"}))
+        asset_classes=frozenset({"fx"}), server_side_stops=True)
     face.descriptor = small
     orch, _, _, _ = mk_orchestrator(tmp_path, faces={"mock": face})
     reports = await orch.submit(mk_order("900000"), valid_for_seconds=300)
@@ -255,7 +255,7 @@ async def test_reject_reroutes_to_next_best_venue_bounded(tmp_path) -> None:
         venue="mock2", order_types=frozenset({"market"}), supports_ioc=True,
         account_model="netting", partial_close=True, min_lot=0.01, lot_step=0.01,
         max_order_lots=100.0, symbol_map={"EUR_USD": "EUR_USD"},
-        quote_depth=False, asset_classes=frozenset({"fx"}))
+        quote_depth=False, asset_classes=frozenset({"fx"}), server_side_stops=True)
     orch, log, _, _ = mk_orchestrator(tmp_path, faces={"mock": bad, "mock2": good})
     reports = await orch.submit(mk_order("100000"), valid_for_seconds=300)
     statuses = [r.status for r in reports]

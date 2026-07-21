@@ -1,0 +1,65 @@
+{
+  "baseline": "acis-untrained-v1",
+  "description": "The pristine, market-UNTRAINED ACIS baseline: the gene search space (DNA) the engine evolves within, BEFORE any QIEA calibration. Every market-optimised divergence is a NEW named ParamSet promoted through the QIEA/ParamLibrary + challenger lane (SPEC 5.6/5.7) - it never edits this baseline. Clone from the git tag, never mutate in place. See BASELINE.md.",
+  "git_tag": "baseline-untrained-v1",
+  "frozen_on": "2026-07-21",
+  "spec": "ACIS_SPEC.md v2.12; GENE_SPECS = core/optimizer/param_types.py (master 5 ranges)",
+  "gene_space": {
+    "ema_fast": [
+      5,
+      50,
+      true
+    ],
+    "ema_slow": [
+      20,
+      200,
+      true
+    ],
+    "rsi_period": [
+      7,
+      21,
+      true
+    ],
+    "rsi_overbought": [
+      65.0,
+      80.0,
+      false
+    ],
+    "rsi_oversold": [
+      20.0,
+      35.0,
+      false
+    ],
+    "atr_multiplier_sl": [
+      1.0,
+      3.5,
+      false
+    ],
+    "atr_multiplier_tp": [
+      1.5,
+      5.0,
+      false
+    ],
+    "momentum_lookback": [
+      5,
+      50,
+      true
+    ],
+    "breakout_atr_threshold": [
+      0.5,
+      2.0,
+      false
+    ],
+    "mean_rev_zscore_entry": [
+      1.5,
+      2.5,
+      false
+    ],
+    "max_holding_periods": [
+      1,
+      48,
+      true
+    ]
+  },
+  "immutability_rule": "Append-only. A change to gene_space is a conscious RE-BASELINE: update this manifest AND cut a new git tag AND record it in BASELINE.md. test_baseline_paramset.py fails on any silent drift."
+}

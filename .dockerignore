@@ -1,0 +1,14 @@
+# Keep the deployment image lean and the build context small.
+.git
+.github
+tests
+specs
+archive
+logs
+**/__pycache__
+**/*.pyc
+*.md
+!config/*.md
+.pytest_cache
+.venv
+venv

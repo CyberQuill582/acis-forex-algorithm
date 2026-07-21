@@ -1,0 +1,60 @@
+# ACIS CI — the merge gate (pre-phase-12 VPS deployment-readiness gate, SPEC v2.10).
+#
+# The FULL test suite is the gate: nothing merges to main unless every test
+# passes on a clean Linux checkout (the VPS deploy target is Linux). The
+# import-direction contract test (tests/unit/test_import_contract.py) runs inside
+# this suite — it IS the dependency linter the architecture review asked for, so
+# a layer-law violation fails the merge automatically.
+#
+# Guardrails are human-commit-only (CLAUDE.md / SPEC §9); CI never mutates them —
+# it only proves the suite is green. There is no path here that can weaken a guard.
+
+name: acis-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# One in-flight run per ref; a newer push cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: full test suite (merge gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # The project runs from source (pyproject sets pythonpath=["."]); it is not
+      # a pip-installable package (flat multi-package layout). So install the
+      # declared deps directly — kept in sync with pyproject [project.dependencies]
+      # + [project.optional-dependencies].dev. A drift (a new import without its
+      # dep here) fails the suite loudly, which is the intended signal.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install structlog "pydantic>=2" pydantic-settings PyYAML pytest pytest-asyncio
+
+      - name: Run the full suite (the gate)
+        run: python -m pytest -q
+
+      # A deterministic, LLM-free engine must be deterministic in CI too: a
+      # second identical run catches order-dependent or seed-leak flakiness that
+      # a single green run would hide. Cheap insurance for a money engine.
+      - name: Re-run for determinism
+        run: python -m pytest -q

@@ -1,18 +1,18 @@
 # STATUS — ACIS current state (read first)
 
-**As of 2026-07-18.** One-screen digest. Authoritative sources: `TODO.md` (work queue), `CLAUDE.md` (rules), `KNOWN_GAPS.md` (live ledger). This file summarises them; if it ever disagrees with those, they win — update this.
+**As of 2026-07-21.** One-screen digest. Authoritative sources: `TODO.md` (work queue), `CLAUDE.md` (rules), `KNOWN_GAPS.md` (live ledger). This file summarises them; if it ever disagrees with those, they win — update this.
 
 ## Where we are
-- **Spec:** master `ACIS_SPEC.md` **v2.12**, complete, all passes owner-ratified. Deep layer specs ACIS-01..12 LOCKED; **ACIS-13 (venue adapters) is the only unwritten spec** (author before the first non-mock live adapter).
-- **Build:** **phases 1–11 ✅** — built, dual-audited (two Opus 4.8 audits each), every finding triaged. **515 tests green** in a full run.
+- **Spec:** master `ACIS_SPEC.md` **v2.12**, complete, all passes owner-ratified. Deep layer specs ACIS-01..12 LOCKED (ACIS-06 → v1.2 for §279 server-side stops); **ACIS-13 (venue adapters) is the only unwritten spec** (author before the first non-mock live adapter).
+- **Build:** **phases 1–11 ✅** — built, dual-audited (two Opus 4.8 audits each), every finding triaged. **Phase 12 in progress:** the pre-phase-12 **VPS deployment-readiness gate is ✅** (CI merge gate, Docker, systemd supervision + §8.6 watchdog, §279 server-side-stop conformance) and the **untrained-baseline freeze is ENFORCED** (git tag `baseline-untrained-v1`, drift-guard test). **522 tests green** in a full run.
 - **Implemented:** the 7 core layers (`core/{data,regime,optimizer,signals,governor,execution,risk}`), the MCP monitoring/control plane (`monitoring/`), and the backtest + §14-validation harness (`tests/backtest/`).
 - **Mode:** **PAPER only.** No live trading. No real-money path is enabled.
 
 ## Next: phase 12 — LIVE readiness (the final §15 phase)
 Full checklist in `TODO.md` → "Phase 12 — LIVE readiness". Headline items:
-1. **Real out-of-sample §14 validation** — acquire ≥2 yr real Dukascopy/TrueFX tick data, grade OUT-OF-SAMPLE. *Never present in-sample numbers vs §14.* This is the paper→live evidence bar.
-2. **VPS deployment-readiness gate** — CI merge gate, Docker, process supervision + §8.6 watchdog, per-adapter server-side-stop.
-3. **Three-loop runtime + in-loop wiring** — GAP-0091b (in-loop VaR/marks), GAP-0099 (per-fill breaker), GAP-0075 (position accounting).
+1. **VPS deployment-readiness gate** — ✅ **DONE 2026-07-21** (CI merge gate, Docker, systemd supervision + §8.6 watchdog, per-adapter §279 server-side-stop conformance). See `deploy/README.md`.
+2. **Real out-of-sample §14 validation** — acquire ≥2 yr real Dukascopy/TrueFX tick data, grade OUT-OF-SAMPLE. *Never present in-sample numbers vs §14.* This is the paper→live evidence bar. **← next**
+3. **Three-loop runtime + in-loop wiring** — GAP-0091b (in-loop VaR/marks), GAP-0099 (per-fill breaker), GAP-0075 (position accounting); this fills the `engine` service/systemd `ExecStart` and threads `SizedOrder.stop_loss` to the venue's server-side stop.
 4. **Per-account universe + full §9.5 enforcement**, **futures/metals roll policy** (GAP-0109), **ACIS-13 spec**, phase-12 dual audits.
 5. **LIVE sign-off — HUMAN ONLY.** §14 minimums met out-of-sample on real data + explicit owner sign-off.
 

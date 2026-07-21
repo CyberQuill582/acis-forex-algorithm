@@ -1,0 +1,39 @@
+# ACIS engine — the supervised fast-loop process. TEMPLATE / NOT YET ENABLED.
+#
+# The production three-loop runtime entrypoint lands with the phase-12 runtime
+# item (TODO "Three-loop production runtime + in-loop wiring"). Until it exists,
+# do NOT `systemctl enable` this unit — it would restart-loop. It is committed now
+# so the supervision topology (engine + watchdog + shared logs/heartbeat.json) is
+# reviewable at the deployment-readiness gate.
+#
+# When the runtime lands: set ExecStart to the real entrypoint (the loop owner
+# that writes logs/heartbeat.json each fast loop), then enable --now.
+
+[Unit]
+Description=ACIS engine (fast loop) — PLACEHOLDER until the phase-12 runtime entrypoint
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=acis
+Group=acis
+WorkingDirectory=/opt/acis
+Environment=PYTHONPATH=/opt/acis
+# TODO(phase-12 runtime): the real entrypoint, e.g.
+#   ExecStart=/usr/bin/python3 -m core.runtime
+ExecStart=/usr/bin/python3 -c "raise SystemExit('engine runtime entrypoint lands with the phase-12 three-loop runtime')"
+
+Restart=always
+RestartSec=5
+
+# The engine writes the heartbeat + JSONL logs; it must never touch guardrails
+# (human-commit-only) — the kernel enforces it here too.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/acis/logs
+
+[Install]
+WantedBy=multi-user.target

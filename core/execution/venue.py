@@ -91,6 +91,11 @@ class BrokerPosition:
     instrument: str
     direction: int
     size_units: Decimal
+    # §279 broker-side stop: the protective stop RESTING AT THE VENUE for this
+    # position (None = no server-side stop attached). Position risk is bounded
+    # even if ACIS vanishes only when this is set; the conformance suite asserts
+    # a live-attachable adapter actually rests it (phase-12 gate).
+    stop_loss: float | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +122,12 @@ class CapabilityDescriptor:
     symbol_map: Mapping[str, str]        # engine symbol -> venue symbol (§13 suffix law)
     quote_depth: bool
     asset_classes: frozenset[str]
+    # §279 (master, "already law"): can the venue hold a protective stop-loss
+    # ON ITS SERVER, so position risk is bounded even if ACIS/the VPS vanishes?
+    # Declared DATA like every other capability. A venue that cannot is NOT
+    # live-attachable — the phase-12 conformance gate asserts placement per
+    # adapter (`test_server_side_stop_*`).
+    server_side_stops: bool
 
     def __post_init__(self) -> None:
         if self.account_model not in ("netting", "hedging"):
@@ -142,7 +153,13 @@ class ExecutionFace(ABC):
     @abstractmethod
     async def submit_order(self, *, fragment_id: str, order_id: str, instrument: str,
                            direction: int, units: Decimal, requested_price: float,
-                           ioc: bool, now: datetime, session_id: str) -> FillReport: ...
+                           ioc: bool, now: datetime, session_id: str,
+                           stop_loss: float | None = None) -> FillReport:
+        """`stop_loss`, when supplied, is placed as a protective stop RESTING AT
+        THE VENUE (master §279) atomically with the fill — never emulated in the
+        engine. A face whose descriptor declares `server_side_stops=False` must
+        reject an order carrying a stop, never accept it unprotected."""
+        ...
 
     @abstractmethod
     async def cancel(self, fragment_id: str) -> bool: ...
@@ -152,6 +169,14 @@ class ExecutionFace(ABC):
 
     @abstractmethod
     async def account_snapshot(self) -> BrokerAccount: ...
+
+    @abstractmethod
+    async def resting_stops(self) -> Mapping[str, float]:
+        """instrument -> stop price for every protective stop CURRENTLY RESTING
+        AT THE VENUE. The conformance gate queries this to prove the stop lives
+        on the broker's server (survives an engine/VPS death), not in engine
+        memory (master §279)."""
+        ...
 
 
 class MockExecutionFace(ExecutionFace):
@@ -178,11 +203,13 @@ class MockExecutionFace(ExecutionFace):
             symbol_map={"EUR_USD": "EUR_USD", "USD_JPY": "USD_JPY"},
             quote_depth=True,
             asset_classes=frozenset({"fx"}),
+            server_side_stops=True,
         )
         self._offset = fill_offset          # adverse price offset per fill
         self._script = list(script or [])
         self._by_fragment: dict[str, FillReport] = {}
         self._net: dict[str, Decimal] = {}
+        self._stops: dict[str, float] = {}  # instrument -> stop RESTING at the venue
         self.submissions = 0                # physical venue hits (idempotency proof)
 
     def _behaviour(self) -> str:
@@ -190,9 +217,14 @@ class MockExecutionFace(ExecutionFace):
 
     async def submit_order(self, *, fragment_id: str, order_id: str, instrument: str,
                            direction: int, units: Decimal, requested_price: float,
-                           ioc: bool, now: datetime, session_id: str) -> FillReport:
+                           ioc: bool, now: datetime, session_id: str,
+                           stop_loss: float | None = None) -> FillReport:
         if fragment_id in self._by_fragment:            # duplicate: same report,
             return self._by_fragment[fragment_id]       # no second venue hit
+        if stop_loss is not None and not self.descriptor.server_side_stops:
+            raise DataQualityError(                     # never accept unprotected
+                "stop_loss", stop_loss,
+                f"venue {self.name} does not hold server-side stops (§279)")
         behaviour = self._behaviour()
         if behaviour == "disconnect":
             raise ConnectionError("mock venue: connection lost before submission")
@@ -222,6 +254,10 @@ class MockExecutionFace(ExecutionFace):
                 remaining_units=units - filled, session_id=session_id)
             self._net[instrument] = (self._net.get(instrument, Decimal("0"))
                                      + direction * filled)
+            if stop_loss is not None and filled > 0:    # rest the stop AT the venue,
+                self._stops[instrument] = stop_loss     # atomically with the fill
+            if self._net.get(instrument) == 0:          # flat again → stop retires
+                self._stops.pop(instrument, None)
         self._by_fragment[fragment_id] = report
         return report
 
@@ -231,12 +267,17 @@ class MockExecutionFace(ExecutionFace):
     async def open_positions(self) -> tuple[BrokerPosition, ...]:
         return tuple(
             BrokerPosition(instrument=inst, direction=1 if net > 0 else -1,
-                           size_units=abs(net))
+                           size_units=abs(net), stop_loss=self._stops.get(inst))
             for inst, net in sorted(self._net.items()) if net != 0)
 
     async def account_snapshot(self) -> BrokerAccount:
         return BrokerAccount(equity=Decimal("10000"), balance=Decimal("10000"),
                              margin_used=Decimal("0"))
+
+    async def resting_stops(self) -> Mapping[str, float]:
+        # a COPY of the venue-held stops — the caller sees broker state, never a
+        # live handle into engine memory (§279).
+        return dict(self._stops)
 
 
 class AttachHalt(Exception):

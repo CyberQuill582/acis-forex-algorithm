@@ -37,11 +37,12 @@ def adapter(request):
     return ADAPTERS[request.param]
 
 
-async def _submit(face, fragment_id="c1", units="1000", instrument="EUR_USD"):
+async def _submit(face, fragment_id="c1", units="1000", instrument="EUR_USD",
+                  direction=1, stop_loss=None):
     return await face.submit_order(
         fragment_id=fragment_id, order_id="ord-c", instrument=instrument,
-        direction=1, units=Decimal(units), requested_price=1.10, ioc=False,
-        now=T0, session_id="conf")
+        direction=direction, units=Decimal(units), requested_price=1.10, ioc=False,
+        now=T0, session_id="conf", stop_loss=stop_loss)
 
 
 async def test_round_trip_lifecycle(adapter) -> None:
@@ -114,8 +115,55 @@ def test_capability_descriptor_is_declared_data(adapter) -> None:
     assert {f.name for f in fields(d)} >= {
         "venue", "order_types", "supports_ioc", "account_model", "partial_close",
         "min_lot", "lot_step", "max_order_lots", "symbol_map", "quote_depth",
-        "asset_classes"}
+        "asset_classes", "server_side_stops"}
     assert "market" in d.order_types
+
+
+# ── §279 server-side-stop placement (per-adapter release gate) ────────────────
+# "every SizedOrder carries a stop-loss placed AT THE BROKER — position risk is
+# bounded even if ACIS vanishes." A live-attachable adapter must (a) DECLARE the
+# capability and (b) actually rest the stop at the venue, provably independent of
+# engine memory. A demo/practice environment provokes the same via a real
+# protective-stop order type; the mock proves the contract in v1.
+
+def test_capability_declares_server_side_stops(adapter) -> None:
+    d = adapter().descriptor
+    assert isinstance(d.server_side_stops, bool)
+    # v1 ships only live-attachable faces; a face that cannot hold stops is not
+    # attachable for live and would be excluded here with its reason.
+    assert d.server_side_stops is True
+
+
+async def test_server_side_stop_rests_at_broker(adapter) -> None:
+    face = adapter()
+    await _submit(face, stop_loss=1.09)
+    # the stop lives at the VENUE, keyed to the position — a fresh query (an
+    # engine restart / a different client) still sees it: it is not in ACIS.
+    stops = await face.resting_stops()
+    assert stops.get("EUR_USD") == 1.09
+    (pos,) = await face.open_positions()
+    assert pos.stop_loss == 1.09           # the position is protected at the broker
+
+
+async def test_server_side_stop_retires_when_flat(adapter) -> None:
+    face = adapter()
+    await _submit(face, stop_loss=1.09)
+    await _submit(face, fragment_id="close", units="1000", direction=-1)
+    assert await face.open_positions() == ()      # flat
+    assert await face.resting_stops() == {}       # the resting stop is gone with it
+
+
+async def test_stop_on_a_venue_that_cannot_hold_it_is_refused(adapter) -> None:
+    """Capability honesty: a face declaring server_side_stops=False must REJECT
+    an order carrying a stop — never accept it unprotected (silent emulation)."""
+    from dataclasses import replace
+
+    face = adapter()
+    if face.descriptor.server_side_stops:
+        face.descriptor = replace(face.descriptor, server_side_stops=False)
+    with pytest.raises(Exception):
+        await _submit(face, stop_loss=1.09)
+    assert await face.open_positions() == ()      # nothing opened unprotected
 
 
 def test_symbol_map_covers_enabled_universe(adapter, acis_config) -> None:

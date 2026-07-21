@@ -1,0 +1,41 @@
+# ACIS watchdog — SPEC §8.6 flatten-only breaker, supervised OUTSIDE the engine
+# blast radius. Copy to /etc/systemd/system/, then: systemctl enable --now acis-watchdog
+#
+# Guard-integrity at the OS layer: ProtectSystem=strict + a single ReadWritePaths
+# means this process CANNOT write config/guardrail_limits.yaml or config/watchdog.yaml
+# even if its code tried — it can only append to logs/ and flatten via the broker.
+# That is the §8.6 law enforced by the kernel, not by promises.
+
+[Unit]
+Description=ACIS watchdog (SPEC §8.6) — flatten-only, outside the engine blast radius
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=acis
+Group=acis
+WorkingDirectory=/opt/acis
+Environment=PYTHONPATH=/opt/acis
+# The broker credential is injected here, out-of-band — NEVER committed to the
+# repo (config/watchdog.yaml carries only the env: reference). Create this file
+# root-owned, 0600: ACIS_WATCHDOG_CREDENTIALS=...
+EnvironmentFile=/etc/acis/watchdog.env
+ExecStart=/usr/bin/python3 scripts/acis_watchdog.py
+
+# The breaker must come back if it ever dies — always, fast.
+Restart=always
+RestartSec=2
+
+# Least privilege — a flatten-only process needs almost nothing.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/acis/logs
+CapabilityBoundingSet=
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
