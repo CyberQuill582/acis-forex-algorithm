@@ -14,6 +14,8 @@ A production-grade, **deterministic (no-LLM-in-the-fast-loop)** autonomous forex
 7. **`SPEC_AUDIT.md`** — cross-source contradiction & audit register.
 
 > Archive / grep-only (not part of the read path): `KNOWN_GAPS_CLOSED.md` (closed items — the regression test named in each entry is the permanent record), `CONCORDANCE.md`, and `archive/` (superseded audit scratch). Grep these when tracing "why does the code do it this way"; never read top-to-bottom.
+>
+> Go-live artifact: `OPERATIONS_LEDGER.md` — the **runtime** ledger (empty until the first live fill). From go-live it logs operational surprises (real-vs-modelled fills, financing/broker reality, observed live VaR breach frequency) in the same format as `KNOWN_GAPS.md`, feeding a standing **operational-referent audit pass**. Guard 3 of the three go-live guards (see CLAUDE.md "Operational correctness").
 
 ## Layout
 ```

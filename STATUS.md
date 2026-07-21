@@ -32,6 +32,12 @@ Full checklist in `TODO.md` → "Phase 12 — LIVE readiness". Headline items:
 
 *(11 further items are `mitigated` — `grep '^- Status: mitigated' KNOWN_GAPS.md`. Closed items live in `KNOWN_GAPS_CLOSED.md`, each pinned by the regression test named in its entry — that test is the permanent record.)*
 
+## Operational correctness at go-live — three independent guards (none substitutes for another)
+Build correctness (the phase audits) is not operational correctness; the gap opens the day it trades real money.
+1. **Two-lens per-phase audit stays as-is** — never downgrade the external-referent lens (the only structural attack on a co-designed system's shared-priors seam).
+2. **Real out-of-sample data + human sign-off before live** — separate from auditing, non-negotiable. Never present in-sample numbers vs §14.
+3. **Runtime ledger from the first live fill** — `OPERATIONS_LEDGER.md` logs real-vs-modelled fills, financing reality, broker quirks, reconnects, observed live VaR breach frequency, in the same ledger format, so the standing **operational-referent audit pass** stays effective. A log records surprises *after* they surface — it never replaces guard 2. See CLAUDE.md "Operational correctness" + audit §3.
+
 ## Never touch without a human (guard-integrity law, SPEC §9)
 `config/guardrail_limits.yaml`, the equity-floor value, and HALT/veto/resume semantics are human-commit-only. There is no force flag. These are safe because the code *cannot reach them*, not because anyone promises care. A change that makes a guardrail reachable is the bug — halt and raise it.
 
