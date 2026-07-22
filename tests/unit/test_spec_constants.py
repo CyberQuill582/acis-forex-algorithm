@@ -108,3 +108,26 @@ def test_decision_budget_matches_acis04(acis_config) -> None:
         r"`fast_loop_decision_budget_ms = (\d+)`", _ACIS04, "specs/ACIS-04-ALPHA_ARENA.md"
     )
     assert acis_config.system.signals.fast_loop_decision_budget_ms == spec_ms
+
+
+def test_marginal_alpha_floor_neutral_cap_match_master() -> None:
+    # GAP-SP12I-02 drift gate: the anti-greed levers were prose constants with no
+    # drift gate. Master §6 C6 "0.25 floor, 1.0 neutral, 1.5 cap" is now pinned to
+    # the constants the Governor actually runs on (risk-restrictive levers, never
+    # guardrails — but a silent drift between prose and code should still fail loud).
+    from core.governor.marginal_alpha import CAP, FLOOR, NEUTRAL
+
+    assert FLOOR == _extract(r"(0\.\d+) floor, 1\.0 neutral")
+    assert NEUTRAL == _extract(r"0\.\d+ floor, (1\.\d+) neutral")
+    assert CAP == _extract(r"1\.0 neutral, (1\.\d+) cap")
+
+
+def test_alpha_decay_throttle_matches_master() -> None:
+    # GAP-SP12I-02 drift gate: master §8 "cut all allocations to 25%" pinned to the
+    # 0.25 multiplier the Capital Governor applies (raw_usd *= 0.25). The throttle
+    # behaviour is separately proven by the phase-6/9 governor tests; this ties the
+    # prose value and the code literal together so a drift on EITHER side fails.
+    spec_frac = _extract(r"cut all allocations to (\d+)%") / 100.0
+    assert spec_frac == 0.25
+    gov_src = (_ROOT / "core" / "governor" / "capital_governor.py").read_text(encoding="utf-8")
+    assert f"*= {spec_frac:.2f}" in gov_src

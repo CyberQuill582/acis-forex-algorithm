@@ -22,9 +22,10 @@ scenarios:
     # filling as deep as ~-40%; -35% sits inside the observed -30/-40% band (the
     # honest worst-legal-book cost, not the daily close). At the 20% clustered
     # worst book this is 7.0% NAV; the ceiling was raised to 7.5% (C-SWN-7,
-    # human-commit). The outage-allowance-source refinement (whether the outage
-    # should borrow only the worst ENABLED-instrument gap rather than any book
-    # scenario) is deferred to phase 11.
+    # human-commit). The outage-allowance-source refinement (borrow only the
+    # worst ENABLED-instrument gap rather than any book scenario) was DELIVERED
+    # in phase 11 (ACIS-09 §6); per-account-universe keying is deferred to
+    # phase 12 (GAP-P11I-10). The static 7.5 below is the conservative fallback.
     kind: gap_through_stop
     description: SNB floor removal 2015-01-15 — USD/CHF gap ~-35% through all stops (worst fill).
     params: {instrument: USD_CHF, gap_pct: -35.0}
@@ -47,7 +48,9 @@ scenarios:
                                # (now the faithful -35% CHF gap, GAP-0108);
                                # raised with the chf ceiling, owner-ratified
                                # 2026-07-18. Outage-allowance-source refinement
-                               # (enabled-only worst gap) deferred to phase 11.
+                               # (enabled-only worst gap) DELIVERED phase 11
+                               # (ACIS-09 §6); per-account keying → phase 12
+                               # (GAP-P11I-10).
   - name: rollover_liquidity_vacuum
     kind: liquidity_vacuum
     description: Spread explosion at 22:00 UTC rollover, 50x normal spread.

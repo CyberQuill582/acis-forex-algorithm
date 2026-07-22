@@ -65,7 +65,7 @@ class RegimeContext:
 
 - **`RegimeInputWindow`:** rolling arrays of `mid`, `spread`, `volume`, `tick_velocity`, `timestamp`, per instrument, length = `max_indicator_lookback` (≥200). Backed by a ring buffer; NaN-free (guaranteed by ACIS-01).
 - **Enums:** `VolClass`, `LiqState` as above. `trend_direction` ∈ {-1,0,+1}.
-- **Config (`regime:`):** `cycle_seconds` (60–300, F1), `atr_periods:[14,50,200]`, `adx_period:14`, `adx_strong_threshold`, `adx_weak_threshold`, `bb_window:100`, `hurst_window:200`, `hurst_meanrev:0.35` (re-derived v2.12; `hurst_trend` DELETED — see §6), `confidence_veto:0.55`, `spread_veto_mult:3.0`, `velocity_veto_mult:0.5`, `macro_lookahead_min:30` (shared with data), `session_median_window`, `session_median_min_samples`. All required.
+- **Config (`regime:`):** `cycle_seconds` (60–300, F1), `atr_periods:[14,50,200]`, `adx_period:14`, `adx_strong`, `adx_weak`, `bb_window:100`, `hurst_window:200`, `hurst_meanrev:0.35` (re-derived v2.12; `hurst_trend` DELETED — see §6), `confidence_veto:0.55`, `spread_veto_mult:3.0`, `velocity_veto_mult:0.5`, `macro_lookahead_min:30` (shared with data), `session_median_window`, `session_median_min_samples`. All required.
 
 ## 6. Algorithm & config set
 

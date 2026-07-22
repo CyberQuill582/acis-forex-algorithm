@@ -64,12 +64,19 @@ def annual_sharpe(returns: Sequence[float], periods_per_year: float) -> float:
     """Mean/std of period returns, annualised. Zero/degenerate variance → 0.0
     (never a spurious infinity that could flatter the grade).
 
-    DECLARED DEVIATION (GAP-P11E-05, §5.6): this is the rf=0 form (mean raw
-    return / std), not the textbook mean-EXCESS-return / std. It slightly
-    over-states Sharpe vs a positive risk-free rate; declared here so the name
-    does not imply an excess-return computation it does not do (§16 naming law).
-    A non-zero rf is a per-day-rate input the phase-11 data-ops loader supplies
-    when live; until then rf=0 is the stated assumption."""
+    DECLARED DEVIATIONS (§5.6, §16 naming law):
+    (1) GAP-P11E-05 — the rf=0 form (mean raw return / std), not textbook
+        mean-EXCESS-return / std; slightly over-states Sharpe vs a positive rf. A
+        non-zero rf is a per-day-rate the data-ops loader supplies when live.
+    (2) GAP-SP12E-02 — this is the naïve iid √periods_per_year annualisation. Per
+        Lo (2002, *The Statistics of Sharpe Ratios*) serial correlation can
+        overstate an annualised Sharpe "by as much as 65 percent"; ACIS's flagship
+        trend/momentum returns are positively autocorrelated at the daily scale
+        within trends — exactly the sign that makes √252 OVERSTATE. This bias lands
+        on the §14 Sharpe>1.5 live-gate, so a pass must be read with that in mind.
+        Whether to apply the Lo autocorrelation correction (vs report raw + this
+        caveat) is an owner decision raised at the spec audit; until ratified, the
+        raw √t figure carries this declared caveat, never presented as unbiased."""
     r = [x for x in returns if math.isfinite(x)]
     if len(r) < 2:
         return 0.0
@@ -123,8 +130,18 @@ def positive_months_pct(equity: Sequence[tuple[datetime, Decimal]]) -> float:
 
 
 def spx_correlation(returns: Sequence[float], spx_returns: Sequence[float]) -> float:
-    """Pearson correlation of aligned period returns. Degenerate variance → 0.0
-    (no spurious correlation from a flat series)."""
+    """Pearson correlation of period returns. Degenerate variance → 0.0 (no
+    spurious correlation from a flat series).
+
+    CALLER PRECONDITION (GAP-SP12E-04b/E-06, load-bearing): the two series MUST be
+    DATE-ALIGNED before this call — element i of `returns` and `spx_returns` must be
+    the SAME calendar day. This function zips by POSITION and cannot detect a
+    misalignment; FX and SPX trade on different calendars (FX runs on some US
+    holidays; SPX has ~252 vs FX's ~260 sessions/yr), so a positional zip of
+    un-joined series silently correlates mismatched dates and yields a meaningless,
+    usually-near-zero value — a FALSE CLEAR of the §14 SPX-corr<0.25 diversification
+    gate. The OOS driver owes a date-join of the SPX series to the equity dates, with
+    a holiday-mismatch fixture proving it (tracked to the evolve-driver build)."""
     n = min(len(returns), len(spx_returns))
     a = [returns[i] for i in range(n) if math.isfinite(returns[i]) and math.isfinite(spx_returns[i])]
     b = [spx_returns[i] for i in range(n) if math.isfinite(returns[i]) and math.isfinite(spx_returns[i])]
@@ -166,16 +183,22 @@ _Z_99 = 2.326
 
 
 def rolling_var_breach_rate(returns: Sequence[float], *, z: float = _Z_99) -> float:
-    """GAP-0103 / GAP-P11E-01 (Kupiec POF backtest): the observed 1-day 1% VaR
-    EXCEEDANCE RATE over the out-of-sample record. For each day t, the delta-normal
-    1% VaR is forecast from the EXPANDING history of prior returns
-    (VaR_t = z·σ_{<t}); a breach is a realised loss exceeding VaR_t. Returns the
-    breach fraction — a well-calibrated 1% VaR breaches on ~1% of days (the
-    "binding frequency" the owner deferred to phase 11 to report).
+    """GAP-0103 / GAP-P11E-01: the observed 1-day 1% VaR EXCEEDANCE RATE over the
+    out-of-sample record. For each day t, the delta-normal 1% VaR is forecast from
+    the EXPANDING history of prior returns (VaR_t = z·σ_{<t}); a breach is a
+    realised loss exceeding VaR_t. Returns the breach fraction — a well-calibrated
+    1% VaR breaches on ~1% of days (the "binding frequency" the owner deferred to
+    phase 11 to report).
 
-    This is a RATE (referent: the 1% confidence LEVEL), a distinct quantity from
-    the 3%-of-NAV `var_cap_pct` MAGNITUDE ceiling the Risk Monitor enforces live
-    — the two are never conflated. NaN-safe; <3 returns ⇒ 0.0."""
+    NOTE (GAP-SP12E-04, §16 naming law): this is the exceedance RATE — the INPUT to
+    a Kupiec POF test, NOT the test itself. It computes no likelihood-ratio
+    statistic and makes no χ²₁ accept/reject decision, so it must never be called a
+    "Kupiec backtest": with a short record even a badly-miscalibrated VaR can show a
+    rate near 1% by luck. The real Kupiec LR_POF significance test is a go-live add
+    for the operational-referent VaR check (GAP-SP12E-05). This RATE (referent: the
+    1% confidence LEVEL) is a distinct quantity from the 3%-of-NAV `var_cap_pct`
+    MAGNITUDE ceiling the Risk Monitor enforces live — the two are never conflated.
+    NaN-safe; <3 returns ⇒ 0.0."""
     r = [x for x in returns if math.isfinite(x)]
     if len(r) < 3:
         return 0.0

@@ -19,11 +19,20 @@ the grade (that is selection bias / meta-overfitting — the exact §5.6 self-de
 the spec forbids). The only legitimate optimisation is QIEA evolving genes on each
 train fold; the validation design is not an optimisation target.
 
-- **Data:** `2012-01-01 → 2026-01-01` (14 yr), **EUR/USD + USD/JPY** (the enabled
-  universe). Source: Dukascopy tick via `dukascopy-node` (primary) + a small TrueFX
-  overlap sample (cross-check). 2012 start avoids the noisy early Dukascopy years;
-  the span covers the EU-debt tail, the 2014–15 USD surge, Brexit, COVID, and the
-  2022 hike run — deliberate regime variety.
+- **Data:** `2012-01-01 → 2026-01-01` (14 yr). **Enabled universe RATIFIED
+  2026-07-22 (owner): 8 instruments** chosen for genuine cross-sectional
+  diversification (the honest path to a trustworthy Sharpe, GAP-SP12E-01), not more
+  USD-correlated majors: **EUR/USD, USD/JPY** (keep) · **GBP/USD, AUD/USD** (distinct
+  drivers) · **USD/CHF** (safe-haven) · **USD/CAD** (oil) · **EUR/GBP** (a cross —
+  removes the common USD factor) · **XAU/USD** (gold — different asset class, strongest
+  FX diversifier). Source: Dukascopy tick via `dukascopy-node` (primary) + a small
+  TrueFX overlap sample (cross-check). 2012 start avoids the noisy early Dukascopy
+  years; the span covers the EU-debt tail, the 2014–15 USD surge, Brexit, COVID, and
+  the 2022 hike run. *(Owner note: keep monitoring focused — download + VALIDATE all 8
+  for the honest diversified grade, but live ENABLE may be phased via the §5.7 rung
+  ladder; ACIS monitors per-instrument/per-strategy natively, so 8 ≠ diluted attention.
+  Per-instrument onboarding — cost model, calendar, cluster, pair stats, §13 tests —
+  is the real cost of broadening, tracked as build work.)*
 - **Walk-forward (development):** **2-yr train / 1-yr test / 1-yr step**, with a
   **~1-week embargo** between train and test (purge boundary leakage; embargo ≥ the
   48 h max-hold). Over 2012→2024 this is **~10 rolling folds, ~10 yr concatenated
@@ -32,9 +41,13 @@ train fold; the validation design is not an optimisation target.
   fold, tuning, or design decision until the design is frozen — then graded **once**
   as the meta-overfit confirmation (a "double out-of-sample" check). The driver
   physically guards it (a holdout guard) until that single final grade.
-- **Adopted honesty enhancements (small ACIS-09 additions):** (1) an **embargo gap**
-  in `generate_folds`; (2) **Deflated Sharpe + a logged trial-count** in the report,
-  so the grade is honest about selection bias under multiple testing. **Deferred:**
+- **Honesty enhancements — ⛔ TO BUILD (NOT yet in code), REQUIRED before any §14 pass
+  can gate live** (spec audit GAP-SP12E-03): (1) an **embargo gap** in `generate_folds`
+  (today `test_start = train_end`, zero gap — boundary leakage is NOT yet removed);
+  (2) **Deflated Sharpe + a logged trial-count** in the report (today the grader
+  applies **raw** `annual_sharpe > 1.5` with no multiple-testing deflation). These are
+  the defences against the GAP-SP12E-01 overfit risk; citing them is not shipping them
+  — they must exist in code before a "PASSED" report is trustworthy. **Deferred:**
   Combinatorial Purged CV (the spec mandates walk-forward; CPCV is a bigger §13
   change — documented future option, not built now).
 
@@ -44,10 +57,13 @@ Node.js required (`node -v` ≥ 14). Per-instrument, per-year chunks (resumable)
 PowerShell:
 
 ```powershell
+$pairs = [ordered]@{ eurusd='EUR_USD'; usdjpy='USD_JPY'; gbpusd='GBP_USD';
+  audusd='AUD_USD'; usdchf='USD_CHF'; usdcad='USD_CAD'; eurgbp='EUR_GBP'; xauusd='XAU_USD' }
 2012..2025 | ForEach-Object {
   $y = $_; $n = $_ + 1
-  npx dukascopy-node -i eurusd -from "$y-01-01" -to "$n-01-01" -t tick -f csv -dir ./data/dukascopy/EUR_USD
-  npx dukascopy-node -i usdjpy -from "$y-01-01" -to "$n-01-01" -t tick -f csv -dir ./data/dukascopy/USD_JPY
+  foreach ($p in $pairs.GetEnumerator()) {
+    npx dukascopy-node -i $p.Key -from "$y-01-01" -to "$n-01-01" -t tick -f csv -dir "./data/dukascopy/$($p.Value)"
+  }
 }
 ```
 

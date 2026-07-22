@@ -23,6 +23,38 @@ This file is the audit trail for the reconciliation of the ACIS specification ag
 
 ---
 
+## Z. Phase-12 SPEC dual audit (2026-07-21, Opus 4.8 × 2, constitution-adoption gate)
+
+Two adversarial audits of the SPEC itself (master v2.12 + locked `specs/`); full
+findings in `KNOWN_GAPS.md` (GAP-SP12I/E) + the pinned `SPEC_AUDIT_BRIEF.md`.
+**Guardrail-adjacent items recorded here (the rest are honesty/doc, in the ledger):**
+
+- **GAP-SP12E-01 — OPEN — human decision.** §14 `Sharpe > 1.5` OOS target exceeds the
+  spec's own cited evidence (MOP TSMOM ~1.0 Sharpe only across 58 markets) for the
+  ratified 2-pair enabled universe → a pass is overfit-prone. The §14 target is a spec
+  value; owner decides (stretch-vs-minimum / broaden universe / require Deflated-Sharpe).
+- **GAP-SP12E-02 — OPEN — human decision.** The §14-gating annual Sharpe uses naïve iid
+  √252 (no Lo-2002 autocorrelation correction) → overstates for autocorrelated trend
+  returns. Deviation now DECLARED in code; whether to APPLY the Lo correction is owner-owned.
+- **GAP-SP12E-05 — NOTED (accepted-risk).** delta-normal + √t VaR is Gaussian-blind to FX
+  fat tails; the `var_cap_pct 3.0%` calibration to a Gaussian 1-day horizon is unverified.
+  Accepted because tails are carried by the §8.5 scenario book + gap law, not VaR; the
+  go-live operational-referent audit must use the Kupiec LR test, not a bare rate.
+- **GAP-SP12I-02 — FIXED.** Anti-greed levers (0.25 floor / 1.5 cap / 25% throttle) were
+  prose constants with no drift gate; now pinned by `test_spec_constants.py` (risk-restrictive
+  levers, never guardrails).
+- **GAP-SP12I-03 — OPEN — human decision.** MOMENTUM_SCALP `valid_for_seconds=30` sits on the
+  strict-`<` fast-decay fencepost, so the most time-sensitive strategy never takes IOC —
+  execution-routing behaviour, owner decides the one-value fix.
+
+**Honest negative (first-class result):** NO guardrail VALUE, HALT/veto/resume, equity-floor,
+staging rule, or the layer law could be broken by either lens — the internal auditor confirmed
+all eight guardrail values agree across every copy and are drift-pinned, and the external
+auditor confirmed the 2015 CHF −35% gap is conservative vs the real event and z(0.99)=2.326.
+The findings are honesty/calibration/traceability, not reachable-guard defects.
+
+---
+
 ## A. Contradictions between sources
 
 ### F1 — NVMA loop cadence disagreement · NOTED (resolved)

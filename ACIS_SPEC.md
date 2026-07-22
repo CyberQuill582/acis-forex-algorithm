@@ -177,7 +177,7 @@ Quantum-inspired binary chromosome evolution maintaining a **regime-indexed para
 
 `ParamSet` fields and ranges (minimum set — extend only with spec edit): ema_fast 5–50, ema_slow 20–200, rsi_period 7–21, rsi_overbought 65–80, rsi_oversold 20–35, atr_multiplier_sl 1.0–3.5, atr_multiplier_tp 1.5–5.0, momentum_lookback 5–50, breakout_atr_threshold 0.5–2.0, mean_rev_zscore_entry 1.5–2.5, max_holding_periods 1–48, plus regime, fitness_score, evolved_at.
 
-Fitness = Sharpe×0.40 + WinRate×0.20 + ProfitFactor×0.20 + MaxDrawdownPenalty×(−0.20), evaluated on the last **500 bars of regime-labelled historical data for the target regime only** (never full history). QIEA reads historical data only — never live portfolio state.
+Fitness = Sharpe×0.40 + WinRate×0.20 + ProfitFactor×0.20 + MaxDrawdownPenalty×(−0.20), evaluated on the last **500 bars of regime-labelled historical data for the target regime only** (never full history). QIEA reads historical data only — never live portfolio state. *(The `Sharpe` component here is the per-trade **mean/σ** shipped as `mean_sigma` — GAP-0105 — a per-regime relative rank, NOT an annualised Sharpe; the only annualised Sharpe in the system is the §14 graded metric.)*
 
 **C8 — fitness is net of costs (binding).** The fitness mini-backtest must apply the **same** spread + commission + swap/slippage cost model used by the §13 backtest harness (`ACIS-09`) — the shared model is unit-tested identical in both places. Optimising on gross (mid-price) returns selects parameters that look profitable in a frictionless world and die net of costs; it is forbidden. This is the classic way a backtest lies, closed at the optimizer, not only at the final gate.
 
@@ -258,7 +258,7 @@ ACIS connects to trading platforms through **one declared contract**, so that su
 
 ## 8. RISK MONITOR `[DIR:core/risk]` — the only upward channel
 
-Continuous `RiskSnapshot`: daily_pnl, daily/open/total drawdown %, 1% VaR, max correlated-cluster %, rolling 50-trade Sharpe and win-rate, alpha_decay_flag, slippage_slope_alert, instruments_halted.
+Continuous `RiskSnapshot`: daily_pnl, daily/open/total drawdown %, 1% VaR, max correlated-cluster %, rolling 50-trade mean/σ (`mean_sigma`, GAP-0105 — per-trade mean/σ, NOT an annualised Sharpe; the §8 alpha-decay "Sharpe" below is the same quantity, and its ratio test cancels annualisation) and win-rate, alpha_decay_flag, slippage_slope_alert, instruments_halted.
 
 HALT limits live in `config/guardrail_limits.yaml` (version-controlled, human-edited only — §9): daily_drawdown 2.0% (halt all new positions for session) · per-instrument drawdown 1.0% (halt instrument) · alpha-decay Sharpe threshold 0.5× baseline · portfolio 1% VaR cap 3.0% NAV · cluster cap 20% · slippage alert 8.0 bps. **Equity circuit breaker (Master Spec, binding): if account equity drops below the configured floor, kill trading instantly — flatten-and-halt, human required to restart.** (These limits and the equity floor cannot be reached from any sizing or signal path — they are out of reach *structurally*, not by convention: the guard-integrity law, §9.)
 

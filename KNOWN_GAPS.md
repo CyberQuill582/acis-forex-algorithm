@@ -20,6 +20,84 @@ Format — one entry per gap, newest first. Never delete entries; close them wit
 > land here first; closure moves the entry to the archive with its closing note.
 
 <!-- ============================================================================
+PHASE-12 SPEC DUAL AUDIT — TRIAGE IN PROGRESS (2026-07-21). Two parallel Opus 4.8
+adversarial audits of the SPEC ITSELF (master v2.12 + locked specs/) per the
+CLAUDE.md constitution-adoption gate: internal-consistency (GAP-SP12I-01..05, all
+LOW) + external-referent (GAP-SP12E-01..06). Author ran the A6 refutation gate:
+every finding reproduced/verified before triage — SP12E-06 GRADUATED unconfirmed→
+confirmed; SP12E-04 confirmed. Pinned brief: SPEC_AUDIT_BRIEF.md; auditor evidence
+in SPEC_AUDIT_INTERNAL_PENDING.md + SPEC_AUDIT_EXTERNAL_PENDING.md (archive both +
+the brief once the RAISED items close). NO guardrail VALUE, HALT/veto/resume, or
+equity-floor semantic weakened — guardrails, layer law, and staging rules SURVIVED
+every internal-contradiction attack (10 internal + 7 external honest negatives,
+incl. the 2015 CHF -35% gap verified conservative vs the real event, z(0.99)=2.326,
+and the v2.12 Hurst drift-invariance fix confirmed right about the world). FIXED now
+(honesty/tests, 524 green): SP12I-02, SP12E-04, SP12E-06(precond), SP12E-02(decl),
+SP12E-03(runbook). RAISED to owner: SP12E-01, SP12E-02(apply-Lo?), SP12I-03, doc
+batch SP12I-01/04/05. Accepted-risk: SP12E-05.
+============================================================================= -->
+
+## GAP-SP12E-01: §14 Sharpe>1.5 target exceeds the spec's own cited evidence base for a 2-pair book
+- Severity: medium · Likelihood: high
+- Status: raised (owner decision pending 2026-07-21 — §14 target is a spec value, human-owned; NOT changed by an agent)
+- Area: master §14 / §5.6 / ACIS-09 / OOS_VALIDATION.md
+- Description: `SHARPE_MIN=1.5` OOS, graded per account on the enabled universe (EUR/USD + USD/JPY — 2 highly-correlated USD-legged pairs). Moskowitz–Ooi–Pedersen (the §5.6 canon) reaches ~1.0 Sharpe only after diversifying across 58 markets (~0.3–0.5 per market). 1.5 on 2 pairs is ~50% above the diversified benchmark → clearable in-sample largely by overfit; the likely real outcome is (a) never clears/never live, or (b) a "pass" is an overfit that slipped the ≥30-trade/>1-fold floors. Externally quoted (foxholm MOP summary) in SPEC_AUDIT_EXTERNAL_PENDING.md.
+- Justification: OWNER DECISION. Options: treat 1.5 as a STRETCH and set a defensible 2-pair minimum; and/or broaden the enabled universe before §14 is a fair test; and/or REQUIRE the Deflated-Sharpe deflation (SP12E-03) to accompany any pass. Not a guardrail weakening — a target-calibration question. → SPEC_AUDIT.md.
+- Linked: SPEC_AUDIT_EXTERNAL_PENDING.md GAP-SP12E-01, [[GAP-SP12E-03]], report.py:29
+
+## GAP-SP12E-02: annual_sharpe uses naïve iid √252 with no autocorrelation correction (Lo 2002); deviation now DECLARED, apply-Lo raised
+- Severity: medium · Likelihood: high
+- Status: mitigated (2026-07-21 — the iid-annualisation deviation is now in `annual_sharpe`'s DECLARED DEVIATIONS, §5.6/§16; whether to APPLY the Lo autocorrelation correction vs report-raw-with-caveat is RAISED to owner)
+- Area: tests/backtest/metrics.py `annual_sharpe`
+- Description: `(mean/sd)·√252` on daily returns, no serial-correlation adjustment. Lo (2002): serial correlation can overstate an annualised Sharpe "by as much as 65 percent"; ACIS's trend/momentum returns are positively autocorrelated within trends — the sign that makes √252 OVERSTATE, landing on the §14 gate (SP12E-01). Quoted (CFA Institute / Lo) in the pending file.
+- Justification: minimum honesty fix APPLIED (declared deviation + caveat next to the figure). Applying the Lo correction changes the gating number → owner-ratified methodology decision. → SPEC_AUDIT.md.
+- Linked: metrics.py `annual_sharpe`, SPEC_AUDIT_EXTERNAL_PENDING.md GAP-SP12E-02
+
+## GAP-SP12E-03: embargo/purge + Deflated Sharpe are cited in the guard-2 runbook but NOT built — required before a §14 pass can gate live
+- Severity: medium · Likelihood: high
+- Status: mitigated (2026-07-21 — runbook wording FIXED to mark both ⛔ TO-BUILD + REQUIRED-before-grade, not adopted-as-done; the machinery itself is on the ratified build list)
+- Area: OOS_VALIDATION.md vs walk_forward.py `generate_folds` / report.py
+- Description: `generate_folds` sets `test_start = train_end` (zero embargo/purge — boundary leakage not removed); no Deflated Sharpe / trial-count anywhere in code (grader applies raw `annual_sharpe>1.5`). These are the defences against the SP12E-01 overfit risk; the runbook cited them as its ground truth (López de Prado) while shipping neither.
+- Justification: dual-nature (read-path truth + faithful-method). Runbook corrected now; the build (embargo gap in generate_folds + deflated_sharpe/trial_count in ValidationReport) is a REQUIRED pre-grade item on the evolve-driver build, elevated from "enhancement" to "load-bearing".
+- Linked: OOS_VALIDATION.md, walk_forward.py:43, report.py, TODO.md phase-12 item (2), [[GAP-SP12E-01]]
+
+## GAP-SP12E-05: delta-normal + √t VaR is Gaussian-blind to the fat tails the 3% cap implicitly bounds
+- Severity: low · Likelihood: medium
+- Status: accepted-risk (2026-07-21 — the spec does NOT rely on VaR for tail bounding; the §8.5 scenario book + gap law carry tails, and VaR is labelled delta-normal + not-yet-wired-in-loop (GAP-0091b))
+- Area: core/risk/monitor.py `_var_pct`, guardrail `var_cap_pct 3.0`
+- Description: per-position delta-normal `z·σ` with σ scaled √(horizon/cadence) assumes iid-normal; a 2015-SNB-class gap (>10σ Gaussian) is assigned ≈0 probability. Residual: the 3% cap's calibration to a Gaussian 1-day horizon is unverified vs real FX kurtosis, and its only empirical check (`var_breach_frequency`) is a bare rate, not a significance test (SP12E-04).
+- Justification: accepted because tails are carried structurally (scenario book/gap law), not by VaR. Recorded as a declared VaR limitation; the go-live operational-referent audit must use the Kupiec LR test (not a bare rate) for live VaR-breach frequency. → SPEC_AUDIT.md.
+- Linked: core/risk/monitor.py `_var_pct`, [[GAP-SP12E-04]], [[gap-0091b]], master §8.5
+
+## GAP-SP12E-06: spx_correlation zips returns by POSITION, not date — a false-clear risk for the §14 SPX-corr gate (CONFIRMED)
+- Severity: low · Likelihood: medium
+- Status: mitigated (2026-07-21 — graduated unconfirmed→confirmed by author; the caller date-alignment PRECONDITION is now load-bearing in the `spx_correlation` docstring; the date-join + a holiday-mismatch fixture are tracked as an evolve-driver build requirement)
+- Area: tests/backtest/metrics.py `spx_correlation`
+- Description: `spx_correlation` zips positionally with no date-join; FX (~260 sessions/yr, trades some US holidays) and SPX (~252) calendars differ, so an un-joined positional zip silently correlates mismatched dates → a meaningless near-zero value → a FALSE CLEAR of the §14 <0.25 diversification gate. The current call sites pass flat `[0.0]*n` fixtures so the defect is inert today; the REAL OOS driver must date-join.
+- Justification: minimum fix APPLIED (precondition made explicit + load-bearing in the docstring). The date-join + fixture land with the evolve-driver (the component that builds the real SPX series).
+- Linked: metrics.py `spx_correlation`, TODO.md phase-12 item (2)
+
+## GAP-SP12I-03: MOMENTUM_SCALP sits exactly on the fast-decay fencepost — the most time-sensitive strategy never takes the IOC path
+- Severity: low · Likelihood: high
+- Status: raised (owner decision pending 2026-07-21 — touches execution routing behaviour)
+- Area: config/system_config.yaml (`signals.valid_for_seconds.MOMENTUM_SCALP=30`, `execution.fast_decay_seconds=30`) vs master §7/§5.5, ACIS-06 §7
+- Description: ACIS-06 §7 uses strict `<`; scalp `valid_for_seconds=30 == fast_decay_seconds=30`, so the shortest-lived signal (30 s vs 300 s) is EXCLUDED from the aggressive-IOC fast path by one second and routed to fragment/scheduled — the opposite of §5.5 "speed over stealth". Reproduced (repro_sp12i.py). No §13 test covers the fast-decay boundary.
+- Justification: OWNER DECISION (recommend: set scalp `valid_for_seconds` to 29 or below so it takes IOC as §5.5 intends; alternatives: ACIS-06 `<=` for the scalp class, or raise `fast_decay_seconds`). Add a §13 fast-decay-boundary test with the chosen value. Not a guardrail.
+- Linked: SPEC_AUDIT_INTERNAL_PENDING.md GAP-SP12I-03, config/system_config.yaml:41/113
+
+## GAP-SP12I-DOC (SP12I-01/04/05): read-path documentation drift — three stale spec/config narratives (batch)
+- Severity: low · Likelihood: high
+- Status: fixed (2026-07-22 — owner ratified "apply all three"; applied: master §5/§8 mean_sigma note, ACIS-02 §6 adx_strong/adx_weak, scenario_book.yaml phase-11-delivered comments; 50 gate tests green. Moves to KNOWN_GAPS_CLOSED.md when the pass's raised items close.)
+- Area: ACIS_SPEC.md §5/§8; specs/ACIS-02 §6; config/scenario_book.yaml
+- Description: (SP12I-01) master §5/§8 still say "Sharpe" for the fitness/alpha-decay metric that GAP-0105 (CLOSED) renamed to `mean_sigma` ("NOT an annualised Sharpe") in the deep specs — a locked spec now must contradict the master to stay honest (functionally harmless: the alpha-decay test is a ratio, annualisation cancels). (SP12I-04) ACIS-02 §6 names config keys `adx_strong_threshold`/`adx_weak_threshold`; the real keys are `adx_strong`/`adx_weak` (ACIS-02 §7 already uses the correct names). (SP12I-05) scenario_book.yaml comments say the GAP-0108 outage refinement is "deferred to phase 11"; phase 11 is ✅ and ACIS-09 §6 states it delivered.
+- Justification: pure traceability drift (A13) — no safety impact, but a fresh session is taught an out-of-date story. Recommended edits (for "apply those"): (01) add a one-line master note that §5/§8 "Sharpe" is the per-trade mean/σ of GAP-0105, the annualised Sharpe being only the §14 graded metric; (04) `adx_strong`/`adx_weak` in ACIS-02 §6; (05) update the three scenario_book comments to point at ACIS-09 §6 where the refinement now lives.
+- Linked: SPEC_AUDIT_INTERNAL_PENDING.md GAP-SP12I-01/04/05, KNOWN_GAPS_CLOSED.md GAP-0105
+
+<!-- SP12I-02 (marginal-alpha/throttle drift gate) + SP12E-04 (Kupiec naming) FIXED
+2026-07-21 with regression tests / honesty edits; they move to KNOWN_GAPS_CLOSED.md
+when this pass's raised items close. Repro: scratchpad/repro_sp12i.py. -->
+
+<!-- ============================================================================
 PHASE-11 DUAL AUDIT — TRIAGE COMPLETE (2026-07-18; suite green: 515 passed). Two
 parallel Opus 4.8 adversarial audits of the phase-11 backtest harness + §14
 validation: external-referent (GAP-P11E-01..07) + internal-consistency
