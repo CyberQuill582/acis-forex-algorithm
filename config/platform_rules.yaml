@@ -35,3 +35,60 @@ accounts:
     min_trading_days: 5
     taper_start_fraction: 0.50    # stricter than the ratified 0.60 floor — allowed
     entry_halt_fraction: 0.70
+
+  # ── Prop-firm rulebook DRAFTS (owner research 2026-07-22) ────────────────────
+  # Model the SHORTLISTED firms' §9.5 rules so ACIS is VALIDATED under the exact
+  # constraints it will trade under (GAP-P11I-02: the rulebook is enforced during
+  # the backtest — no train/live gap). ⚠ VERIFY every value against each firm's
+  # CURRENT published rules before use: prop rules change often and firms can close
+  # (MyFundedFX shut Feb 2026) — hence 2-3 firms as insurance. Structure mirrors the
+  # proven `prop_demo` fixture (daily = trailing/intraday/equity, total = static/eod/
+  # balance), modelling daily STRICTER than the real rule where in doubt (halts are
+  # cheap). NOTE: none of the three imposes a min-hold-TIME (the common rule is min
+  # trading DAYS), so MOMENTUM_SCALP is not prohibited here; the strict case is the
+  # `prop_demo` min_hold_seconds=60, where the scalp simply fails its gate under the
+  # rule and is not promoted for that account. ACIS's own 2% daily guardrail is far
+  # inside every prop 5% daily, so ACIS essentially cannot breach a prop daily limit.
+  ftmo:                             # reputability anchor — 12-yr payout track record
+    platform: ctrader
+    news:                           # standard: high-impact blackout (ACIS respects §3.5)
+      restricted: true
+      window_before_s: 120
+      window_after_s: 120
+    min_hold_seconds: 0             # no min-hold-time; anti-HFT only (ACIS is not HFT)
+    weekend_holding_allowed: false  # standard accounts (a Swing variant would be true)
+    drawdown_rules:
+      - type: trailing              # ~5% max daily loss (modelled off intraday high-water)
+        anchor: intraday
+        basis: equity
+        limit_pct: 5.0
+      - type: static                # 10% max total loss (from initial balance)
+        anchor: eod
+        basis: balance
+        limit_pct: 10.0
+  the5ers:                          # swing-friendly — unlimited time, holds allowed
+    platform: ctrader
+    news:
+      restricted: false             # permissive on most programs
+    min_hold_seconds: 0
+    weekend_holding_allowed: true
+    drawdown_rules:
+      - type: static                # ~10% max total (program-dependent; some have NO daily
+        anchor: eod                 # — ACIS's own 2% daily guardrail covers the gap)
+        basis: balance
+        limit_pct: 10.0
+  atlas_funded:                     # permissive — news + weekend + SCALPING all allowed
+    platform: mt5
+    news:
+      restricted: false
+    min_hold_seconds: 0             # scalp runs at its native horizon here
+    weekend_holding_allowed: true
+    drawdown_rules:
+      - type: trailing
+        anchor: intraday
+        basis: equity
+        limit_pct: 5.0
+      - type: static
+        anchor: eod
+        basis: balance
+        limit_pct: 10.0

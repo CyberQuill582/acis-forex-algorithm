@@ -80,6 +80,65 @@ instruments:
     max_plausible_spread: 1.2
     calendar: cme_metals
 
+  # ── Diversification basket (owner-ratified 2026-07-22) — DECLARED, disabled ──
+  # until cost-calibration at data-download time: an ENABLED instrument requires a
+  # costs block + vol_target_atr_frac (schema-enforced), and those are calibrated
+  # from the real Dukascopy ticks (§13/v2.9). Enabling = flip `enabled: true` + add
+  # calibrated costs/vol_target + a scenario-replay re-verification (guardrail-adjacent).
+  # That is the data-time step; declaring them now readies the universe (§3.7).
+  GBP_USD:
+    enabled: false
+    asset_class: fx
+    base_ccy: GBP
+    quote_ccy: USD
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0008
+    calendar: fx_default
+  AUD_USD:
+    enabled: false
+    asset_class: fx
+    base_ccy: AUD
+    quote_ccy: USD
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0006
+    calendar: fx_default
+  USD_CAD:
+    enabled: false
+    asset_class: fx
+    base_ccy: USD
+    quote_ccy: CAD
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0008
+    calendar: fx_default
+  EUR_GBP:
+    enabled: false
+    asset_class: fx
+    base_ccy: EUR
+    quote_ccy: GBP
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0006
+    calendar: fx_default
+
 # §5.5: every relationship declares its window AND method — schema-fatal otherwise.
 pair_relationships:
   eurusd_usdjpy:
@@ -95,9 +154,10 @@ clusters:
   # bounds its worst legal book by the 20% cluster cap (GAP-P9I-02: a
   # cluster-less instrument would be bounded only by the 30% delta cap, which
   # the §8.5 chf_depeg scenario's worst-book construction must reflect honestly).
-  usd_long: [USD_JPY, USD_CHF]
-  usd_short: [EUR_USD]
-  commodity: [XAU_USD]     # C7: extension reference, inert while disabled
+  usd_long: [USD_JPY, USD_CHF, USD_CAD]
+  usd_short: [EUR_USD, GBP_USD, AUD_USD]
+  commodity: [XAU_USD, AUD_USD]     # C7: extension references inert while disabled
+  european: [EUR_USD, GBP_USD, EUR_GBP]   # EUR/GBP bloc — gives the cross a cluster
   yen_carry: [USD_JPY]
   risk_on: [EUR_USD]
   risk_off: [XAU_USD, USD_JPY]

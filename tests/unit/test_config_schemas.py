@@ -179,7 +179,9 @@ def test_pair_relationship_without_method_is_fatal(tmp_path: Path) -> None:
 
 def test_pair_relationship_unknown_leg_is_fatal(tmp_path: Path) -> None:
     def mutate(d):
-        d["pair_relationships"]["eurusd_usdjpy"]["legs"] = ["EUR_USD", "GBP_USD"]
+        # NZD_USD is not declared in the universe (GBP_USD now IS, as a disabled
+        # diversification-basket extension — 2026-07-22); use a genuinely unknown leg.
+        d["pair_relationships"]["eurusd_usdjpy"]["legs"] = ["EUR_USD", "NZD_USD"]
     with pytest.raises(ConfigError):
         load_config(_mutated_config(tmp_path, "instruments.yaml", mutate))
 
