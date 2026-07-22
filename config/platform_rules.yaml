@@ -92,3 +92,20 @@ accounts:
         anchor: eod
         basis: balance
         limit_pct: 10.0
+  fundednext:                       # cTrader + Match-Trader; EAs on all programs.
+    platform: ctrader               # SWING account modelled — the ACIS-fit product
+    news:                           # (weekend + news holds; live leverage is reduced
+      restricted: false             #  to 1:30, which is not a rulebook field).
+    min_hold_seconds: 0
+    weekend_holding_allowed: true
+    drawdown_rules:
+      - type: trailing              # ~5% max daily
+        anchor: intraday
+        basis: equity
+        limit_pct: 5.0
+      - type: static                # ~10% max total (from initial balance)
+        anchor: eod
+        basis: balance
+        limit_pct: 10.0
+    consistency_max_day_profit_pct: 40.0   # no single day > 40% of total profit
+    min_trading_days: 5
