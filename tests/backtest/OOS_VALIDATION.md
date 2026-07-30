@@ -51,28 +51,23 @@ train fold; the validation design is not an optimisation target.
   Combinatorial Purged CV (the spec mandates walk-forward; CPCV is a bigger §13
   change — documented future option, not built now).
 
-### Data acquisition (run this to start the ~40–60 GB, multi-day download)
+### Data acquisition (~35 GB gzipped, multi-day download — BUILT)
 
-Node.js required (`node -v` ≥ 14). Per-instrument, per-year chunks (resumable).
-PowerShell:
+The downloader is committed: [`scripts/download_dukascopy.js`](../../scripts/download_dukascopy.js),
+run per the [`scripts/GCP_DOWNLOAD.md`](../../scripts/GCP_DOWNLOAD.md) runbook (GCP VM under
+the $300 free credit; tmux for disconnect-survival). It pulls all 8 instruments ×
+2012–2025 in **monthly** chunks (RAM-safe on a 2 GB VM where a year-chunk would OOM),
+**resumable** (completed chunks skipped; re-run retries only the missing/failed), with
+rate-limit-survival settings baked in (`retryCount:8` — the critical fix over the default 0
+— plus `batchSize:5`, `pauseBetweenBatchesMs:3000`). Target = **1344 chunks**
+(8 × 14 × 12). Output: `data/dukascopy/<INSTRUMENT>/<sym>-YYYY-MM.csv.gz`.
 
-```powershell
-$pairs = [ordered]@{ eurusd='EUR_USD'; usdjpy='USD_JPY'; gbpusd='GBP_USD';
-  audusd='AUD_USD'; usdchf='USD_CHF'; usdcad='USD_CAD'; eurgbp='EUR_GBP'; xauusd='XAU_USD' }
-2012..2025 | ForEach-Object {
-  $y = $_; $n = $_ + 1
-  foreach ($p in $pairs.GetEnumerator()) {
-    npx dukascopy-node -i $p.Key -from "$y-01-01" -to "$n-01-01" -t tick -f csv -dir "./data/dukascopy/$($p.Value)"
-  }
-}
-```
-
-Tick CSV columns are `timestamp(ms), askPrice, bidPrice, askVolume, bidVolume`
-(the reader will be built to this). Then a small TrueFX overlap sample (register at
-truefx.com; one or two months of EURUSD + USDJPY) under `./data/truefx/…`. Keep
-`data/` **out of git** (GBs). Tell me the path + confirm `dukascopy-node`, and I
-build the CSV reader → streaming evolve-driver (aggregates ticks→1-min bars per
-fold; never holds 14 yr of ticks in RAM) → holdout guard.
+Tick CSV columns are `timestamp(ms), askPrice, bidPrice, askVolume, bidVolume` (the reader
+will be built to this). Then a small TrueFX overlap sample (register at truefx.com; one or
+two months of EURUSD + USDJPY) under `data/truefx/…` for the cross-source drift check.
+`data/` is **git-ignored** (GBs). Once the tree lands at the repo root, I build the CSV
+reader → streaming evolve-driver (aggregates ticks→1-min bars per fold; never holds 14 yr
+of ticks in RAM) → holdout guard.
 
 ## §14 minimums (out-of-sample, ≥2 years) — enforced in `report.py`
 

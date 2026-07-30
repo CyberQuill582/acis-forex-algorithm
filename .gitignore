@@ -6,3 +6,10 @@ logs/*.log
 *.db
 *.sqlite
 .venv/
+
+# OOS data acquisition (scripts/download_dukascopy.js) — never commit the tick set
+data/
+node_modules/
+scripts/download.log
+scripts/run.log
+*.csv.gz
