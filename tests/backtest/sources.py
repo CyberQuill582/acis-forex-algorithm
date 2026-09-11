@@ -12,15 +12,14 @@ would make the backtest quietly trade through a hole in the data.
     histdata   data/histdata/<INSTR>/<YYYY>/HISTDATA_COM_ASCII_<PAIR>_T<YYYYMM>.zip
                "YYYYMMDD HHMMSSNNN,bid,ask,vol", fixed EST (UTC-5, NO daylight saving);
                one file per EST calendar month. Carries no tick volume (0).
-    dukascopy  data/dukascopy/<INSTR>/<YYYY>/<sym>-<YYYY-MM-DD>.csv.gz
-               "timestamp(ms UTC),askPrice,bidPrice,askVolume,bidVolume"; one file per
-               UTC day, Saturdays never written (market closed).
+    dukascopy  data/dukascopy/<INSTR>/<YYYY>/<MM0>/<DD>_ticks.bi5 — a mirror of Dukascopy's
+               official S3 archive (month ZERO-based), decoded by bi5.py. A missing day
+               inside a year the downloader marked `SYNCED` means "no ticks" (holiday);
+               a year with no marker was never downloaded and raises.
 """
 
 from __future__ import annotations
 
-import csv
-import gzip
 import io
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -28,10 +27,10 @@ from pathlib import Path
 from typing import Iterator
 
 from core.data.normaliser import RawTick
+from tests.backtest import bi5
 from tests.backtest.data_loader import TickSource
 
 UTC = timezone.utc
-EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 EST_OFFSET = timedelta(hours=5)                 # HistData EST (fixed) -> UTC
 
 
@@ -97,25 +96,21 @@ class DukascopyTickSource(TickSource):
         self._root = Path(root)
 
     def path(self, instrument: str, day: datetime) -> Path:
-        sym = instrument.replace("_", "").lower()
-        d = day.strftime("%Y-%m-%d")
-        return self._root / instrument / d[:4] / f"{sym}-{d}.csv.gz"
+        return (self._root / instrument / str(day.year) / f"{day.month - 1:02d}"
+                / f"{day.day:02d}_ticks.bi5")
 
     def load(self, instrument: str, start: datetime, end: datetime) -> Iterator[RawTick]:
         _check_window(start, end)
         start, end = start.astimezone(UTC), end.astimezone(UTC)
         day = start.replace(hour=0, minute=0, second=0, microsecond=0)
         while day < end:
-            if day.weekday() != 5:               # Saturday files are never written
-                p = self.path(instrument, day)
-                if not p.exists():
-                    raise MissingDataError(f"dukascopy {instrument} {day:%Y-%m-%d}: {p}")
-                with gzip.open(p, "rt", encoding="ascii", newline="") as f:
-                    rows = csv.reader(f)
-                    next(rows, None)             # header
-                    for ms, ask, bid, askv, bidv in rows:
-                        t = EPOCH + timedelta(milliseconds=int(ms))    # exact, no float
-                        if start <= t < end:
-                            yield _tick(t, instrument, float(bid), float(ask),
-                                        float(askv) + float(bidv), self.name)
+            if not (self._root / instrument / str(day.year) / "SYNCED").exists():
+                raise MissingDataError(f"dukascopy {instrument} {day.year}: year not "
+                                       f"downloaded (no SYNCED marker)")
+            p = self.path(instrument, day)
+            if p.exists():                       # absent inside a SYNCED year = no ticks
+                for t in bi5.decode(p.read_bytes(), instrument, day):
+                    if start <= t.ts < end:
+                        yield _tick(t.ts, instrument, t.bid, t.ask,
+                                    t.ask_volume + t.bid_volume, self.name)
             day += timedelta(days=1)

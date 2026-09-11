@@ -1,8 +1,7 @@
 # ACIS market-data download supervisor (Windows).
 #
-#   -Job histdata   scripts/download_histdata.py run   (PRIMARY bulk tick source)
-#   -Job dukascopy  scripts/download_dukascopy.js      (cross-check source; default for
-#                                                        backward compatibility)
+#   -Job s3         scripts/download_dukascopy_s3.py run   (PRIMARY: Dukascopy official S3 archive)
+#   -Job histdata   scripts/download_histdata.py run       (cross-check source)
 #
 # Keeps the chosen downloader running until its COMPLETE marker exists:
 #   * single instance per job (named mutex) - the scheduled task can fire it repeatedly
@@ -17,17 +16,16 @@
 #                then end the python.exe / node.exe and powershell.exe processes.
 # Absolute paths are used throughout: this machine's PATH cannot be relied on.
 
-param([ValidateSet('dukascopy', 'histdata')][string]$Job = 'dukascopy')
+param([Parameter(Mandatory = $true)][ValidateSet('s3', 'histdata')][string]$Job)
 
 $ErrorActionPreference = 'Continue'
 $Root = Split-Path -Parent $PSScriptRoot
+$Python = 'C:\Users\USER\AppData\Local\Programs\Python\Python311\python.exe'
 $Jobs = @{
-    dukascopy = @{ Exe = 'C:\Program Files\nodejs\node.exe'
-                   Args = @((Join-Path $Root 'scripts\download_dukascopy.js'))
-                   Data = 'data\dukascopy'; Mutex = 'Local\ACIS_Dukascopy_Download' }
-    histdata  = @{ Exe = 'C:\Users\USER\AppData\Local\Programs\Python\Python311\python.exe'
-                   Args = @((Join-Path $Root 'scripts\download_histdata.py'), 'run')
-                   Data = 'data\histdata'; Mutex = 'Local\ACIS_HistData_Download' }
+    s3       = @{ Exe = $Python; Args = @((Join-Path $Root 'scripts\download_dukascopy_s3.py'), 'run')
+                  Data = 'data\dukascopy'; Mutex = 'Local\ACIS_DukascopyS3_Download' }
+    histdata = @{ Exe = $Python; Args = @((Join-Path $Root 'scripts\download_histdata.py'), 'run')
+                  Data = 'data\histdata'; Mutex = 'Local\ACIS_HistData_Download' }
 }
 $J        = $Jobs[$Job]
 $Data     = Join-Path $Root $J.Data

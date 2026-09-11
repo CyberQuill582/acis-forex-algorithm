@@ -25,7 +25,7 @@ GRANDFATHERED = {
     "config/schemas.py": 702,
     "core/signals/agon.py": 507,
     "core/governor/capital_governor.py": 472,
-    "scripts/download_histdata.py": 456,        # slims when the S3 downloader shares its infra
+    "scripts/download_histdata.py": 400,        # 456 → 400 after scripts/dl_common.py extraction
     "core/regime/nvma.py": 395,
     "core/signals/provenance.py": 391,
     "core/risk/monitor.py": 378,

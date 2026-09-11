@@ -3,7 +3,7 @@ cross-source matcher (GAP-P12D-04)."""
 
 from __future__ import annotations
 
-import gzip
+import lzma
 import random
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from core.data.normaliser import RawTick
+from tests.backtest.bi5 import RECORD
 from tests.backtest.data_loader import BacktestDataLoader, _nearest
 from tests.backtest.sources import (DukascopyTickSource, HistDataTickSource,
                                     MissingDataError)
@@ -29,12 +30,14 @@ def _histdata_zip(root: Path, instrument: str, y: int, m: int, rows: list[str]) 
         z.writestr(f"DAT_ASCII_{pair}_T_{y}{m:02d}.csv", "\r\n".join(rows) + "\r\n")
 
 
-def _dukascopy_day(root: Path, instrument: str, day: str, rows: list[str]) -> None:
-    sym = instrument.replace("_", "").lower()
-    d = root / instrument / day[:4]
+def _dukascopy_day(root: Path, instrument: str, day: datetime, records, synced=True) -> None:
+    """Write one official-S3-layout day file (month ZERO-based) + the year's SYNCED marker."""
+    d = root / instrument / str(day.year) / f"{day.month - 1:02d}"
     d.mkdir(parents=True, exist_ok=True)
-    with gzip.open(d / f"{sym}-{day}.csv.gz", "wt") as f:
-        f.write("timestamp,askPrice,bidPrice,askVolume,bidVolume\n" + "\n".join(rows) + "\n")
+    raw = lzma.compress(b"".join(RECORD.pack(*r) for r in records), format=lzma.FORMAT_ALONE)
+    (d / f"{day.day:02d}_ticks.bi5").write_bytes(raw)
+    if synced:
+        (root / instrument / str(day.year) / "SYNCED").write_text("test")
 
 
 # ------------------------------------------------------------------ HistData
@@ -85,25 +88,29 @@ def test_histdata_out_of_order_tick_is_not_dropped(tmp_path) -> None:
 
 
 # ----------------------------------------------------------------- Dukascopy
-def test_dukascopy_exact_ms_and_summed_volume(tmp_path) -> None:
-    _dukascopy_day(tmp_path, "EUR_USD", "2025-12-31",
-                   ["1767139200164,1.17459,1.17455,0.12,0.9"])
-    got = list(DukascopyTickSource(tmp_path).load(
-        "EUR_USD", datetime(2025, 12, 31, tzinfo=UTC), datetime(2026, 1, 1, tzinfo=UTC)))
-    t = got[0]
+def test_dukascopy_s3_layout_decodes_bid_ask_and_summed_volume(tmp_path) -> None:
+    day = datetime(2025, 12, 31, tzinfo=UTC)                 # stored under 2025/11/31 (Dec = 11)
+    _dukascopy_day(tmp_path, "EUR_USD", day, [(164, 117459, 117455, 0.12, 0.9)])
+    assert (tmp_path / "EUR_USD" / "2025" / "11" / "31_ticks.bi5").exists()
+    t = list(DukascopyTickSource(tmp_path).load("EUR_USD", day, day + timedelta(days=1)))[0]
     assert t.event_time == datetime(2025, 12, 31, 0, 0, 0, 164000, tzinfo=UTC)
-    assert (t.bid, t.ask, t.provider) == (1.17455, 1.17459, "dukascopy")   # ask column first
+    assert (t.bid, t.ask, t.provider) == (1.17455, 1.17459, "dukascopy")
     assert t.volume == pytest.approx(1.02)
 
 
-def test_dukascopy_skips_saturday_but_raises_on_missing_weekday(tmp_path) -> None:
-    _dukascopy_day(tmp_path, "EUR_USD", "2026-01-02", ["1767312000000,1.1,1.0999,1,1"])  # Fri
-    _dukascopy_day(tmp_path, "EUR_USD", "2026-01-04", ["1767564000000,1.1,1.0999,1,1"])  # Sun
+def test_dukascopy_missing_day_is_holiday_only_inside_a_synced_year(tmp_path) -> None:
+    fri, sun = datetime(2026, 1, 2, tzinfo=UTC), datetime(2026, 1, 4, 22, tzinfo=UTC)
+    _dukascopy_day(tmp_path, "EUR_USD", fri, [(0, 110000, 109990, 1.0, 1.0)])
+    _dukascopy_day(tmp_path, "EUR_USD", sun.replace(hour=0), [(79_200_000, 110000, 109990, 1.0, 1.0)])
     src = DukascopyTickSource(tmp_path)
-    got = list(src.load("EUR_USD", datetime(2026, 1, 2, tzinfo=UTC), datetime(2026, 1, 5, tzinfo=UTC)))
-    assert len(got) == 2                                    # Saturday 01-03 needs no file
+    # Mon 5-Jan has no file, but 2026 is SYNCED → "no ticks", not an error
+    got = list(src.load("EUR_USD", fri, datetime(2026, 1, 6, tzinfo=UTC)))
+    assert [t.event_time for t in got] == [fri, sun]
+    # a year the downloader never finished (no SYNCED marker) must raise
+    _dukascopy_day(tmp_path, "EUR_USD", datetime(2024, 3, 4, tzinfo=UTC),
+                   [(0, 108000, 107990, 1.0, 1.0)], synced=False)
     with pytest.raises(MissingDataError):
-        list(src.load("EUR_USD", datetime(2026, 1, 2, tzinfo=UTC), datetime(2026, 1, 6, tzinfo=UTC)))
+        list(src.load("EUR_USD", datetime(2024, 3, 4, tzinfo=UTC), datetime(2024, 3, 5, tzinfo=UTC)))
 
 
 def test_naive_or_empty_window_rejected(tmp_path) -> None:
@@ -152,7 +159,6 @@ def test_bisect_nearest_matches_the_old_linear_scan_exactly() -> None:
 
 # ------------------------------------------------- real downloaded files (smoke)
 HD_REAL = REPO / "data" / "histdata" / "EUR_GBP" / "2012" / "HISTDATA_COM_ASCII_EURGBP_T201201.zip"
-DK_REAL = REPO / "data" / "dukascopy" / "EUR_USD" / "2025" / "eurusd-2025-12-31.csv.gz"
 
 
 @pytest.mark.skipif(not HD_REAL.exists(), reason="real HistData month not downloaded")
@@ -163,11 +169,3 @@ def test_real_histdata_month_hour_is_sane() -> None:
     assert len(got) > 500
     assert all(0.70 < t.bid < 0.90 and t.ask >= t.bid for t in got)   # EUR/GBP Jan-2012 range
     assert all(a.event_time <= b.event_time for a, b in zip(got, got[1:]))
-
-
-@pytest.mark.skipif(not DK_REAL.exists(), reason="real Dukascopy day not downloaded")
-def test_real_dukascopy_day_is_sane() -> None:
-    got = list(DukascopyTickSource(REPO / "data" / "dukascopy").load(
-        "EUR_USD", datetime(2025, 12, 31, tzinfo=UTC), datetime(2026, 1, 1, tzinfo=UTC)))
-    assert len(got) > 50000                                     # ~53k ticks that day
-    assert all(1.10 < t.bid < 1.25 and t.ask >= t.bid for t in got)

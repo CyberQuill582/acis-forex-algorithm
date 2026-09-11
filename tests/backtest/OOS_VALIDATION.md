@@ -51,43 +51,42 @@ train fold; the validation design is not an optimisation target.
   Combinatorial Purged CV (the spec mandates walk-forward; CPCV is a bigger §13
   change — documented future option, not built now).
 
-### Data acquisition (bid/ask TICK, 8 × 14 yr — BUILT + TESTED 2026-09-11, awaiting owner "go")
+### Data acquisition (master §13 v2.13 — built + tested 2026-09-11, downloads await the owner)
 
-**Primary = HistData tick** (owner-ratified 2026-09-11, **GAP-P12D-01**): Dukascopy admits
-~one instrument-day from the owner's connection before a long penalty, so it cannot supply
-the bulk. HistData publishes one ASCII tick zip per pair-month; all 8 instruments are
-offered for every year 2012–2025. **Cross-check = Dukascopy** (TrueFX no longer offers free
-history — **GAP-P12D-02**). Resolution stays tick with bid+ask — no M1 shortcut.
+**Primary = Dukascopy tick, via its official S3 archive** (owner decision 2026-09-11). The
+anonymous public feed is per-IP rate-limited (≈ one instrument-day before a >40-min
+penalty) and bans datacenter IPs, so it is retired (`archive/download_dukascopy_publicfeed.js`).
+**Cross-check = HistData** (replaced TrueFX, whose free history was withdrawn — GAP-P12D-02).
+Tick resolution with bid + ask throughout.
 
-- **Downloader** [`scripts/download_histdata.py`](../../scripts/download_histdata.py)
-  (stdlib Python). 1,344 files, **newest month first, all 8 instruments per month**. Every
-  zip is **fully verified before it counts**: `testzip()`, expected CSV present, every row
-  parsed, all ticks inside the month; per-file sha256, row count, crossed/non-positive/
-  out-of-order/duplicate counts and HistData's own gap report go to `manifest.jsonl`.
-  Network errors never fail a file (waits for TCP reachability, backs off); 429/503 →
-  escalating cooldown; streamed to `.part` then renamed; OS file lock; pauses if disk < 3 GB.
-  Test one month: `python scripts\download_histdata.py test --pair eurgbp --month 2012-01`
-  (live result: 1,197,028 ticks, 0 anomalies, max gap 177 s, 12 s).
-- **Cross-check downloader** [`scripts/download_dukascopy.js`](../../scripts/download_dukascopy.js):
-  same auto-resume design, one UTC day per instrument, newest-first; trickles overlap days
-  for `cross_source_drift`. Its task **"ACIS Dukascopy Download"** exists but is DISABLED.
-- **Supervisor** [`scripts/dl_supervisor.ps1`](../../scripts/dl_supervisor.ps1)
-  `-Job histdata|dukascopy`: single instance per job, keeps the PC awake while running (no
-  power settings changed), restarts the downloader on any exit. A scheduled task (at logon +
-  every 30 min) makes reboots and crashes resume on their own.
-- **Format:** `DAT_ASCII_<PAIR>_T_<YYYYMM>.csv` = `YYYYMMDD HHMMSSNNN,bid,ask,volume`,
-  timestamps **fixed EST (UTC−5, no DST)** — the reader converts to UTC. Stored as published:
-  `data/histdata/<INSTRUMENT>/<YYYY>/HISTDATA_COM_ASCII_<PAIR>_T<YYYYMM>.zip`.
-- **Watch:** `data/histdata/status.json` (percent, files/hour, ETA), `download.log`,
-  `supervisor.log`. Done when `data/histdata/COMPLETE` exists.
-- ⚠ **Residential connection only** — datacenter IPs are banned by Dukascopy, and HistData
-  refused a datacenter connection too.
+- **Primary downloader** [`scripts/download_dukascopy_s3.py`](../../scripts/download_dukascopy_s3.py):
+  `aws s3 sync` does the transfer (credentials, retries, resume); the script runs newest year
+  first across all 8 instruments and **verifies every day file** with
+  [`bi5.py`](bi5.py) — LZMA, whole 20-byte records, ticks inside their day, and a price
+  envelope that turns Dukascopy's "wrong scale fails silently" into an error. A verified
+  instrument-year gets a `SYNCED` marker: the reader treats a missing day inside a SYNCED
+  year as a holiday and an unmarked year as not downloaded. `coverage.json` lists missing
+  weekdays for review. The decoder is pinned to real Dukascopy bytes (`test_bi5.py`).
+  **Owner setup, once:** AWS account + an access key + AWS CLI v2 + `aws configure` (the agent
+  never sees keys); then `python scripts\download_dukascopy_s3.py check` prints the identity,
+  confirms all 8 symbols exist, prices the download, and probes the XAU scale.
+- **Cross-check downloader** [`scripts/download_histdata.py`](../../scripts/download_histdata.py):
+  1,344 month zips, each fully verified (`testzip()`, every row parsed, ticks inside the
+  month; sha256 + anomaly counts + HistData's gap report in `manifest.jsonl`); stored as
+  published; fixed-EST timestamps converted by the reader. Tested: `test_download_histdata.py`.
+- **Supervisor** [`scripts/dl_supervisor.ps1`](../../scripts/dl_supervisor.ps1) `-Job s3|histdata`:
+  single instance per job, keeps the PC awake while running, restarts on any exit; a
+  scheduled task (at logon + every 30 min) resumes after reboots. Shared plumbing:
+  [`scripts/dl_common.py`](../../scripts/dl_common.py).
+- **Watch:** `data/<dukascopy|histdata>/status.json`, `download.log`, `supervisor.log`; done
+  when that folder's `COMPLETE` exists.
+- **Macro inputs** (done): `scripts/download_macro.py` → SPX + overnight rates from the issuing
+  banks → `financing.py`. **Still to build:** the historical event calendar (GAP-P12D-03).
 
-**Ticks are not the whole input set** (**GAP-P12D-03**, open): an honest §14 grade also
-needs a date-joined SPX daily series, a historical high-impact event calendar (drives NVMA
-MACRO_EVENT + the §3.5 news blackout), and dated financing rates. `data/` is git-ignored.
-Once data lands: HistData `TickSource` reader → streaming evolve-driver (per-fold, never
-holds the full history in RAM) → holdout guard.
+Before any §14 pass is presented: `cross_source_drift` Dukascopy-vs-HistData on overlapping
+days (C-BT-9). Then: streaming evolve-driver (per-fold, never the full history in RAM) with
+embargo + Deflated Sharpe (GAP-SP12E-03), date-joined SPX (GAP-SP12E-06) → holdout guard.
+`data/` is git-ignored.
 
 ## §14 minimums (out-of-sample, ≥2 years) — enforced in `report.py`
 

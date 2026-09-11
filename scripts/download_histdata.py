@@ -7,7 +7,7 @@ owner's connection). HistData publishes one zip per pair per month:
     DAT_ASCII_<PAIR>_T_<YYYYMM>.csv   "YYYYMMDD HHMMSSNNN,bid,ask,volume"
     timestamps in EST *without* daylight saving, i.e. a fixed UTC-5 offset
 
-Unattended and self-resuming, like scripts/download_dukascopy.js:
+Unattended and self-resuming (shared plumbing in scripts/dl_common.py):
 
   ORDER    newest month first, all 8 instruments per month — the on-disk data is always
            one contiguous recent window covering the whole universe.
@@ -38,11 +38,8 @@ import argparse
 import hashlib
 import io
 import json
-import msvcrt
 import os
 import re
-import shutil
-import socket
 import sys
 import time
 import urllib.error
@@ -51,6 +48,8 @@ import urllib.request
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from dl_common import Ops
 
 INSTRUMENTS = {
     "eurusd": "EUR_USD",
@@ -67,11 +66,9 @@ LAST_MONTH = (2025, 12)
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "histdata"
-LOG = OUT / "download.log"
 STATUS = OUT / "status.json"
 STATE = OUT / "state.json"
 MANIFEST = OUT / "manifest.jsonl"
-LOCK = OUT / "download.lock"
 COMPLETE = OUT / "COMPLETE"
 
 SITE = "https://www.histdata.com"
@@ -90,61 +87,9 @@ DISK_MIN_GB = 3.0
 TIMEOUT_S = 120
 
 
-# ----------------------------------------------------------------- infrastructure
-def log(msg: str) -> None:
-    line = f"{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}  {msg}"
-    print(line, flush=True)
-    with LOG.open("a", encoding="utf-8") as f:
-        f.write(line + "\n")
-
-
-def write_json_atomic(path: Path, obj) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, indent=1), encoding="utf-8")
-    os.replace(tmp, path)
-
-
-def acquire_lock():
-    """OS file lock: released automatically if the process dies, so never stale."""
-    fh = open(LOCK, "a+")
-    fh.seek(0)
-    try:
-        msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
-    except OSError:
-        fh.close()
-        return None
-    return fh
-
-
-def online() -> bool:
-    try:
-        socket.create_connection(("www.histdata.com", 443), timeout=10).close()
-        return True
-    except OSError:
-        return False
-
-
-def wait_for_network() -> None:
-    if online():
-        return
-    log("NETWORK DOWN - waiting for connectivity (checking every 30 s)...")
-    t0 = time.time()
-    while not online():
-        time.sleep(30)
-    log(f"NETWORK BACK after {round((time.time() - t0) / 60)} min - resuming")
-
-
-def free_gb() -> float:
-    return shutil.disk_usage(OUT).free / 1e9
-
-
-def wait_for_disk() -> None:
-    if free_gb() >= DISK_MIN_GB:
-        return
-    log(f"DISK LOW ({free_gb():.1f} GB free < {DISK_MIN_GB}) - paused; free space to continue")
-    while free_gb() < DISK_MIN_GB:
-        time.sleep(600)
-    log("DISK OK - resuming")
+OPS = Ops(OUT, "www.histdata.com", DISK_MIN_GB)        # log / lock / network / disk guards
+log, write_json_atomic = OPS.log, OPS.write_json
+wait_for_network, wait_for_disk, free_gb = OPS.wait_for_network, OPS.wait_for_disk, OPS.free_gb
 
 
 class RateLimited(Exception):
@@ -363,8 +308,7 @@ def cmd_run() -> int:
     if COMPLETE.exists():
         log("COMPLETE marker present - nothing to do")
         return 0
-    lock = acquire_lock()
-    if lock is None:
+    if not OPS.acquire_lock():
         print("another downloader holds the lock")
         return 3
     state = load_state()
