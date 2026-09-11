@@ -10,9 +10,23 @@ The harness owns the position lifecycle + a DECLARED fill/close model (the
 fidelity modelling GAP-0001 mandates the report surface): an order fills at its
 `entry_price`; a position closes on a stop/target touch, an opposite-direction
 signal (reverse), or a max-hold timeout; PnL is Decimal, net of the C8
-`CostModel` round-trip friction PLUS overnight carry/swap (triple-swap Wednesday,
-`carry.py`). This is the position/runtime layer the fast-loop GAPs (0075/0091b/
-0099) deferred — a backtest IS a runtime, so it lives here.
+`CostModel` round-trip friction PLUS overnight financing (`carry.py`). This is the
+position/runtime layer the fast-loop GAPs (0075/0091b/0099) deferred — a backtest
+IS a runtime, so it lives here.
+
+Every money amount is converted from the instrument's QUOTE currency to the
+ACCOUNT currency (USD) before it touches realised PnL or the equity curve
+(GAP-P12D-05): a USD_JPY move is a JPY amount, and booking it as dollars inflates
+it ~100-150×. XXX_USD → ×1; USD_XXX → ÷price; a cross (EUR_GBP) converts through
+its quote leg's last-seen price (GBP_USD), and a run that lacks the leg raises
+`ConversionUnavailable` rather than silently booking pounds as dollars.
+
+Financing is direction- and size-aware (GAP-P12D-06): each business-day rollover
+held charges units × entry_price × rate/100/365 × the convention's multiplier,
+where `financing(instrument, night, direction)` returns the annualised rate (%)
+for THAT side — the rate differential net of the broker fee, so a long and a short
+never carry the same sign. Entry price stands in for the 5pm-ET rollover price (a
+declared approximation; holds are capped at 48 h).
 
 Audit-hardened (phase-11 dual audit): the out-of-sample equity is ONE CONTINUOUS
 curve across folds — realised PnL and open positions persist, never reset per
@@ -28,19 +42,47 @@ P11E-01). `run` grades ONLY the concatenated out-of-sample folds (C-BT-1).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Callable, Mapping, Sequence
 
 from core.data.normaliser import MarketState
 from core.optimizer.costs import CostModel
-from tests.backtest.carry import carry_charge
+from tests.backtest.carry import swap_multiplier
 from tests.backtest.metrics import (ClosedTrade, MetricBlock, _returns_from_equity,
                                     compute_metrics, rolling_var_breach_rate)
 from tests.backtest.report import ValidationReport, build_report
 from tests.backtest.walk_forward import Fold
 
 _UTC = timezone.utc
+ACCOUNT_CCY = "USD"
+_DAYS_PER_YEAR = Decimal("365")                  # OANDA: position value × rate × 1/365
+
+# (instrument, business-day rollover date, direction) -> annualised % for that side
+FinancingRate = Callable[[str, date, int], Decimal]
+
+
+class ConversionUnavailable(Exception):
+    """A quote-currency amount has no route to the account currency in this run."""
+
+
+def quote_to_account(instrument: str, price: float, last_price: Mapping[str, float]) -> Decimal:
+    """Factor converting a QUOTE-currency amount of `instrument` to ACCOUNT_CCY at
+    `price` (that instrument's own price) or via a cross's quote leg."""
+    base, _, quote = instrument.partition("_")
+    if quote == ACCOUNT_CCY:
+        return Decimal("1")
+    if base == ACCOUNT_CCY:
+        return Decimal("1") / Decimal(str(price))
+    leg = last_price.get(f"{quote}_{ACCOUNT_CCY}")
+    if leg:
+        return Decimal(str(leg))
+    leg = last_price.get(f"{ACCOUNT_CCY}_{quote}")
+    if leg:
+        return Decimal("1") / Decimal(str(leg))
+    raise ConversionUnavailable(
+        f"{instrument}: no {quote}_{ACCOUNT_CCY} or {ACCOUNT_CCY}_{quote} price seen yet — "
+        f"a cross needs its conversion leg in the same run")
 
 
 @dataclass
@@ -87,14 +129,16 @@ class Backtest:
     def __init__(self, *, account: str, cost_model: CostModel, rulebook=None,
                  nav: Decimal = Decimal("10000"), max_hold_s: float = 48 * 3600,
                  periods_per_year: float = 252.0,
-                 daily_swap: Mapping[str, Decimal] | None = None) -> None:
+                 financing: FinancingRate | None = None,
+                 swap_conventions: Mapping[str, str] | None = None) -> None:
         self._account = account
         self._cost = cost_model
         self._rulebook = rulebook                    # §9.5 account rules (or None)
         self._nav0 = nav
         self._max_hold_s = max_hold_s
         self._ppy = periods_per_year
-        self._daily_swap = dict(daily_swap or {})    # per-instrument one-night swap
+        self._financing = financing                  # None ⇒ no carry (caveated)
+        self._conventions = dict(swap_conventions or {})   # default tom_next
         # global watermark over the loop's accumulating order book.
         self._seen_orders = 0
 
@@ -106,7 +150,7 @@ class Backtest:
             # (1) mark/close the existing position on this instrument
             pos = book.open_by_inst.get(st.instrument)
             if pos is not None:
-                closed = self._maybe_close(pos, st)
+                closed = self._maybe_close(pos, st, book)
                 if closed is not None:
                     book.trades.append(closed)
                     book.realised += closed.pnl
@@ -142,7 +186,7 @@ class Backtest:
         if existing is not None:
             if existing.direction == order.direction:
                 return                          # same-side dedup (GAP-0075)
-            closed = self._close_at(existing, order.entry_price, st.timestamp, "reverse")
+            closed = self._close_at(existing, order.entry_price, st.timestamp, "reverse", book)
             book.trades.append(closed)
             book.realised += closed.pnl
             del book.open_by_inst[order.instrument]
@@ -154,44 +198,60 @@ class Backtest:
             strategy_type=order.factors_snapshot.get("strategy_type", "UNKNOWN")
             if isinstance(order.factors_snapshot, Mapping) else "UNKNOWN")
 
-    def _maybe_close(self, pos: _OpenPos, st: MarketState) -> ClosedTrade | None:
+    def _maybe_close(self, pos: _OpenPos, st: MarketState,
+                     book: _BookState) -> ClosedTrade | None:
         price = st.mid
         if pos.direction == 1:
             if price <= pos.stop_loss:
-                return self._close_at(pos, pos.stop_loss, st.timestamp, "stop")
+                return self._close_at(pos, pos.stop_loss, st.timestamp, "stop", book)
             if pos.take_profit is not None and price >= pos.take_profit:
-                return self._close_at(pos, pos.take_profit, st.timestamp, "target")
+                return self._close_at(pos, pos.take_profit, st.timestamp, "target", book)
         else:
             if price >= pos.stop_loss:
-                return self._close_at(pos, pos.stop_loss, st.timestamp, "stop")
+                return self._close_at(pos, pos.stop_loss, st.timestamp, "stop", book)
             if pos.take_profit is not None and price <= pos.take_profit:
-                return self._close_at(pos, pos.take_profit, st.timestamp, "target")
+                return self._close_at(pos, pos.take_profit, st.timestamp, "target", book)
         if (st.timestamp - pos.entry_ts).total_seconds() >= self._max_hold_s:
-            return self._close_at(pos, price, st.timestamp, "max_hold")
+            return self._close_at(pos, price, st.timestamp, "max_hold", book)
         return None
 
+    def _carry_quote(self, pos: _OpenPos, exit_ts: datetime) -> Decimal:
+        """Financing over every business-day rollover held, in QUOTE currency."""
+        if self._financing is None:
+            return Decimal("0")
+        conv = self._conventions.get(pos.instrument, "tom_next")
+        value = pos.size_units * Decimal(str(pos.entry_price))    # position value, quote ccy
+        total = Decimal("0")
+        for night in _nights(pos.entry_ts, exit_ts):
+            rate = Decimal(str(self._financing(pos.instrument, night, pos.direction)))
+            total += value * rate / Decimal("100") / _DAYS_PER_YEAR \
+                * Decimal(swap_multiplier(night, conv))
+        return total
+
     def _close_at(self, pos: _OpenPos, exit_price: float, ts: datetime,
-                  reason: str) -> ClosedTrade:
+                  reason: str, book: _BookState) -> ClosedTrade:
         gross = (Decimal(str(exit_price)) - Decimal(str(pos.entry_price))) \
             * Decimal(pos.direction) * pos.size_units
         friction = Decimal(str(self._cost.slippage_per_side * 2
                                + self._cost.commission_per_side * 2)) * pos.size_units
-        # overnight carry: triple-swap Wednesday over each night held (GAP-P11E-04).
-        swap = self._daily_swap.get(pos.instrument, Decimal("0"))
-        carry = (carry_charge(nights=_nights(pos.entry_ts, ts), daily_swap=swap)
-                 if swap != 0 else Decimal("0"))
+        carry = self._carry_quote(pos, ts)
+        # all three are QUOTE-currency amounts — convert once, at the close rate
+        to_acct = quote_to_account(pos.instrument, exit_price, book.last_price)
         return ClosedTrade(entry_ts=pos.entry_ts, exit_ts=ts,
-                           pnl=gross - friction + carry, strategy_type=pos.strategy_type)
+                           pnl=(gross - friction + carry) * to_acct,
+                           strategy_type=pos.strategy_type)
 
     def _unrealised(self, book: _BookState) -> Decimal:
-        """Mark EVERY open position off its instrument's last-seen price."""
+        """Mark EVERY open position off its instrument's last-seen price, converted
+        to the account currency at that price."""
         total = Decimal("0")
         for pos in book.open_by_inst.values():
             mark = book.last_price.get(pos.instrument)
             if mark is None:
                 continue
             total += (Decimal(str(mark)) - Decimal(str(pos.entry_price))) \
-                * Decimal(pos.direction) * pos.size_units
+                * Decimal(pos.direction) * pos.size_units \
+                * quote_to_account(pos.instrument, mark, book.last_price)
         return total
 
     def _rule_violations(self, trades: Sequence[ClosedTrade]) -> tuple[str, ...]:
@@ -237,8 +297,12 @@ class Backtest:
         caveats = (
             "tick backtest cannot fully reproduce live microstructure (GAP-0001)",
             "fills modelled at order price ± declared C8 friction",
-            "overnight carry applied per triple-swap-Wednesday when a daily_swap "
-            "rate is supplied; rates default to 0 pending OANDA financing calibration",
+            ("overnight financing applied per business-day rollover from the supplied "
+             "dated rate model (entry price as the rollover price)"
+             if self._financing is not None else
+             "NO overnight financing modelled (no rate model supplied) — overnight "
+             "and weekend holds are flattered"),
+            "PnL converted quote→USD at the close rate (crosses via their quote leg)",
             *extra_caveats,
         )
         return build_report(
@@ -258,14 +322,17 @@ class Backtest:
 
 
 def _nights(entry: datetime, exit: datetime) -> list:
-    """Dates on which a 22:00-UTC FX rollover falls within (entry, exit] — one
-    'night' of swap each (the 22:00 rollover is the daily-boundary anchor, C1)."""
+    """Business days (Mon–Fri) whose 22:00-UTC rollover falls within (entry, exit]
+    (22:00 UTC is the spec's daily-boundary anchor, C1). Nothing rolls on Saturday
+    or Sunday — the weekend is billed inside the week by the convention's triple
+    day (carry.py), so counting weekend nights would charge it twice (GAP-P12D-06)."""
     nights = []
     roll = datetime.combine(entry.date(), time(22, 0), tzinfo=_UTC)
     if roll <= entry:
         roll += timedelta(days=1)
     while roll <= exit:
-        nights.append(roll.date())
+        if roll.weekday() < 5:
+            nights.append(roll.date())
         roll += timedelta(days=1)
     return nights
 

@@ -17,6 +17,7 @@ use synthetic sources and an undeclared source name is REFUSED.
 
 from __future__ import annotations
 
+import bisect
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -124,9 +125,10 @@ class BacktestDataLoader:
         never averages the two sources (C-BT-9). Alignment is nearest-in-time
         within `align_tol_s`."""
         sec = sorted(secondary, key=lambda t: t.event_time)
+        times = [t.event_time for t in sec]
         diffs_bps: list[float] = []
         for p in primary:
-            match = _nearest(sec, p.event_time, align_tol_s)
+            match = _nearest(sec, times, p.event_time, align_tol_s)
             if match is None:
                 continue
             mp = (p.bid + p.ask) / 2.0
@@ -148,14 +150,27 @@ class BacktestDataLoader:
         return report
 
 
-def _nearest(sorted_ticks: Sequence[RawTick], ts: datetime,
+def _nearest(sorted_ticks: Sequence[RawTick], times: Sequence[datetime], ts: datetime,
              tol_s: float) -> RawTick | None:
+    """Nearest tick to `ts` within `tol_s`; on an exact tie the LATER tick wins.
+
+    Binary search (GAP-P12D-04): a linear scan per primary tick is O(n·m) — ~2.5e9
+    steps for one real day of two 50k-tick feeds, so the cross-check could never run.
+    The only candidates for the minimum gap are the latest tick at-or-before `ts` and
+    the latest duplicate of the first tick after it; visiting them in time order with
+    `<=` reproduces the old scan's later-wins tie-break exactly."""
+    k = bisect.bisect_right(times, ts)
+    candidates = []
+    if k > 0:
+        candidates.append(k - 1)
+    if k < len(times):
+        candidates.append(bisect.bisect_right(times, times[k]) - 1)
     best = None
     best_gap = tol_s
-    for t in sorted_ticks:
-        gap = abs((t.event_time - ts).total_seconds())
+    for j in candidates:
+        gap = abs((sorted_ticks[j].event_time - ts).total_seconds())
         if gap <= best_gap:
-            best, best_gap = t, gap
+            best, best_gap = sorted_ticks[j], gap
     return best
 
 
