@@ -51,37 +51,43 @@ train fold; the validation design is not an optimisation target.
   Combinatorial Purged CV (the spec mandates walk-forward; CPCV is a bigger §13
   change — documented future option, not built now).
 
-### Data acquisition (full bid/ask TICK, 8 × 14 yr — BUILT, running since 2026-09-11)
+### Data acquisition (bid/ask TICK, 8 × 14 yr — BUILT + TESTED 2026-09-11, awaiting owner "go")
 
-Full tick, as master §13 requires (owner decision 2026-09-11; the M1 shortcut was
-considered and rejected — no resolution deviation). Unattended, auto-resuming:
+**Primary = HistData tick** (owner-ratified 2026-09-11, **GAP-P12D-01**): Dukascopy admits
+~one instrument-day from the owner's connection before a long penalty, so it cannot supply
+the bulk. HistData publishes one ASCII tick zip per pair-month; all 8 instruments are
+offered for every year 2012–2025. **Cross-check = Dukascopy** (TrueFX no longer offers free
+history — **GAP-P12D-02**). Resolution stays tick with bid+ask — no M1 shortcut.
 
-- **Downloader** [`scripts/download_dukascopy.js`](../../scripts/download_dukascopy.js):
-  one UTC day per instrument (a day clears Dukascopy's per-IP volume window; a week
-  429s). **Newest-first, all 8 instruments per day**, so whatever is on disk is always one
-  contiguous recent window across the whole universe. Adaptive pause (faster on success
-  streaks, slower + escalating cooldown on 429). **Network errors never count as failures**
-  — it waits for DNS to return and retries. Atomic writes (`.tmp` → rename). Suspicious
-  empty weekdays are refetched, then listed in `empty_days.log`. Pauses if disk < 3 GB.
-- **Supervisor** [`scripts/dl_supervisor.ps1`](../../scripts/dl_supervisor.ps1): single
-  instance, keeps the PC awake while running (no power settings changed), restarts the
-  downloader whenever it exits. Launched by the Windows scheduled task
-  **"ACIS Dukascopy Download"** (at logon + every 30 min) → survives reboots and crashes.
-- **Target = 35,072 chunks** (4,384 non-Saturday days × 8). Measured ~40 s/day-chunk at the
-  starting pace ⇒ **~2–3 weeks** of PC-on time; expected ~20–32 GB.
-- Output: `data/dukascopy/<INSTRUMENT>/<YYYY>/<sym>-<YYYY-MM-DD>.csv.gz`, columns
-  `timestamp(ms), askPrice, bidPrice, askVolume, bidVolume` (UTC).
-- **Watch:** `data/dukascopy/status.json` (percent, chunks/hour, ETA, reached-back-to date),
-  `download.log`, `supervisor.log`. Done when `data/dukascopy/COMPLETE` exists.
-- **Stop:** `Unregister-ScheduledTask -TaskName "ACIS Dukascopy Download" -Confirm:$false`,
-  then end the `node.exe`/`powershell.exe` processes. Restart any time — resume is automatic.
-- ⚠ **Residential connection only.** GCP/datacenter IPs are hard-banned (sustained 429,
-  backoff never clears — proven 2026-07-31).
+- **Downloader** [`scripts/download_histdata.py`](../../scripts/download_histdata.py)
+  (stdlib Python). 1,344 files, **newest month first, all 8 instruments per month**. Every
+  zip is **fully verified before it counts**: `testzip()`, expected CSV present, every row
+  parsed, all ticks inside the month; per-file sha256, row count, crossed/non-positive/
+  out-of-order/duplicate counts and HistData's own gap report go to `manifest.jsonl`.
+  Network errors never fail a file (waits for TCP reachability, backs off); 429/503 →
+  escalating cooldown; streamed to `.part` then renamed; OS file lock; pauses if disk < 3 GB.
+  Test one month: `python scripts\download_histdata.py test --pair eurgbp --month 2012-01`
+  (live result: 1,197,028 ticks, 0 anomalies, max gap 177 s, 12 s).
+- **Cross-check downloader** [`scripts/download_dukascopy.js`](../../scripts/download_dukascopy.js):
+  same auto-resume design, one UTC day per instrument, newest-first; trickles overlap days
+  for `cross_source_drift`. Its task **"ACIS Dukascopy Download"** exists but is DISABLED.
+- **Supervisor** [`scripts/dl_supervisor.ps1`](../../scripts/dl_supervisor.ps1)
+  `-Job histdata|dukascopy`: single instance per job, keeps the PC awake while running (no
+  power settings changed), restarts the downloader on any exit. A scheduled task (at logon +
+  every 30 min) makes reboots and crashes resume on their own.
+- **Format:** `DAT_ASCII_<PAIR>_T_<YYYYMM>.csv` = `YYYYMMDD HHMMSSNNN,bid,ask,volume`,
+  timestamps **fixed EST (UTC−5, no DST)** — the reader converts to UTC. Stored as published:
+  `data/histdata/<INSTRUMENT>/<YYYY>/HISTDATA_COM_ASCII_<PAIR>_T<YYYYMM>.zip`.
+- **Watch:** `data/histdata/status.json` (percent, files/hour, ETA), `download.log`,
+  `supervisor.log`. Done when `data/histdata/COMPLETE` exists.
+- ⚠ **Residential connection only** — datacenter IPs are banned by Dukascopy, and HistData
+  refused a datacenter connection too.
 
-Optionally add a small TrueFX overlap sample (truefx.com; a month or two of EURUSD +
-USDJPY) under `data/truefx/…` for the cross-source drift check. `data/` is **git-ignored**.
-Once the tree lands: build the CSV reader → streaming evolve-driver (per-fold, never holds
-the full history in RAM) → holdout guard.
+**Ticks are not the whole input set** (**GAP-P12D-03**, open): an honest §14 grade also
+needs a date-joined SPX daily series, a historical high-impact event calendar (drives NVMA
+MACRO_EVENT + the §3.5 news blackout), and dated financing rates. `data/` is git-ignored.
+Once data lands: HistData `TickSource` reader → streaming evolve-driver (per-fold, never
+holds the full history in RAM) → holdout guard.
 
 ## §14 minimums (out-of-sample, ≥2 years) — enforced in `report.py`
 

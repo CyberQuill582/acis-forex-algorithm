@@ -37,6 +37,30 @@ SP12E-03(runbook). RAISED to owner: SP12E-01, SP12E-02(apply-Lo?), SP12I-03, doc
 batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 ============================================================================= -->
 
+## GAP-P12D-01: OOS primary tick source is HistData, not Dukascopy — master §13 provenance substituted (owner-ratified)
+- Severity: medium · Likelihood: medium
+- Status: accepted-risk (OWNER-RATIFIED 2026-09-11; HistData↔Dukascopy cross-check REQUIRED before any §14 pass is presented)
+- Area: [DIR:tests/backtest] data acquisition, master §13 (v2.9), ACIS-09 §5
+- Description: §13 names Dukascopy tick primary (TrueFX validator). Measured from the owner's residential link 2026-09-10/11: Dukascopy admits ~one instrument-day (~24 hourly requests), then imposes a penalty that outlasts 5/10/20/40-min cooldowns (datacenter/GCP IPs are hard-banned outright, 2026-07-31) → the 35,072 day-chunk plan would take years. HistData.com publishes the same universe as one ASCII tick zip per pair-month (1,344 files). Verified 2026-09-11: all 8 instruments cover 2012–2025 (XAUUSD from 2009, EURGBP from 2002); a live month (EURGBP 2012-01) parsed **1,197,028 bid/ask ticks, 0 crossed / 0 non-positive / 0 out-of-order / 0 duplicate, max reported gap 177 s**. Resolution is preserved (tick, bid+ask); the VENDOR changes: retail-aggregated feed, **no tick volume** (ACIS reads none — `volume` is only validated ≥0), timestamps in **fixed EST (UTC−5, no DST)**, converted in the reader. Its quote density drives `tick_velocity`, which NVMA's liquidity veto and the scalp read RELATIVE to the session median — self-consistent within the source, but the live venue's density differs (sharpens [[GAP-0001]]).
+- Justification: OWNER DECISION (in-chat 2026-09-11, "HistData primary"). The only free route to the full ratified universe × 14 yr at tick resolution. **Binding condition:** before a §14 pass is presented, run the loader's `cross_source_drift` HistData-vs-Dukascopy on overlapping days (the Dukascopy job, newest-first, supplies them); any window over threshold is investigated, never averaged (C-BT-9). Per-file provenance (sha256, row/anomaly counts, HistData gap report) is recorded in `data/histdata/manifest.jsonl`.
+- Linked: scripts/download_histdata.py, scripts/download_dukascopy.js, tests/backtest/data_loader.py `cross_source_drift`, OOS_VALIDATION.md, [[GAP-0001]], [[GAP-P12D-02]]
+
+## GAP-P12D-02: master §13 names TrueFX as the cross-check source, but TrueFX no longer offers free history
+- Severity: low · Likelihood: high
+- Status: raised (spec-vs-world; §13 text is owner-owned — the agent substitutes Dukascopy in the validator ROLE and does not edit the spec)
+- Area: master §13 (v2.9), ACIS-09 §5, tests/backtest/data_loader.py docstring
+- Description: TrueFX's site redesign limits free historical downloads to roughly the last year; older history is paid (truefx-downloader README: the site "limited the amount of historical data available"; the downloads page is login-gated). The spec's named validator cannot cross-check a 14-yr window. Found 2026-09-11 while sourcing data — external-referent class (the spec is wrong about the outside world).
+- Justification: role substitution only, no guardrail touched: Dukascopy (former primary) becomes the cross-check source under [[GAP-P12D-01]]. Amending §13's source names is an owner decision.
+- Linked: [[GAP-P12D-01]], master §13, tests/backtest/data_loader.py
+
+## GAP-P12D-03: the §14 run needs three NON-tick inputs that are not yet sourced — SPX daily, a historical event calendar, time-varying financing
+- Severity: high · Likelihood: high
+- Status: open (must be sourced and wired before an honest §14 grade — tick data alone is NOT sufficient)
+- Area: tests/backtest harness/metrics, core/data/normaliser.py `macro_imminent`, core/regime/nvma.py:268, master §14 / §3.5 / §9.5 / §13
+- Description: (1) **SPX daily closes** — the §14 `spx_correlation` <0.25 gate needs a real, date-joined series ([[GAP-SP12E-06]]); today's call sites pass zeros. (2) **Historical high-impact event calendar** — `MarketStateFactory` takes an injected `macro_imminent(instrument, t)`. With no source it is always False, so NVMA never enters **MACRO_EVENT** (its top-precedence regime, nvma.py:268) and the Governor's §3.5 news blackout never fires: the backtest trades straight through NFP/FOMC/CPI where the live engine stands aside — optimistic AND unfaithful, and news-restricted rulebooks (ftmo, prop_demo) can never register a blackout breach. (3) **Financing** — the harness takes ONE constant `daily_swap` per instrument, defaulting to 0 "pending OANDA calibration"; 2012–2025 spans zero rates through the 2022-23 hiking cycle, so any constant misprices carry over most of the window and 0 flatters every overnight/weekend hold.
+- Justification: (1) and (3) are small, free sources (daily index history; central-bank policy-rate histories as a rate-differential swap proxy, with the harness taking a dated series instead of a constant). (2) is the hard one — a curated historical high-impact set. Each is a declared evolve-driver input; until wired, a §14 report must carry these as caveats and must NOT be presented as a pass.
+- Linked: tests/backtest/metrics.py `spx_correlation`, tests/backtest/harness.py `daily_swap`, core/data/normaliser.py `macro_imminent`, core/regime/nvma.py:268, [[GAP-SP12E-06]], config/platform_rules.yaml
+
 ## GAP-SP12E-01: §14 Sharpe>1.5 target exceeds the spec's own cited evidence base for a 2-pair book
 - Severity: medium · Likelihood: high
 - Status: raised (owner decision pending 2026-07-21 — §14 target is a spec value, human-owned; NOT changed by an agent)

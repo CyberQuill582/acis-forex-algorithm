@@ -1,37 +1,52 @@
-# ACIS Dukascopy download supervisor (Windows).
+# ACIS market-data download supervisor (Windows).
 #
-# Keeps scripts/download_dukascopy.js running until the COMPLETE marker exists:
-#   * single instance (named mutex) - the scheduled task can fire it repeatedly, harmlessly
+#   -Job histdata   scripts/download_histdata.py run   (PRIMARY bulk tick source)
+#   -Job dukascopy  scripts/download_dukascopy.js      (cross-check source; default for
+#                                                        backward compatibility)
+#
+# Keeps the chosen downloader running until its COMPLETE marker exists:
+#   * single instance per job (named mutex) - the scheduled task can fire it repeatedly
 #   * keeps the PC from idle-sleeping while downloading (SetThreadExecutionState; released
 #     automatically when this process exits - no power settings are changed)
 #   * restarts the downloader whenever it exits, with a growing delay if it crash-loops
 #
-# Launched by the scheduled task "ACIS Dukascopy Download" (at logon + every 30 min), so a
-# reboot, logoff, or crash resumes on its own. Run by hand:
-#   powershell -ExecutionPolicy Bypass -File scripts\dl_supervisor.ps1
-# Stop for good:  Unregister-ScheduledTask -TaskName "ACIS Dukascopy Download" -Confirm:$false
-#                 then end the node.exe / powershell.exe processes.
+# Launched by a scheduled task (at logon + every 30 min), so a reboot, logoff, or crash
+# resumes on its own. Run by hand:
+#   powershell -ExecutionPolicy Bypass -File scripts\dl_supervisor.ps1 -Job histdata
+# Stop for good: Unregister-ScheduledTask -TaskName "<task name>" -Confirm:$false
+#                then end the python.exe / node.exe and powershell.exe processes.
+# Absolute paths are used throughout: this machine's PATH cannot be relied on.
+
+param([ValidateSet('dukascopy', 'histdata')][string]$Job = 'dukascopy')
 
 $ErrorActionPreference = 'Continue'
-$Root     = Split-Path -Parent $PSScriptRoot
-$Node     = 'C:\Program Files\nodejs\node.exe'
-$Data     = Join-Path $Root 'data\dukascopy'
+$Root = Split-Path -Parent $PSScriptRoot
+$Jobs = @{
+    dukascopy = @{ Exe = 'C:\Program Files\nodejs\node.exe'
+                   Args = @((Join-Path $Root 'scripts\download_dukascopy.js'))
+                   Data = 'data\dukascopy'; Mutex = 'Local\ACIS_Dukascopy_Download' }
+    histdata  = @{ Exe = 'C:\Users\USER\AppData\Local\Programs\Python\Python311\python.exe'
+                   Args = @((Join-Path $Root 'scripts\download_histdata.py'), 'run')
+                   Data = 'data\histdata'; Mutex = 'Local\ACIS_HistData_Download' }
+}
+$J        = $Jobs[$Job]
+$Data     = Join-Path $Root $J.Data
 $Log      = Join-Path $Data 'supervisor.log'
 $Complete = Join-Path $Data 'COMPLETE'
 New-Item -ItemType Directory -Force -Path $Data | Out-Null
 
 function Log([string]$m) {
-    $line = '{0}  {1}' -f (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'), $m
+    $line = '{0}  [{1}] {2}' -f (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'), $Job, $m
     Add-Content -Path $Log -Value $line -Encoding utf8
 }
 
 if (Test-Path $Complete) { exit 0 }
 
 $created = $false
-$mutex = [System.Threading.Mutex]::new($true, 'Local\ACIS_Dukascopy_Download', [ref]$created)
-if (-not $created) { exit 0 }          # a supervisor is already running
+$mutex = [System.Threading.Mutex]::new($true, $J.Mutex, [ref]$created)
+if (-not $created) { exit 0 }          # this job's supervisor is already running
 
-if (-not (Test-Path $Node)) { Log "node.exe not found at $Node - cannot run"; exit 1 }
+if (-not (Test-Path $J.Exe)) { Log "interpreter not found at $($J.Exe) - cannot run"; exit 1 }
 
 Add-Type -Namespace AcisDl -Name Power -MemberDefinition @'
 [System.Runtime.InteropServices.DllImport("kernel32.dll")]
@@ -48,7 +63,7 @@ try {
     while (-not (Test-Path $Complete)) {
         $t0 = Get-Date
         Log 'launching downloader'
-        & $Node (Join-Path $Root 'scripts\download_dukascopy.js') *> $null
+        & $J.Exe @($J.Args) *> $null
         $code = $LASTEXITCODE
         $ranMin = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
         Log "downloader exited code=$code after $ranMin min"
