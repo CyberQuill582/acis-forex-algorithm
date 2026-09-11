@@ -8,7 +8,8 @@ logs/*.log
 .venv/
 
 # OOS data acquisition (scripts/download_dukascopy.js) — never commit the tick set
-data/
+# root only: an unanchored "data/" also hid NEW files in core/data/ (fx_clock.py, 2026-09-11)
+/data/
 node_modules/
 scripts/download.log
 scripts/run.log

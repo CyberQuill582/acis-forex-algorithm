@@ -1,36 +1,23 @@
 # STATUS — ACIS current state (read first)
 
-**As of 2026-07-21.** One-screen digest. Authoritative sources: `TODO.md` (work queue), `CLAUDE.md` (rules), `KNOWN_GAPS.md` (live ledger). This file summarises them; if it ever disagrees with those, they win — update this.
+**As of 2026-09-11.** One-screen digest. Authoritative sources: `TODO.md` (work queue), `CLAUDE.md` (rules), `KNOWN_GAPS.md` (live ledger). This file summarises them; if it ever disagrees with those, they win — update this.
 
 ## Where we are
-- **Spec:** master `ACIS_SPEC.md` **v2.12**, complete, all passes owner-ratified. Deep layer specs ACIS-01..12 LOCKED (ACIS-06 → v1.2 for §279 server-side stops); **ACIS-13 (venue adapters) is the only unwritten spec** (author before the first non-mock live adapter).
-- **Build:** **phases 1–11 ✅** — built, dual-audited (two Opus 4.8 audits each), every finding triaged. **Phase 12 in progress:** the pre-phase-12 **VPS deployment-readiness gate is ✅** (CI merge gate, Docker, systemd supervision + §8.6 watchdog, §279 server-side-stop conformance) and the **untrained-baseline freeze is ENFORCED** (git tag `baseline-untrained-v1`, drift-guard test). **522 tests green** in a full run.
-- **Implemented:** the 7 core layers (`core/{data,regime,optimizer,signals,governor,execution,risk}`), the MCP monitoring/control plane (`monitoring/`), and the backtest + §14-validation harness (`tests/backtest/`).
+- **Spec:** master `ACIS_SPEC.md` **v2.13** (2026-09-11: §13 cross-check source HistData replaces TrueFX; Dukascopy primary via its official S3 archive). Deep specs ACIS-01..12 LOCKED (ACIS-09 → v1.2); **ACIS-13 (venue adapters) is the only unwritten spec**. Governed by `../specs_constitution/SPEC_CONSTITUTION.md` **v0.5**.
+- **Build:** **phases 1–11 ✅** — built, dual-audited, every finding triaged. **Phase 12 in progress:** VPS deployment-readiness gate ✅, untrained-baseline freeze ENFORCED (tag `baseline-untrained-v1`), and the **OOS data layer** under way — HistData cross-check engine + tick readers built, SPX + dated overnight rates + financing model done, backtest PnL now converted to USD, DST-correct FX clock in the backtest. **559 tests green** in a full run.
+- **Implemented:** the 7 core layers (`core/{data,regime,optimizer,signals,governor,execution,risk}`), the MCP control plane contract (`monitoring/`; the wire transport is GAP-P12D-08), the backtest + §14 harness (`tests/backtest/`), data-ops downloaders (`scripts/`).
 - **Mode:** **PAPER only.** No live trading. No real-money path is enabled.
 
 ## Next: phase 12 — LIVE readiness (the final §15 phase)
 Full checklist in `TODO.md` → "Phase 12 — LIVE readiness". Headline items:
-1. **VPS deployment-readiness gate** — ✅ **DONE 2026-07-21** (CI merge gate, Docker, systemd supervision + §8.6 watchdog, per-adapter §279 server-side-stop conformance). See `deploy/README.md`.
-2. **Real out-of-sample §14 validation** — acquire ≥2 yr real Dukascopy/TrueFX tick data, grade OUT-OF-SAMPLE. *Never present in-sample numbers vs §14.* This is the paper→live evidence bar. **← next**
-3. **Three-loop runtime + in-loop wiring** — GAP-0091b (in-loop VaR/marks), GAP-0099 (per-fill breaker), GAP-0075 (position accounting); this fills the `engine` service/systemd `ExecStart` and threads `SizedOrder.stop_loss` to the venue's server-side stop.
-4. **Per-account universe + full §9.5 enforcement**, **futures/metals roll policy** (GAP-0109), **ACIS-13 spec**, phase-12 dual audits.
+1. **Real out-of-sample §14 validation** — Dukascopy S3 downloader (owner creates the AWS account), HistData cross-check download, the historical event calendar, then the evolve-driver and the per-account grade. *Never present in-sample numbers vs §14.* **← next**
+2. **Engine-side DST fix** (GAP-P12D-10) — the guardrail daily-loss reset instant needs the owner's explicit per-change confirmation.
+3. **Three-loop runtime + in-loop wiring** — GAP-0091b, GAP-0099, GAP-0075, the MCP wire transport GAP-P12D-08, the SQLite signal store GAP-P12D-09.
+4. **Per-account universe + full §9.5 enforcement**, **futures/metals roll policy** (GAP-0109), **ACIS-13 spec**, phase-12 dual audits (recommended auditor Fable 5.1; the brief includes legibility GAP-P12M-01/02).
 5. **LIVE sign-off — HUMAN ONLY.** §14 minimums met out-of-sample on real data + explicit owner sign-off.
 
-## Open risk (LIVE ledger — 5 items, ALL low severity; none blocks the build)
-- **GAP-0020** — feed reconnect/backoff protocol untested until a real feed face exists (phase-12 adapter).
-- **GAP-0035** — v1 fitness harness doesn't exercise the momentum/breakout/mean-reversion genes.
-- **GAP-0067** — MarketStateStore commits per-row (fsync-bound); at real feed rates the audit/replay store sheds ticks (throughput, phase-11/12).
-- **GAP-0091b** — VaR/cluster metrics need marks fed each evaluate; the production mark stream isn't wired yet (phase-12 runtime).
-- **GAP-0109** — two §13 futures-lifecycle glitch classes untested; need the futures roll-or-flatten policy (phase-12 futures enablement).
-
-## Accepted-risks to re-confirm before live (5) — decisions we chose to live with
-- **GAP-0004** — slippage auto-throttle is **alert-only**, not an automatic size cut (interim; F10).
-- **GAP-P10E-03** — human-token verifier is an unsalted single-round SHA-256 bearer-secret equality check; high-entropy-token mandate + transport throttle declared — **harden at the deployment gate**.
-- **GAP-0001** — backtest fidelity ≠ live microstructure (inherent; disclosed in every report's `fidelity_caveats`).
-- **GAP-0023** — `fx_default` calendar tags 21:00–00:00 UTC "closed" daily (spurious dead window; deliberate conservatism).
-- **GAP-P11I-10** — GAP-0108 outage-gap refinement keys off the global instruments flag, not per-account (latent; shipped scenario-replay gate numbers UNCHANGED).
-
-*(11 further items are `mitigated` — `grep '^- Status: mitigated' KNOWN_GAPS.md`. Closed items live in `KNOWN_GAPS_CLOSED.md`, each pinned by the regression test named in its entry — that test is the permanent record.)*
+## Open risk — generated, never hand-copied
+`python scripts/ledger_check.py --summary` prints every **owner decision pending**, **open**, **mitigated** and **accepted-risk** item from the ledger. It runs automatically at every session start. This file deliberately carries no copy of those lists: a hand-kept copy is what went stale here before (A13). Closed items live in `KNOWN_GAPS_CLOSED.md`, each pinned by the proof named in its entry.
 
 ## Operational correctness at go-live — three independent guards (none substitutes for another)
 Build correctness (the phase audits) is not operational correctness; the gap opens the day it trades real money.
@@ -42,4 +29,4 @@ Build correctness (the phase audits) is not operational correctness; the gap ope
 `config/guardrail_limits.yaml`, the equity-floor value, and HALT/veto/resume semantics are human-commit-only. There is no force flag. These are safe because the code *cannot reach them*, not because anyone promises care. A change that makes a guardrail reachable is the bug — halt and raise it.
 
 ## Process
-Every completed phase gets **two** parallel adversarial audits (internal-consistency + external-referent); every finding is triaged (fixed+test / mitigated / accepted-risk) before the phase is ✅. Author ≠ auditor; a clean report is never a sign-off. Ledgers are append-only, never-delete.
+Every completed phase gets **two** parallel adversarial audits (internal-consistency + external-referent); every finding is triaged (fixed+test / mitigated / accepted-risk) before the phase is ✅. Author ≠ auditor; a clean report is never a sign-off. Ledgers are append-only, never-delete. **Ledger closure law** (CLAUDE.md, constitution A15): nothing unfinished lives only in chat; a closure names its residual; `scripts/ledger_check.py` gates CI. **Legibility budget** (A12): no new production module over 300 lines.

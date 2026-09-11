@@ -39,7 +39,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-01: OOS primary tick source is HistData, not Dukascopy — master §13 provenance substituted (owner-ratified)
 - Severity: medium · Likelihood: medium
-- Status: accepted-risk (OWNER-RATIFIED 2026-09-11; HistData↔Dukascopy cross-check REQUIRED before any §14 pass is presented)
+- Status: superseded (2026-09-11, same day — the owner then chose **Dukascopy's official S3 archive** as the primary, so the primary provenance is Dukascopy again and there is no substitution; HistData moved to the cross-check role — see GAP-P12D-02 / master v2.13. Text below kept as the record of why HistData was vetted.)
+- Residual: none — no provenance deviation remains; the HistData↔Dukascopy cross-source check this entry demanded is spec law (master §13, ACIS-09 C-BT-9) and is scheduled in TODO.md's §14 data plan.
 - Area: [DIR:tests/backtest] data acquisition, master §13 (v2.9), ACIS-09 §5
 - Description: §13 names Dukascopy tick primary (TrueFX validator). Measured from the owner's residential link 2026-09-10/11: Dukascopy admits ~one instrument-day (~24 hourly requests), then imposes a penalty that outlasts 5/10/20/40-min cooldowns (datacenter/GCP IPs are hard-banned outright, 2026-07-31) → the 35,072 day-chunk plan would take years. HistData.com publishes the same universe as one ASCII tick zip per pair-month (1,344 files). Verified 2026-09-11: all 8 instruments cover 2012–2025 (XAUUSD from 2009, EURGBP from 2002); a live month (EURGBP 2012-01) parsed **1,197,028 bid/ask ticks, 0 crossed / 0 non-positive / 0 out-of-order / 0 duplicate, max reported gap 177 s**. Resolution is preserved (tick, bid+ask); the VENDOR changes: retail-aggregated feed, **no tick volume** (ACIS reads none — `volume` is only validated ≥0), timestamps in **fixed EST (UTC−5, no DST)**, converted in the reader. Its quote density drives `tick_velocity`, which NVMA's liquidity veto and the scalp read RELATIVE to the session median — self-consistent within the source, but the live venue's density differs (sharpens [[GAP-0001]]).
 - Justification: OWNER DECISION (in-chat 2026-09-11, "HistData primary"). The only free route to the full ratified universe × 14 yr at tick resolution. **Binding condition:** before a §14 pass is presented, run the loader's `cross_source_drift` HistData-vs-Dukascopy on overlapping days (the Dukascopy job, newest-first, supplies them); any window over threshold is investigated, never averaged (C-BT-9). Per-file provenance (sha256, row/anomaly counts, HistData gap report) is recorded in `data/histdata/manifest.jsonl`.
@@ -47,11 +48,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-02: master §13 names TrueFX as the cross-check source, but TrueFX no longer offers free history
 - Severity: low · Likelihood: high
-- Status: raised (spec-vs-world; §13 text is owner-owned — the agent substitutes Dukascopy in the validator ROLE and does not edit the spec)
-- Area: master §13 (v2.9), ACIS-09 §5, tests/backtest/data_loader.py docstring
+- Status: fixed (2026-09-11 — owner ratified in-chat HistData as the validation cross-check; master §13 → v2.13 and ACIS-09 → v1.2 name HistData, Dukascopy stays primary via its official S3 archive)
+- Area: master §13 (v2.13), ACIS-09 §5 (v1.2), tests/backtest/data_loader.py docstring
 - Description: TrueFX's site redesign limits free historical downloads to roughly the last year; older history is paid (truefx-downloader README: the site "limited the amount of historical data available"; the downloads page is login-gated). The spec's named validator cannot cross-check a 14-yr window. Found 2026-09-11 while sourcing data — external-referent class (the spec is wrong about the outside world).
-- Justification: role substitution only, no guardrail touched: Dukascopy (former primary) becomes the cross-check source under [[GAP-P12D-01]]. Amending §13's source names is an owner decision.
-- Linked: [[GAP-P12D-01]], master §13, tests/backtest/data_loader.py
+- Justification: a source-name substitution in a list the master itself calls "examples, not a hardcode"; no guardrail or provenance rule changed.
+- Proof: ACIS_SPEC.md §13 + CHANGELOG v2.13; specs/ACIS-09-BACKTEST_VALIDATION.md v1.2; `tests/backtest/sources.py` `HistDataTickSource`, `test_real_histdata_month_hour_is_sane`
+- Residual: none — the cross-check source exists, is built and tested; running it before §14 is spec law (C-BT-9) scheduled in TODO.md.
+- Linked: [[GAP-P12D-01]], tests/backtest/data_loader.py
 
 ## GAP-P12D-03: the §14 run needs three NON-tick inputs that are not yet sourced — SPX daily, a historical event calendar, time-varying financing
 - Severity: high · Likelihood: high
@@ -70,6 +73,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Description: every primary tick scanned the ENTIRE secondary list for its nearest match. Inert on 5-tick fixtures; on one real day of two ~50k-tick feeds it is ~2.5×10⁹ comparisons — the HistData↔Dukascopy check that [[GAP-P12D-01]]'s ratification is conditioned on could not have run.
 - Justification: replaced by binary search over the sorted secondary; the only minimum-gap candidates are the latest tick at-or-before `ts` and the latest duplicate of the first tick after it, visited in time order with `<=`, so the old later-wins tie-break is reproduced exactly.
 - Linked: test `test_bisect_nearest_matches_the_old_linear_scan_exactly` (3,000 probes × 4 tolerances on a duplicate-heavy grid vs the old scan), tests/backtest/test_sources.py
+- Residual: none — the matcher is exact and fast; running it on real overlapping Dukascopy/HistData days is spec law (C-BT-9) scheduled in TODO.md's §14 data plan.
 
 ## GAP-P12D-05: backtest harness booked PnL in the QUOTE currency as if it were USD — USD_JPY inflated ~100–150× (CONFIRMED)
 - Severity: high · Likelihood: high
@@ -78,6 +82,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Description: `gross = Δprice × units` is a QUOTE-currency amount; the harness added it straight into realised PnL, the marked equity, the intraday drawdown and every §14 metric. A ¥10,000 USD_JPY gain was booked as $10,000. USD_JPY is ENABLED, so any two-pair §14 run would have been dominated by yen-denominated noise — meaningless Sharpe/DD/PF. The live Risk Monitor was fixed for the same class at phase 9 ([[GAP-0104]]); the harness never was. The spec is silent on account currency, so the external referent governs: PnL is in account currency.
 - Justification: every quote-currency amount (gross, friction, financing, marks) is converted once via `quote_to_account` — XXX_USD ×1, USD_XXX ÷price, crosses through the quote leg's last-seen price; a missing leg raises `ConversionUnavailable` (never books pounds as dollars). This also closes the backtest side of [[GAP-0092]]'s cross-pair residual (EUR_GBP is in the ratified universe; its GBP_USD leg is too).
 - Linked: tests `test_usd_jpy_pnl_is_booked_in_dollars_not_yen`, `test_cross_pair_converts_through_its_quote_leg_or_refuses`, `test_usd_jpy_open_position_marked_in_dollars` (tests/backtest/test_harness_regressions.py)
+- Residual: GAP-0092 — the backtest side is done; the LIVE Risk Monitor still falls back to quote currency for a cross pair, and that entry owns it.
 
 ## GAP-P12D-06: carry was one signed constant per instrument — direction- and size-blind — and billed weekends twice
 - Severity: medium · Likelihood: high
@@ -86,14 +91,57 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Description: (a) `daily_swap[instrument]` was charged identically to a long and a short and did not scale with position size — real financing flips sign with direction and scales with notional (OANDA: position value × funding rate × 1/365). (b) `_nights` counted every 22:00-UTC rollover including Saturday and Sunday, while `swap_multiplier` also tripled Wednesday — the weekend was billed twice (+2 days per weekend held), contradicting carry.py's own tom-next rationale. (c) An undeclared `swap_convention` (e.g. XAU_USD's `financing_daily`) silently charged 1× every night.
 - Justification: the harness now takes `financing(instrument, night, direction) -> annualised %` for THAT side (rate differential net of broker fee, built from the dated overnight-rate series — [[GAP-P12D-03]]) and charges value × rate/100/365 × multiplier per BUSINESS-day rollover. Conventions are explicit: tom_next = Wed ×3, financing_daily = Fri ×3 (OANDA CFD convention; not defined by the spec — declared here); anything else raises. Entry price stands in for the 5pm-ET rollover price (declared; holds ≤48 h).
 - Linked: tests `test_financing_is_direction_and_size_aware`, `test_weekend_is_not_billed_twice`, `test_gold_financing_bills_the_weekend_on_friday`, `test_overnight_carry_reduces_pnl_of_a_held_position`, `test_triple_swap_wednesday_carry`
+- Residual: GAP-P12D-03, GAP-P12D-07 — wiring the dated rate model into the evolve-driver (P12D-03) and the rollover INSTANT (P12D-07) are owned there.
 
 ## GAP-P12D-07: the spec's fixed 22:00-UTC daily anchor is the real FX rollover only in winter — in US summer time it is 21:00 UTC
 - Severity: low · Likelihood: high
-- Status: raised (spec-owned — master C1 `session_boundaries_utc` / fx_default calendar; NOT changed by an agent)
-- Area: master §C1, config/instruments.yaml `fx_default` (weekend_close/open 22:00), tests/backtest/harness.py `_nights`, tests/backtest/data_loader.py `_is_weekend`
-- Description: the FX day rolls at 17:00 New York; that is 22:00 UTC under EST but **21:00 UTC under EDT** (≈ Mar–Nov). The spec pins 22:00 UTC year-round. Effects in summer: a position opened 21:00–22:00 UTC is financed from the wrong rollover (≤1 h misplacement per boundary), Sunday 21:00–22:00 UTC ticks (the real open) are dropped by the weekend filter, and the Friday close is placed an hour late (harmless — no ticks). Small, but it is exactly the §13 DST-boundary glitch class, and it touches QIEA staging boundaries.
-- Justification: owner decision whether to make the anchor DST-aware (America/New_York 17:00) or keep 22:00 UTC as a declared simplification. Found 2026-09-11 (external-referent class).
-- Linked: [[GAP-P12D-06]], master §C1 / §13 (DST glitch class)
+- Status: fixed for the BACKTEST (2026-09-11 — OWNER RULING in-chat: "make sure that there is no time anomaly"; the engine side is GAP-P12D-10)
+- Area: core/data/fx_clock.py (new), tests/backtest/harness.py financing nights + weekend-holding rule, tests/backtest/data_loader.py `_is_weekend`, master §C1 / §13
+- Description: the FX day rolls at 17:00 New York; that is 22:00 UTC under EST but **21:00 UTC under EDT** (≈ Mar–Nov). The spec pins 22:00 UTC year-round. In summer that financed positions from the wrong rollover — the WRONG DAY, which changes whether the tom-next triple applies (a Tue-21:30 → Wed-21:30 hold paid Tuesday ×1 instead of Wednesday ×3) — dropped the real Sunday 21:00–22:00 UTC open, and placed the Friday close an hour late. Exactly the §13 DST-boundary glitch class.
+- Justification: one dependency-free FX clock (`core/data/fx_clock.py`, exact US rule since 2007: 2nd Sunday of March → 1st Sunday of November; earlier dates raise) now defines the rollover, the weekend window and business-day rollovers; every backtest consumer uses it. No new dependency (the `tzdata` package would have needed a spec edit — A1).
+- Proof: `test_daylight_time_switches_on_the_real_us_dates`, `test_rollover_is_21_utc_in_summer_and_22_utc_in_winter`, `test_summer_weekend_boundaries_follow_new_york`, `test_business_rollovers_are_weekdays_at_the_real_instant`, `test_summer_rollover_is_21_utc_not_22`
+- Residual: GAP-P12D-10 — the ENGINE's fixed-UTC day boundaries (C1 staging list, session windows, AGON daily bars, governor weekend fencepost, the guardrail daily-loss reset) are owned there.
+- Linked: [[GAP-P12D-06]], [[GAP-0023]]
+
+## GAP-P12D-10: the engine's day boundaries and sessions are still fixed-UTC — an hour off for half the year (owner ruling: no time anomaly)
+- Severity: medium · Likelihood: high
+- Status: open (owner ruling 2026-09-11 "make sure that there is no time anomaly"; execution is a focused change with its own audit)
+- Area: config/system_config.yaml `session_boundaries_utc` (master C1 — QIEA staging instants), config/instruments.yaml `fx_default` sessions + weekend_close/open, core/signals/agon.py daily `BarAggregator(anchor_utc="22:00")` (TSMOM daily bars), core/governor/capital_governor.py weekend-ban fencepost, core/risk/guardrails.py `daily_reset_utc` (engine daily-loss window — GUARDRAIL-ADJACENT)
+- Description: each reads a fixed UTC clock time, so during US/UK summer time the TSMOM daily bar closes an hour late, the weekend ban fires an hour late on Fridays, the London/New-York session tags and the C1 staging instants sit an hour off, and the daily-loss window resets at 22:00 UTC instead of the real 21:00 UTC rollover. GAP-0023's spurious 21:00–00:00 UTC "closed" window is the same defect family.
+- Justification: bigger than the backtest fix and touches (a) master C1's declared UTC list (spec edit) and (b) a guardrail trigger instant — CLAUDE.md requires an explicit per-change human confirmation for (b) and the phase dual audit afterwards. Plan: every consumer reads `core/data/fx_clock.py`; London sessions need the UK rule (last Sunday of March → last Sunday of October, 01:00 UTC); C1 becomes "the local-time session edges, resolved to UTC per date by the FX clock".
+- Linked: [[GAP-P12D-07]], [[GAP-0023]], core/data/fx_clock.py, master §C1
+
+## GAP-P12D-08: the MCP wire transport (`monitoring/server.py` `serve()`) is a declared stub with no owner
+- Severity: medium · Likelihood: high
+- Status: open (found 2026-09-11 by the ledger-closure check — GAP-P10E-06 was CLOSED with "`serve()` remains a declared not-yet-implemented binding point" and nothing live owned it)
+- Area: monitoring/server.py `serve()` (`# pragma: no cover`), ACIS-08 §1/§3/§11, master §12
+- Description: the ControlPlane contract is built and tested, but nothing binds it to the MCP wire (`CallToolResult`/`GetPromptResult`, prompt bodies). Phronesis supervises ACIS ONLY through MCP (§0/§12), so without the binding the supervision/control plane cannot be reached by its real client at go-live.
+- Justification: a deployment-adapter task that belongs with the phase-12 production runtime (GAP-0075/0091b) and the bearer-auth hardening (GAP-P10E-03); must land before live.
+- Linked: KNOWN_GAPS_CLOSED.md GAP-P10E-06, [[GAP-P10E-03]], [[GAP-0075]]
+
+## GAP-P12D-09: ACIS-04 §10's SQLite `signal_log` store was never built
+- Severity: low · Likelihood: high
+- Status: open (found 2026-09-11 by the ledger-closure check — GAP-0061 was closed after fixing the table's DDL, while noting "the signal_log table is not yet implemented"; nothing live owned it)
+- Area: [DIR:core/signals], ACIS-04 §9/§10, master §12
+- Description: §9's JSONL `signal_log` IS implemented (`SIGNAL_EMITTED` and every `DISCARD_*` reason are logged). §10's SQLite `signal_log` table — the queryable store every other layer has (market_state, fill_report, risk_snapshot, provenance, param_*) — has no CREATE TABLE anywhere in core.
+- Justification: auditability is covered by the JSONL log today, so this is not a safety hole; but the locked spec requires the store and the §12 plane / audits cannot query signals without it. Build it or amend ACIS-04 §10 (owner call).
+- Linked: KNOWN_GAPS_CLOSED.md GAP-0061, core/signals/agon.py
+
+## GAP-P12M-01: nine production modules exceed the 300-line legibility budget (SPEC_CONSTITUTION v0.4 A12)
+- Severity: medium · Likelihood: high
+- Status: open (owner-reported external-review deduction 2026-09-11; decomposition is AUDIT work, deliberately not done in this session)
+- Area: config/schemas.py (702), core/signals/agon.py (507), core/governor/capital_governor.py (472), scripts/download_histdata.py (456), core/regime/nvma.py (395), core/signals/provenance.py (391), core/risk/monitor.py (378), core/execution/venue.py (378), core/risk/guardrails.py (326)
+- Description: a review scored ACIS "still coherent, but further decomposition would help newcomers" (capital_governor ~470, monitor ~380). A12 v0.4 now makes >300 lines presumptively a finding unless justified against a spec requirement; "coherent" is not a defense.
+- Justification: the next phase-12 dual adversarial audit (recommended auditor: **Fable 5.1**; floor Opus 4.8) must, per module, either name the cohesive extraction (own name, own tests, one responsibility) and do it, or write the spec-requirement justification that clears the length. Until then a RATCHET holds the line: `tests/unit/test_module_budget.py` fails if any new module exceeds 300 lines or any grandfathered one grows, and demands the allowlist line go once a module is back under budget. download_histdata.py slims when the S3 downloader shares its infrastructure.
+- Linked: tests/unit/test_module_budget.py, [[GAP-P12M-02]], ../specs_constitution/SPEC_CONSTITUTION.md A12
+
+## GAP-P12M-02: invariant density has no written mental model — a newcomer must reconstruct the gate / human-token / audit system from code
+- Severity: medium · Likelihood: high
+- Status: open (owner-reported external-review deduction 2026-09-11; for the next audit)
+- Area: every invariant-bearing module (governor, risk monitor, guardrails, MCP plane, param library, provenance); the orienting read path (README → STATUS → TODO → CLAUDE → ACIS_SPEC)
+- Description: the review noted "occasional density from the sheer number of invariants being upheld; a new reader needs the mental model of the gates/human-token/audit system." A12 v0.4 requires (a) each invariant-bearing module to open with a one-screen mental model (the invariants, where each is enforced, what to hold in mind), and (b) the read path to state the gate / human-token / audit model ONCE. Neither exists today.
+- Justification: documentation + audit work. The next phase-12 dual audit (recommended **Fable 5.1**) checks each invariant-bearing module for the one-screen model and checks that a fresh reader can locate every gate from the read path alone; findings triaged per A6. Must not grow into a new standing document (A13) — the model lives in the module docstrings and one read-path section.
+- Linked: [[GAP-P12M-01]], ../specs_constitution/SPEC_CONSTITUTION.md A12/A13, CLAUDE.md
 
 ## GAP-SP12E-01: §14 Sharpe>1.5 target exceeds the spec's own cited evidence base for a 2-pair book
 - Severity: medium · Likelihood: high
@@ -143,17 +191,32 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Justification: OWNER DECISION (recommend: set scalp `valid_for_seconds` to 29 or below so it takes IOC as §5.5 intends; alternatives: ACIS-06 `<=` for the scalp class, or raise `fast_decay_seconds`). Add a §13 fast-decay-boundary test with the chosen value. Not a guardrail.
 - Linked: SPEC_AUDIT_INTERNAL_PENDING.md GAP-SP12I-03, config/system_config.yaml:41/113
 
-## GAP-SP12I-DOC (SP12I-01/04/05): read-path documentation drift — three stale spec/config narratives (batch)
+## GAP-SP12I-DOC / GAP-SP12I-01 / GAP-SP12I-04 / GAP-SP12I-05: read-path documentation drift — three stale spec/config narratives (batch)
 - Severity: low · Likelihood: high
 - Status: fixed (2026-07-22 — owner ratified "apply all three"; applied: master §5/§8 mean_sigma note, ACIS-02 §6 adx_strong/adx_weak, scenario_book.yaml phase-11-delivered comments; 50 gate tests green. Moves to KNOWN_GAPS_CLOSED.md when the pass's raised items close.)
+- Residual: GAP-SP12I-03, GAP-SP12E-02 — the three doc edits are complete; only the archive move of this spec-audit pass waits on those two still-live siblings.
 - Area: ACIS_SPEC.md §5/§8; specs/ACIS-02 §6; config/scenario_book.yaml
 - Description: (SP12I-01) master §5/§8 still say "Sharpe" for the fitness/alpha-decay metric that GAP-0105 (CLOSED) renamed to `mean_sigma` ("NOT an annualised Sharpe") in the deep specs — a locked spec now must contradict the master to stay honest (functionally harmless: the alpha-decay test is a ratio, annualisation cancels). (SP12I-04) ACIS-02 §6 names config keys `adx_strong_threshold`/`adx_weak_threshold`; the real keys are `adx_strong`/`adx_weak` (ACIS-02 §7 already uses the correct names). (SP12I-05) scenario_book.yaml comments say the GAP-0108 outage refinement is "deferred to phase 11"; phase 11 is ✅ and ACIS-09 §6 states it delivered.
 - Justification: pure traceability drift (A13) — no safety impact, but a fresh session is taught an out-of-date story. Recommended edits (for "apply those"): (01) add a one-line master note that §5/§8 "Sharpe" is the per-trade mean/σ of GAP-0105, the annualised Sharpe being only the §14 graded metric; (04) `adx_strong`/`adx_weak` in ACIS-02 §6; (05) update the three scenario_book comments to point at ACIS-09 §6 where the refinement now lives.
 - Linked: SPEC_AUDIT_INTERNAL_PENDING.md GAP-SP12I-01/04/05, KNOWN_GAPS_CLOSED.md GAP-0105
 
-<!-- SP12I-02 (marginal-alpha/throttle drift gate) + SP12E-04 (Kupiec naming) FIXED
-2026-07-21 with regression tests / honesty edits; they move to KNOWN_GAPS_CLOSED.md
-when this pass's raised items close. Repro: scratchpad/repro_sp12i.py. -->
+## GAP-SP12I-02: the anti-greed levers (marginal-alpha 0.25 floor / 1.0 neutral / 1.5 cap, 25% alpha-decay throttle) were prose constants with no drift gate
+- Severity: low · Likelihood: medium
+- Status: fixed (2026-07-21, regression tests; recorded as a proper entry 2026-09-11 — it had lived only in an HTML comment, invisible to the ledger)
+- Area: core/governor/marginal_alpha.py, core/governor/capital_governor.py, master §6 C6 / §8
+- Description: the master's numbers existed in code as literals that nothing tied back to the spec; a silent edit would have changed sizing behaviour with no failing test.
+- Proof: `test_marginal_alpha_floor_neutral_cap_match_master`, `test_alpha_decay_throttle_matches_master` (tests/unit/test_spec_constants.py)
+- Residual: none — both levers are pinned to the master's values by drift-gate tests.
+- Linked: SPEC_AUDIT.md, SPEC_AUDIT_INTERNAL_PENDING.md
+
+## GAP-SP12E-04: `rolling_var_breach_rate` claimed to be a "Kupiec POF backtest" — it is only the exceedance RATE
+- Severity: low · Likelihood: high
+- Status: fixed (2026-07-21, honesty edit; recorded as a proper entry 2026-09-11 — it had lived only in an HTML comment)
+- Area: tests/backtest/metrics.py `rolling_var_breach_rate`, master §16 naming law
+- Description: the docstring named a statistical test the function does not perform; a rate is the INPUT to Kupiec's likelihood-ratio test, not the test.
+- Proof: tests/backtest/metrics.py `rolling_var_breach_rate` docstring (§16 naming note); `test_metrics_and_grader`
+- Residual: GAP-SP12E-05 — the significance test itself (Kupiec LR on the tally) is not implemented; that gap owns it.
+- Linked: SPEC_AUDIT_EXTERNAL_PENDING.md
 
 <!-- ============================================================================
 PHASE-11 DUAL AUDIT — TRIAGE COMPLETE (2026-07-18; suite green: 515 passed). Two

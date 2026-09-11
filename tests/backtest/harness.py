@@ -10,23 +10,12 @@ The harness owns the position lifecycle + a DECLARED fill/close model (the
 fidelity modelling GAP-0001 mandates the report surface): an order fills at its
 `entry_price`; a position closes on a stop/target touch, an opposite-direction
 signal (reverse), or a max-hold timeout; PnL is Decimal, net of the C8
-`CostModel` round-trip friction PLUS overnight financing (`carry.py`). This is the
+`CostModel` round-trip friction PLUS overnight financing. This is the
 position/runtime layer the fast-loop GAPs (0075/0091b/0099) deferred — a backtest
-IS a runtime, so it lives here.
-
-Every money amount is converted from the instrument's QUOTE currency to the
-ACCOUNT currency (USD) before it touches realised PnL or the equity curve
-(GAP-P12D-05): a USD_JPY move is a JPY amount, and booking it as dollars inflates
-it ~100-150×. XXX_USD → ×1; USD_XXX → ÷price; a cross (EUR_GBP) converts through
-its quote leg's last-seen price (GBP_USD), and a run that lacks the leg raises
-`ConversionUnavailable` rather than silently booking pounds as dollars.
-
-Financing is direction- and size-aware (GAP-P12D-06): each business-day rollover
-held charges units × entry_price × rate/100/365 × the convention's multiplier,
-where `financing(instrument, night, direction)` returns the annualised rate (%)
-for THAT side — the rate differential net of the broker fee, so a long and a short
-never carry the same sign. Entry price stands in for the 5pm-ET rollover price (a
-declared approximation; holds are capped at 48 h).
+IS a runtime, so it lives here. Money: every quote-currency amount is converted to
+USD (`money.py`, GAP-P12D-05); financing is direction- and size-aware per real
+17:00-New-York business-day rollover (`carry.py` + `core/data/fx_clock.py`,
+GAP-P12D-06/07).
 
 Audit-hardened (phase-11 dual audit): the out-of-sample equity is ONE CONTINUOUS
 curve across folds — realised PnL and open positions persist, never reset per
@@ -42,47 +31,21 @@ P11E-01). `run` grades ONLY the concatenated out-of-sample folds (C-BT-1).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Callable, Mapping, Sequence
 
+from core.data.fx_clock import business_rollovers, holds_through_weekend
 from core.data.normaliser import MarketState
 from core.optimizer.costs import CostModel
-from tests.backtest.carry import swap_multiplier
+from tests.backtest.carry import FinancingRate, financing_charge
 from tests.backtest.metrics import (ClosedTrade, MetricBlock, _returns_from_equity,
                                     compute_metrics, rolling_var_breach_rate)
+from tests.backtest.money import quote_to_account
 from tests.backtest.report import ValidationReport, build_report
 from tests.backtest.walk_forward import Fold
 
 _UTC = timezone.utc
-ACCOUNT_CCY = "USD"
-_DAYS_PER_YEAR = Decimal("365")                  # OANDA: position value × rate × 1/365
-
-# (instrument, business-day rollover date, direction) -> annualised % for that side
-FinancingRate = Callable[[str, date, int], Decimal]
-
-
-class ConversionUnavailable(Exception):
-    """A quote-currency amount has no route to the account currency in this run."""
-
-
-def quote_to_account(instrument: str, price: float, last_price: Mapping[str, float]) -> Decimal:
-    """Factor converting a QUOTE-currency amount of `instrument` to ACCOUNT_CCY at
-    `price` (that instrument's own price) or via a cross's quote leg."""
-    base, _, quote = instrument.partition("_")
-    if quote == ACCOUNT_CCY:
-        return Decimal("1")
-    if base == ACCOUNT_CCY:
-        return Decimal("1") / Decimal(str(price))
-    leg = last_price.get(f"{quote}_{ACCOUNT_CCY}")
-    if leg:
-        return Decimal(str(leg))
-    leg = last_price.get(f"{ACCOUNT_CCY}_{quote}")
-    if leg:
-        return Decimal("1") / Decimal(str(leg))
-    raise ConversionUnavailable(
-        f"{instrument}: no {quote}_{ACCOUNT_CCY} or {ACCOUNT_CCY}_{quote} price seen yet — "
-        f"a cross needs its conversion leg in the same run")
 
 
 @dataclass
@@ -219,14 +182,12 @@ class Backtest:
         """Financing over every business-day rollover held, in QUOTE currency."""
         if self._financing is None:
             return Decimal("0")
-        conv = self._conventions.get(pos.instrument, "tom_next")
-        value = pos.size_units * Decimal(str(pos.entry_price))    # position value, quote ccy
-        total = Decimal("0")
-        for night in _nights(pos.entry_ts, exit_ts):
-            rate = Decimal(str(self._financing(pos.instrument, night, pos.direction)))
-            total += value * rate / Decimal("100") / _DAYS_PER_YEAR \
-                * Decimal(swap_multiplier(night, conv))
-        return total
+        return financing_charge(
+            instrument=pos.instrument, direction=pos.direction,
+            value=pos.size_units * Decimal(str(pos.entry_price)),
+            nights=business_rollovers(pos.entry_ts, exit_ts),      # real 17:00-NY instants
+            rate=self._financing,
+            swap_convention=self._conventions.get(pos.instrument, "tom_next"))
 
     def _close_at(self, pos: _OpenPos, exit_price: float, ts: datetime,
                   reason: str, book: _BookState) -> ClosedTrade:
@@ -265,7 +226,7 @@ class Backtest:
         for t in trades:
             if t.duration_s < self._rulebook.min_hold_seconds:
                 out.append("min_hold")
-            if not self._rulebook.weekend_holding_allowed and _crosses_weekend(t.entry_ts, t.exit_ts):
+            if not self._rulebook.weekend_holding_allowed and holds_through_weekend(t.entry_ts, t.exit_ts):
                 out.append("weekend_holding")
         return tuple(dict.fromkeys(out))             # dedup, order-preserving
 
@@ -321,28 +282,3 @@ class Backtest:
                                max_drawdown_pct_override=book.max_dd_pct)
 
 
-def _nights(entry: datetime, exit: datetime) -> list:
-    """Business days (Mon–Fri) whose 22:00-UTC rollover falls within (entry, exit]
-    (22:00 UTC is the spec's daily-boundary anchor, C1). Nothing rolls on Saturday
-    or Sunday — the weekend is billed inside the week by the convention's triple
-    day (carry.py), so counting weekend nights would charge it twice (GAP-P12D-06)."""
-    nights = []
-    roll = datetime.combine(entry.date(), time(22, 0), tzinfo=_UTC)
-    if roll <= entry:
-        roll += timedelta(days=1)
-    while roll <= exit:
-        if roll.weekday() < 5:
-            nights.append(roll.date())
-        roll += timedelta(days=1)
-    return nights
-
-
-def _crosses_weekend(entry: datetime, exit: datetime) -> bool:
-    """True if the holding period spans the Fri-22:00 → Sun-22:00 closed window
-    (a Saturday falls within, or the position is held across it)."""
-    d = entry
-    while d <= exit:
-        if d.weekday() == 5:                         # any Saturday inside the hold
-            return True
-        d += timedelta(days=1)
-    return False

@@ -21,9 +21,15 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Sequence
+from typing import Callable, Sequence
 
 _TRIPLE_DAY = {"tom_next": 2, "financing_daily": 4}     # Mon=0 … Fri=4
+_DAYS_PER_YEAR = Decimal("365")                          # OANDA: value × rate × 1/365
+
+# (instrument, business-day rollover date, direction) -> annualised % for THAT side:
+# the rate differential net of the broker fee, so a long and a short never share a sign
+# (GAP-P12D-06). Built by tests/backtest/financing.py from dated overnight rates.
+FinancingRate = Callable[[str, date, int], Decimal]
 
 
 def swap_multiplier(night: date, swap_convention: str = "tom_next") -> int:
@@ -36,6 +42,21 @@ def swap_multiplier(night: date, swap_convention: str = "tom_next") -> int:
     if night.weekday() >= 5:
         raise ValueError(f"{night} is a weekend day — no rollover happens then")
     return 3 if night.weekday() == triple else 1
+
+
+def financing_charge(*, instrument: str, direction: int, value: Decimal,
+                     nights: Sequence[date], rate: FinancingRate,
+                     swap_convention: str = "tom_next") -> Decimal:
+    """Financing over the held business-day rollovers, in the QUOTE currency:
+    Σ value × rate(side, night)/100/365 × the convention's multiplier. `value` is the
+    position value (units × price) at the rollover — entry price stands in for it
+    (a declared approximation; holds are capped at 48 h)."""
+    total = Decimal("0")
+    for night in nights:
+        r = Decimal(str(rate(instrument, night, direction)))
+        total += value * r / Decimal("100") / _DAYS_PER_YEAR \
+            * Decimal(swap_multiplier(night, swap_convention))
+    return total
 
 
 def carry_charge(*, nights: Sequence[date], daily_swap: Decimal,

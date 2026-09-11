@@ -133,7 +133,7 @@ def spx_correlation(returns: Sequence[float], spx_returns: Sequence[float]) -> f
     """Pearson correlation of period returns. Degenerate variance → 0.0 (no
     spurious correlation from a flat series).
 
-    CALLER PRECONDITION (GAP-SP12E-04b/E-06, load-bearing): the two series MUST be
+    CALLER PRECONDITION (GAP-SP12E-06, load-bearing): the two series MUST be
     DATE-ALIGNED before this call — element i of `returns` and `spx_returns` must be
     the SAME calendar day. This function zips by POSITION and cannot detect a
     misalignment; FX and SPX trade on different calendars (FX runs on some US

@@ -2,17 +2,18 @@
 
 Backtest tick data comes from a DECLARED, reproducible source named in config —
 never "whatever was lying around". Dukascopy is primary (institutional tick,
-bid/ask); TrueFX is a cross-check validator (not primary). Ingested data passes
+bid/ask; official S3 archive); HistData is the cross-check validator (not primary;
+it replaced TrueFX in master v2.13 — GAP-P12D-02). Ingested data passes
 the SAME source-level §3 filtering as live ticks (NaN/inf/crossed/non-positive
 rejection + weekend filtering, every reject logged), then flows into the real
 `MarketStateFactory` in the harness — the engine's own validation is not bypassed.
 
-The loader owns a cross-source sanity check: Dukascopy vs TrueFX drift on
+The loader owns a cross-source sanity check: Dukascopy vs HistData drift on
 overlapping windows ⇒ FLAG for investigation, never average silently (C-BT-9).
 
-The concrete network download adapters (Dukascopy/TrueFX HTTP) are thin, deferred
-to data-ops like the §7.5 feed transports; a `TickSource` is injected, so tests
-use synthetic sources and an undeclared source name is REFUSED.
+Downloads live in scripts/ (data-ops); file-backed `TickSource`s live in
+sources.py. A `TickSource` is injected, so tests use synthetic sources and an
+undeclared source name is REFUSED.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, Iterator, Sequence
 
+from core.data.fx_clock import in_weekend
 from core.data.normaliser import RawTick
 from core.optimizer.costs import CostModel
 
@@ -33,7 +35,7 @@ class ProvenanceError(Exception):
 
 
 class TickSource(ABC):
-    """A declared, named historical tick source (Dukascopy, TrueFX, or a test
+    """A declared, named historical tick source (Dukascopy, HistData, or a test
     synthetic). The real network adapters subclass this at data-ops time."""
 
     name: str
@@ -63,16 +65,9 @@ class LoadResult:
 
 
 def _is_weekend(ts: datetime) -> bool:
-    """Forex weekend closure (fx_default): Fri ≥22:00 UTC, all Saturday,
-    Sun <22:00 UTC. A tick inside the closed window is dropped."""
-    wd = ts.weekday()                    # Mon=0 … Sun=6
-    if wd == 5:                          # Saturday
-        return True
-    if wd == 4 and ts.hour >= 22:        # Friday after 22:00
-        return True
-    if wd == 6 and ts.hour < 22:         # Sunday before 22:00
-        return True
-    return False
+    """Forex weekend closure: Friday's 17:00-New-York rollover → Sunday's (21:00 UTC in
+    US summer time, 22:00 UTC in winter — GAP-P12D-07). A tick inside it is dropped."""
+    return in_weekend(ts)
 
 
 def _bad_tick(t: RawTick, max_spread: float | None) -> bool:

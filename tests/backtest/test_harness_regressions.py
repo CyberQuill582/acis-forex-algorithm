@@ -31,8 +31,9 @@ import pytest
 from config.schemas import AccountRulebook, NewsRules
 from core.data.normaliser import MarketState
 from core.governor.portfolio_types import SizedOrder
-from tests.backtest.harness import (Backtest, ConversionUnavailable, FoldData, _BookState,
-                                    _OpenPos, _nights, quote_to_account)
+from core.data.fx_clock import business_rollovers
+from tests.backtest.harness import Backtest, FoldData, _BookState, _OpenPos
+from tests.backtest.money import ConversionUnavailable, quote_to_account
 from tests.backtest.walk_forward import Fold
 from tests.optimizer_fixtures import TEST_COSTS
 
@@ -268,11 +269,25 @@ def test_weekend_is_not_billed_twice() -> None:
     already pays for the weekend."""
     fri = datetime(2026, 1, 9, 12, tzinfo=_UTC)
     mon_late = datetime(2026, 1, 12, 23, tzinfo=_UTC)
-    assert _nights(fri, mon_late) == [date(2026, 1, 9), date(2026, 1, 12)]
+    assert business_rollovers(fri, mon_late) == [date(2026, 1, 9), date(2026, 1, 12)]
     bt = Backtest(account="a", cost_model=_NOFRICTION,
                   financing=lambda inst, night, d: Decimal("-3.65"))  # −0.01% of value/day
     carry = bt._carry_quote(_pos("EUR_USD", 1, 1.0, "100000", fri), mon_late)
     assert carry == pytest.approx(Decimal("-20"))             # 2 days × −$10, not 4
+
+
+def test_summer_rollover_is_21_utc_not_22() -> None:
+    """GAP-P12D-07: in US summer time the day rolls at 21:00 UTC. Opened 21:30 UTC on
+    Tue 15-Jul-2025 (already past Tuesday's real roll) and held 24 h, the position holds
+    exactly one rollover — WEDNESDAY's, 21:00 UTC, the tom-next triple day (−$30). The old
+    fixed 22:00 anchor billed Tuesday 22:00 instead (×1, −$10): wrong day, wrong multiple."""
+    entry = datetime(2025, 7, 15, 21, 30, tzinfo=_UTC)
+    exit_ts = entry + timedelta(hours=24)
+    assert business_rollovers(entry, exit_ts) == [date(2025, 7, 16)]
+    bt = Backtest(account="a", cost_model=_NOFRICTION,
+                  financing=lambda inst, night, d: Decimal("-3.65"))  # −0.01% of value/day
+    carry = bt._carry_quote(_pos("EUR_USD", 1, 1.0, "100000", entry), exit_ts)
+    assert carry == pytest.approx(Decimal("-30"))             # Wed ×3, not Tue ×1
 
 
 def test_gold_financing_bills_the_weekend_on_friday() -> None:
