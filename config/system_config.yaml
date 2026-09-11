@@ -2,8 +2,13 @@
 mode: paper
 base_unit_usd: 1000.0
 active_account: dev_paper
-# C1: the single source of truth for forex session boundaries (UTC).
-session_boundaries_utc: ["22:00", "00:00", "07:00", "12:00"]
+# C1: the single source of truth for forex session boundaries — LOCAL wall times,
+# resolved to UTC per date by fx_clock (GAP-P12D-10): the rollover, then each open.
+session_boundaries:
+  - {zone: America/New_York, at: "17:00"}
+  - {zone: Asia/Tokyo, at: "09:00"}
+  - {zone: Europe/London, at: "08:00"}
+  - {zone: America/New_York, at: "08:00"}
 param_stall_alert_boundaries: 3
 regime:
   cycle_seconds: 120

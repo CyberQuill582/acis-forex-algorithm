@@ -12,13 +12,14 @@ import json
 import math
 import uuid
 from collections import deque
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal
 from types import MappingProxyType
 from typing import Callable, Mapping
 
-from config.schemas import AccountRulebook, GovernorConfig, GuardrailLimits
+from config.schemas import AccountRulebook, GovernorConfig, GuardrailLimits, ZonedTime
 from core.data.errors import DataQualityError
+from core.data.fx_clock import local_to_utc, next_local, to_local
 from core.governor.factors import correlation_factor, liquidity_factor, vol_norm
 from core.governor.marginal_alpha import MarginalAlphaEstimator
 from core.governor.portfolio_types import PortfolioState, SizedOrder
@@ -41,9 +42,9 @@ class CapitalGovernor:
         clusters: dict[str, list[str]],
         vol_targets: dict[str, float],
         confidence_veto: float,
-        session_boundaries_utc: list[str],
-        weekend_close_utc: str,
-        weekend_open_utc: str,
+        session_boundaries: list[ZonedTime],
+        week_close: ZonedTime,
+        week_open: ZonedTime,
         scalp_horizon_s: int,
         atr_period: int,
         blackout: Callable[[str, datetime], bool],
@@ -56,9 +57,9 @@ class CapitalGovernor:
         self._clusters = clusters
         self._vol_targets = vol_targets
         self._confidence_veto = confidence_veto
-        self._boundaries = session_boundaries_utc
-        self._weekend_close = weekend_close_utc
-        self._weekend_open = weekend_open_utc
+        self._boundaries = session_boundaries
+        self._week_close = week_close
+        self._week_open = week_open
         self._scalp_horizon_s = scalp_horizon_s
         self._atr_period = atr_period
         self._blackout = blackout
@@ -405,31 +406,22 @@ class CapitalGovernor:
     def _within_weekend_buffer(self, now: datetime) -> bool:
         """GAP-0053: the no-weekend-holding entry ban covers the buffer BEFORE
         the Friday close AND the whole closed window through the Sunday open —
-        no post-close bypass."""
-        utc = now.astimezone(timezone.utc)
-        wd = utc.weekday()
+        no post-close bypass. Days and times are the declared centre's local
+        wall clock (17:00 New York — GAP-P12D-10)."""
+        close, reopen = self._week_close, self._week_open
+        local = to_local(now, close.zone)
+        wd = local.weekday()
         if wd == 5:                                       # Saturday
             return True
-        oh, om = map(int, self._weekend_open.split(":"))
         if wd == 6:                                       # Sunday, before the open
-            return (utc.hour, utc.minute) < (oh, om)
+            return to_local(now, reopen.zone).strftime("%H:%M") < reopen.at
         if wd != 4:                                       # Mon–Thu
             return False
-        hh, mm = map(int, self._weekend_close.split(":"))
-        close = utc.replace(hour=hh, minute=mm, second=0, microsecond=0)
-        gap = (close - utc).total_seconds()
+        gap = (local_to_utc(local.date(), close.at, close.zone) - now).total_seconds()
         return gap <= self._cfg.weekend_entry_buffer_s    # buffer window OR past close
 
     def _next_boundary(self, now: datetime) -> datetime:
-        utc = now.astimezone(timezone.utc)
-        candidates = []
-        for b in self._boundaries:
-            hh, mm = map(int, b.split(":"))
-            c = utc.replace(hour=hh, minute=mm, second=0, microsecond=0)
-            if c <= utc:
-                c += timedelta(days=1)
-            candidates.append(c)
-        return min(candidates)
+        return min(next_local(now, b.zone, b.at) for b in self._boundaries)
 
     def _zero(self, signal: Signal, reason: str, snapshot: dict,
               now: datetime) -> SizedOrder:

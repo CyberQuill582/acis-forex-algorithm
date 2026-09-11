@@ -13,10 +13,11 @@ most-severe scope winning (global flatten > session halt > instrument halt).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from decimal import Decimal
 
 from config.schemas import DrawdownRule, GuardrailLimits, RiskConfig
+from core.data.fx_clock import trading_day
 from core.risk.risk_types import PlatformDrawdownState
 from core.risk.sink import HaltSink
 
@@ -30,16 +31,6 @@ def taper_factor(distance: float, start: float, halt: float) -> float:
     if distance >= halt:
         return 0.0
     return (halt - distance) / (halt - start)
-
-
-def _trading_day(now: datetime, reset_hhmm: str):
-    """The FX trading day that `now` falls in, where each day starts at
-    `reset_hhmm` UTC (the rollover). A day runs reset→reset, so a loss
-    straddling 00:00 UTC stays inside one trading day (GAP-P9I-03)."""
-    utc = now.astimezone(timezone.utc)
-    h, m = map(int, reset_hhmm.split(":"))
-    boundary = utc.replace(hour=h, minute=m, second=0, microsecond=0)
-    return utc.date() if utc >= boundary else (utc - timedelta(days=1)).date()
 
 
 @dataclass
@@ -68,11 +59,11 @@ class _RuleAnchor:
     day: object | None = None
 
     def update(self, rule: DrawdownRule, basis: float, now: datetime, *,
-               resets_daily: bool, reset_hhmm: str) -> float:
-        # GAP-P9I-03: the trading day for the daily loss limit starts at the FX
-        # rollover (reset_hhmm, e.g. 22:00 UTC), NOT calendar midnight — a
-        # drawdown straddling 00:00 UTC must not be forgotten.
-        today = _trading_day(now, reset_hhmm)
+               resets_daily: bool) -> float:
+        # GAP-P9I-03: the daily loss limit's day starts at the FX rollover, NOT
+        # calendar midnight (a drawdown straddling 00:00 UTC must not be forgotten);
+        # the rollover is the real 17:00 New York instant (GAP-P12D-10, owner-approved).
+        today = trading_day(now)
         if resets_daily:
             if self.day != today or self.anchor is None:
                 self.day = today
@@ -96,7 +87,6 @@ class DrawdownSeries:
 
     limits: GuardrailLimits
     rules: tuple[tuple[str, str, DrawdownRule, bool], ...]  # (key, origin, rule, resets_daily)
-    daily_reset_utc: str = "22:00"       # FX rollover / trading-day start (GAP-P9I-03)
     _anchors: dict[str, _RuleAnchor] = field(default_factory=dict)
 
     def measure(self, *, equity: float, balance: float, now: datetime,
@@ -105,8 +95,7 @@ class DrawdownSeries:
         for key, _origin, rule, resets_daily in self.rules:
             basis = equity if rule.basis == "equity" else balance
             anchor = self._anchors.setdefault(key, _RuleAnchor())
-            measured = anchor.update(rule, basis, now, resets_daily=resets_daily,
-                                     reset_hhmm=self.daily_reset_utc)
+            measured = anchor.update(rule, basis, now, resets_daily=resets_daily)
             distance = measured / rule.limit_pct if rule.limit_pct > 0 else 0.0
             out.append(PlatformDrawdownState(
                 rule_key=key, measured_pct=measured, limit_pct=rule.limit_pct,
@@ -117,8 +106,7 @@ class DrawdownSeries:
 
 def build_drawdown_series(limits: GuardrailLimits,
                           platform_rules: list[DrawdownRule],
-                          account_name: str,
-                          daily_reset_utc: str = "22:00") -> DrawdownSeries:
+                          account_name: str) -> DrawdownSeries:
     """The engine daily loss limit (resets at the FX trading-day rollover,
     master §8) + every platform rule under its own semantics (trailing
     ratchets, static is a fixed inception reference — neither resets daily).
@@ -132,8 +120,7 @@ def build_drawdown_series(limits: GuardrailLimits,
     for r in platform_rules:
         key = f"{account_name}:{r.type}:{r.anchor}:{r.basis}"
         rules.append((key, "platform", r, False))     # platform rules never reset daily
-    return DrawdownSeries(limits=limits, rules=tuple(rules),
-                          daily_reset_utc=daily_reset_utc)
+    return DrawdownSeries(limits=limits, rules=tuple(rules))
 
 
 @dataclass

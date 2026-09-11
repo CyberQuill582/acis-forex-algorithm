@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Sequence
 
 from config.schemas import PairRelationship, SignalsConfig
-from core.data.bars import Bar, BarAggregator
+from core.data.bars import Bar, BarAggregator, DailyBarAggregator
 from core.data.errors import DataQualityError
 from core.data.normaliser import MarketState
 from core.optimizer.param_types import ParamSet
@@ -130,8 +130,7 @@ class AGON:
         if bar is not None:
             self._bars.setdefault(inst, deque(maxlen=self.window_capacity)).append(bar)
             self._sample_pairs(inst)
-        daily_agg = self._daily_agg.setdefault(
-            inst, BarAggregator(_DAILY_S, anchor_utc="22:00"))   # rollover-anchored
+        daily_agg = self._daily_agg.setdefault(inst, DailyBarAggregator())
         daily = daily_agg.add(state.timestamp, state.mid, state.spread)
         if daily is not None:
             self._append_daily(inst, daily)

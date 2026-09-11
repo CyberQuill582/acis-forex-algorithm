@@ -1,5 +1,5 @@
 # ACIS Deep-Spec Set — Index & Constitution Map
-**Document ID:** `ACIS-SPEC-INDEX-000` · **Version:** 1.0 · **Status:** ACTIVE
+**Document ID:** `ACIS-SPEC-INDEX-000` · **Version:** 1.3 · **Status:** ACTIVE
 **Depends On:** `../ACIS_SPEC.md` (master), `../_SPEC_AUTHORING_GUIDE.md` (template), `../SPEC_AUDIT.md` (findings)
 **Blocks:** every layer spec below
 
@@ -47,7 +47,7 @@ Status ladder: `DRAFT` → `REVIEWED` (passed `_SPEC_REVIEW_PASS.md`) → `LOCKE
 ## 4. Shared vocabulary (defined once, referenced everywhere)
 These are defined authoritatively in the master spec and the layer that owns them; every other doc references, never redefines:
 - **Frozen boundary objects** — `MarketState` (01), `RegimeContext` (02), `ActiveParamSet`/`ParamSet` (03), `Signal` (04), `SizedOrder` (05), `FillReport` (06), `RiskSnapshot` (07). All `@dataclass(frozen=True)`, validated on construction, deep-immutable (see `SPEC_AUDIT.md` F16).
-- **Session boundary** — the `system_config.yaml` `session_boundaries_utc` list (master §5 / C1). Single source of truth for QIEA staging + `MarketState.session`.
+- **Session boundary** — the `system_config.yaml` `session_boundaries` list of `{zone, at}` local wall times (master §5 / C1; resolved to UTC per date by `core/data/fx_clock.py`, master §3.7 v2.14). Single source of truth for QIEA staging + `MarketState.session`.
 - **Stores** (read-shared across the three loops, master §10) — `data_store`, `regime_store`, `param_library` (active + `PendingParamStore`), `portfolio_state`, `risk_store`. Ownership: a store is *written* by exactly one layer and *read* by others; the writer is named in that layer's spec §9/§10.
 - **The three loops** — SLOW (QIEA, 03), MEDIUM (NVMA, 02), FAST (Data→Alpha→Governor→Execution, 01/04/05/06). Isolation rules in master §10.
 - **Error base** — `DataQualityError` (01) and the per-layer error taxonomy; halts are structured events, never exceptions that escape the loop.
@@ -78,6 +78,7 @@ Each layer spec has a **Logic Flaw Registry** (§13 of the template) that must a
 - **Reviewing:** run `../_SPEC_REVIEW_PASS.md` — it walks the master, every `.md`, this set, and the skeleton, and re-verifies every `SPEC_AUDIT.md` OPEN/FIXED item.
 
 ## Changelog
+- **1.3 (2026-09-11)** — Master v2.14 (GAP-P12D-10): the *session boundary* term is now a list of local `{zone, at}` wall times, not fixed UTC instants. (Header version corrected from a stale 1.0.)
 - **1.2** — Master v2.4 registered: new `ACIS-13` (platform adapter contract + attach protocol, master §7.5), TO AUTHOR. Coverage additions to existing docs: `ACIS-01` gains master §3.7 asset-class law (contract metadata, per-calendar session boundaries — C1 generalised, futures lifecycle) and C10; `ACIS-10` gains §3.6 Tier-G taxonomy + shock-asymmetry law (C12, F27); `ACIS-11` gains §5.7 evolution law (lifecycle, re-validation due dates, graveyard/revival, challenger lane, C14); `ACIS-05`/`ACIS-07` gain §9.5 account doctrine (stricter-of, platform-measured drawdown series, C11, F26 + GAP-0010); `ACIS-04`/`ACIS-08` gain §10 per-gate skip attribution (C15); `ACIS-09` gains the nine F31 glitch classes and per-account §14 evaluation.
 - **1.1** — Master v2.2 additions registered: ACIS-10 (events/news + platform-rules law), ACIS-11 (strategy provenance + literature law + Pair Divergence detail), ACIS-12 (scenario book + gap law), all TO AUTHOR. ACIS-04 must additionally cover the Pair Divergence module's linked signal groups; ACIS-05 the blackout hard override + atomic group sizing.
 - **1.0** — Index created; nine layer specs registered in implementation order with dependency law, shared vocabulary, and audit-correction assignments.

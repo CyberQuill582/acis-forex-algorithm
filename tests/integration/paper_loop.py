@@ -189,7 +189,7 @@ def build_paper_loop(
         def open_position_count(self) -> int:
             return book_holder[0].open_position_count() if book_holder else 0
 
-    lib = ParamLibrary(tmp_path / "params.db", cfg.system.session_boundaries_utc,
+    lib = ParamLibrary(tmp_path / "params.db", cfg.system.session_boundaries,
                        cfg.system.param_stall_alert_boundaries, _Gate(), log)
     nvma = NVMA(
         cfg=cfg.system.regime,
@@ -221,9 +221,9 @@ def build_paper_loop(
         clusters=cfg.instruments.clusters,
         vol_targets={s: sp.vol_target_atr_frac for s, sp in enabled.items()},
         confidence_veto=cfg.system.regime.confidence_veto,
-        session_boundaries_utc=cfg.system.session_boundaries_utc,
-        weekend_close_utc=fx.weekend_close_utc,
-        weekend_open_utc=fx.weekend_open_utc,
+        session_boundaries=cfg.system.session_boundaries,
+        week_close=fx.week_close,
+        week_open=fx.week_open,
         scalp_horizon_s=(signals_cfg.momentum_scalp_horizon_bars[1]
                          * signals_cfg.momentum_scalp_bar_seconds),
         atr_period=signals_cfg.atr_period,

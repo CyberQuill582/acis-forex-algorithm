@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from config.schemas import ZonedTime
 from core.optimizer.param_library import (
     ParamLibrary,
     PromotionForbiddenError,
@@ -15,9 +16,11 @@ from core.optimizer.param_types import ParamSet
 from core.regime.regime_types import RegimeType
 from tests.optimizer_fixtures import CapturingLogger, make_paramset
 
-BOUNDARIES = ["22:00", "00:00", "07:00", "12:00"]
-AT_BOUNDARY = datetime(2026, 7, 6, 22, 0, tzinfo=timezone.utc)
-MID_SESSION = datetime(2026, 7, 6, 21, 59, tzinfo=timezone.utc)  # C-QIEA-1: close-looking
+BOUNDARIES = [ZonedTime(zone=z, at=t) for z, t in (
+    ("America/New_York", "17:00"), ("Asia/Tokyo", "09:00"),
+    ("Europe/London", "08:00"), ("America/New_York", "08:00"))]
+AT_BOUNDARY = datetime(2026, 7, 6, 21, 0, tzinfo=timezone.utc)   # 17:00 EDT rollover
+MID_SESSION = datetime(2026, 7, 6, 20, 59, tzinfo=timezone.utc)  # C-QIEA-1: close-looking
 
 
 class FakeGate:
@@ -49,10 +52,20 @@ def test_boundary_is_minute_exact_against_the_declared_list() -> None:
 
 
 def test_boundary_check_is_utc_aware() -> None:
-    plus_one = datetime(2026, 7, 6, 23, 0, tzinfo=timezone(timedelta(hours=1)))
-    assert is_session_boundary(plus_one, BOUNDARIES)  # 23:00+01:00 == 22:00 UTC
+    plus_one = datetime(2026, 7, 6, 22, 0, tzinfo=timezone(timedelta(hours=1)))
+    assert is_session_boundary(plus_one, BOUNDARIES)  # 22:00+01:00 == 21:00 UTC
     with pytest.raises(ValueError):
-        is_session_boundary(datetime(2026, 7, 6, 22, 0), BOUNDARIES)
+        is_session_boundary(datetime(2026, 7, 6, 21, 0), BOUNDARIES)
+
+
+def test_boundaries_follow_dst() -> None:
+    # GAP-P12D-10: the rollover boundary is 21:00 UTC in July, 22:00 UTC in January
+    utc = timezone.utc
+    assert not is_session_boundary(datetime(2026, 7, 6, 22, 0, tzinfo=utc), BOUNDARIES)
+    assert is_session_boundary(datetime(2026, 1, 5, 22, 0, tzinfo=utc), BOUNDARIES)
+    assert not is_session_boundary(datetime(2026, 1, 5, 21, 0, tzinfo=utc), BOUNDARIES)
+    assert is_session_boundary(datetime(2026, 1, 5, 8, 0, tzinfo=utc), BOUNDARIES)   # London
+    assert is_session_boundary(datetime(2026, 7, 6, 7, 0, tzinfo=utc), BOUNDARIES)
 
 
 # ---------------------------- promotion guard (C-QIEA-1) ---------------------- #

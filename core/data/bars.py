@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from core.data.errors import DataQualityError
+from core.data.fx_clock import rollover_utc, trading_day
 
 
 @dataclass(frozen=True)
@@ -44,15 +45,14 @@ class Bar:
 
 class BarAggregator:
     """One instrument, one duration. `add()` returns the COMPLETED bar (or None)
-    when the incoming tick opens a later bucket. `anchor_utc` fixes the bucket
-    grid's phase — "22:00" gives rollover-anchored daily bars (master §5 C1)."""
+    when the incoming tick opens a later bucket. Buckets tile UTC from 00:00;
+    daily bars use `DailyBarAggregator` (a fixed-UTC day is DST-wrong)."""
 
-    def __init__(self, duration_s: int, anchor_utc: str = "00:00") -> None:
+    def __init__(self, duration_s: int) -> None:
         if duration_s <= 0:
             raise DataQualityError("duration_s", duration_s, "must be > 0")
-        hh, mm = map(int, anchor_utc.split(":"))
         self._duration = duration_s
-        self._anchor = datetime(1970, 1, 5, hh, mm, tzinfo=timezone.utc)  # a Monday
+        self._anchor = datetime(1970, 1, 5, tzinfo=timezone.utc)  # a Monday
         self._bucket: int | None = None
         self._o = self._h = self._l = self._c = 0.0
         self._spread = 0.0
@@ -61,6 +61,9 @@ class BarAggregator:
     def _bucket_of(self, ts: datetime) -> int:
         return int((ts.astimezone(timezone.utc) - self._anchor).total_seconds()
                    // self._duration)
+
+    def _bucket_open(self, bucket: int) -> datetime:
+        return self._anchor + timedelta(seconds=bucket * self._duration)
 
     def add(self, ts: datetime, mid: float, spread: float) -> Bar | None:
         if ts.tzinfo is None:
@@ -81,7 +84,7 @@ class BarAggregator:
             self._spread = spread
             return None
         completed = Bar(
-            ts_open=self._anchor + timedelta(seconds=self._bucket * self._duration),
+            ts_open=self._bucket_open(self._bucket),
             open=self._o, high=self._h, low=self._l, close=self._c,
             spread=self._spread, duration_s=self._duration,
         )
@@ -92,3 +95,18 @@ class BarAggregator:
         self._bucket = bucket
         self._o = self._h = self._l = self._c = mid
         self._spread = spread
+
+
+class DailyBarAggregator(BarAggregator):
+    """Rollover-anchored daily bars (master §5 C1): one bar per FX trading day,
+    17:00 New York → 17:00 New York, so the UTC open moves with US DST (21:00 UTC
+    in summer, 22:00 in winter — GAP-P12D-10). `duration_s` stays the nominal day."""
+
+    def __init__(self) -> None:
+        super().__init__(86_400)
+
+    def _bucket_of(self, ts: datetime) -> int:
+        return trading_day(ts).toordinal()
+
+    def _bucket_open(self, bucket: int) -> datetime:
+        return rollover_utc(date.fromordinal(bucket))

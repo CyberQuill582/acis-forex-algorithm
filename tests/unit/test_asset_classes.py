@@ -32,13 +32,22 @@ class TestFxCalendar:
         fx = calendars["fx_default"]
         assert fx.session_at(_utc(2026, 7, 18, 12)) == "closed"       # Saturday
         assert fx.session_at(_utc(2026, 7, 17, 22, 30)) == "closed"   # Friday post-close
-        assert fx.session_at(_utc(2026, 7, 19, 21, 0)) == "closed"    # Sunday pre-open
+        assert fx.session_at(_utc(2026, 7, 19, 20, 59)) == "closed"   # Sunday pre-open
         assert fx.session_at(_utc(2026, 7, 20, 2)) == "tokyo"         # Monday
+        # winter: New York trades until 22:00 UTC on Friday (17:00 EST)
+        assert fx.session_at(_utc(2026, 1, 16, 21, 30)) == "new_york"
+        assert fx.session_at(_utc(2026, 1, 16, 22, 0)) == "closed"
 
-    def test_dst_shift_does_not_move_utc_windows(self, calendars) -> None:
-        # US DST changed 2026-03-08; the boundary list is UTC — tagging must not move.
+    def test_windows_follow_each_centres_dst(self, calendars) -> None:
+        # GAP-P12D-10: sessions are local wall time, so their UTC windows MOVE.
         fx = calendars["fx_default"]
-        assert fx.session_at(_utc(2026, 3, 6, 13)) == fx.session_at(_utc(2026, 3, 10, 13)) == "overlap"
+        # London opens 08:00 London: 08:00 UTC in January, 07:00 UTC in July
+        assert fx.session_at(_utc(2026, 1, 14, 7, 30)) == "tokyo"
+        assert fx.session_at(_utc(2026, 7, 14, 7, 30)) == "overlap"
+        # 2026-03-08 → 03-29 the US is on EDT while London is still on GMT: New York
+        # opens 12:00 UTC on 10 March but 13:00 UTC on 6 March
+        assert fx.session_at(_utc(2026, 3, 6, 12, 30)) == "london"
+        assert fx.session_at(_utc(2026, 3, 10, 12, 30)) == "overlap"
 
     def test_naive_timestamp_rejected(self, calendars) -> None:
         with pytest.raises(ValueError):
@@ -48,12 +57,14 @@ class TestFxCalendar:
 class TestExchangeCalendar:
     def test_open_holiday_weekend(self, calendars) -> None:
         cme = calendars["cme_metals"]
-        assert cme.session_at(_utc(2026, 7, 15, 14)) == "exchange"   # Wednesday, in session
-        assert cme.session_at(_utc(2026, 7, 15, 21)) == "closed"     # after close
+        assert cme.session_at(_utc(2026, 7, 15, 14)) == "exchange"   # Wed 09:00 Chicago
+        assert cme.session_at(_utc(2026, 7, 15, 21)) == "closed"     # 16:00 Chicago, after close
+        assert cme.session_at(_utc(2026, 1, 14, 14)) == "closed"     # 08:00 CST, pre-open
+        assert cme.session_at(_utc(2026, 1, 14, 20, 30)) == "exchange"  # 14:30 CST
         assert cme.session_at(_utc(2026, 7, 3, 14)) == "closed"      # declared holiday
         assert cme.session_at(_utc(2026, 7, 18, 14)) == "closed"     # Saturday
 
     def test_half_day_early_close_is_session_end(self, calendars) -> None:
         cme = calendars["cme_metals"]
-        assert cme.session_at(_utc(2026, 11, 27, 14)) == "exchange"  # before early close
-        assert cme.session_at(_utc(2026, 11, 27, 17, 30)) == "closed"  # after early close
+        assert cme.session_at(_utc(2026, 11, 27, 15)) == "exchange"  # 09:00 CST, before 11:00
+        assert cme.session_at(_utc(2026, 11, 27, 17, 30)) == "closed"  # 11:30 CST, after

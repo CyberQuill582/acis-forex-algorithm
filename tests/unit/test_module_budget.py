@@ -22,15 +22,15 @@ PRODUCTION = ["core", "monitoring", "config", "scripts", "tests/backtest"]
 
 # path -> line count on 2026-09-11 (the ceiling), all owned by GAP-P12M-01
 GRANDFATHERED = {
-    "config/schemas.py": 702,
-    "core/signals/agon.py": 507,
-    "core/governor/capital_governor.py": 472,
+    "config/schemas.py": 622,                   # 702 → 622: calendars → config/calendars.py (P12D-10)
+    "core/signals/agon.py": 506,
+    "core/governor/capital_governor.py": 464,
     "scripts/download_histdata.py": 400,        # 456 → 400 after scripts/dl_common.py extraction
     "core/regime/nvma.py": 395,
     "core/signals/provenance.py": 391,
     "core/risk/monitor.py": 378,
     "core/execution/venue.py": 378,
-    "core/risk/guardrails.py": 326,
+    "core/risk/guardrails.py": 313,
 }
 
 

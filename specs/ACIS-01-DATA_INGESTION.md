@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-DATA-001` |
-| **Version** | 1.1 (LOCKED) |
+| **Version** | 1.2 (LOCKED — master v2.14 local market time, 2026-09-11) |
 | **Layer / DIR** | Layer 1 · `[DIR:core/data]` |
 | **Consumes** | raw broker/feed payloads (external) |
 | **Emits** | `MarketState` (frozen) → NVMA (ACIS-02) |
@@ -31,11 +31,11 @@
 **Entry point:** `core/data/feeds.py::FeedConnector.stream() -> AsyncIterator[RawTick]` and `core/data/normaliser.py::MarketStateFactory.build(raw: RawTick, ctx: FeedContext) -> MarketState`.
 
 **Inputs at boot:**
-- `system_config.yaml` (loaded once, pydantic-settings, master §9): `data.stale_threshold_ms`, `data.tick_velocity_window_s` (default 10), `data.queue_max`, `data.session_boundaries_utc` (the C1 list, shared), `data.macro_lookahead_min` (default 30), broker selection + credentials (from env, never in YAML).
+- `system_config.yaml` (loaded once, pydantic-settings, master §9): `data.stale_threshold_ms`, `data.tick_velocity_window_s` (default 10), `data.queue_max`, `session_boundaries` (the C1 list of local `{zone, at}` times, shared), `data.macro_lookahead_min` (default 30), broker selection + credentials (from env, never in YAML).
 - `instruments.yaml`: the enabled instrument universe + per-instrument **full §3.7 contract metadata** — asset class, tick size + tick value, lot/contract step + minimum, margin model, swap/financing convention, `max_plausible_spread`, and a named **market calendar** (forex 24/5 default from the C1 boundary list; exchange calendars with holidays/half-days for futures) — plus cluster membership and coupled-pair declarations. Incomplete contract metadata on an enabled instrument is fatal at boot (master §3.7).
 - A macro-economic calendar source (Tier-1 events) — read-only, injected; the feed layer only computes `macro_events_imminent`, it does not fetch predictions.
 
-**Boot preconditions (fail fast, refuse to start):** config schema valid; every enabled instrument has `pip_size` + `min_lot`; `session_boundaries_utc` non-empty and monotonic within a day; broker credentials present for the selected broker. A missing required value is fatal — no defaults for anything that affects correctness (master §9).
+**Boot preconditions (fail fast, refuse to start):** config schema valid; every enabled instrument has `pip_size` + `min_lot`; `session_boundaries` non-empty, duplicate-free, and cross-checked against the fx session opens (GAP-0025/0033); broker credentials present for the selected broker. A missing required value is fatal — no defaults for anything that affects correctness (master §9).
 
 ## 3. Layer architecture & responsibility
 
@@ -85,7 +85,7 @@ class MarketState:
 | `volume` | finite, ≥ 0 |
 | `order_book_depth` | monotone price ladders; each `(px,vol)` finite, px>0, vol≥0 |
 | `tick_velocity` | finite, ≥ 0 |
-| `session` | ∈ enum; derived from `session_boundaries_utc` + `timestamp` |
+| `session` | ∈ enum; derived from the instrument's calendar (local-time windows) + `timestamp` |
 
 No field may be `NaN`/`inf` — a NaN anywhere is a hard reject (F/NaN-leakage glitch class), never coerced to 0.
 
@@ -94,9 +94,9 @@ No field may be `NaN`/`inf` — a NaN anywhere is a hard reject (F/NaN-leakage g
 - **Derived fields:** `spread = ask - bid`; `mid = (bid+ask)/2`. Computed with the instrument's `pip_size` awareness only for logging/threshold comparison, never rounded into the stored price.
 - **`tick_velocity`:** count of ticks in the trailing `tick_velocity_window_s`, divided by the window; ring buffer per instrument. Cold start (fewer ticks than window): report the partial rate and set a `warming` flag in `raw`-adjacent metadata, do not fabricate.
 - **Staleness:** `is_stale = (ingest_ts - timestamp) > stale_threshold_ms`. Stale does not reject; it flags. NVMA vetoes on it.
-- **Session tagging (C1, generalised per C10):** map `timestamp` against the instrument's declared **market calendar** (`asset_classes.py`); for forex instruments the calendar is the C1 `session_boundaries_utc` list + session windows (overlaps → `overlap`; outside all → `closed`); exchange calendars resolve open sessions, holidays, and half-days (a declared early close is the session end, not a feed outage — §13 glitch class). This is the *only* session logic in the system; ACIS-02/03 reference it.
+- **Session tagging (C1, generalised per C10):** map `timestamp` against the instrument's declared **market calendar** (`asset_classes.py`); for forex instruments the calendar is the C1 `session_boundaries` list + session windows, each window read in its own centre's local time (master §3.7 v2.14) (overlaps → `overlap`; outside all → `closed`); exchange calendars resolve open sessions, holidays, and half-days (a declared early close is the session end, not a feed outage — §13 glitch class). This is the *only* session logic in the system; ACIS-02/03 reference it.
 - **`macro_events_imminent`:** true if any Tier-1 calendar event for the instrument's currencies falls within `macro_lookahead_min`. Calendar is injected data, not a prediction.
-- **Config block (`system_config.yaml → data:`):** `stale_threshold_ms`, `clock_skew_tolerance_ms`, `tick_velocity_window_s`, `queue_max`, `queue_overflow_policy: drop_oldest`, `macro_lookahead_min`, `session_boundaries_utc`, `max_plausible_spread` (per-instrument). All required; no correctness default.
+- **Config block (`system_config.yaml → data:`):** `stale_threshold_ms`, `clock_skew_tolerance_ms`, `tick_velocity_window_s`, `queue_max`, `queue_overflow_policy: drop_oldest`, `macro_lookahead_min`, `session_boundaries` (top-level), `max_plausible_spread` (per-instrument). All required; no correctness default.
 
 ## 7. Core logic (step by step)
 
@@ -168,7 +168,7 @@ No error in this layer escapes upward to halt trading directly — it reports; N
 ## 13. Logic-flaw registry (corrections this layer owns)
 - **C-DATA-1 (F16):** `raw` and `order_book_depth` stored as deep-immutable structures (`MappingProxyType` + nested tuples, or frozen model). The immutability test asserts a nested-mutation attempt fails — attribute-reassignment failing is not sufficient.
 - **C-DATA-2 (F17):** any persisted aggregate that later feeds PnL/accounting uses `Decimal`; raw prices stay float; the float→Decimal boundary is explicit and tested (no float PnL accumulation).
-- **C-DATA-3 (F6/C1):** session tagging resolves only against `session_boundaries_utc`; DST/Sunday-open/Friday-close handled by the boundary list, tested at those edges.
+- **C-DATA-3 (F6/C1):** session tagging resolves only against the declared calendars and `session_boundaries`; every time is local and resolved per date by `core/data/fx_clock.py`, so DST moves the UTC windows (tested on both sides of the US and UK switch dates and in the 2–3 week gap between them), and the Sunday-open/Friday-close edges are the 17:00 New York rollover.
 - **C-DATA-4 (F18 hand-off):** session-median (spread, tick velocity) estimator lives here as `session_median_cache`; ACIS-02 consumes it. Cold-start (no median yet) is exposed as a warming flag, not a fabricated value.
 - **C-DATA-5:** duplicate/out-of-order/reconnect/weekend-gap never cause silent history rewrite or interpolation; each has an explicit flag + log + test.
 - **C-DATA-6 (master §7.5 / GAP-0013):** the feed face exposes no account, position, equity, or margin surface — the import-contract test asserts this structurally, not just import direction.
@@ -200,5 +200,6 @@ No error in this layer escapes upward to halt trading directly — it reports; N
 **Done-when (phase 1, master §15):** all §14 tests green; the import-linter contract test exists and passes (no upward imports); mock feed drives an end-to-end tick without any lower layer present. **Conflict-table rows owned:** none directly, but this layer *supplies* the `is_stale`/`session`/`macro` inputs that NVMA turns into `tradeable=False` — so its correctness is a precondition for the "NVMA veto" and "regime shift" rows.
 
 ## Changelog
+- **1.2 (2026-09-11)** — Master v2.14 (GAP-P12D-10): calendars and `session_boundaries` are declared in LOCAL time (`{zone, at}`; fx sessions `{zone, open, close}`; exchange calendars carry a `zone`) and resolved to UTC per date by `core/data/fx_clock.py`. C-DATA-3 restated; the boundary list moves out of the `data:` block wording (it was always top-level).
 - **1.1 (LOCKED, 2026-07-15)** — v2.5 master consistency pass: asset-class law (contract metadata, per-calendar sessions, `asset_classes.py`), feed-face rule (adapters §7.5, no account surface — C-DATA-6), v1 feed set corrected to mock-first with OANDA/MT5 at phase-12 conformance. Status → LOCKED for the phase-1 build.
 - **1.0 (DRAFT)** — Initial deep spec from master §3 + `ACIS_Agent_Prompt.md` §3.1; corrections C-DATA-1..5 wired from `SPEC_AUDIT.md`.

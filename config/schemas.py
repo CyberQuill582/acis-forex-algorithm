@@ -10,31 +10,19 @@ Guardrail values (`guardrail_limits.yaml`) change only by human commit
 
 from __future__ import annotations
 
-import re
-from datetime import date, time
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import Field, model_validator
+
+from config.calendars import (ExchangeCalendar, FxCalendar, Session, ZonedTime,  # noqa: F401
+                              _Strict, check_boundaries)
 
 
 class ConfigError(Exception):
     """Fatal configuration error — the system refuses to start (SPEC §9)."""
-
-
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-_HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-
-
-def _parse_hhmm(value: str, field: str) -> time:
-    if not isinstance(value, str) or not _HHMM.match(value):
-        raise ValueError(f"{field}: {value!r} is not HH:MM UTC")
-    hh, mm = value.split(":")
-    return time(int(hh), int(mm))
 
 
 # --------------------------------------------------------------------------- #
@@ -312,7 +300,7 @@ class SystemConfig(_Strict):
     mode: Literal["backtest", "paper", "live"]
     base_unit_usd: float = Field(gt=0)
     active_account: str
-    session_boundaries_utc: list[str] = Field(min_length=1)  # C1: empty list is fatal
+    session_boundaries: list[ZonedTime] = Field(min_length=1)  # C1: empty list is fatal
     param_stall_alert_boundaries: int = Field(gt=0)
     data: DataConfig
     regime: RegimeConfig
@@ -324,57 +312,13 @@ class SystemConfig(_Strict):
     risk: RiskConfig
     monitoring: MonitoringConfig
 
-    @field_validator("session_boundaries_utc")
-    @classmethod
-    def _boundaries(cls, v: list[str]) -> list[str]:
-        parsed = [_parse_hhmm(b, "session_boundaries_utc") for b in v]
-        if len(set(parsed)) != len(parsed):
-            raise ValueError("session_boundaries_utc: duplicate boundary")
-        return v
-
 
 # --------------------------------------------------------------------------- #
 # instruments.yaml — asset-class law (SPEC §3.7): contract metadata is declared
 # data; an enabled instrument with incomplete metadata is fatal.
 # --------------------------------------------------------------------------- #
 
-class FxCalendar(_Strict):
-    type: Literal["fx"]
-    sessions: dict[str, tuple[str, str]] = Field(min_length=1)  # name -> (start,end) UTC
-    weekend_close_utc: str  # Friday close, HH:MM
-    weekend_open_utc: str   # Sunday open, HH:MM
-
-    @model_validator(mode="after")
-    def _times(self) -> "FxCalendar":
-        for name, (start, end) in self.sessions.items():
-            s, e = _parse_hhmm(start, name), _parse_hhmm(end, name)
-            if s >= e:
-                raise ValueError(f"session {name}: start must precede end (no wrap)")
-        _parse_hhmm(self.weekend_close_utc, "weekend_close_utc")
-        _parse_hhmm(self.weekend_open_utc, "weekend_open_utc")
-        return self
-
-
-class ExchangeCalendar(_Strict):
-    type: Literal["exchange"]
-    open_utc: str
-    close_utc: str
-    days: list[int] = Field(min_length=1)  # ISO weekday numbers 1=Mon .. 7=Sun
-    holidays: list[date] = Field(default_factory=list)
-    half_days: dict[date, str] = Field(default_factory=dict)  # date -> early close HH:MM
-
-    @model_validator(mode="after")
-    def _times(self) -> "ExchangeCalendar":
-        o, c = _parse_hhmm(self.open_utc, "open_utc"), _parse_hhmm(self.close_utc, "close_utc")
-        if o >= c:
-            raise ValueError("open_utc must precede close_utc (no wrap)")
-        if any(d < 1 or d > 7 for d in self.days):
-            raise ValueError("days: ISO weekday 1..7")
-        for d, early in self.half_days.items():
-            e = _parse_hhmm(early, f"half_days[{d}]")
-            if not (o < e < c):
-                raise ValueError(f"half_days[{d}]: early close must fall inside the session")
-        return self
+# FxCalendar / ExchangeCalendar live in config/calendars.py (local time, GAP-P12D-10).
 
 
 class InstrumentCosts(_Strict):
@@ -643,33 +587,9 @@ class AcisConfig(_Strict):
             sym = sc.params.get("instrument")
             if sym is not None and sym not in self.instruments.instruments:
                 raise ValueError(f"scenario {sc.name!r}: unknown instrument {sym!r}")
-        # GAP-0025 (C1 cross-check): every session boundary must coincide with a
-        # declared fx session start or the weekend close/rollover — the staging
-        # boundary list and the session-tagging windows may not silently diverge.
-        fx_edges: set[str] = set()
-        for cal in self.instruments.calendars.values():
-            if isinstance(cal, FxCalendar):
-                fx_edges.update(start for start, _ in cal.sessions.values())
-                fx_edges.add(cal.weekend_close_utc)
-        for boundary in self.system.session_boundaries_utc:
-            if boundary not in fx_edges:
-                raise ValueError(
-                    f"session boundary {boundary!r} matches no fx session start or "
-                    "weekend close (C1 single-source cross-check, GAP-0025)"
-                )
-        # GAP-0033: the check is BIDIRECTIONAL — every fx session start must
-        # itself be a declared boundary, so a session-name transition can never
-        # occur at an instant QIEA staging does not treat as a boundary.
-        boundaries = set(self.system.session_boundaries_utc)
-        for cal_name, cal in self.instruments.calendars.items():
-            if isinstance(cal, FxCalendar):
-                for session_name, (start, _end) in cal.sessions.items():
-                    if start not in boundaries:
-                        raise ValueError(
-                            f"fx calendar {cal_name!r} session {session_name!r} starts at "
-                            f"{start!r}, which is not in session_boundaries_utc "
-                            "(C1 bidirectional cross-check, GAP-0033)"
-                        )
+        # GAP-0025/0033: the C1 staging boundaries and the session windows may not
+        # silently diverge (bidirectional, on local (zone, time) pairs).
+        check_boundaries(self.system.session_boundaries, self.instruments.calendars)
         return self
 
 

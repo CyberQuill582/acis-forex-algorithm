@@ -193,14 +193,27 @@ def test_trailing_highwater_survives_a_day_boundary() -> None:
 
 
 def test_daily_loss_straddling_midnight_still_trips() -> None:
-    # GAP-P9I-03: the engine daily loss limit anchors at the 22:00 FX rollover,
-    # not 00:00 UTC — a loss straddling calendar midnight is one trading day and
-    # must trip the 2.0% daily limit (auto-session halt).
+    # GAP-P9I-03: the engine daily loss limit anchors at the FX rollover (17:00
+    # New York), not 00:00 UTC — a loss straddling calendar midnight is one trading
+    # day and must trip the 2.0% daily limit (auto-session halt).
     from datetime import timedelta
     cfg, sink = load_cfg(), RecordingSink()
     _, g, _, _ = build_monitor(cfg, sink)
-    before = T0.replace(hour=23, minute=0)                # 23:00 (after 22:00 open)
+    before = T0.replace(hour=23, minute=0)                # 23:00 (after the 21:00 July roll)
     after = before + timedelta(hours=2)                   # 01:00 next calendar day
     g.check(_ctx(equity=10000.0, nav=10000.0, now=before))   # day-open anchor
     g.check(_ctx(equity=9790.0, nav=9790.0, now=after))      # 2.1% down, same day
     assert sink.session_halts == ["daily_drawdown"]      # not forgotten at midnight
+
+
+@pytest.mark.parametrize("month, trips", [(7, False), (1, True)])
+def test_daily_loss_day_resets_at_the_real_new_york_rollover(month, trips) -> None:
+    # GAP-P12D-10: the day boundary is 17:00 New York — 21:00 UTC in July (EDT),
+    # 22:00 UTC in January (EST). A 2.1% drop from 20:30 to 21:30 UTC crosses the
+    # summer roll (new day, fresh anchor → no halt) but not the winter one (halt).
+    cfg, sink = load_cfg(), RecordingSink()
+    _, g, _, _ = build_monitor(cfg, sink)
+    day = T0.replace(month=month)
+    g.check(_ctx(equity=10000.0, nav=10000.0, now=day.replace(hour=20, minute=30)))
+    g.check(_ctx(equity=9790.0, nav=9790.0, now=day.replace(hour=21, minute=30)))
+    assert (sink.session_halts == ["daily_drawdown"]) is trips

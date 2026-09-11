@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from config.schemas import ZonedTime
 from core.optimizer.param_library import ParamLibrary
 from core.regime.regime_types import RegimeType
 from core.signals.signal_types import StrategyType
@@ -19,7 +20,7 @@ from tests.signals_fixtures import (
     trend_cross_up_mids,
 )
 
-BOUNDARY = datetime(2026, 7, 6, 22, 0, tzinfo=timezone.utc)
+BOUNDARY = datetime(2026, 7, 6, 21, 0, tzinfo=timezone.utc)   # 17:00 EDT rollover
 
 
 class FlatGate:
@@ -45,7 +46,8 @@ def test_signal_param_set_id_traces_to_promoted_active_set(tmp_path) -> None:
     with the promoted set's param_set_id (jointly with ACIS-03)."""
     from tests.optimizer_fixtures import CapturingLogger
 
-    lib = ParamLibrary(tmp_path / "params.db", ["22:00"], 3, FlatGate(),
+    lib = ParamLibrary(tmp_path / "params.db",
+                       [ZonedTime(zone="America/New_York", at="17:00")], 3, FlatGate(),
                        CapturingLogger())
     staged = make_paramset(regime=RegimeType.STRONG_TREND_UP)
     lib.stage(staged)

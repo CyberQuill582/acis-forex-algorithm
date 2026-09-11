@@ -85,17 +85,37 @@ def test_boundary_diverging_from_fx_calendar_is_fatal(tmp_path: Path) -> None:
     # silently diverge — a boundary matching no fx session edge is fatal.
     cfg = _mutated_config(
         tmp_path, "system_config.yaml",
-        lambda d: d.__setitem__("session_boundaries_utc", ["22:00", "03:00"]),
+        lambda d: d["session_boundaries"].append({"zone": "Asia/Tokyo", "at": "03:00"}),
     )
     with pytest.raises(ConfigError):
         load_config(cfg)
+
+
+def test_boundary_in_the_wrong_zone_is_fatal(tmp_path: Path) -> None:
+    # GAP-P12D-10: boundaries match on (zone, local time) — 08:00 Tokyo is not the
+    # London open even though both read "08:00"; an unmodelled zone is fatal too.
+    for i, bad in enumerate(({"zone": "Asia/Tokyo", "at": "08:00"},
+                             {"zone": "Mars/Olympus", "at": "08:00"})):
+        cfg = _mutated_config(tmp_path / str(i), "system_config.yaml",
+                              lambda d, b=bad: d["session_boundaries"].append(b))
+        with pytest.raises(ConfigError):
+            load_config(cfg)
+
+
+def test_fixed_utc_calendar_fields_are_rejected(tmp_path: Path) -> None:
+    # GAP-P12D-10: the old fixed-UTC keys no longer exist — declaring one is fatal
+    def mutate(d):
+        d["calendars"]["fx_default"]["weekend_close_utc"] = "22:00"
+    with pytest.raises(ConfigError):
+        load_config(_mutated_config(tmp_path, "instruments.yaml", mutate))
 
 
 def test_fx_session_start_missing_from_boundaries_is_fatal(tmp_path: Path) -> None:
     # GAP-0033: bidirectional C1 check — a session-name transition can never
     # occur at an instant QIEA staging does not treat as a boundary.
     def mutate(d):
-        d["calendars"]["fx_default"]["sessions"]["sydney"] = ["21:00", "23:00"]
+        d["calendars"]["fx_default"]["sessions"]["sydney"] = {
+            "zone": "UTC", "open": "21:00", "close": "23:00"}
     cfg = _mutated_config(tmp_path, "instruments.yaml", mutate)
     with pytest.raises(ConfigError):
         load_config(cfg)
@@ -103,7 +123,7 @@ def test_fx_session_start_missing_from_boundaries_is_fatal(tmp_path: Path) -> No
 
 def test_empty_session_boundaries_is_fatal(tmp_path: Path) -> None:
     cfg = _mutated_config(
-        tmp_path, "system_config.yaml", lambda d: d.__setitem__("session_boundaries_utc", [])
+        tmp_path, "system_config.yaml", lambda d: d.__setitem__("session_boundaries", [])
     )
     with pytest.raises(ConfigError):
         load_config(cfg)

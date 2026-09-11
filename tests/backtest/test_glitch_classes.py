@@ -60,7 +60,7 @@ def test_trailing_drawdown_anchor_uses_intraday_high_water() -> None:
     rule = DrawdownRule(type="trailing", anchor="intraday", basis="equity", limit_pct=5.0)
     tracker = _RuleAnchor()
     day = datetime(2026, 1, 5, 12, tzinfo=timezone.utc)          # a Monday, mid-day
-    kw = dict(resets_daily=False, reset_hhmm="22:00")
+    kw = dict(resets_daily=False)
     tracker.update(rule, 10000.0, day.replace(hour=8), **kw)      # inception
     tracker.update(rule, 10500.0, day.replace(hour=10), **kw)     # intraday high-water 10500
     # drop to 10000: trailing DD = (10500-10000)/10500 = 4.76% off the high-water,

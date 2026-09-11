@@ -3,15 +3,15 @@
 **As of 2026-09-11.** One-screen digest. Authoritative sources: `TODO.md` (work queue), `CLAUDE.md` (rules), `KNOWN_GAPS.md` (live ledger). This file summarises them; if it ever disagrees with those, they win — update this.
 
 ## Where we are
-- **Spec:** master `ACIS_SPEC.md` **v2.13** (2026-09-11: §13 cross-check source HistData replaces TrueFX; Dukascopy primary via its official S3 archive). Deep specs ACIS-01..12 LOCKED (ACIS-09 → v1.2); **ACIS-13 (venue adapters) is the only unwritten spec**. Governed by `../specs_constitution/SPEC_CONSTITUTION.md` **v0.5**.
-- **Build:** **phases 1–11 ✅** — built, dual-audited, every finding triaged. **Phase 12 in progress:** VPS deployment-readiness gate ✅, untrained-baseline freeze ENFORCED (tag `baseline-untrained-v1`), and the **OOS data layer** under way — HistData cross-check engine + tick readers built, SPX + dated overnight rates + financing model done, backtest PnL now converted to USD, DST-correct FX clock in the backtest. **559 tests green** in a full run.
+- **Spec:** master `ACIS_SPEC.md` **v2.14** (2026-09-11: v2.13 — §13 cross-check source HistData replaces TrueFX, Dukascopy primary via its official S3 archive; v2.14 — every market time declared in LOCAL time and resolved per date, GAP-P12D-10). Deep specs ACIS-01..12 LOCKED (ACIS-01 → v1.2, ACIS-03 → v1.3, ACIS-09 → v1.2); **ACIS-13 (venue adapters) is the only unwritten spec**. Governed by `../specs_constitution/SPEC_CONSTITUTION.md` **v0.5**.
+- **Build:** **phases 1–11 ✅** — built, dual-audited, every finding triaged. **Phase 12 in progress:** VPS deployment-readiness gate ✅, untrained-baseline freeze ENFORCED (tag `baseline-untrained-v1`), and the **OOS data layer** under way — HistData cross-check engine + tick readers built, SPX + dated overnight rates + financing model done, backtest PnL now converted to USD, DST-correct market time in the backtest AND the engine (sessions, staging boundaries, daily bars, weekend ban, daily-loss day). **586 tests green** in a full run.
 - **Implemented:** the 7 core layers (`core/{data,regime,optimizer,signals,governor,execution,risk}`), the MCP control plane contract (`monitoring/`; the wire transport is GAP-P12D-08), the backtest + §14 harness (`tests/backtest/`), data-ops downloaders (`scripts/`).
 - **Mode:** **PAPER only.** No live trading. No real-money path is enabled.
 
 ## Next: phase 12 — LIVE readiness (the final §15 phase)
 Full checklist in `TODO.md` → "Phase 12 — LIVE readiness". Headline items:
 1. **Real out-of-sample §14 validation** — Dukascopy S3 downloader (owner creates the AWS account), HistData cross-check download, the historical event calendar, then the evolve-driver and the per-account grade. *Never present in-sample numbers vs §14.* **← next**
-2. **Engine-side DST fix** (GAP-P12D-10) — the guardrail daily-loss reset instant needs the owner's explicit per-change confirmation.
+2. **Gold calendar shape** (GAP-P12D-11) — XAU_USD is tagged against a 6.5-h CME day session; needs a daily-break calendar before the gold leg is graded. *(The engine-side DST fix GAP-P12D-10 is done — owner-ratified.)*
 3. **Three-loop runtime + in-loop wiring** — GAP-0091b, GAP-0099, GAP-0075, the MCP wire transport GAP-P12D-08, the SQLite signal store GAP-P12D-09.
 4. **Per-account universe + full §9.5 enforcement**, **futures/metals roll policy** (GAP-0109), **ACIS-13 spec**, phase-12 dual audits (recommended auditor Fable 5.1; the brief includes legibility GAP-P12M-01/02).
 5. **LIVE sign-off — HUMAN ONLY.** §14 minimums met out-of-sample on real data + explicit owner sign-off.

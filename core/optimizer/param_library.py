@@ -17,7 +17,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
+from config.schemas import ZonedTime
 from core.data.errors import DataQualityError
+from core.data.fx_clock import at_local_minute
 from core.optimizer.param_types import ActiveParamSet, ParamSet, PendingEntry
 from core.regime.regime_types import RegimeType
 
@@ -32,12 +34,13 @@ class PositionGate(Protocol):
     def open_position_count(self) -> int: ...
 
 
-def is_session_boundary(now: datetime, boundaries_utc: list[str]) -> bool:
-    """C1 + the GAP-0025 ruling: a discrete UTC instant, minute-granularity,
-    matched ONLY against the declared session_boundaries_utc list."""
+def is_session_boundary(now: datetime, boundaries: list[ZonedTime]) -> bool:
+    """C1 + the GAP-0025 ruling: a discrete instant, minute-granularity, matched
+    ONLY against the declared session_boundaries list — each a local wall time in
+    its centre, so the UTC instant follows DST (GAP-P12D-10)."""
     if now.tzinfo is None:
         raise ValueError("boundary check requires a tz-aware datetime")
-    return now.astimezone(timezone.utc).strftime("%H:%M") in boundaries_utc
+    return any(at_local_minute(now, b.zone, b.at) for b in boundaries)
 
 
 _SCHEMA = """
@@ -88,7 +91,7 @@ class ParamLibrary:
     def __init__(
         self,
         db_path: str | Path,
-        boundaries_utc: list[str],
+        boundaries: list[ZonedTime],
         stall_alert_boundaries: int,
         gate: PositionGate,
         logger,
@@ -96,7 +99,7 @@ class ParamLibrary:
         self._db = sqlite3.connect(str(db_path))
         self._db.executescript(_SCHEMA)
         self._db.commit()
-        self._boundaries = boundaries_utc
+        self._boundaries = boundaries
         self._stall_threshold = stall_alert_boundaries
         self._gate = gate
         self._log = logger

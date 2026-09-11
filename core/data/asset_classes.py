@@ -7,9 +7,10 @@ tagging. This is the ONLY session logic in the system (C1, generalised).
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
+from datetime import datetime, time
 
 from config.schemas import ExchangeCalendar, FxCalendar
+from core.data.fx_clock import to_local
 
 SESSION_CLOSED = "closed"
 SESSION_OVERLAP = "overlap"
@@ -31,26 +32,27 @@ class MarketCalendar:
     def session_at(self, ts: datetime) -> str:
         if ts.tzinfo is None:
             raise ValueError("session_at requires a tz-aware timestamp")
-        ts = ts.astimezone(timezone.utc)
         if isinstance(self._cfg, FxCalendar):
             return self._fx_session(ts)
         return self._exchange_session(ts)
 
     # -- fx: London/NY/Tokyo windows, weekend closure (SPEC §3, ACIS-01 §6) -- #
+    # Every window is read in its own centre's local time (GAP-P12D-10).
 
     def _fx_session(self, ts: datetime) -> str:
-        wd = ts.isoweekday()  # 1=Mon .. 7=Sun
-        t = ts.time()
+        close, reopen = self._cfg.week_close, self._cfg.week_open
+        wk = to_local(ts, close.zone)
+        wd, t = wk.isoweekday(), wk.time()  # 1=Mon .. 7=Sun, in the week-close zone
         if wd == 6:  # Saturday
             return SESSION_CLOSED
-        if wd == 5 and t >= _hhmm(self._cfg.weekend_close_utc):  # Friday after close
+        if wd == 5 and t >= _hhmm(close.at):  # Friday after close
             return SESSION_CLOSED
-        if wd == 7 and t < _hhmm(self._cfg.weekend_open_utc):  # Sunday before open
+        if wd == 7 and to_local(ts, reopen.zone).time() < _hhmm(reopen.at):  # Sunday pre-open
             return SESSION_CLOSED
         active = [
             name
-            for name, (start, end) in self._cfg.sessions.items()
-            if _hhmm(start) <= t < _hhmm(end)
+            for name, s in self._cfg.sessions.items()
+            if _hhmm(s.open) <= to_local(ts, s.zone).time() < _hhmm(s.close)
         ]
         if not active:
             return SESSION_CLOSED
@@ -61,12 +63,13 @@ class MarketCalendar:
     # -- exchange: weekday sessions, holidays, half-days (glitch class §13) -- #
 
     def _exchange_session(self, ts: datetime) -> str:
-        d: date = ts.date()
-        if ts.isoweekday() not in self._cfg.days or d in self._cfg.holidays:
+        local = to_local(ts, self._cfg.zone)          # days/holidays/hours are local
+        d = local.date()
+        if local.isoweekday() not in self._cfg.days or d in self._cfg.holidays:
             return SESSION_CLOSED
-        close = self._cfg.half_days.get(d, self._cfg.close_utc)
+        close = self._cfg.half_days.get(d, self._cfg.close)
         # A declared early close IS the session end, not a feed outage.
-        if _hhmm(self._cfg.open_utc) <= ts.time() < _hhmm(close):
+        if _hhmm(self._cfg.open) <= local.time() < _hhmm(close):
             return SESSION_EXCHANGE
         return SESSION_CLOSED
 

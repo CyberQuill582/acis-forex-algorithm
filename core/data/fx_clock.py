@@ -1,13 +1,16 @@
-"""The FX clock — the one DST-correct definition of the forex day (GAP-P12D-07).
+"""The FX clock — the one DST-correct definition of market time (GAP-P12D-07/10).
 
-The FX day rolls at 17:00 New York. That is 22:00 UTC under EST but 21:00 UTC under
-EDT (≈ March–November), so a fixed-UTC anchor is an hour wrong for half the year.
-The week closes at Friday's rollover and reopens at Sunday's.
+Every market time in ACIS is declared in its centre's LOCAL time and resolved to UTC
+per date here: the FX day rolls at 17:00 New York (22:00 UTC under EST, 21:00 UTC
+under EDT), London opens 08:00 London time, Tokyo 09:00 Tokyo time. A fixed-UTC
+constant is an hour wrong for half of every year.
 
-Dependency-free and exact for 2007 onward (the US rule since the Energy Policy Act of
-2005): daylight time runs from the second Sunday of March to the first Sunday of
-November, switching at 02:00 local — so 17:00 on either switch day already uses the
-new offset. Earlier dates raise rather than guess (ACIS data starts 2012).
+Dependency-free and exact for the ACIS data window (2012 on): the US rule since 2007
+(second Sunday of March → first Sunday of November, 02:00 local) for New York and
+Chicago; the UK/EU rule since 1996 (last Sunday of March → last Sunday of October,
+01:00 UTC) for London; no DST in Tokyo. Rules resolve by LOCAL DATE, which is exact
+for every declared market time (all fall outside the 01:00–02:00 switch hour on the
+switch Sunday). Earlier years raise rather than guess.
 """
 
 from __future__ import annotations
@@ -15,8 +18,11 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 UTC = timezone.utc
-ROLLOVER_LOCAL_HOUR = 17                     # 5pm New York
-_EST, _EDT = timedelta(hours=-5), timedelta(hours=-4)
+ROLLOVER = ("America/New_York", "17:00")               # the FX day boundary
+_ZONES = {                                             # zone -> (standard offset h, DST rule)
+    "UTC": (0, None), "Asia/Tokyo": (9, None), "Europe/London": (0, "uk"),
+    "America/New_York": (-5, "us"), "America/Chicago": (-6, "us"),
+}
 
 
 def _nth_sunday(year: int, month: int, n: int) -> date:
@@ -24,17 +30,71 @@ def _nth_sunday(year: int, month: int, n: int) -> date:
     return first + timedelta(days=(6 - first.weekday()) % 7 + 7 * (n - 1))
 
 
+def _last_sunday(year: int, month: int) -> date:
+    last = date(year, month + 1, 1) - timedelta(days=1)
+    return last - timedelta(days=(last.weekday() + 1) % 7)
+
+
 def us_daylight_time(day: date) -> bool:
-    """True if New York is on EDT at 17:00 local on `day`."""
+    """True if US zones are on daylight time for local business hours on `day`."""
     if day.year < 2007:
         raise ValueError(f"{day}: US DST rule before 2007 is not modelled")
     return _nth_sunday(day.year, 3, 2) <= day < _nth_sunday(day.year, 11, 1)
 
 
+def uk_summer_time(day: date) -> bool:
+    """True if London is on BST for local business hours on `day`."""
+    if day.year < 1996:
+        raise ValueError(f"{day}: UK/EU DST rule before 1996 is not modelled")
+    return _last_sunday(day.year, 3) <= day < _last_sunday(day.year, 10)
+
+
+def utc_offset(day: date, zone: str) -> timedelta:
+    """The zone's UTC offset for local business hours on local date `day`."""
+    try:
+        std, rule = _ZONES[zone]
+    except KeyError:
+        raise ValueError(f"unknown market zone {zone!r}; declared: {sorted(_ZONES)}") from None
+    dst = (rule == "us" and us_daylight_time(day)) or (rule == "uk" and uk_summer_time(day))
+    return timedelta(hours=std + (1 if dst else 0))
+
+
+def local_to_utc(day: date, hhmm: str, zone: str) -> datetime:
+    """Local wall time `hhmm` on local date `day` in `zone`, as a UTC instant."""
+    hh, mm = map(int, hhmm.split(":"))
+    return datetime(day.year, day.month, day.day, hh, mm, tzinfo=UTC) - utc_offset(day, zone)
+
+
+def to_local(ts: datetime, zone: str) -> datetime:
+    """The naive local wall time in `zone` at UTC instant `ts`."""
+    ts = ts.astimezone(UTC).replace(tzinfo=None)
+    guess = (ts + utc_offset(ts.date(), zone)).date()    # settle the local date first
+    return ts + utc_offset(guess, zone)
+
+
+def at_local_minute(ts: datetime, zone: str, hhmm: str) -> bool:
+    """True if `ts` falls in the minute whose local wall time in `zone` is `hhmm`."""
+    return to_local(ts, zone).strftime("%H:%M") == hhmm
+
+
+def next_local(ts: datetime, zone: str, hhmm: str) -> datetime:
+    """The first UTC instant strictly after `ts` at local wall time `hhmm` in `zone`."""
+    day = to_local(ts, zone).date()
+    today = local_to_utc(day, hhmm, zone)
+    return today if today > ts else local_to_utc(day + timedelta(days=1), hhmm, zone)
+
+
 def rollover_utc(day: date) -> datetime:
     """The 17:00-New-York rollover on `day`, as a UTC instant."""
-    offset = _EDT if us_daylight_time(day) else _EST
-    return datetime(day.year, day.month, day.day, ROLLOVER_LOCAL_HOUR, tzinfo=UTC) - offset
+    return local_to_utc(day, ROLLOVER[1], ROLLOVER[0])
+
+
+def trading_day(ts: datetime) -> date:
+    """The FX trading day `ts` belongs to, labelled by the date of the rollover that
+    opened it (a day runs rollover → rollover, so a loss straddling 00:00 UTC stays in
+    one trading day)."""
+    ts = ts.astimezone(UTC)
+    return ts.date() if ts >= rollover_utc(ts.date()) else ts.date() - timedelta(days=1)
 
 
 def in_weekend(ts: datetime) -> bool:

@@ -2,22 +2,25 @@
 # The enabled set is per-account; extension instruments may be declared disabled
 # and referenced by clusters (C7: inert until enabled; unknown symbol = error).
 calendars:
+  # All times are LOCAL wall time in the named centre; fx_clock resolves them to UTC
+  # per date, so they track DST (GAP-P12D-10). Never declare a fixed-UTC market time.
   fx_default:
     type: fx
     sessions:
-      tokyo: ["00:00", "09:00"]
-      london: ["07:00", "16:00"]
-      new_york: ["12:00", "21:00"]
-    weekend_close_utc: "22:00"   # Friday
-    weekend_open_utc: "22:00"    # Sunday
+      tokyo: {zone: Asia/Tokyo, open: "09:00", close: "18:00"}
+      london: {zone: Europe/London, open: "08:00", close: "17:00"}
+      new_york: {zone: America/New_York, open: "08:00", close: "17:00"}
+    week_close: {zone: America/New_York, at: "17:00"}   # Friday = the rollover
+    week_open: {zone: America/New_York, at: "17:00"}    # Sunday
   cme_metals:
     type: exchange
-    open_utc: "13:30"
-    close_utc: "20:00"
+    zone: America/Chicago        # CME runs on Chicago time
+    open: "08:30"
+    close: "15:00"
     days: [1, 2, 3, 4, 5]
     holidays: ["2026-12-25", "2026-07-03"]
     half_days:
-      "2026-11-27": "17:00"
+      "2026-11-27": "11:00"
 
 instruments:
   EUR_USD:

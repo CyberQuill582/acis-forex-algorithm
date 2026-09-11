@@ -8,7 +8,8 @@ from types import MappingProxyType
 
 import pytest
 
-from config.schemas import AccountRulebook, GovernorConfig, GuardrailLimits, NewsRules
+from config.schemas import (AccountRulebook, GovernorConfig, GuardrailLimits, NewsRules,
+                            ZonedTime)
 from core.data.errors import DataQualityError
 from core.governor.capital_governor import CapitalGovernor, ResumeForbiddenError
 from core.governor.factors import correlation_factor, liquidity_factor, vol_norm
@@ -19,7 +20,8 @@ from tests.optimizer_fixtures import CapturingLogger
 from tests.signals_fixtures import T0, mk_regime
 from tests.unit.test_signal_types import mk_signal
 
-FRIDAY_2100 = datetime(2026, 7, 10, 21, 0, tzinfo=timezone.utc)
+FRIDAY_2100 = datetime(2026, 7, 10, 21, 0, tzinfo=timezone.utc)   # = the 17:00 EDT close
+_NY_ROLL = ZonedTime(zone="America/New_York", at="17:00")
 
 
 def mk_rulebook(**overrides) -> AccountRulebook:
@@ -59,9 +61,11 @@ def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0,
         clusters={"usd_short": ["EUR_USD"], "yen_carry": ["USD_JPY"]},
         vol_targets={"EUR_USD": 0.0008, "USD_JPY": 0.0008},
         confidence_veto=0.55,
-        session_boundaries_utc=["22:00", "00:00", "07:00", "12:00"],
-        weekend_close_utc="22:00",
-        weekend_open_utc="22:00",
+        session_boundaries=[_NY_ROLL, ZonedTime(zone="Asia/Tokyo", at="09:00"),
+                            ZonedTime(zone="Europe/London", at="08:00"),
+                            ZonedTime(zone="America/New_York", at="08:00")],
+        week_close=_NY_ROLL,
+        week_open=_NY_ROLL,
         scalp_horizon_s=900,
         atr_period=14,
         blackout=blackout or (lambda instrument, now: False),
@@ -478,13 +482,16 @@ def test_gap0053_weekend_ban_covers_the_whole_closed_window() -> None:
     for instant in (
         datetime(2026, 7, 10, 23, 30, tzinfo=timezone.utc),   # Friday post-close
         datetime(2026, 7, 11, 12, 0, tzinfo=timezone.utc),    # Saturday
-        datetime(2026, 7, 12, 21, 0, tzinfo=timezone.utc),    # Sunday pre-open
+        datetime(2026, 7, 12, 20, 30, tzinfo=timezone.utc),   # Sunday pre-open (21:00 EDT)
+        datetime(2026, 1, 11, 21, 30, tzinfo=timezone.utc),   # Sunday pre-open (22:00 EST)
     ):
         sig = mk_signal(generated_at=instant)
         assert gov.allocate(sig, mk_portfolio(), mk_regime(), instant).reason == "weekend_ban"
-    after_open = datetime(2026, 7, 12, 22, 30, tzinfo=timezone.utc)  # Sunday, reopened
-    sig = mk_signal(generated_at=after_open)
-    assert gov.allocate(sig, mk_portfolio(), mk_regime(), after_open).reason == "formula"
+    # GAP-P12D-10: the summer market reopens at 21:00 UTC, not 22:00
+    for after_open in (datetime(2026, 7, 12, 21, 30, tzinfo=timezone.utc),
+                       datetime(2026, 1, 11, 22, 30, tzinfo=timezone.utc)):
+        sig = mk_signal(generated_at=after_open)
+        assert gov.allocate(sig, mk_portfolio(), mk_regime(), after_open).reason == "formula"
 
 
 # ---------------- v2.11 internal-audit triage regressions (GAP-0058) ---------------- #

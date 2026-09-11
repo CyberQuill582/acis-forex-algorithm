@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from core.data.bars import Bar, BarAggregator
+from core.data.bars import Bar, BarAggregator, DailyBarAggregator
 from core.data.errors import DataQualityError
 
 T0 = datetime(2026, 7, 6, 10, 0, tzinfo=timezone.utc)
@@ -40,12 +40,17 @@ def test_stale_tick_into_closed_bucket_is_dropped_and_counted() -> None:
     assert agg.stale_ticks_dropped == 1
 
 
-def test_daily_bars_anchor_at_rollover() -> None:
-    agg = BarAggregator(86_400, anchor_utc="22:00")
-    agg.add(datetime(2026, 7, 6, 23, 0, tzinfo=timezone.utc), 1.10, 0.0002)
-    bar = agg.add(datetime(2026, 7, 7, 22, 1, tzinfo=timezone.utc), 1.12, 0.0002)
-    assert bar is not None
-    assert bar.ts_open == datetime(2026, 7, 6, 22, 0, tzinfo=timezone.utc)  # 22:00 UTC
+@pytest.mark.parametrize("month, roll_hour", [(7, 21), (1, 22)])
+def test_daily_bars_anchor_at_the_new_york_rollover(month, roll_hour) -> None:
+    # GAP-P12D-10: 17:00 New York is 21:00 UTC in July, 22:00 UTC in January
+    utc = timezone.utc
+    agg = DailyBarAggregator()
+    agg.add(datetime(2026, month, 6, roll_hour, 30, tzinfo=utc), 1.10, 0.0002)
+    assert agg.add(datetime(2026, month, 7, roll_hour - 1, 59, tzinfo=utc),
+                   1.11, 0.0002) is None                          # same trading day
+    bar = agg.add(datetime(2026, month, 7, roll_hour, 1, tzinfo=utc), 1.12, 0.0002)
+    assert bar is not None and bar.close == 1.11
+    assert bar.ts_open == datetime(2026, month, 6, roll_hour, tzinfo=utc)
 
 
 def test_bar_shape_and_input_validation() -> None:

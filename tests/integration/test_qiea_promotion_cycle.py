@@ -14,7 +14,7 @@ from core.regime.regime_types import RegimeType
 from tests.optimizer_fixtures import T0, TEST_COSTS, CapturingLogger, opt_cfg, zigzag_history
 from tests.unit.test_nvma import fill_window, mk_state, series_strong_trend
 
-BOUNDARY_0 = datetime(2026, 7, 6, 22, 0, tzinfo=timezone.utc)
+BOUNDARY_0 = datetime(2026, 7, 6, 21, 0, tzinfo=timezone.utc)   # 17:00 EDT rollover
 
 
 class FakeGate:
@@ -44,7 +44,7 @@ def test_full_promotion_cycle_with_stall_restart_and_nvma_gate(tmp_path, acis_co
     log = CapturingLogger()
     gate = FakeGate(1)
     db = tmp_path / "params.db"
-    boundaries = acis_config.system.session_boundaries_utc
+    boundaries = acis_config.system.session_boundaries
     lib = ParamLibrary(db, boundaries, acis_config.system.param_stall_alert_boundaries, gate, log)
     nvma = make_nvma(cfg, lib)
 
