@@ -202,9 +202,11 @@ def cmd_test(inst: str, month: str) -> int:
     y, m = (int(x) for x in month.split("-"))
     dest = OUT / inst / str(y) / f"{m - 1:02d}"
     sync(prefix(inst, y, m), dest)
-    ok, bad = verify_dir(inst, y, OUT / inst / str(y), load_known())
-    print(f"TEST {inst} {month}: {ok} day files verified, {bad} rejected")
-    return 0 if ok and not bad else 1
+    known = load_known()
+    new, bad = verify_dir(inst, y, OUT / inst / str(y), known)
+    have = sum(1 for f in dest.glob("*_ticks.bi5") if f.relative_to(ROOT).as_posix() in known)
+    print(f"TEST {inst} {month}: {have} day files verified ({new} new this run), {bad} rejected")
+    return 0 if have and not bad else 1               # a resumed rerun is a pass, not "0 verified"
 
 
 def main() -> int:
