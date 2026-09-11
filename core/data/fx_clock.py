@@ -49,13 +49,16 @@ def uk_summer_time(day: date) -> bool:
     return _last_sunday(day.year, 3) <= day < _last_sunday(day.year, 10)
 
 
+_DST_RULES = {"us": us_daylight_time, "uk": uk_summer_time}
+
+
 def utc_offset(day: date, zone: str) -> timedelta:
     """The zone's UTC offset for local business hours on local date `day`."""
     try:
         std, rule = _ZONES[zone]
     except KeyError:
         raise ValueError(f"unknown market zone {zone!r}; declared: {sorted(_ZONES)}") from None
-    dst = (rule == "us" and us_daylight_time(day)) or (rule == "uk" and uk_summer_time(day))
+    dst = rule is not None and _DST_RULES[rule](day)
     return timedelta(hours=std + (1 if dst else 0))
 
 
@@ -82,6 +85,13 @@ def next_local(ts: datetime, zone: str, hhmm: str) -> datetime:
     day = to_local(ts, zone).date()
     today = local_to_utc(day, hhmm, zone)
     return today if today > ts else local_to_utc(day + timedelta(days=1), hhmm, zone)
+
+
+def last_local(ts: datetime, zone: str, hhmm: str) -> datetime:
+    """The latest UTC instant at or before `ts` at local wall time `hhmm` in `zone`."""
+    day = to_local(ts, zone).date()
+    today = local_to_utc(day, hhmm, zone)
+    return today if today <= ts else local_to_utc(day - timedelta(days=1), hhmm, zone)
 
 
 def rollover_utc(day: date) -> datetime:

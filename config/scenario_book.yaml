@@ -53,6 +53,6 @@ scenarios:
                                # (GAP-P11I-10).
   - name: rollover_liquidity_vacuum
     kind: liquidity_vacuum
-    description: Spread explosion at 22:00 UTC rollover, 50x normal spread.
+    description: Spread explosion at the 17:00 New York rollover (21:00 UTC summer / 22:00 winter), 50x normal spread.
     params: {instrument: EUR_USD, spread_mult: 50, ref_price: 1.10}
     max_loss_pct_nav: 1.0

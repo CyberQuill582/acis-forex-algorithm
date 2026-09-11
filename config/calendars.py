@@ -48,22 +48,32 @@ class ZonedTime(_Strict):
 
 
 class Session(_Strict):
+    """open→close in one centre's local time; or, with `close_zone`, from the open in
+    `zone` to the next `close` in another centre (e.g. the New York close → the Tokyo
+    open), which may cross midnight."""
     zone: Zone
     open: str
     close: str
+    close_zone: Zone | None = None
 
     @model_validator(mode="after")
     def _times(self) -> "Session":
-        if parse_hhmm(self.open, "open") >= parse_hhmm(self.close, "close"):
-            raise ValueError("session open must precede close in local time (no wrap)")
+        o, c = parse_hhmm(self.open, "open"), parse_hhmm(self.close, "close")
+        if self.close_zone is None and o >= c:
+            raise ValueError("session open must precede close in local time "
+                             "(declare close_zone for a session that ends in another centre)")
         return self
 
 
 class FxCalendar(_Strict):
+    """A 24/5 over-the-counter market (spot FX, spot metals): open from the Sunday
+    `week_open` to the Friday `week_close`, tagged by the centre sessions, closed
+    inside an optional `daily_break` (spot gold's daily hour — master §3.7)."""
     type: Literal["fx"]
     sessions: dict[str, Session] = Field(min_length=1)
     week_close: ZonedTime   # Friday, local
     week_open: ZonedTime    # Sunday, local
+    daily_break: Session | None = None
 
 
 class ExchangeCalendar(_Strict):

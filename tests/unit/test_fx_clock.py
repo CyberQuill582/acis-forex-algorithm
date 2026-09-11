@@ -118,3 +118,12 @@ def test_next_local_is_strictly_after() -> None:
     assert at_local_minute(jul, "America/New_York", "17:00")
     assert next_local(jul, "America/New_York", "17:00") == datetime(2025, 7, 16, 21, tzinfo=UTC)
     assert next_local(jul, "Asia/Tokyo", "09:00") == datetime(2025, 7, 16, 0, tzinfo=UTC)
+
+
+
+def test_last_local_is_at_or_before() -> None:
+    from core.data.fx_clock import last_local
+    jul = datetime(2025, 7, 15, 21, 0, tzinfo=UTC)                  # 17:00 EDT exactly
+    assert last_local(jul, "America/New_York", "17:00") == jul
+    assert last_local(jul, "Asia/Tokyo", "09:00") == datetime(2025, 7, 15, 0, tzinfo=UTC)
+    assert last_local(jul.replace(hour=20), "America/New_York", "17:00") ==         datetime(2025, 7, 14, 21, tzinfo=UTC)

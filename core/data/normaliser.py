@@ -19,7 +19,7 @@ from core.data.asset_classes import MarketCalendar
 from core.data.errors import DataQualityError
 
 SESSIONS = frozenset(
-    {"london", "new_york", "tokyo", "overlap", "closed", "exchange"}
+    {"sydney", "tokyo", "london", "new_york", "overlap", "closed", "exchange"}
 )
 
 

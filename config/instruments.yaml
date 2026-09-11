@@ -6,12 +6,23 @@ calendars:
   # per date, so they track DST (GAP-P12D-10). Never declare a fixed-UTC market time.
   fx_default:
     type: fx
-    sessions:
+    sessions:                    # GAP-0023: sydney = New York close → Tokyo open (no dead window)
+      sydney: {zone: America/New_York, open: "17:00", close: "09:00", close_zone: Asia/Tokyo}
       tokyo: {zone: Asia/Tokyo, open: "09:00", close: "18:00"}
       london: {zone: Europe/London, open: "08:00", close: "17:00"}
       new_york: {zone: America/New_York, open: "08:00", close: "17:00"}
     week_close: {zone: America/New_York, at: "17:00"}   # Friday = the rollover
     week_open: {zone: America/New_York, at: "17:00"}    # Sunday
+  spot_metals:                   # GAP-P12D-11: OTC spot gold — 24/5 with a daily hour off
+    type: fx
+    sessions:
+      sydney: {zone: America/New_York, open: "17:00", close: "09:00", close_zone: Asia/Tokyo}
+      tokyo: {zone: Asia/Tokyo, open: "09:00", close: "18:00"}
+      london: {zone: Europe/London, open: "08:00", close: "17:00"}
+      new_york: {zone: America/New_York, open: "08:00", close: "17:00"}
+    week_close: {zone: America/New_York, at: "17:00"}   # Friday
+    week_open: {zone: America/New_York, at: "18:00"}    # Sunday, an hour after FX
+    daily_break: {zone: America/New_York, open: "17:00", close: "18:00"}
   cme_metals:
     type: exchange
     zone: America/Chicago        # CME runs on Chicago time
@@ -81,7 +92,7 @@ instruments:
     margin_model: retail_cfd
     swap_convention: financing_daily
     max_plausible_spread: 1.2
-    calendar: cme_metals
+    calendar: spot_metals        # OTC spot, not the CME day session (GAP-P12D-11)
 
   # ── Diversification basket (owner-ratified 2026-07-22) — DECLARED, disabled ──
   # until cost-calibration at data-download time: an ENABLED instrument requires a

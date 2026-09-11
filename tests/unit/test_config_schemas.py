@@ -268,3 +268,12 @@ def test_scenario_kind_params_enforced(tmp_path: Path) -> None:
         d["scenarios"][0]["params"].pop("gap_pct")
     with pytest.raises(ConfigError):
         load_config(_mutated_config(tmp_path, "scenario_book.yaml", mutate))
+
+
+def test_wrapping_session_needs_a_close_zone(tmp_path: Path) -> None:
+    # GAP-0023: only a session that closes in ANOTHER centre may wrap midnight
+    def mutate(d):
+        d["calendars"]["fx_default"]["sessions"]["sydney"] = {
+            "zone": "America/New_York", "open": "17:00", "close": "09:00"}
+    with pytest.raises(ConfigError):
+        load_config(_mutated_config(tmp_path, "instruments.yaml", mutate))

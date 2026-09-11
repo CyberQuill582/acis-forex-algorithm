@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-DATA-001` |
-| **Version** | 1.2 (LOCKED — master v2.14 local market time, 2026-09-11) |
+| **Version** | 1.3 (LOCKED — master v2.15 Sydney session + spot-metals calendar, 2026-09-11) |
 | **Layer / DIR** | Layer 1 · `[DIR:core/data]` |
 | **Consumes** | raw broker/feed payloads (external) |
 | **Emits** | `MarketState` (frozen) → NVMA (ACIS-02) |
@@ -60,7 +60,7 @@ class MarketState:
     order_book_depth: Mapping[str, Tuple[Tuple[float, float], ...]]
                                  # {"bids": ((px,vol),...), "asks": (...)} — immutable tuples
     tick_velocity: float         # ticks/sec, rolling window (default 10s), ≥ 0
-    session: str                 # london | new_york | tokyo | overlap | closed
+    session: str                 # sydney | tokyo | london | new_york | overlap | closed | exchange
     macro_events_imminent: bool  # Tier-1 event within data.macro_lookahead_min
     ingest_ts: datetime          # local receipt time (for clock-skew detection, §13)
     is_stale: bool               # timestamp delta > stale_threshold_ms
@@ -200,6 +200,7 @@ No error in this layer escapes upward to halt trading directly — it reports; N
 **Done-when (phase 1, master §15):** all §14 tests green; the import-linter contract test exists and passes (no upward imports); mock feed drives an end-to-end tick without any lower layer present. **Conflict-table rows owned:** none directly, but this layer *supplies* the `is_stale`/`session`/`macro` inputs that NVMA turns into `tradeable=False` — so its correctness is a precondition for the "NVMA veto" and "regime shift" rows.
 
 ## Changelog
+- **1.3 (2026-09-11)** — Master v2.15: `sydney` joins the session enum as the New York close → Tokyo open window (a session may close in another centre's local time via `close_zone`; closes GAP-0023's dead window without overlapping Tokyo); fx-type calendars may declare a `daily_break` (spot metals: 17:00–18:00 New York; XAU_USD moves off the CME day-session calendar — GAP-P12D-11).
 - **1.2 (2026-09-11)** — Master v2.14 (GAP-P12D-10): calendars and `session_boundaries` are declared in LOCAL time (`{zone, at}`; fx sessions `{zone, open, close}`; exchange calendars carry a `zone`) and resolved to UTC per date by `core/data/fx_clock.py`. C-DATA-3 restated; the boundary list moves out of the `data:` block wording (it was always top-level).
 - **1.1 (LOCKED, 2026-07-15)** — v2.5 master consistency pass: asset-class law (contract metadata, per-calendar sessions, `asset_classes.py`), feed-face rule (adapters §7.5, no account surface — C-DATA-6), v1 feed set corrected to mock-first with OANDA/MT5 at phase-12 conformance. Status → LOCKED for the phase-1 build.
 - **1.0 (DRAFT)** — Initial deep spec from master §3 + `ACIS_Agent_Prompt.md` §3.1; corrections C-DATA-1..5 wired from `SPEC_AUDIT.md`.

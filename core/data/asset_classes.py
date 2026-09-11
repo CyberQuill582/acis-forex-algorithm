@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime, time
 
-from config.schemas import ExchangeCalendar, FxCalendar
-from core.data.fx_clock import to_local
+from config.schemas import ExchangeCalendar, FxCalendar, Session
+from core.data.fx_clock import last_local, next_local, to_local
 
 SESSION_CLOSED = "closed"
 SESSION_OVERLAP = "overlap"
@@ -20,6 +20,13 @@ SESSION_EXCHANGE = "exchange"
 def _hhmm(value: str) -> time:
     hh, mm = value.split(":")
     return time(int(hh), int(mm))
+
+
+def _in_session(ts: datetime, s: Session) -> bool:
+    if s.close_zone is None:
+        return _hhmm(s.open) <= to_local(ts, s.zone).time() < _hhmm(s.close)
+    opened = last_local(ts, s.zone, s.open)             # crosses centres (and midnight)
+    return ts < next_local(opened, s.close_zone, s.close)
 
 
 class MarketCalendar:
@@ -36,7 +43,7 @@ class MarketCalendar:
             return self._fx_session(ts)
         return self._exchange_session(ts)
 
-    # -- fx: London/NY/Tokyo windows, weekend closure (SPEC §3, ACIS-01 §6) -- #
+    # -- fx: Sydney/Tokyo/London/NY windows, weekend + daily break (ACIS-01 §6) -- #
     # Every window is read in its own centre's local time (GAP-P12D-10).
 
     def _fx_session(self, ts: datetime) -> str:
@@ -49,11 +56,10 @@ class MarketCalendar:
             return SESSION_CLOSED
         if wd == 7 and to_local(ts, reopen.zone).time() < _hhmm(reopen.at):  # Sunday pre-open
             return SESSION_CLOSED
-        active = [
-            name
-            for name, s in self._cfg.sessions.items()
-            if _hhmm(s.open) <= to_local(ts, s.zone).time() < _hhmm(s.close)
-        ]
+        brk = self._cfg.daily_break
+        if brk and _hhmm(brk.open) <= to_local(ts, brk.zone).time() < _hhmm(brk.close):
+            return SESSION_CLOSED                     # a declared daily break (spot metals)
+        active = [name for name, s in self._cfg.sessions.items() if _in_session(ts, s)]
         if not active:
             return SESSION_CLOSED
         if len(active) > 1:
