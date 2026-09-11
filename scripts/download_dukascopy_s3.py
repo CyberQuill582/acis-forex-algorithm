@@ -49,7 +49,9 @@ AUTH_ERRORS = ("InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied",
 
 
 def aws_exe() -> str:
-    for c in (shutil.which("aws"), r"C:\Program Files\Amazon\AWSCLIV2\aws.exe"):
+    for c in (shutil.which("aws"),
+              r"C:\Program Files\Amazon\AWSCLIV2\aws.exe",                            # all-users MSI
+              os.path.expandvars(r"%LOCALAPPDATA%\Programs\Amazon\AWSCLIV2\aws.exe")):  # per-user (winget)
         if c and Path(c).exists():
             return c
     raise SystemExit("AWS CLI v2 not found — install it, then run `aws configure` (owner).")
@@ -177,14 +179,17 @@ def cmd_check() -> int:
     have = {l.split()[-1].rstrip("/") for l in top.stdout.splitlines() if l.strip().endswith("/")}
     for inst, (sym, _) in SYMBOLS.items():
         print(f"  {inst:8} {sym:7} {'present' if sym in have else 'MISSING from bucket'}")
-    total = 0
+    total = files = 0
     for inst in SYMBOLS:
         ls = aws("s3", "ls", f"s3://{BUCKET}/{SYMBOLS[inst][0]}/", "--recursive")
-        size = sum(int(p[2]) for l in ls.stdout.splitlines() if (p := l.split()) and len(p) == 4
-                   and p[3].endswith("_ticks.bi5") and 2012 <= int(p[3].split("/")[1]) <= 2025)
-        total += size
-        print(f"  {inst:8} 2012-2025 ticks: {size / 1e9:.2f} GB")
-    print(f"TOTAL {total / 1e9:.2f} GB  (requester pays: ~${total / 1e9 * 0.02:.2f} transfer + requests)")
+        sizes = [int(p[2]) for l in ls.stdout.splitlines() if (p := l.split()) and len(p) == 4
+                 and p[3].endswith("_ticks.bi5") and 2012 <= int(p[3].split("/")[1]) <= 2025]
+        total, files = total + sum(sizes), files + len(sizes)
+        print(f"  {inst:8} 2012-2025 ticks: {sum(sizes) / 1e9:.2f} GB in {len(sizes)} files")
+    # Requester pays at LIST price, eu-west-1 → internet (a home PC): $0.09/GB egress,
+    # $0.0004 per 1,000 GETs. AWS's free egress allowance may cover the transfer.
+    print(f"TOTAL {total / 1e9:.2f} GB in {files} files — requester pays, list price: "
+          f"~${total / 1e9 * 0.09:.2f} internet transfer + ~${files * 0.0004 / 1000:.2f} requests")
     with tempfile.TemporaryDirectory() as tmp:          # XAU point-scale probe (bi5 PLAUSIBLE)
         aws("s3", "cp", f"s3://{BUCKET}/XAUUSD/2012/00/03_ticks.bi5", tmp)
         f = Path(tmp) / "03_ticks.bi5"
