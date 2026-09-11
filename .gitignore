@@ -13,3 +13,6 @@ node_modules/
 scripts/download.log
 scripts/run.log
 *.csv.gz
+
+# Local Claude Code conversation backups (private chat transcripts — never commit)
+conversation-archive/

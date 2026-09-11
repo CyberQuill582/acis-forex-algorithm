@@ -51,23 +51,37 @@ train fold; the validation design is not an optimisation target.
   Combinatorial Purged CV (the spec mandates walk-forward; CPCV is a bigger §13
   change — documented future option, not built now).
 
-### Data acquisition (~35 GB gzipped, multi-day download — BUILT)
+### Data acquisition (full bid/ask TICK, 8 × 14 yr — BUILT, running since 2026-09-11)
 
-The downloader is committed: [`scripts/download_dukascopy.js`](../../scripts/download_dukascopy.js),
-run per the [`scripts/GCP_DOWNLOAD.md`](../../scripts/GCP_DOWNLOAD.md) runbook (GCP VM under
-the $300 free credit; tmux for disconnect-survival). It pulls all 8 instruments ×
-2012–2025 in **monthly** chunks (RAM-safe on a 2 GB VM where a year-chunk would OOM),
-**resumable** (completed chunks skipped; re-run retries only the missing/failed), with
-rate-limit-survival settings baked in (`retryCount:8` — the critical fix over the default 0
-— plus `batchSize:5`, `pauseBetweenBatchesMs:3000`). Target = **1344 chunks**
-(8 × 14 × 12). Output: `data/dukascopy/<INSTRUMENT>/<sym>-YYYY-MM.csv.gz`.
+Full tick, as master §13 requires (owner decision 2026-09-11; the M1 shortcut was
+considered and rejected — no resolution deviation). Unattended, auto-resuming:
 
-Tick CSV columns are `timestamp(ms), askPrice, bidPrice, askVolume, bidVolume` (the reader
-will be built to this). Then a small TrueFX overlap sample (register at truefx.com; one or
-two months of EURUSD + USDJPY) under `data/truefx/…` for the cross-source drift check.
-`data/` is **git-ignored** (GBs). Once the tree lands at the repo root, I build the CSV
-reader → streaming evolve-driver (aggregates ticks→1-min bars per fold; never holds 14 yr
-of ticks in RAM) → holdout guard.
+- **Downloader** [`scripts/download_dukascopy.js`](../../scripts/download_dukascopy.js):
+  one UTC day per instrument (a day clears Dukascopy's per-IP volume window; a week
+  429s). **Newest-first, all 8 instruments per day**, so whatever is on disk is always one
+  contiguous recent window across the whole universe. Adaptive pause (faster on success
+  streaks, slower + escalating cooldown on 429). **Network errors never count as failures**
+  — it waits for DNS to return and retries. Atomic writes (`.tmp` → rename). Suspicious
+  empty weekdays are refetched, then listed in `empty_days.log`. Pauses if disk < 3 GB.
+- **Supervisor** [`scripts/dl_supervisor.ps1`](../../scripts/dl_supervisor.ps1): single
+  instance, keeps the PC awake while running (no power settings changed), restarts the
+  downloader whenever it exits. Launched by the Windows scheduled task
+  **"ACIS Dukascopy Download"** (at logon + every 30 min) → survives reboots and crashes.
+- **Target = 35,072 chunks** (4,384 non-Saturday days × 8). Measured ~40 s/day-chunk at the
+  starting pace ⇒ **~2–3 weeks** of PC-on time; expected ~20–32 GB.
+- Output: `data/dukascopy/<INSTRUMENT>/<YYYY>/<sym>-<YYYY-MM-DD>.csv.gz`, columns
+  `timestamp(ms), askPrice, bidPrice, askVolume, bidVolume` (UTC).
+- **Watch:** `data/dukascopy/status.json` (percent, chunks/hour, ETA, reached-back-to date),
+  `download.log`, `supervisor.log`. Done when `data/dukascopy/COMPLETE` exists.
+- **Stop:** `Unregister-ScheduledTask -TaskName "ACIS Dukascopy Download" -Confirm:$false`,
+  then end the `node.exe`/`powershell.exe` processes. Restart any time — resume is automatic.
+- ⚠ **Residential connection only.** GCP/datacenter IPs are hard-banned (sustained 429,
+  backoff never clears — proven 2026-07-31).
+
+Optionally add a small TrueFX overlap sample (truefx.com; a month or two of EURUSD +
+USDJPY) under `data/truefx/…` for the cross-source drift check. `data/` is **git-ignored**.
+Once the tree lands: build the CSV reader → streaming evolve-driver (per-fold, never holds
+the full history in RAM) → holdout guard.
 
 ## §14 minimums (out-of-sample, ≥2 years) — enforced in `report.py`
 
