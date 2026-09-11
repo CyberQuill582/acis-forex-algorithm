@@ -266,7 +266,8 @@ async function downloadChunk(c, s, state) {
         // DNS can resolve while the link is still unusable (captive portal, flaky
         // Wi-Fi), so back off on repeats instead of spinning: 5s, 10s, … capped 10 min.
         const wait = Math.min(10 * 60e3, 5000 * 2 ** netFails++);
-        log(`NET   ${c.dir} ${c.day}  ${e.message} — retry in ${Math.round(wait / 1000)}s`);
+        const cause = e.cause ? ` [${e.cause.code || ''} ${e.cause.message || ''}]`.replace(/\s+\]/, ']') : '';
+        log(`NET   ${c.dir} ${c.day}  ${e.message}${cause} — retry in ${Math.round(wait / 1000)}s`);
         await sleep(wait);
         await waitForNetwork();
       } else if (kind === 'rate') {
