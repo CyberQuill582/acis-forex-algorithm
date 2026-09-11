@@ -29,7 +29,7 @@ Two adversarial audits of the SPEC itself (master v2.12 + locked `specs/`); full
 findings in `KNOWN_GAPS.md` (GAP-SP12I/E) + the pinned `SPEC_AUDIT_BRIEF.md`.
 **Guardrail-adjacent items recorded here (the rest are honesty/doc, in the ledger):**
 
-- **GAP-SP12E-01 — OPEN — human decision.** §14 `Sharpe > 1.5` OOS target exceeds the
+- **GAP-SP12E-01 — RESOLVED by the owner (2026-07-22, re-ratified 2026-09-11): target UNCHANGED at 1.5, graded on the broadened 8-instrument universe, any pass must carry the Deflated Sharpe (GAP-SP12E-03); no lowering.** Original finding: §14 `Sharpe > 1.5` OOS target exceeds the
   spec's own cited evidence (MOP TSMOM ~1.0 Sharpe only across 58 markets) for the
   ratified 2-pair enabled universe → a pass is overfit-prone. The §14 target is a spec
   value; owner decides (stretch-vs-minimum / broaden universe / require Deflated-Sharpe).

@@ -91,7 +91,7 @@
   - [ ] **LIVE-TRADING SIGN-OFF — HUMAN ONLY.** Never enable live yourself. Requires the §14 minimums met OUT-OF-SAMPLE on real data + explicit owner sign-off (guard 2, separate from and never substituted by the audits). `guardrail_limits.yaml` / equity-floor / HALT-veto-resume semantics stay human-commit-only.
 
 ## Open decisions parked (non-blocking, owned)
-- [ ] **Put `../specs_constitution/` under version control (owner, suggested 2026-09-11).** The shared constitution that governs ACIS has no git history, and two sessions amended it on 2026-09-11 (v0.4 A12, v0.5 A15). An untracked governing document cannot be diffed, reverted or audited.
+- [x] 2026-09-11 — **`../specs_constitution/` put under version control** (owner-ratified; first commit `6d32204` = v0.5; the third-party andrej-karpathy-skills clone is ignored — it keeps its own history).
 - GAP-0009 Momentum-Scalp horizon → ACIS-04, phase 5. · GAP-0004 slippage auto-throttle → accepted-risk, alert-only interim. · Deep-spec contracts: marginal-alpha fn (ACIS-05), session median (ACIS-02), expectancy fn (ACIS-03), decision-latency budget (ACIS-04).
 
 ## Done

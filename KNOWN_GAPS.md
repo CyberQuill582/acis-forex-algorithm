@@ -145,7 +145,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-SP12E-01: §14 Sharpe>1.5 target exceeds the spec's own cited evidence base for a 2-pair book
 - Severity: medium · Likelihood: high
-- Status: raised (owner decision pending 2026-07-21 — §14 target is a spec value, human-owned; NOT changed by an agent)
+- Status: resolved (OWNER DECISION — chose "broaden the universe for an HONEST Sharpe" on 2026-07-22, ratified again in-chat 2026-09-11. The §14 `SHARPE_MIN = 1.5` is UNCHANGED; it is graded on the broadened 8-instrument universe, and any pass must carry the Deflated Sharpe. The "treat 1.5 as a stretch and lower the minimum" option was NOT taken — the owner's standing: "quality, not mediocre results or a lie".)
+- Residual: GAP-SP12E-03 — the Deflated-Sharpe/trial-count and embargo that must accompany any pass are owned there; enabling the 6 declared instruments (calibrated costs + vol targets) is the TODO "Diversification-basket onboarding" item.
 - Area: master §14 / §5.6 / ACIS-09 / OOS_VALIDATION.md
 - Description: `SHARPE_MIN=1.5` OOS, graded per account on the enabled universe (EUR/USD + USD/JPY — 2 highly-correlated USD-legged pairs). Moskowitz–Ooi–Pedersen (the §5.6 canon) reaches ~1.0 Sharpe only after diversifying across 58 markets (~0.3–0.5 per market). 1.5 on 2 pairs is ~50% above the diversified benchmark → clearable in-sample largely by overfit; the likely real outcome is (a) never clears/never live, or (b) a "pass" is an overfit that slipped the ≥30-trade/>1-fold floors. Externally quoted (foxholm MOP summary) in SPEC_AUDIT_EXTERNAL_PENDING.md.
 - Justification: OWNER DECISION. Options: treat 1.5 as a STRETCH and set a defensible 2-pair minimum; and/or broaden the enabled universe before §14 is a fair test; and/or REQUIRE the Deflated-Sharpe deflation (SP12E-03) to accompany any pass. Not a guardrail weakening — a target-calibration question. → SPEC_AUDIT.md.
