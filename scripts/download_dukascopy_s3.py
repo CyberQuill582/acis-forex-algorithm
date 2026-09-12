@@ -6,7 +6,9 @@ Bucket `cfg-public-proper-wallaby` (eu-west-1, Requester Pays), one file per UTC
 skipped). This script orchestrates (newest year first, all 8 instruments) and VERIFIES
 every new file with tests/backtest/bi5.py (LZMA, whole records, ticks inside their day,
 plausible prices) into manifest.jsonl; a file that fails is deleted so the next sync
-refetches it. A cleanly synced + verified instrument-year gets a `SYNCED` marker — the
+refetches it. Verification runs in ONE background worker while the next year syncs, so
+the link never idles on CPU work (at most one year queued behind the one verifying).
+A cleanly synced + verified instrument-year gets a `SYNCED` marker — the
 reader treats a missing day inside a SYNCED year as "no ticks" (holiday), and a year
 with no marker as not downloaded.
 
@@ -28,7 +30,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -43,9 +47,14 @@ MANIFEST, STATUS, COMPLETE = OUT / "manifest.jsonl", OUT / "status.json", OUT / 
 YEARS = list(range(2025, 2011, -1))                 # newest first
 UTC = timezone.utc
 OPS = Ops(OUT, "s3.eu-west-1.amazonaws.com")
-log = OPS.log
+_LOG_LOCK = threading.Lock()
 AUTH_ERRORS = ("InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied",
                "Unable to locate credentials", "ExpiredToken")
+
+
+def log(msg: str) -> None:
+    with _LOG_LOCK:                                      # the sync loop and the verifier both log
+        OPS.log(msg)
 
 
 def aws_exe() -> str:
@@ -71,6 +80,9 @@ def prefix(inst: str, year: int, month: int | None = None) -> str:
 
 def sync(src: str, dest: Path) -> None:
     """`aws s3 sync` with retry-until-done; network drops wait, bad credentials abort."""
+    if dest.exists():
+        for tmp in dest.rglob("*_ticks.bi5.*"):
+            tmp.unlink(missing_ok=True)                  # partial transfers of a killed sync
     for attempt in range(1, 7):
         OPS.wait_for_disk()
         r = aws("s3", "sync", src, str(dest), "--exclude", "*", "--include", "*_ticks.bi5",
@@ -117,9 +129,23 @@ def verify_dir(inst: str, year: int, dest: Path, known: set[str]) -> tuple[int, 
 
 
 def load_known() -> set[str]:
-    if not MANIFEST.exists():
-        return set()
-    return {json.loads(l)["file"] for l in MANIFEST.read_text(encoding="utf-8").splitlines() if l}
+    """Files already verified. A line cut off by a killed run is skipped (that file is just
+    verified again) — never a crash that would crash-loop the supervisor."""
+    known: set[str] = set()
+    if MANIFEST.exists():
+        for line in MANIFEST.read_text(encoding="utf-8").splitlines():
+            try:
+                known.add(json.loads(line)["file"])
+            except (ValueError, KeyError, TypeError):
+                continue
+    return known
+
+
+def heal_manifest() -> None:
+    """End a cut-off last line so the next record starts on a line of its own."""
+    if MANIFEST.exists() and MANIFEST.stat().st_size and not MANIFEST.read_bytes().endswith(b"\n"):
+        with MANIFEST.open("a", encoding="utf-8") as m:
+            m.write("\n")
 
 
 def missing_weekdays(inst: str, year: int) -> list[str]:
@@ -133,6 +159,24 @@ def missing_weekdays(inst: str, year: int) -> list[str]:
     return out
 
 
+def finish_year(year: int, inst: str, dest: Path, known: set[str], coverage: dict,
+                done: list[int], total: int) -> None:
+    """The verifier's half of the pipeline: verify one synced year, then mark it SYNCED.
+    Runs on the single worker thread, so manifest, `known` and `coverage` have one writer."""
+    ok, bad = verify_dir(inst, year, dest, known)
+    if bad:
+        log(f"RETRY {inst} {year}: {bad} file(s) failed verification - refetching next pass")
+        return                                           # no SYNCED marker: next pass resyncs
+    (dest / "SYNCED").write_text(datetime.now(UTC).isoformat(), encoding="utf-8")
+    coverage[f"{inst} {year}"] = missing_weekdays(inst, year)
+    done[0] += 1
+    log(f"OK    {inst} {year}: +{ok} files  [{done[0]}/{total}]  free={OPS.free_gb():.1f}GB")
+    OPS.write_json(STATUS, {"updated": datetime.now(UTC).isoformat(timespec="seconds"),
+                            "done_this_run": done[0], "remaining": total - done[0],
+                            "reached": f"{inst} {year}", "verified_files": len(known),
+                            "free_disk_gb": round(OPS.free_gb(), 1)})
+
+
 def cmd_run() -> int:
     if COMPLETE.exists():
         log("COMPLETE marker present - nothing to do")
@@ -140,25 +184,26 @@ def cmd_run() -> int:
     if not OPS.acquire_lock():
         print("another downloader holds the lock")
         return 3
-    known, coverage = load_known(), {}
+    heal_manifest()
+    known, coverage, done = load_known(), {}, [0]
     todo = [(y, i) for y in YEARS for i in SYMBOLS if not (OUT / i / str(y) / "SYNCED").exists()]
     log(f"START pid={os.getpid()} instrument-years remaining={len(todo)}/{len(YEARS) * len(SYMBOLS)} "
         f"free={OPS.free_gb():.1f}GB")
     OPS.wait_for_network()
-    for n, (year, inst) in enumerate(todo, 1):
-        dest = OUT / inst / str(year)
-        sync(prefix(inst, year), dest)
-        ok, bad = verify_dir(inst, year, dest, known)
-        if bad:
-            log(f"RETRY {inst} {year}: {bad} file(s) failed verification - refetching next pass")
-            continue                                     # no SYNCED marker: next pass resyncs
-        (dest / "SYNCED").write_text(datetime.now(UTC).isoformat(), encoding="utf-8")
-        coverage[f"{inst} {year}"] = missing_weekdays(inst, year)
-        log(f"OK    {inst} {year}: +{ok} files  [{n}/{len(todo)}]  free={OPS.free_gb():.1f}GB")
-        OPS.write_json(STATUS, {"updated": datetime.now(UTC).isoformat(timespec="seconds"),
-                                "done_this_run": n, "remaining": len(todo) - n,
-                                "reached": f"{inst} {year}", "verified_files": len(known),
-                                "free_disk_gb": round(OPS.free_gb(), 1)})
+    pending: list[Future] = []
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="verify") as verifier:
+        for year, inst in todo:
+            dest = OUT / inst / str(year)
+            sync(prefix(inst, year), dest)
+            for f in [f for f in pending if f.done()]:
+                f.result()                               # a verifier failure surfaces here
+                pending.remove(f)
+            if len(pending) >= 2:                        # one verifying + one queued, at most
+                pending.pop(0).result()
+            pending.append(verifier.submit(finish_year, year, inst, dest, known, coverage,
+                                           done, len(todo)))
+        for f in pending:
+            f.result()
     OPS.write_json(OUT / "coverage.json", coverage)
     left = [(y, i) for y in YEARS for i in SYMBOLS if not (OUT / i / str(y) / "SYNCED").exists()]
     if left:
