@@ -16,7 +16,12 @@
 #                then end the python.exe / node.exe and powershell.exe processes.
 # Absolute paths are used throughout: this machine's PATH cannot be relied on.
 
-param([Parameter(Mandatory = $true)][ValidateSet('s3', 'histdata')][string]$Job)
+#   -After s3       queue behind another job: exit at once until that job's COMPLETE marker
+#                   exists (the task keeps firing every 30 min, so this job starts by itself
+#                   once the other finishes and never competes with it for the link)
+
+param([Parameter(Mandatory = $true)][ValidateSet('s3', 'histdata')][string]$Job,
+      [ValidateSet('s3', 'histdata')][string]$After)
 
 $ErrorActionPreference = 'Continue'
 $Root = Split-Path -Parent $PSScriptRoot
@@ -39,6 +44,9 @@ function Log([string]$m) {
 }
 
 if (Test-Path $Complete) { exit 0 }
+if ($After -and -not (Test-Path (Join-Path (Join-Path $Root $Jobs[$After].Data) 'COMPLETE'))) {
+    exit 0                             # queued: the job it waits for has not finished yet
+}
 
 $created = $false
 $mutex = [System.Threading.Mutex]::new($true, $J.Mutex, [ref]$created)
