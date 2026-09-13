@@ -68,6 +68,11 @@ def local_to_utc(day: date, hhmm: str, zone: str) -> datetime:
     return datetime(day.year, day.month, day.day, hh, mm, tzinfo=UTC) - utc_offset(day, zone)
 
 
+def naive_local_to_utc(local: datetime, zone: str) -> datetime:
+    """A naive local wall-clock datetime in `zone` (any precision), as a UTC instant."""
+    return local.replace(tzinfo=UTC) - utc_offset(local.date(), zone)
+
+
 def to_local(ts: datetime, zone: str) -> datetime:
     """The naive local wall time in `zone` at UTC instant `ts`."""
     ts = ts.astimezone(UTC).replace(tzinfo=None)

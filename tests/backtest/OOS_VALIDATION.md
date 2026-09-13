@@ -73,7 +73,7 @@ Tick resolution with bid + ask throughout.
 - **Cross-check downloader** [`scripts/download_histdata.py`](../../scripts/download_histdata.py):
   1,344 month zips, each fully verified (`testzip()`, every row parsed, ticks inside the
   month; sha256 + anomaly counts + HistData's gap report in `manifest.jsonl`); stored as
-  published; fixed-EST timestamps converted by the reader. Tested: `test_download_histdata.py`.
+  published; HistData-clock timestamps (Frankfurt − 6 h — NOT the documented fixed EST, GAP-P12D-13) converted by the reader. Tested: `test_download_histdata.py`.
 - **Supervisor** [`scripts/dl_supervisor.ps1`](../../scripts/dl_supervisor.ps1) `-Job s3|histdata`:
   single instance per job, keeps the PC awake while running, restarts on any exit; a
   scheduled task (at logon + every 30 min) resumes after reboots. Shared plumbing:

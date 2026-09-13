@@ -10,8 +10,10 @@ A missing file inside the requested window raises `MissingDataError` — a silen
 would make the backtest quietly trade through a hole in the data.
 
     histdata   data/histdata/<INSTR>/<YYYY>/HISTDATA_COM_ASCII_<PAIR>_T<YYYYMM>.zip
-               "YYYYMMDD HHMMSSNNN,bid,ask,vol", fixed EST (UTC-5, NO daylight saving);
-               one file per EST calendar month. Carries no tick volume (0).
+               "YYYYMMDD HHMMSSNNN,bid,ask,vol". HistData documents "EST without DST", but
+               its clock is Frankfurt time − 6 h — it switches on the EU summer-time dates
+               (GAP-P12D-13) — i.e. London time − 5 h; one file per month on that clock.
+               Carries no tick volume (0).
     dukascopy  data/dukascopy/<INSTR>/<YYYY>/<MM0>/<DD>_ticks.bi5 — a mirror of Dukascopy's
                official S3 archive (month ZERO-based), decoded by bi5.py. A missing day
                inside a year the downloader marked `SYNCED` means "no ticks" (holiday);
@@ -26,12 +28,23 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
+from core.data.fx_clock import naive_local_to_utc, to_local, utc_offset
 from core.data.normaliser import RawTick
 from tests.backtest import bi5
 from tests.backtest.data_loader import TickSource
 
 UTC = timezone.utc
-EST_OFFSET = timedelta(hours=5)                 # HistData EST (fixed) -> UTC
+HD_TO_LONDON = timedelta(hours=5)       # HistData clock + 5 h = London wall time (P12D-13)
+
+
+def histdata_naive_to_utc(hd: datetime) -> datetime:
+    """HistData's clock (Frankfurt − 6 h, measured against Dukascopy UTC) → UTC."""
+    return naive_local_to_utc(hd + HD_TO_LONDON, "Europe/London")
+
+
+def utc_to_histdata(ts: datetime) -> datetime:
+    """A UTC instant as HistData's naive clock (which monthly file holds it)."""
+    return to_local(ts, "Europe/London") - HD_TO_LONDON
 
 
 class MissingDataError(Exception):
@@ -66,10 +79,12 @@ class HistDataTickSource(TickSource):
         _check_window(start, end)
         start, end = start.astimezone(UTC), end.astimezone(UTC)
         pair = instrument.replace("_", "")
-        # the UTC window, seen in HistData's fixed EST, spans these EST months
-        first_est, last_est = start - EST_OFFSET, end - EST_OFFSET - timedelta(microseconds=1)
-        y, m = first_est.year, first_est.month
-        while (y, m) <= (last_est.year, last_est.month):
+        # the UTC window, seen on HistData's clock, spans these monthly files
+        first_hd = utc_to_histdata(start)
+        last_hd = utc_to_histdata(end) - timedelta(microseconds=1)
+        y, m = first_hd.year, first_hd.month
+        offsets: dict = {}                                 # London offset per local date
+        while (y, m) <= (last_hd.year, last_hd.month):
             p = self.path(instrument, y, m)
             if not p.exists():
                 raise MissingDataError(f"histdata {instrument} {y}-{m:02d}: {p}")
@@ -79,9 +94,13 @@ class HistDataTickSource(TickSource):
                     if not line.strip():
                         continue
                     ts, bid, ask, vol = line.rstrip("\r\n").split(",")[:4]
-                    t = datetime(int(ts[0:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]),
-                                 int(ts[11:13]), int(ts[13:15]), int(ts[15:18]) * 1000,
-                                 tzinfo=UTC) + EST_OFFSET
+                    local = datetime(int(ts[0:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]),
+                                     int(ts[11:13]), int(ts[13:15]),
+                                     int(ts[15:18]) * 1000) + HD_TO_LONDON
+                    off = offsets.get(local.date())
+                    if off is None:
+                        off = offsets[local.date()] = utc_offset(local.date(), "Europe/London")
+                    t = (local - off).replace(tzinfo=UTC)
                     # no early exit on t >= end: the downloader COUNTS out-of-order
                     # ticks rather than rejecting them, so keep scanning the file
                     if start <= t < end:

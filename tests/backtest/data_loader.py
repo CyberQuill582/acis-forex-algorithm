@@ -53,6 +53,8 @@ class DriftReport:
     mean_bps: float
     threshold_bps: float
     flagged: bool          # True ⇒ investigate; the loader NEVER averages the two
+    coverage: float = 1.0  # share of primary ticks that aligned with a secondary tick
+    reason: str = ""       # why it was flagged ("" when clear)
 
 
 @dataclass(frozen=True)
@@ -114,11 +116,13 @@ class BacktestDataLoader:
 
     def cross_source_drift(self, *, instrument: str, primary: Sequence[RawTick],
                            secondary: Sequence[RawTick], threshold_bps: float,
-                           align_tol_s: float = 1.0) -> DriftReport:
+                           align_tol_s: float = 1.0, min_coverage: float = 0.5) -> DriftReport:
         """Compare primary vs cross-check mids on overlapping timestamps. A drift
         beyond `threshold_bps` FLAGS the window for investigation — the loader
         never averages the two sources (C-BT-9). Alignment is nearest-in-time
-        within `align_tol_s`."""
+        within `align_tol_s`. Too little overlap (under `min_coverage` of the
+        primary ticks aligned — a clock shift or a data hole) is ALSO flagged:
+        comparing nothing is a failure, never a clear (GAP-P12D-13)."""
         sec = sorted(secondary, key=lambda t: t.event_time)
         times = [t.event_time for t in sec]
         diffs_bps: list[float] = []
@@ -130,18 +134,23 @@ class BacktestDataLoader:
             ms = (match.bid + match.ask) / 2.0
             if mp > 0:
                 diffs_bps.append(abs(mp - ms) / mp * 1e4)
-        if not diffs_bps:
-            report = DriftReport(instrument, 0, 0.0, 0.0, threshold_bps, False)
-        else:
-            mx = max(diffs_bps)
-            report = DriftReport(instrument, len(diffs_bps), mx,
-                                 sum(diffs_bps) / len(diffs_bps), threshold_bps,
-                                 mx > threshold_bps)
+        n = len(diffs_bps)
+        coverage = n / len(primary) if primary else 0.0
+        mx = max(diffs_bps) if n else 0.0
+        reasons = []
+        if coverage < min_coverage:
+            reasons.append(f"only {coverage:.1%} of primary ticks aligned within {align_tol_s}s "
+                           "(clock shift or missing data)")
+        if mx > threshold_bps:
+            reasons.append(f"max drift {mx:.2f} bps > {threshold_bps} bps")
+        report = DriftReport(instrument, n, mx, sum(diffs_bps) / n if n else 0.0,
+                             threshold_bps, bool(reasons), coverage, "; ".join(reasons))
         if report.flagged:
             self._log.event("BACKTEST_SOURCE_DRIFT", instrument=instrument,
                             max_bps=round(report.max_bps, 3),
                             mean_bps=round(report.mean_bps, 3),
-                            threshold_bps=threshold_bps)
+                            threshold_bps=threshold_bps,
+                            coverage=round(coverage, 4), reason=report.reason)
         return report
 
 

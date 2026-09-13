@@ -98,3 +98,16 @@ def test_batched_yields_full_and_partial_batches() -> None:
     assert [len(b) for b in batches] == [3, 3, 1]
     with pytest.raises(ValueError):
         list(batched(iter(ticks), 0))
+
+
+def test_cross_source_drift_flags_when_nothing_aligns() -> None:
+    # GAP-P12D-13: an hour-shifted secondary aligns with nothing — a FAILURE, never a clear
+    # (it used to return n_compared=0, flagged=False)
+    prim = [mk_tick(T0 + timedelta(seconds=i)) for i in range(5)]
+    shifted = [mk_tick(T0 + timedelta(hours=1, seconds=i), provider="histdata") for i in range(5)]
+    ldr = _loader(dukascopy=prim, histdata=shifted)
+    r = ldr.cross_source_drift(instrument="EUR_USD", primary=prim, secondary=shifted,
+                               threshold_bps=5.0)
+    assert r.n_compared == 0 and r.coverage == 0.0 and r.flagged and "aligned" in r.reason
+    assert ldr.cross_source_drift(instrument="EUR_USD", primary=[], secondary=shifted,
+                                  threshold_bps=5.0).flagged

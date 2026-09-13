@@ -1,6 +1,6 @@
 """Offline tests of the HistData downloader's verification (scripts/download_histdata.py).
 Every zip must be fully proven before it counts; these pin the rejection classes and
-the fixed-EST -> UTC conversion. (Previously checked only ad hoc in a session — now
+the HistData-clock -> UTC conversion (Frankfurt - 6 h, GAP-P12D-13). (Previously checked only ad hoc in a session — now
 committed, per the ledger closure law.)"""
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def _zip(tmp: Path, name: str, rows, member="DAT_ASCII_EURGBP_T_201201.csv", rep
 def test_good_month_parses_with_est_to_utc_and_gap_report(tmp_path) -> None:
     r = h.verify("eurgbp", 2012, 1, _zip(tmp_path, "g.zip", GOOD, report="Gap of 62s\nGap of 900s\n"))
     assert r["rows"] == 3
-    assert r["first_utc"] == "2012-01-02T22:00:00.123000+00:00"   # 17:00 EST (fixed) = 22:00 UTC
+    assert r["first_utc"] == "2012-01-02T22:00:00.123000+00:00"   # winter: 17:00 HistData = 22:00 UTC
     assert r["last_utc"] == "2012-02-01T04:59:59.999000+00:00"
     assert (r["gap_reports"], r["max_gap_s"]) == (2, 900)
 
@@ -58,3 +58,11 @@ def test_plan_is_newest_month_first_all_instruments() -> None:
     plan = h.build_plan()
     assert len(plan) == 8 * 14 * 12
     assert plan[0] == ("eurusd", 2025, 12) and plan[-1] == ("xauusd", 2012, 1)
+
+
+def test_summer_month_first_utc_follows_eu_summer_time(tmp_path) -> None:
+    # GAP-P12D-13: HistData's clock is Frankfurt - 6 h, so a July 17:00 row is 21:00 UTC
+    rows = ["20120701 170000000,0.80,0.81,0", "20120731 120000000,0.80,0.81,0"]
+    r = h.verify("eurgbp", 2012, 7, _zip(tmp_path, "s.zip", rows, member="DAT_ASCII_EURGBP_T_201207.csv"))
+    assert r["first_utc"] == "2012-07-01T21:00:00+00:00"
+    assert r["last_utc"] == "2012-07-31T16:00:00+00:00"

@@ -41,26 +41,34 @@ def _dukascopy_day(root: Path, instrument: str, day: datetime, records, synced=T
 
 
 # ------------------------------------------------------------------ HistData
-def test_histdata_converts_fixed_est_to_utc(tmp_path) -> None:
-    # Sunday open 17:00:00.123 EST (fixed, no DST) == 22:00:00.123 UTC, in winter AND summer
-    _histdata_zip(tmp_path, "EUR_USD", 2012, 1, ["20120101 170000123,1.29315,1.29335,0"])
-    _histdata_zip(tmp_path, "EUR_USD", 2012, 7, ["20120701 170000000,1.26600,1.26620,0"])
+def test_histdata_clock_is_frankfurt_minus_six_hours(tmp_path) -> None:
+    # GAP-P12D-13: HistData documents "EST without DST", but its clock switches on the EU
+    # summer-time dates (measured against Dukascopy UTC: 100% tick match either side)
+    _histdata_zip(tmp_path, "EUR_USD", 2012, 1, ["20120101 170000123,1.29315,1.29335,0"])  # winter
+    _histdata_zip(tmp_path, "EUR_USD", 2012, 7, ["20120701 170000000,1.26600,1.26620,0"])  # EU summer
+    _histdata_zip(tmp_path, "EUR_USD", 2024, 3, ["20240311 070000000,1.09,1.0901,0",       # US on EDT, EU not
+                                                  "20240329 070000000,1.08,1.0801,0"])      # Fri before EU switch
+    _histdata_zip(tmp_path, "EUR_USD", 2024, 4, ["20240401 080000000,1.07,1.0701,0"])       # Mon after EU switch
     src = HistDataTickSource(tmp_path)
-    # windows start at 05:00 UTC = 00:00 EST, so each needs only its own EST month file
-    # (a 00:00 UTC start would be 19:00 EST the previous day -> previous month's file)
+    # windows start at 05:00 UTC = 00:00/01:00 on HistData's clock, so each needs only its own file
     jan = list(src.load("EUR_USD", datetime(2012, 1, 1, 5, tzinfo=UTC), datetime(2012, 1, 2, tzinfo=UTC)))
     jul = list(src.load("EUR_USD", datetime(2012, 7, 1, 5, tzinfo=UTC), datetime(2012, 7, 2, tzinfo=UTC)))
-    with pytest.raises(MissingDataError):                      # ...proved here
+    with pytest.raises(MissingDataError):     # 00:00 UTC = 19:00 the previous day -> December's file
         list(src.load("EUR_USD", datetime(2012, 1, 1, tzinfo=UTC), datetime(2012, 1, 2, tzinfo=UTC)))
     assert jan[0].event_time == datetime(2012, 1, 1, 22, 0, 0, 123000, tzinfo=UTC)
-    assert jul[0].event_time == datetime(2012, 7, 1, 22, 0, tzinfo=UTC)      # no DST shift
+    assert jul[0].event_time == datetime(2012, 7, 1, 21, 0, tzinfo=UTC)          # EU summer: -4 h
+    mar = list(src.load("EUR_USD", datetime(2024, 3, 11, 5, tzinfo=UTC), datetime(2024, 3, 30, tzinfo=UTC)))
+    apr = list(src.load("EUR_USD", datetime(2024, 4, 1, 5, tzinfo=UTC), datetime(2024, 4, 2, tzinfo=UTC)))
+    assert [t.event_time for t in mar] == [datetime(2024, 3, 11, 12, tzinfo=UTC),  # EU rule, not US
+                                           datetime(2024, 3, 29, 12, tzinfo=UTC)]
+    assert apr[0].event_time == datetime(2024, 4, 1, 12, tzinfo=UTC)
     t = jan[0]
     assert (t.bid, t.ask, t.volume, t.provider, t.instrument) == (1.29315, 1.29335, 0.0,
                                                                   "histdata", "EUR_USD")
 
 
 def test_histdata_window_spans_est_month_boundary(tmp_path) -> None:
-    # 2012-01-31 23:30 EST lives in the JANUARY file but is 2012-02-01 04:30 UTC
+    # 2012-01-31 23:30 on HistData's (winter) clock lives in the JANUARY file = 2012-02-01 04:30 UTC
     _histdata_zip(tmp_path, "EUR_USD", 2012, 1, ["20120131 233000000,1.3,1.3002,0"])
     _histdata_zip(tmp_path, "EUR_USD", 2012, 2, ["20120201 010000000,1.31,1.3102,0"])
     got = list(HistDataTickSource(tmp_path).load(
@@ -169,3 +177,30 @@ def test_real_histdata_month_hour_is_sane() -> None:
     assert len(got) > 500
     assert all(0.70 < t.bid < 0.90 and t.ask >= t.bid for t in got)   # EUR/GBP Jan-2012 range
     assert all(a.event_time <= b.event_time for a, b in zip(got, got[1:]))
+
+
+REAL_DUK_2024 = REPO / "data" / "dukascopy" / "EUR_USD" / "2024" / "SYNCED"
+REAL_HD_2024 = [REPO / "data" / "histdata" / "EUR_USD" / "2024" / f"HISTDATA_COM_ASCII_EURUSD_T2024{m:02d}.zip"
+                for m in (3, 4, 10)]
+
+
+@pytest.mark.skipif(not (REAL_DUK_2024.exists() and all(p.exists() for p in REAL_HD_2024)),
+                    reason="real 2024 EUR_USD Dukascopy + HistData months not downloaded")
+@pytest.mark.parametrize("start", [datetime(2024, 3, 29, 12, tzinfo=UTC), datetime(2024, 4, 1, 12, tzinfo=UTC),
+                                   datetime(2024, 10, 25, 12, tzinfo=UTC), datetime(2024, 10, 28, 12, tzinfo=UTC)])
+def test_real_histdata_ticks_land_on_dukascopy_utc_across_eu_switches(start) -> None:
+    # GAP-P12D-13 regression on the REAL files, both sides of each EU switch: the same ticks at
+    # the same UTC millisecond, and the drift check sees full overlap (never a silent clear)
+    end = start + timedelta(minutes=10)
+
+    def key(t):
+        return (round(t.event_time.timestamp() * 1000), round(t.bid, 5), round(t.ask, 5))
+
+    duk = list(DukascopyTickSource(REPO / "data" / "dukascopy").load("EUR_USD", start, end))
+    hd = list(HistDataTickSource(REPO / "data" / "histdata").load("EUR_USD", start, end))
+    assert len(hd) > 100
+    dk = {key(t) for t in duk}
+    assert sum(1 for t in hd if key(t) in dk) / len(hd) > 0.99
+    rep = BacktestDataLoader({}, CapturingLogger()).cross_source_drift(
+        instrument="EUR_USD", primary=hd, secondary=duk, threshold_bps=5.0)
+    assert not rep.flagged and rep.coverage > 0.99 and rep.max_bps == 0.0

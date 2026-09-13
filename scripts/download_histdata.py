@@ -5,7 +5,7 @@ Primary bulk tick source for the ratified 8-instrument universe, 2012-01 .. 2025
 owner's connection). HistData publishes one zip per pair per month:
 
     DAT_ASCII_<PAIR>_T_<YYYYMM>.csv   "YYYYMMDD HHMMSSNNN,bid,ask,volume"
-    timestamps in EST *without* daylight saving, i.e. a fixed UTC-5 offset
+    clock: Frankfurt time - 6 h (EU summer time), NOT the documented fixed EST (P12D-13)
 
 Unattended and self-resuming (shared plumbing in scripts/dl_common.py):
 
@@ -50,6 +50,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dl_common import Ops
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tests.backtest.sources import histdata_naive_to_utc  # noqa: E402
 
 INSTRUMENTS = {
     "eurusd": "EUR_USD",
@@ -76,7 +78,6 @@ PAGE = SITE + "/download-free-forex-historical-data/?/ascii/tick-data-quotes/{pa
 GET = SITE + "/get.php"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-EST_FIXED = timezone(timedelta(hours=-5))      # HistData: EST, NO daylight saving
 
 PAUSE_S = 8                   # between files (HistData asks for gentle use)
 COOLDOWN_BASE_S = 5 * 60
@@ -178,9 +179,8 @@ TS_RE = re.compile(r"^\d{8} \d{9}$")
 
 
 def est_to_utc(ts: str) -> datetime:
-    return (datetime.strptime(ts[:15], "%Y%m%d %H%M%S")
-            .replace(microsecond=int(ts[15:18]) * 1000, tzinfo=EST_FIXED)
-            .astimezone(timezone.utc))
+    return histdata_naive_to_utc(datetime.strptime(ts[:15], "%Y%m%d %H%M%S")
+                                 .replace(microsecond=int(ts[15:18]) * 1000))
 
 
 def verify(pair: str, y: int, m: int, path: Path) -> dict:
