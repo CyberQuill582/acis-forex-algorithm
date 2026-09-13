@@ -1,0 +1,2 @@
+# Shell scripts run on Linux servers (EC2 user data): never convert to CRLF
+*.sh text eol=lf
