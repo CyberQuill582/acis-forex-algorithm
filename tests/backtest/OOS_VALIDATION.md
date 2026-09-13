@@ -83,8 +83,8 @@ Tick resolution with bid + ask throughout.
 - **Macro inputs** (done): `scripts/download_macro.py` → SPX + overnight rates from the issuing
   banks → `financing.py`. **Still to build:** the historical event calendar (GAP-P12D-03).
 
-Before any §14 pass is presented: `cross_source_drift` Dukascopy-vs-HistData on overlapping
-days (C-BT-9). Then: streaming evolve-driver (per-fold, never the full history in RAM) with
+Before any §14 pass is presented: `scripts/run_data_validation.py` — ECB reference rates, the EUR/GBP triangle,
+the market's clock marks and sampled gold vs HistData (C-BT-9, GAP-P12D-14) — with every flag explained. Then: streaming evolve-driver (per-fold, never the full history in RAM) with
 embargo + Deflated Sharpe (GAP-SP12E-03), date-joined SPX (GAP-SP12E-06) → holdout guard.
 `data/` is git-ignored.
 

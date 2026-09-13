@@ -9,7 +9,6 @@ windows with stdlib math only — no NaN ever leaves this layer (C-REG-4).
 from __future__ import annotations
 
 import math
-import statistics
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,6 +17,7 @@ from typing import Callable, Sequence
 
 from config.schemas import RegimeConfig
 from core.data.normaliser import MarketState
+from core.regime.fast_stats import pstdev  # float, exact-zero on constants (GAP-P12D-12)
 from core.regime.regime_types import (
     NEVER_TRADEABLE,
     LiqState,
@@ -86,7 +86,7 @@ def bollinger_width_percentile(mids: Sequence[float], window: int, band_period: 
         chunk = mids[end - band_period:end]
         if len(chunk) < band_period:
             continue
-        sd = statistics.pstdev(chunk)
+        sd = pstdev(chunk)
         widths.append(4.0 * sd)  # +/- 2 sigma band width
     if not widths:
         return math.nan
@@ -141,7 +141,7 @@ def hurst_exponent(mids: Sequence[float], window: int) -> float:
                 running += d
                 cum.append(running)
             r = max(cum) - min(cum)
-            s = statistics.pstdev(chunk)
+            s = pstdev(chunk)
             if s > 0:
                 rs_values.append(r / s)
         if rs_values:
@@ -273,7 +273,7 @@ class NVMA:
         # median would self-track a widening spread and mask sustained
         # illiquidity). σ is the window spread dispersion; the centre is the
         # session median. Dead velocity stays a VETO (master §4), not a regime.
-        spread_sigma = statistics.pstdev(spreads) if len(spreads) > 1 else 0.0
+        spread_sigma = pstdev(spreads) if len(spreads) > 1 else 0.0
         illiquid_spread = (state.spread - med_spread) > cfg.spread_illiquid_sigma * spread_sigma
         if state.session == "closed" or illiquid_spread:
             snapshot.update(session=state.session, spread=state.spread,

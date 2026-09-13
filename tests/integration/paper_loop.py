@@ -72,8 +72,14 @@ class PaperLoop:
         store: MarketStateStore,
         logger: JsonlEventLogger,
         portfolio_fn,
+        regime_cycle_s: float | None = None,
     ) -> None:
         self._factory = factory
+        # None: classify every tick (the compressed test cadence). A number: §10 Loop 2 —
+        # classify each instrument at most once per `regime_cycle_s`, reusing the stored
+        # context in between (historical replays, GAP-P12D-12).
+        self._cycle_s = regime_cycle_s
+        self._classified_at: dict[str, datetime] = {}
         self.nvma = nvma_engine
         self.params = param_library
         self.agon = agon
@@ -97,9 +103,9 @@ class PaperLoop:
     # -- the composed medium+fast loop -------------------------------------- #
 
     def on_state(self, state: MarketState) -> None:
-        # medium loop (§10 Loop 2), compressed to per-tick cadence for tests
+        # medium loop (§10 Loop 2): per tick by default, or at `regime_cycle_s`
         self.nvma.observe(state)
-        ctx = self.nvma.classify(state)
+        ctx = self._regime(state)
         self.last_context = ctx
         # fast loop (§10 Loop 3)
         bar = self.agon.observe(state)
@@ -126,6 +132,15 @@ class PaperLoop:
             if oa.size_units > 0 and ob.size_units > 0:
                 self.book.open(oa)
                 self.book.open(ob)
+
+    def _regime(self, state: MarketState):
+        if self._cycle_s is None:
+            return self.nvma.classify(state)
+        last = self._classified_at.get(state.instrument)
+        if last is None or (state.timestamp - last).total_seconds() >= self._cycle_s:
+            self._classified_at[state.instrument] = state.timestamp
+            return self.nvma.classify(state)
+        return self.nvma.regime_store[state.instrument]
 
     async def run(self, feed: FeedConnector, *, drain: bool = False) -> IngestionPipeline:
         """drain=True runs the async writer to completion (the e2e persistence
@@ -176,10 +191,13 @@ def build_paper_loop(
     tierg_shock=None,
     blackout=None,
     session_id: str = "itest7",
+    logger=None,
+    regime_cycle_s: float | None = None,
 ) -> PaperLoop:
-    """Wire the real layers from the real config (the phase-12 attach shape)."""
-    log = JsonlEventLogger(tmp_path / "system_log.jsonl", layer="integration",
-                           session_id=session_id)
+    """Wire the real layers from the real config (the phase-12 attach shape). A replay
+    passes `regime_cycle_s` (cfg.system.regime.cycle_seconds) and a ReplayEventLogger."""
+    log = logger if logger is not None else JsonlEventLogger(
+        tmp_path / "system_log.jsonl", layer="integration", session_id=session_id)
     store = MarketStateStore(tmp_path / "acis.sqlite")
     writer = AsyncBoundedWriter(store, queue_max=cfg.system.data.queue_max,
                                 session_id=session_id, logger=log)
@@ -231,6 +249,6 @@ def build_paper_loop(
         logger=log,
     )
     loop = PaperLoop(factory, engine, lib, agon, governor, writer, store, log,
-                     portfolio_fn)
+                     portfolio_fn, regime_cycle_s=regime_cycle_s)
     book_holder.append(loop.book)
     return loop
