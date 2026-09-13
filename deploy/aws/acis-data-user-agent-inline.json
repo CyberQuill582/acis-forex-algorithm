@@ -1,0 +1,85 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyLookups",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "ssm:DescribeInstanceInformation",
+        "ssm:GetCommandInvocation",
+        "ssm:ListCommands",
+        "ssm:ListCommandInvocations",
+        "servicequotas:GetServiceQuota",
+        "freetier:GetAccountPlanState",
+        "freetier:GetFreeTierUsage"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LatestAmazonLinuxAmiLookup",
+      "Effect": "Allow",
+      "Action": ["ssm:GetParameter", "ssm:GetParameters"],
+      "Resource": "arn:aws:ssm:eu-west-1::parameter/aws/service/ami-amazon-linux-latest/*"
+    },
+    {
+      "Sid": "LaunchSmallInstancesInIrelandOnly",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {"aws:RequestedRegion": "eu-west-1"},
+        "StringEqualsIfExists": {"ec2:InstanceType": ["c7i-flex.large", "m7i-flex.large", "t3.small"]}
+      }
+    },
+    {
+      "Sid": "TagOnlyAtLaunch",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": "*",
+      "Condition": {"StringEquals": {"ec2:CreateAction": "RunInstances", "aws:RequestedRegion": "eu-west-1"}}
+    },
+    {
+      "Sid": "StartStopTerminateOnlyAcisTagged",
+      "Effect": "Allow",
+      "Action": ["ec2:StartInstances", "ec2:StopInstances", "ec2:RebootInstances", "ec2:TerminateInstances"],
+      "Resource": "*",
+      "Condition": {"StringEquals": {"aws:RequestedRegion": "eu-west-1", "ec2:ResourceTag/Project": "acis"}}
+    },
+    {
+      "Sid": "PassOnlyTheServerRoleToEc2",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::565257597310:role/acis-data-server-role",
+      "Condition": {"StringEquals": {"iam:PassedToService": "ec2.amazonaws.com"}}
+    },
+    {
+      "Sid": "RunCommandsOnlyOnAcisTaggedInstances",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": "arn:aws:ec2:eu-west-1:565257597310:instance/*",
+      "Condition": {"StringEquals": {"ssm:resourceTag/Project": "acis"}}
+    },
+    {
+      "Sid": "ShellCommandDocument",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": "arn:aws:ssm:eu-west-1::document/AWS-RunShellScript"
+    },
+    {
+      "Sid": "CancelOwnCommands",
+      "Effect": "Allow",
+      "Action": "ssm:CancelCommand",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AcisTransferBucket",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetObject", "s3:PutObject"],
+      "Resource": [
+        "arn:aws:s3:::acis-transfer-565257597310",
+        "arn:aws:s3:::acis-transfer-565257597310/*"
+      ]
+    }
+  ]
+}
