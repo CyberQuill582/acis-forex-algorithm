@@ -15,5 +15,9 @@ scripts/download.log
 scripts/run.log
 *.csv.gz
 
+# mutation-testing gate (scripts/mutation_gate.py) working files
+.mutmut-cache
+html/
+
 # Local Claude Code conversation backups (private chat transcripts — never commit)
 conversation-archive/

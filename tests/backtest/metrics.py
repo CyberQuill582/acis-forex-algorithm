@@ -165,14 +165,14 @@ def spx_correlation(marks: Sequence[tuple[date, Decimal]],
     return cov / math.sqrt(va * vb)
 
 
-def _avg_duration(trades: Sequence[ClosedTrade], *, include: bool,
-                  only: str | None = None) -> float:
+def _avg_duration(trades: Sequence[ClosedTrade], *, only: str | None = None) -> float:
+    """Mean duration of `only`'s trades or, with no `only`, of the §14 band — every trade
+    except the TSMOM and MOMENTUM_SCALP carve-outs. (An unused all-trades branch was
+    removed: the mutation gate showed nothing could reach it, GAP-P12D-28.)"""
     if only is not None:
         sel = [t for t in trades if t.strategy_type == only]
-    elif include:
-        sel = [t for t in trades if t.strategy_type not in _DURATION_CARVE_OUT]
     else:
-        sel = list(trades)
+        sel = [t for t in trades if t.strategy_type not in _DURATION_CARVE_OUT]
     if not sel:
         return 0.0
     return sum(t.duration_s for t in sel) / len(sel)
@@ -245,7 +245,7 @@ def compute_metrics(*, trades: Sequence[ClosedTrade],
         profit_factor=profit_factor(trades),
         positive_months_pct=positive_months_pct(equity_curve),
         spx_correlation=spx_correlation(rollover_marks, spx_closes),
-        avg_trade_duration_s=_avg_duration(trades, include=True),        # §14 band
-        tsmom_avg_duration_s=_avg_duration(trades, include=False, only="TSMOM"),
-        scalp_avg_duration_s=_avg_duration(trades, include=False, only="MOMENTUM_SCALP"),
+        avg_trade_duration_s=_avg_duration(trades),                      # §14 band
+        tsmom_avg_duration_s=_avg_duration(trades, only="TSMOM"),
+        scalp_avg_duration_s=_avg_duration(trades, only="MOMENTUM_SCALP"),
         n_trades=len(trades))

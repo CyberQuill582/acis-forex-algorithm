@@ -74,6 +74,20 @@ class FoldData:
 EvolveFn = Callable[[object, FoldData], "Mapping | None"]
 
 
+def refuse_lookahead(record: Mapping, fold: Fold) -> None:
+    """GAP-P12D-28: an evolution record may not cite a bar that opens at or after its fold's
+    train end — that bar's price belongs to the embargo or the test window. It checks the
+    spans the record reports (evolve_step.py records every candidate's first and last bar),
+    so it catches a leaky data path, not an evolve function that misreports its own spans."""
+    for regime, entry in record.get("regimes", {}).items():
+        for c in entry.get("candidates", ()):
+            last = c.get("last_bar")
+            if last is not None and datetime.fromisoformat(last) >= fold.train_end:
+                raise ValueError(f"look-ahead: fold {fold.index} evolved {regime} on "
+                                 f"{c.get('instrument')} with a bar at {last}, at or after its "
+                                 f"train end {fold.train_end.isoformat()}")
+
+
 class Backtest:
     def __init__(self, *, account: str, cost_models: Mapping[str, CostModel], rulebook=None,
                  nav: Decimal = Decimal("10000"), max_hold_s: float = 48 * 3600,
@@ -177,6 +191,7 @@ class Backtest:
             record = evolve_fn(loop, fd)             # evolves on data before train_end only
             if record is not None:
                 evolution.append(record)
+                refuse_lookahead(record, fd.fold)    # GAP-P12D-28 look-ahead canary guard
                 if record.get("champions") and self._clock is None:   # GAP-P12D-24 F-I6
                     raise ValueError("params were staged but this backtest declares no session "
                                      "boundaries, so they could never promote")
