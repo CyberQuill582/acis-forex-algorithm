@@ -36,7 +36,7 @@ def _run(tmp_path, acis_config, n_bars: int):
     for instrument in ("EUR_USD", "USD_JPY"):
         cache.write(instrument, T0.year, bars)
     loop = SimpleNamespace(params=_Stager())
-    fold = Fold(0, T0 - timedelta(days=730), TRAIN_END, TRAIN_END + timedelta(days=7),
+    fold = Fold(0, T0, TRAIN_END, TRAIN_END + timedelta(days=7),      # only the cached year
                 TRAIN_END + timedelta(days=365))
     record = evolve_fold(loop, FoldData(fold, ()), cfg=_cfg(acis_config), cache=cache,
                          instruments=["EUR_USD", "USD_JPY"], logger=CapturingLogger())

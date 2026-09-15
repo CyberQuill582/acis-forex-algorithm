@@ -93,13 +93,66 @@ def test_fold_sharpes_are_the_trials_and_min_trials_raises_n() -> None:
     script = {a: [_order(a, 1, 1.10, 1.00, 1.20)], b: [_order(b, 1, 1.10, 1.00, 1.20)]}
     folds = [_daily_fold(0, a, [1.10, 1.103, 1.101, 1.106, 1.104, 1.109]),
              _daily_fold(1, b, [1.10, 1.098, 1.102, 1.099, 1.104, 1.100])]
-    bt = Backtest(account="a", cost_models=defaultdict(lambda: TEST_COSTS), max_hold_s=5 * 86400)
-    r = bt.run(loop=_FakeLoop(script), folds=folds,
+    bt = Backtest(account="a", cost_models=defaultdict(lambda: TEST_COSTS), max_hold_s=5 * 86400,
+                  session_boundaries=[NY_ROLL])
+    loop = _FakeLoop(script)
+    loop.params = _ParamsStub(bt)
+    r = bt.run(loop=loop, folds=folds,
                evolve_fn=lambda lp, fd: {"fold": fd.fold.index, "champions": 3},
                spx_closes={}, guardrail_hash="GH", expected_guardrail_hash="GH", min_trials=7)
     assert r.trial_count == 13                                    # 3 + 3 champions + 7 registry entries
     assert r.in_sample_evolution == ({"fold": 0, "champions": 3}, {"fold": 1, "champions": 3})
     assert r.in_sample.n_trades == 0 and any("not replayed" in c for c in r.fidelity_caveats)
+
+
+class _WarmLoop(_FakeLoop):
+    def __init__(self, script) -> None:
+        super().__init__(script)
+        self.observed: list[datetime] = []
+        self.decided: list[datetime] = []
+
+    def observe_only(self, st) -> None:
+        self.observed.append(st.timestamp)
+
+    def on_state(self, st) -> None:
+        self.decided.append(st.timestamp)
+        super().on_state(st)
+
+
+def test_warm_up_ticks_feed_the_engine_but_never_trade() -> None:
+    first = datetime(2026, 2, 9, 10, tzinfo=UTC)
+    warm = [_ms(first - timedelta(days=6, hours=i), 1.10) for i in (2, 1)]
+    test = [_ms(first, 1.10), _ms(first + timedelta(minutes=1), 1.11)]
+    # an order scripted at a warm-up instant must never be placed
+    loop = _WarmLoop({warm[0].timestamp: [_order(warm[0].timestamp, 1, 1.10, 1.05, 1.11)]})
+    bt = Backtest(account="a", cost_models=defaultdict(lambda: TEST_COSTS))
+    fold = FoldData(_fold(0, first), test, warmup_states=warm)
+    r = bt.run(loop=loop, folds=[fold], evolve_fn=lambda lp, fd: None, spx_closes={},
+               guardrail_hash="GH", expected_guardrail_hash="GH")
+    assert loop.observed == [s.timestamp for s in warm]
+    assert loop.decided == [s.timestamp for s in test]
+    assert r.out_of_sample.n_trades == 0
+
+
+def test_a_position_closed_on_a_tick_frees_that_tick_s_boundary_sweep() -> None:
+    d0 = datetime(2026, 1, 6, 15, tzinfo=UTC)                   # Tue 10:00 EST
+    states = [_ms(d0, 1.10), _ms(d0 + timedelta(hours=30), 1.10)]   # past Tue 17:00, max hold 1 h
+    loop = _FakeLoop({d0: [_order(d0, 1, 1.10, 1.05, 1.20)]})
+    bt = Backtest(account="a", cost_models=defaultdict(lambda: TEST_COSTS), max_hold_s=3600,
+                  session_boundaries=[NY_ROLL])
+    loop.params = _ParamsStub(bt)
+    bt.run(loop=loop, folds=[FoldData(_fold(0, d0), states)], evolve_fn=lambda lp, fd: None,
+           spx_closes={}, guardrail_hash="GH", expected_guardrail_hash="GH")
+    assert loop.params.sweeps == [(datetime(2026, 1, 6, 22, tzinfo=UTC), 0)]   # closed first, then swept
+
+
+def test_staged_params_without_session_boundaries_are_refused() -> None:
+    a = datetime(2026, 2, 2, 10, tzinfo=UTC)
+    bt = Backtest(account="a", cost_models=defaultdict(lambda: TEST_COSTS))
+    with pytest.raises(ValueError, match="never promote"):
+        bt.run(loop=_FakeLoop({}), folds=[FoldData(_fold(0, a), [_ms(a, 1.10)])],
+               evolve_fn=lambda lp, fd: {"champions": 1}, spx_closes={},
+               guardrail_hash="GH", expected_guardrail_hash="GH")
 
 
 def test_a_single_fold_cannot_claim_trials() -> None:

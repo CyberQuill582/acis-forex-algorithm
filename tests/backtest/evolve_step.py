@@ -61,12 +61,14 @@ def evolve_fold(loop, fd, *, cfg: AcisConfig, cache: LabelledBarCache,
         candidates, best, best_params = [], None, None
         for instrument in instruments:
             cost = cost_model(cfg, instrument)
-            history = cache.history(instrument, regime, train_end, opt.fitness_bars)
+            history = cache.history(instrument, regime, fd.fold.train_start, train_end, opt.fitness_bars)
             qiea = QIEA(opt, cost, logger, signal_bar_seconds=sig.signal_bar_seconds,
                         atr_period=sig.atr_period)
             champion = qiea.evolve(regime, history, seed=seed_for(fd.fold.index, regime, instrument),
                                    now=train_end)
-            entry = {"instrument": instrument, "bars": len(history.bars), "champion": champion is not None}
+            entry = {"instrument": instrument, "bars": len(history.bars), "champion": champion is not None,
+                     "first_bar": history.bars[0].ts.isoformat() if history.bars else None,
+                     "last_bar": history.bars[-1].ts.isoformat() if history.bars else None}
             if champion is not None:
                 champions += 1
                 res = holdout_expectancy(champion, history, opt, cost, sig.atr_period)

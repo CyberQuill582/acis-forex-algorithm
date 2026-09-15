@@ -20,6 +20,14 @@ class Fold:
     test_start: datetime
     test_end: datetime
 
+    def __post_init__(self) -> None:
+        """GAP-P12D-24 (F-I4): a fold is ordered or it does not exist."""
+        stamps = (self.train_start, self.train_end, self.test_start, self.test_end)
+        if any(t.tzinfo is None for t in stamps):
+            raise ValueError("fold dates must be tz-aware")
+        if not (self.train_start < self.train_end <= self.test_start < self.test_end):
+            raise ValueError(f"fold {self.index}: need train_start < train_end <= test_start < test_end")
+
 
 def generate_folds(*, period_start: datetime, period_end: datetime,
                    train_window: timedelta, test_window: timedelta,

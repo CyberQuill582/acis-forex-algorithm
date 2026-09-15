@@ -4,7 +4,9 @@ to end; drawdown session halt (ACIS-05 §14 integration, jointly with ACIS-04)."
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal
 
+from core.governor.units import usd_per_base_unit
 from core.regime.regime_types import RegimeType
 from core.signals.signal_types import StrategyType
 from tests.optimizer_fixtures import make_paramset
@@ -46,7 +48,8 @@ def test_pair_group_atomic_from_agon_to_close(tmp_path) -> None:
     gov, _ = mk_governor()
     ranging = mk_regime(RegimeType.MEAN_REVERTING)
     oa, ob = gov.allocate_group(pair, mk_portfolio(), ranging, T0)
-    assert oa.size_units == ob.size_units > 0
+    usd = [o.size_units * usd_per_base_unit(o.instrument, o.entry_price, {}) for o in (oa, ob)]
+    assert min(usd) > 0 and abs(usd[0] - usd[1]) <= Decimal("0.05")   # equal USD legs (GAP-P12D-26)
     assert gov.open_groups() == (pair[0].group_id,)
     closes = gov.check_group_exits({pair[0].group_id: "reconvergence"},
                                    T0 + timedelta(hours=2))

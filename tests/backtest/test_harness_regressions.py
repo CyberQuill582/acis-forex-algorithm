@@ -136,7 +136,7 @@ def test_period_is_derived_from_oos_data_not_fold_claim() -> None:
     f0 = [_ms(d0, 1.10)]
     f1 = [_ms(d1, 1.10)]
     week = timedelta(days=7)                                  # test dates the harness must ignore
-    bogus = Fold(0, d0 - timedelta(days=900), d0 - week, d0 - week, d0 - week)
+    bogus = Fold(0, d0 - timedelta(days=900), d0 - week, d0 - week, d0 - week + timedelta(days=1))
     folds = [FoldData(bogus, f0), FoldData(bogus, f1)]
     bt = Backtest(account="acc", cost_models=_COSTS)
     r = bt.run(loop=_FakeLoop({}), folds=folds, evolve_fn=_noop,

@@ -133,6 +133,14 @@ class PaperLoop:
                 self.book.open(oa)
                 self.book.open(ob)
 
+    def observe_only(self, state: MarketState) -> None:
+        """Warm-up (GAP-P12D-24): feed the regime and signal windows — no signals, no orders."""
+        self.nvma.observe(state)
+        self.last_context = self._regime(state)
+        bar = self.agon.observe(state)
+        if bar is not None:
+            self.governor.observe_bar(state.instrument, bar)
+
     def _regime(self, state: MarketState):
         if self._cycle_s is None:
             return self.nvma.classify(state)

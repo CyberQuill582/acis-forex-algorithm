@@ -164,13 +164,13 @@ class CapitalGovernor:
             out = (self._rewrite(leg_a, Decimal("0"), reason),
                    self._rewrite(leg_b, Decimal("0"), reason))
         else:
-            balanced = min(leg_a.size_units, leg_b.size_units)
-            # GAP-0049: hard caps on the GROUP AGGREGATE — the group's balanced
-            # notional counted ONCE per cluster (union of both legs' clusters),
-            # and the currency deltas NETTED across both legs (§7.6: one
-            # relationship bet, never two directional bets).
-            notional_a = balanced * usd_per_base_unit(a.instrument, a.entry_price, self._bars)
-            notional_b = balanced * usd_per_base_unit(b.instrument, b.entry_price, self._bars)
+            # GAP-P12D-26: balance in USD — the smaller leg's USD notional, in each leg's units
+            per_a, per_b = (usd_per_base_unit(s.instrument, s.entry_price, self._bars) for s in (a, b))
+            usd = min(leg_a.size_units * per_a, leg_b.size_units * per_b)
+            units_a, units_b = ((usd / p).quantize(Decimal("0.01")) for p in (per_a, per_b))
+            # GAP-0049: caps on the GROUP AGGREGATE — notional counted ONCE per cluster,
+            # currency deltas NETTED across both legs (§7.6: one relationship bet).
+            notional_a, notional_b = units_a * per_a, units_b * per_b
             group_notional = max(notional_a, notional_b)
             union_clusters = {c for c, members in self._clusters.items()
                               if a.instrument in members or b.instrument in members}
@@ -188,8 +188,8 @@ class CapitalGovernor:
                 out = (self._rewrite(leg_a, Decimal("0"), reason),
                        self._rewrite(leg_b, Decimal("0"), reason))
             else:
-                out = (self._rewrite(leg_a, balanced, "formula:group"),
-                       self._rewrite(leg_b, balanced, "formula:group"))
+                out = (self._rewrite(leg_a, units_a, "formula:group"),
+                       self._rewrite(leg_b, units_b, "formula:group"))
                 self._open_groups[a.group_id] = out
         for o in out:
             self._log_order(o)

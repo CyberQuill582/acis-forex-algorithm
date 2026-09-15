@@ -76,23 +76,37 @@ def label_bars(states: Iterable[MarketState], engine, *, cycle_s: float,
             engine.classify(st)
 
 
+LABELLER_VERSION = 1          # bump whenever NVMA or this labeller changes what a label is
+
+
 @dataclass(frozen=True)
 class LabelSpec:
     source: str
     bar_seconds: int
     cycle_s: float
     regime_config: str                                     # canonical JSON of cfg.system.regime
+    inputs: str = ""          # canonical JSON of every other input that can change a label
 
     @classmethod
-    def for_config(cls, cfg: AcisConfig, source: str) -> "LabelSpec":
+    def for_config(cls, cfg: AcisConfig, source: str, data_start: datetime) -> "LabelSpec":
+        # GAP-P12D-24 (F-E6/F-I2): the factory settings (session medians, stale and velocity
+        # windows) feed NVMA's vetoes; calendars and spread limits decide which ticks survive
+        inputs = {"data": cfg.system.data.model_dump(mode="json"),
+                  "calendars": {k: v.model_dump(mode="json") for k, v in cfg.instruments.calendars.items()},
+                  "instruments": {s: [sp.calendar, sp.max_plausible_spread]
+                                  for s, sp in cfg.instruments.instruments.items()},
+                  "data_start": data_start.isoformat(), "macro_source": None,
+                  "labeller_version": LABELLER_VERSION}
         return cls(source=source, bar_seconds=cfg.system.signals.signal_bar_seconds,
                    cycle_s=float(cfg.system.regime.cycle_seconds),
-                   regime_config=json.dumps(cfg.system.regime.model_dump(mode="json"), sort_keys=True))
+                   regime_config=json.dumps(cfg.system.regime.model_dump(mode="json"), sort_keys=True),
+                   inputs=json.dumps(inputs, sort_keys=True))
 
     def key(self) -> str:
         blob = json.dumps({"source": self.source, "bar_seconds": self.bar_seconds,
                            "cycle_s": self.cycle_s, "regime": self.regime_config,
-                           "warmup_s": LABEL_WARMUP.total_seconds()}, sort_keys=True)
+                           "inputs": self.inputs, "warmup_s": LABEL_WARMUP.total_seconds()},
+                          sort_keys=True)
         return hashlib.sha256(blob.encode()).hexdigest()
 
 
@@ -128,6 +142,7 @@ class LabelledBarCache:
                 w.writerow((b.ts.isoformat(), repr(b.open), repr(b.high), repr(b.low),
                             repr(b.close), repr(b.spread), b.regime.value))
                 n += 1
+        self._meta(instrument, year).unlink(missing_ok=True)   # un-commit first (GAP-P12D-24 F-I3)
         os.replace(tmp, self._csv(instrument, year))
         meta_tmp = folder / f".{year}.meta.json.tmp"
         meta_tmp.write_text(json.dumps({"key": self._spec.key(), "bars": n,
@@ -147,13 +162,17 @@ class LabelledBarCache:
                                   close=float(row["close"]), spread=float(row["spread"]),
                                   regime=RegimeType(row["regime"]))
 
-    def history(self, instrument: str, regime: RegimeType, end: datetime,
+    def history(self, instrument: str, regime: RegimeType, start: datetime, end: datetime,
                 n: int) -> RegimeLabelledHistory:
-        """The last `n` bars of `regime` that open strictly before `end` (the fold's
-        train end — nothing from the test window can leak into evolution)."""
+        """The last `n` bars of `regime` that open at or after `start` and CLOSE by `end` (the
+        fold's train window — no bar straddling the train end, nothing from the test window).
+        Every year of the window must be cached, or it raises (GAP-P12D-24 F-I5)."""
+        bar = timedelta(seconds=self._spec.bar_seconds)
         picked: list[LabelledBar] = []
-        for year in sorted((y for y in self.years(instrument) if y <= end.year), reverse=True):
-            picked = [b for b in self.read(instrument, year) if b.regime is regime and b.ts < end] + picked
+        for year in range((end - timedelta(microseconds=1)).year, start.year - 1, -1):
+            chunk = [b for b in self.read(instrument, year)
+                     if b.regime is regime and start <= b.ts and b.ts + bar <= end]
+            picked = chunk + picked
             if len(picked) >= n:
                 break
         return RegimeLabelledHistory(instrument=instrument, bars=tuple(picked[-n:]),

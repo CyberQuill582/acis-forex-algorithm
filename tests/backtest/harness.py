@@ -15,7 +15,10 @@ Invariants:
     engine back in time, and it is transparency only. The in-sample record is each fold's
     evolution summary (owner ruling 2026-09-15, GAP-P12D-18).
   * The first test tick must come at least the max hold after `fold.train_end`, checked on
-    the real data (embargo, GAP-SP12E-03).
+    the real data (embargo, GAP-SP12E-03). Warm-up ticks between the two feed the engine's
+    windows and manage open positions, but decide nothing (GAP-P12D-24).
+  * On every tick, open positions are managed BEFORE the boundary sweep, so a position
+    closed on that tick does not block a promotion.
   * Staged params promote only at simulated session boundaries, through
     `ParamLibrary.on_boundary`, and only when THIS book is flat: the harness is the
     loop's `PositionGate` (ACIS-03 §7 C2; wire it with `build_paper_loop(position_gate=…)`).
@@ -59,6 +62,9 @@ NOT_REPLAYED = MetricBlock(
 class FoldData:
     fold: Fold
     test_states: Iterable[MarketState]      # time-ordered; may be a one-shot stream
+    # observe-only ticks from train_end up to test_start: the engine's windows stay warm
+    # through the embargo, but nothing is decided on them (GAP-P12D-24 F-E3/F-E4)
+    warmup_states: Iterable[MarketState] = ()
 
 
 EvolveFn = Callable[[object, FoldData], "Mapping | None"]
@@ -91,32 +97,40 @@ class Backtest:
 
     def _replay(self, loop, fd: FoldData, book: BookState) -> None:
         self._active = book
+        for st in fd.warmup_states:                  # observe-only: no signals, no orders
+            self._tick(loop, st, book, trade=False)
         first = True
         for st in fd.test_states:
             if first:                                # embargo, on the real data
                 require_embargo(fd.fold.index, fd.fold.train_end, st.timestamp, self._max_hold_s)
                 first = False
-            if self._clock is not None:
-                for boundary in self._clock.crossed(st.timestamp):
-                    loop.params.on_boundary(boundary)    # C2: promotes only when flat
-            book.last_price[st.instrument] = st.mid
-            pos = book.open_by_inst.get(st.instrument)
-            if pos is not None:
-                closed = self.positions.maybe_close(pos, st, book)
-                if closed is not None:
-                    book.book_close(closed, st.instrument)
+            self._tick(loop, st, book, trade=True)
+
+    def _tick(self, loop, st: MarketState, book: BookState, *, trade: bool) -> None:
+        book.last_price[st.instrument] = st.mid
+        pos = book.open_by_inst.get(st.instrument)
+        if pos is not None:                          # existing positions are always managed
+            closed = self.positions.maybe_close(pos, st, book)
+            if closed is not None:
+                book.book_close(closed, st.instrument)
+        if self._clock is not None:                  # after the close, so a carried position frees the gate (F-I7)
+            for boundary in self._clock.crossed(st.timestamp):
+                loop.params.on_boundary(boundary)    # C2: promotes only when flat
+        if not trade:
+            loop.observe_only(st)
+        else:
             loop.on_state(st)                        # NVMA → AGON → Governor
             new_orders = loop.book.orders[self._seen_orders:]
             self._seen_orders = len(loop.book.orders)
             for order in new_orders:
                 self.positions.apply_order(order, st, book)
-            marked = self._nav0 + book.realised + self.positions.unrealised(book)
-            self.positions.mark_drawdown(book, marked)
-            book.marker.observe(st.timestamp, marked)
-            day = st.timestamp.date()
-            if day != book.last_day:
-                book.equity.append((st.timestamp, marked))
-                book.last_day = day
+        marked = self._nav0 + book.realised + self.positions.unrealised(book)
+        self.positions.mark_drawdown(book, marked)
+        book.marker.observe(st.timestamp, marked)
+        day = st.timestamp.date()
+        if day != book.last_day:
+            book.equity.append((st.timestamp, marked))
+            book.last_day = day
 
     def _rule_violations(self, trades: Sequence[ClosedTrade]) -> tuple[str, ...]:
         """§9.5/C-BT-7: min-hold and weekend-holding, evaluable from closed trades. (The
@@ -144,6 +158,9 @@ class Backtest:
             record = evolve_fn(loop, fd)             # evolves on data before train_end only
             if record is not None:
                 evolution.append(record)
+                if record.get("champions") and self._clock is None:   # GAP-P12D-24 F-I6
+                    raise ValueError("params were staged but this backtest declares no session "
+                                     "boundaries, so they could never promote")
             start = len(oos.equity)
             self._replay(loop, fd, oos)
             m = moments(_returns_from_equity(oos.equity[max(start - 1, 0):]))

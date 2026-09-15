@@ -83,11 +83,37 @@ def test_history_takes_the_last_n_regime_bars_before_the_train_end(tmp_path) -> 
     cache.write("EUR_USD", 2013, _bars(datetime(2013, 12, 31, 23, 50, tzinfo=UTC), [T, R, T, R]))
     cache.write("EUR_USD", 2014, _bars(datetime(2014, 1, 6, tzinfo=UTC), [T, T, R, T]))
     end = datetime(2014, 1, 6, 0, 3, tzinfo=UTC)                  # excludes the last 2014 bar
-    h = cache.history("EUR_USD", T, end, n=3)
+    h = cache.history("EUR_USD", T, datetime(2013, 1, 1, tzinfo=UTC), end, n=3)
     assert h.bar_seconds == 60 and all(b.regime is T for b in h.bars)
     assert [b.ts for b in h.bars] == [datetime(2013, 12, 31, 23, 52, tzinfo=UTC),
                                       datetime(2014, 1, 6, 0, 0, tzinfo=UTC),
                                       datetime(2014, 1, 6, 0, 1, tzinfo=UTC)]
+
+
+def test_history_drops_straddling_bars_and_bars_before_the_train_start(tmp_path) -> None:
+    cache = LabelledBarCache(tmp_path, _spec())
+    cache.write("EUR_USD", 2013, _bars(datetime(2013, 12, 31, 23, 50, tzinfo=UTC), [T, R, T, R]))
+    cache.write("EUR_USD", 2014, _bars(datetime(2014, 1, 6, tzinfo=UTC), [T, T, R, T]))
+    end = datetime(2014, 1, 6, 0, 1, 30, tzinfo=UTC)          # the 00:01 bar closes at 00:02, after end
+    h = cache.history("EUR_USD", T, datetime(2014, 1, 1, tzinfo=UTC), end, n=10)
+    assert [b.ts for b in h.bars] == [datetime(2014, 1, 6, tzinfo=UTC)]
+
+
+def test_history_refuses_a_window_with_an_uncached_year(tmp_path) -> None:
+    cache = LabelledBarCache(tmp_path, _spec())
+    cache.write("EUR_USD", 2014, _bars(datetime(2014, 1, 6, tzinfo=UTC), [T, T]))
+    with pytest.raises(StaleLabelsError):                    # 2013 is inside the window, not cached
+        cache.history("EUR_USD", T, datetime(2013, 6, 1, tzinfo=UTC),
+                      datetime(2014, 2, 1, tzinfo=UTC), n=500)
+
+
+def test_the_key_changes_with_every_label_input(acis_config) -> None:
+    start = datetime(2012, 1, 1, tzinfo=UTC)
+    base = LabelSpec.for_config(acis_config, "dukascopy", start)
+    data = acis_config.system.data.model_copy(update={"session_median_window": 99})
+    changed = acis_config.model_copy(update={"system": acis_config.system.model_copy(update={"data": data})})
+    assert LabelSpec.for_config(changed, "dukascopy", start).key() != base.key()
+    assert LabelSpec.for_config(acis_config, "dukascopy", datetime(2013, 1, 1, tzinfo=UTC)).key() != base.key()
 
 
 class _MinuteSource(TickSource):
@@ -110,7 +136,8 @@ class _MinuteSource(TickSource):
 def test_a_year_job_warms_up_before_the_year_and_keeps_only_its_bars(tmp_path, acis_config) -> None:
     log = CapturingLogger()
     loader = BacktestDataLoader({"test": _MinuteSource()}, log)
-    cache = LabelledBarCache(tmp_path, LabelSpec.for_config(acis_config, "test"))
+    cache = LabelledBarCache(tmp_path, LabelSpec.for_config(acis_config, "test",
+                                                            datetime(2013, 12, 30, 12, tzinfo=UTC)))
     n = label_instrument_year(cfg=acis_config, loader=loader, source="test", instrument="EUR_USD",
                               year=2014, cache=cache, logger=log,
                               data_start=datetime(2013, 12, 30, 12, tzinfo=UTC))

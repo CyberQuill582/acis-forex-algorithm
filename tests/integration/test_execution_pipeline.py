@@ -9,6 +9,7 @@ from random import Random
 
 from core.execution.fragmenter import plan  # noqa: F401  (import contract smoke)
 from core.execution.orchestrator import ExecutionOrchestrator
+from core.governor.units import usd_per_base_unit
 from core.execution.venue import (
     FillReportStore,
     FillStatus,
@@ -87,14 +88,14 @@ async def test_pair_group_executes_both_legs(tmp_path) -> None:
     gov, _ = mk_governor()
     oa, ob = gov.allocate_group(pair, mk_portfolio(),
                                 mk_regime(RegimeType.MEAN_REVERTING), T0)
-    assert oa.size_units == ob.size_units > 0
+    usd = [o.size_units * usd_per_base_unit(o.instrument, o.entry_price, {}) for o in (oa, ob)]
+    assert min(usd) > 0 and abs(usd[0] - usd[1]) <= Decimal("0.05")   # equal USD legs (GAP-P12D-26)
 
     orch, face, _ = mk_exec(tmp_path)
     ra = await orch.submit(oa, valid_for_seconds=pair[0].valid_for_seconds)
     rb = await orch.submit(ob, valid_for_seconds=pair[1].valid_for_seconds)
-    assert (sum((r.filled_units for r in ra), Decimal("0"))
-            == sum((r.filled_units for r in rb), Decimal("0"))
-            == oa.size_units)                    # the relationship trade is intact
+    assert sum((r.filled_units for r in ra), Decimal("0")) == oa.size_units   # each leg fills its own
+    assert sum((r.filled_units for r in rb), Decimal("0")) == ob.size_units   # size: the pair is intact
     assert {p.instrument for p in await face.open_positions()} == {
         "EUR_USD", "USD_JPY"}
 

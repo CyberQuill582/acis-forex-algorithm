@@ -40,7 +40,7 @@ def _job(instrument: str, year: int) -> tuple[str, int, int, float]:
                                              layer="labels", session_id=f"labels-{instrument}-{year}"),
                             keep_per_type=20)
     loader = BacktestDataLoader({SOURCE: DukascopyTickSource(ROOT / "data" / "dukascopy")}, log)
-    cache = LabelledBarCache(OUT, LabelSpec.for_config(cfg, SOURCE))
+    cache = LabelledBarCache(OUT, LabelSpec.for_config(cfg, SOURCE, DATA_START))
     n = label_instrument_year(cfg=cfg, loader=loader, source=SOURCE, instrument=instrument,
                               year=year, cache=cache, logger=log, data_start=DATA_START)
     log.close()
@@ -57,7 +57,7 @@ def main() -> int:
     if any(y >= HOLDOUT_YEAR for y in a.years):
         print(f"refused: {HOLDOUT_YEAR}+ is the locked holdout — no fold trains on it")
         return 2
-    cache = LabelledBarCache(OUT, LabelSpec.for_config(cfg, SOURCE))
+    cache = LabelledBarCache(OUT, LabelSpec.for_config(cfg, SOURCE, DATA_START))
     jobs = [(i, y) for i in a.instruments for y in a.years if not cache.has(i, y)]
     print(f"{len(jobs)} instrument-years to label ({a.workers} workers)", flush=True)
     with ProcessPoolExecutor(max_workers=a.workers) as ex:

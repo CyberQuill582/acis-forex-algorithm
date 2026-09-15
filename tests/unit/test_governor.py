@@ -329,7 +329,8 @@ def test_group_sizes_both_or_neither_balanced() -> None:
     gov, _ = mk_governor()
     a, b = _pair_signals()
     oa, ob = gov.allocate_group((a, b), mk_portfolio(), mk_regime(), T0)
-    assert oa.size_units == ob.size_units > 0     # min-size balanced
+    assert oa.size_units > 0                      # balanced in USD (GAP-P12D-26):
+    assert abs(oa.size_units * Decimal("1.1") - ob.size_units) <= Decimal("0.02")   # EUR leg × 1.1 = USD leg
     assert gov.open_groups() == ("g1",)
 
 
@@ -425,7 +426,7 @@ def test_gap0049_healthy_group_still_sizes() -> None:
                   strategy_type=StrategyType.PAIR_DIVERGENCE, group_id="g1",
                   direction=-1, entry_price=155.0, stop_loss=155.8, take_profit=153.9)
     oa, ob = gov.allocate_group((a, b), mk_portfolio(), mk_regime(), T0)
-    assert oa.size_units == ob.size_units > 0   # USD nets out across the legs
+    assert oa.size_units > 0 and abs(oa.size_units * Decimal("1.1") - ob.size_units) <= Decimal("0.02")
 
 
 def test_gap0050_taper_only_call_never_clears_alpha_decay() -> None:

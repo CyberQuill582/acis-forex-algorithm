@@ -62,8 +62,11 @@ class HoldoutGuard:
                     f"{HOLDOUT_END.date()}); it is graded once, by the final run only")
 
     def begin_final(self, folds: Sequence[Fold], *, config_hash: str) -> None:
-        if not folds or any(f.test_start < HOLDOUT_START or f.test_end > HOLDOUT_END for f in folds):
-            raise ValueError("the final run must test only inside the holdout window")
+        # GAP-P12D-24 (F-I4): validate BEFORE the once-only marker, against the exact ratified plan
+        expected = plan_folds(HOLDOUT_START.year, HOLDOUT_END.year - 1)
+        if list(folds) != expected:
+            raise ValueError("the final run must be exactly the ratified holdout plan "
+                             f"({HOLDOUT_START.year}–{HOLDOUT_END.year - 1}, embargoed calendar folds)")
         self._marker.parent.mkdir(parents=True, exist_ok=True)
         try:
             with self._marker.open("x", encoding="utf-8") as f:

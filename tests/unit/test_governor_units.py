@@ -59,9 +59,10 @@ def test_usd_base_notional_meets_the_currency_cap_in_dollars() -> None:
     assert gov.allocate(jpy, light_usd, mk_regime(), T0).reason == "formula"
 
 
-def test_pair_legs_balance_without_the_yen_leg_shrinking_both() -> None:
-    """EUR/USD 486/1.1 = 441.82 EUR against USD/JPY 486 USD: both legs take 441.82. Before
-    the fix the yen leg was 3.14 units, which shrank the whole pair ~140×."""
+def test_pair_legs_balance_in_usd_not_in_unit_counts() -> None:
+    """EUR/USD 441.82 EUR ($486.00) against USD/JPY 486 USD ($486.00): both legs carry the
+    same USD notional, each in its own base units (GAP-P12D-26). Balancing unit counts
+    left a +$44 USD directional residual; before GAP-P12D-22 the yen leg shrank the pair ~140×."""
     gov, _ = mk_governor()
     oa, ob = gov.allocate_group(_pair_signals(), mk_portfolio(), mk_regime(), T0)
-    assert oa.size_units == ob.size_units == BASELINE_UNITS
+    assert oa.size_units == BASELINE_UNITS and ob.size_units == _q(RAW_USD)

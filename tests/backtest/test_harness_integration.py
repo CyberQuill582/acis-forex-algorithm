@@ -38,7 +38,8 @@ def _two_folds(states):
     hold (the GAP-SP12E-03 embargo). Training windows are not replayed (GAP-P12D-18)."""
     def fold(i, test):
         first = test[0].timestamp
-        return FoldData(Fold(i, T0, first - timedelta(minutes=6), first, test[-1].timestamp), test)
+        return FoldData(Fold(i, first - timedelta(days=1), first - timedelta(minutes=6), first,
+                             test[-1].timestamp), test)
     return [fold(0, states[:120]), fold(1, states[130:])]
 
 

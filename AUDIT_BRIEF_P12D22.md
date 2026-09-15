@@ -1,6 +1,6 @@
 # Pinned dual-audit brief — Governor base-unit sizing + evolve-driver steps 1–4 (A4)
 
-Pinned 2026-09-15. Launch both lenses in fresh context, in parallel, on Fable 5.1 (recommended) or Opus 4.8 (the floor) — never Sonnet or Haiku. Auditors change no repo file except their report, cite existing IDs only (label findings F-I1… / F-E1…), and write to `scratchpad/audit_p12d22_internal.md` and `scratchpad/audit_p12d22_external.md`. The author triages every finding into `KNOWN_GAPS.md`, then `git mv` this brief and the reports to `archive/`.
+Pinned 2026-09-15. Launch both lenses in fresh context, in parallel, on Opus 5 (owner directive 2026-09-15; Fable only when the owner asks; floor Opus 4.8) — never Sonnet or Haiku. (This commit's first audit pair was already running on Fable when the directive landed and was left to finish.) Auditors change no repo file except their report, cite existing IDs only (label findings F-I1… / F-E1…), and write to `scratchpad/audit_p12d22_internal.md` and `scratchpad/audit_p12d22_external.md`. The author triages every finding into `KNOWN_GAPS.md`, then `git mv` this brief and the reports to `archive/`.
 
 **Scope:** the 2026-09-15 commit "Governor base-unit sizing (GAP-P12D-22) + evolve-driver steps 1–4". Read GAP-P12D-22, GAP-P12D-18, GAP-P12D-19, GAP-P12D-20 and GAP-P12D-21 in KNOWN_GAPS.md first.
 - Core: core/governor/units.py, core/governor/calendar_gates.py, core/governor/capital_governor.py (sizing, exposure notional, pair-leg notional; calendar gates moved), specs/ACIS-05 v1.3.
