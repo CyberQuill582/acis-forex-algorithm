@@ -36,17 +36,19 @@ def test_generate_folds_leaves_the_embargo_gap() -> None:
 
 
 def test_harness_refuses_a_fold_shorter_than_the_max_hold() -> None:
-    d0 = datetime(2025, 1, 7, 10, tzinfo=UTC)
-    train = [_ms(d0, 1.10)]
-    test = [_ms(d0 + timedelta(minutes=30), 1.10)]          # 30 min < the 1 h max hold
-    fold = [FoldData(Fold(0, d0, d0, d0, d0), train, test)]
-    bt = Backtest(account="acc", cost_model=TEST_COSTS, max_hold_s=3600)
-    with pytest.raises(ValueError, match="embargo"):
-        bt.run(loop=_FakeLoop({}), folds=fold, evolve_fn=_noop, spx_closes={},
-               guardrail_hash="GH", expected_guardrail_hash="GH")
-    ok = [FoldData(Fold(0, d0, d0, d0, d0), train, [_ms(d0 + timedelta(hours=2), 1.10)])]
-    bt.run(loop=_FakeLoop({}), folds=ok, evolve_fn=_noop, spx_closes={},
-           guardrail_hash="GH", expected_guardrail_hash="GH")
+    train_end = datetime(2025, 1, 7, 10, tzinfo=UTC)
+
+    def fold(first_test: datetime) -> list[FoldData]:
+        return [FoldData(Fold(0, train_end - timedelta(days=730), train_end, first_test,
+                              first_test + timedelta(days=1)), [_ms(first_test, 1.10)])]
+
+    bt = Backtest(account="acc", cost_models={"EUR_USD": TEST_COSTS}, max_hold_s=3600)
+    with pytest.raises(ValueError, match="embargo"):           # 30 min < the 1 h max hold
+        bt.run(loop=_FakeLoop({}), folds=fold(train_end + timedelta(minutes=30)), evolve_fn=_noop,
+               spx_closes={}, guardrail_hash="GH", expected_guardrail_hash="GH")
+    Backtest(account="acc", cost_models={"EUR_USD": TEST_COSTS}, max_hold_s=3600).run(
+        loop=_FakeLoop({}), folds=fold(train_end + timedelta(hours=2)), evolve_fn=_noop,
+        spx_closes={}, guardrail_hash="GH", expected_guardrail_hash="GH")
 
 
 # --------------------------- date-joined SPX --------------------------- #

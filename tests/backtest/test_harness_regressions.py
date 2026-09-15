@@ -22,6 +22,7 @@ fix — not the real engine's stochastics — is what is under test):
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from types import MappingProxyType
@@ -32,13 +33,22 @@ from config.schemas import AccountRulebook, NewsRules
 from core.data.normaliser import MarketState
 from core.governor.portfolio_types import SizedOrder
 from core.data.fx_clock import business_rollovers
-from tests.backtest.harness import Backtest, FoldData, _BookState, _OpenPos
+from tests.backtest.book import BookState, OpenPos
+from tests.backtest.harness import Backtest, FoldData
 from tests.backtest.money import ConversionUnavailable, quote_to_account
 from tests.backtest.walk_forward import Fold
 from tests.optimizer_fixtures import TEST_COSTS
 
 _UTC = timezone.utc
 _INST = "EUR_USD"
+_COSTS = defaultdict(lambda: TEST_COSTS)          # every instrument, the same test friction
+
+
+def _fold(index: int, first_test: datetime) -> Fold:
+    """Declared windows for a scripted test: training ended a week before the first
+    test tick, clearing the embargo (GAP-SP12E-03)."""
+    return Fold(index, first_test - timedelta(days=737), first_test - timedelta(days=7),
+                first_test, first_test + timedelta(days=365))
 
 
 def _ms(ts: datetime, mid: float) -> MarketState:
@@ -107,9 +117,9 @@ def test_oos_book_is_continuous_across_folds() -> None:
     script = {d0: [_order(d0, 1, 1.10, 1.05, 1.11)],
               d1: [_order(d1, 1, 1.10, 1.05, 1.11)]}
     loop = _FakeLoop(script)
-    folds = [FoldData(Fold(0, d0, d0, d0, d0), (), f0_states),
-             FoldData(Fold(1, d1, d1, d1, d1), (), f1_states)]
-    bt = Backtest(account="acc", cost_model=TEST_COSTS)
+    folds = [FoldData(_fold(0, d0), f0_states),
+             FoldData(_fold(1, d1), f1_states)]
+    bt = Backtest(account="acc", cost_models=_COSTS)
     r = bt.run(loop=loop, folds=folds, evolve_fn=_noop, spx_closes={},
                guardrail_hash="GH", expected_guardrail_hash="GH")
     assert r.out_of_sample.n_trades == 2                     # BOTH folds' trades kept
@@ -125,9 +135,10 @@ def test_period_is_derived_from_oos_data_not_fold_claim() -> None:
     d1 = datetime(2026, 3, 9, 10, tzinfo=_UTC)
     f0 = [_ms(d0, 1.10)]
     f1 = [_ms(d1, 1.10)]
-    bogus = Fold(0, d0, d0, d0, d0)                          # dates the harness must ignore
-    folds = [FoldData(bogus, (), f0), FoldData(bogus, (), f1)]
-    bt = Backtest(account="acc", cost_model=TEST_COSTS)
+    week = timedelta(days=7)                                  # test dates the harness must ignore
+    bogus = Fold(0, d0 - timedelta(days=900), d0 - week, d0 - week, d0 - week)
+    folds = [FoldData(bogus, f0), FoldData(bogus, f1)]
+    bt = Backtest(account="acc", cost_models=_COSTS)
     r = bt.run(loop=_FakeLoop({}), folds=folds, evolve_fn=_noop,
                spx_closes={}, guardrail_hash="GH", expected_guardrail_hash="GH")
     assert r.period[0] == d0 and r.period[1] == d1           # true data span, not the claim
@@ -144,8 +155,8 @@ def test_min_hold_violation_populates_rule_violations_and_fails() -> None:
     states = [_ms(d0, 1.10), _ms(d0 + timedelta(minutes=1), 1.11)]
     script = {d0: [_order(d0, 1, 1.10, 1.05, 1.11)]}
     strict = _rulebook(min_hold_seconds=3600)                # 1h min hold
-    bt = Backtest(account="strict", cost_model=TEST_COSTS, rulebook=strict)
-    r = bt.run(loop=_FakeLoop(script), folds=[FoldData(Fold(0, d0, d0, d0, d0), (), states)],
+    bt = Backtest(account="strict", cost_models=_COSTS, rulebook=strict)
+    r = bt.run(loop=_FakeLoop(script), folds=[FoldData(_fold(0, d0), states)],
                evolve_fn=_noop, spx_closes={},
                guardrail_hash="GH", expected_guardrail_hash="GH")
     assert "min_hold" in r.rule_violations
@@ -158,11 +169,11 @@ def test_rule_enforcement_is_per_account() -> None:
     d0 = datetime(2026, 1, 5, 10, tzinfo=_UTC)
     states = [_ms(d0, 1.10), _ms(d0 + timedelta(minutes=1), 1.11)]
     script = {d0: [_order(d0, 1, 1.10, 1.05, 1.11)]}
-    fold = [FoldData(Fold(0, d0, d0, d0, d0), (), states)]
+    fold = [FoldData(_fold(0, d0), states)]
 
-    strict = Backtest(account="strict", cost_model=TEST_COSTS,
+    strict = Backtest(account="strict", cost_models=_COSTS,
                       rulebook=_rulebook(min_hold_seconds=3600))
-    lax = Backtest(account="lax", cost_model=TEST_COSTS,
+    lax = Backtest(account="lax", cost_models=_COSTS,
                    rulebook=_rulebook(min_hold_seconds=0))
     common = dict(evolve_fn=_noop, spx_closes={},
                   guardrail_hash="GH", expected_guardrail_hash="GH")
@@ -183,15 +194,15 @@ def test_overnight_carry_reduces_pnl_of_a_held_position() -> None:
     exit_ts = datetime(2026, 1, 8, 10, tzinfo=_UTC)          # Thu — spans Tue + Wed nights
     states = [_ms(d0, 1.10), _ms(exit_ts, 1.11)]             # open, then close on target
     script = {d0: [_order(d0, 1, 1.10, 1.05, 1.11)]}
-    fold = [FoldData(Fold(0, d0, d0, d0, d0), (), states)]
+    fold = [FoldData(_fold(0, d0), states)]
     common = dict(folds=fold, evolve_fn=_noop, spx_closes={},
                   guardrail_hash="GH", expected_guardrail_hash="GH")
 
-    no_carry = Backtest(account="a", cost_model=TEST_COSTS)
+    no_carry = Backtest(account="a", cost_models=_COSTS)
     # gross +10.0 (0.01 × 1000), friction 0.04. A deliberately extreme −100%/yr rate
     # (a mechanics test, not a realistic rate) on a 1,100 position value over
     # Tue(1×)+Wed(3×) = 4 days → −1100 × 4/365 ≈ −12.05, flipping it to a net loss.
-    with_carry = Backtest(account="a", cost_model=TEST_COSTS,
+    with_carry = Backtest(account="a", cost_models=_COSTS,
                           financing=lambda inst, night, d: Decimal("-100"))
     r0 = no_carry.run(loop=_FakeLoop(dict(script)), **common)
     r1 = with_carry.run(loop=_FakeLoop(dict(script)), **common)
@@ -202,22 +213,23 @@ def test_overnight_carry_reduces_pnl_of_a_held_position() -> None:
 
 # -- quote→USD conversion + direction/size-aware financing (P12D-05/06) -------- #
 
-def _pos(inst: str, direction: int, entry: float, units: str, ts: datetime) -> _OpenPos:
-    return _OpenPos(instrument=inst, direction=direction, entry_price=entry,
+def _pos(inst: str, direction: int, entry: float, units: str, ts: datetime) -> OpenPos:
+    return OpenPos(instrument=inst, direction=direction, entry_price=entry,
                     size_units=Decimal(units), entry_ts=ts, stop_loss=0.0,
                     take_profit=None, strategy_type="TREND")
 
 
 _NOFRICTION = type(TEST_COSTS)(commission_per_side=0.0, slippage_per_side=0.0)
+_FREE = defaultdict(lambda: _NOFRICTION)
 
 
 def test_usd_jpy_pnl_is_booked_in_dollars_not_yen() -> None:
     """Long 10,000 USD_JPY 150.00 → 151.00 is a ¥10,000 gain = $66.23 at the close
     rate. Before the fix the harness booked 10,000 'dollars' — 151× too large."""
     t = datetime(2026, 1, 6, 10, tzinfo=_UTC)
-    bt = Backtest(account="a", cost_model=_NOFRICTION)
-    closed = bt._close_at(_pos("USD_JPY", 1, 150.0, "10000", t), 151.0, t, "target",
-                          _BookState())
+    bt = Backtest(account="a", cost_models=_FREE)
+    closed = bt.positions.close_at(_pos("USD_JPY", 1, 150.0, "10000", t), 151.0, t, "target",
+                          BookState())
     assert closed.pnl == pytest.approx(Decimal("10000") / Decimal("151"), rel=1e-12)
     assert closed.pnl < 100
 
@@ -226,23 +238,23 @@ def test_cross_pair_converts_through_its_quote_leg_or_refuses() -> None:
     """EUR_GBP PnL is in GBP; it converts at the last-seen GBP_USD. With no GBP leg
     in the run the harness must raise, never book pounds as dollars."""
     t = datetime(2026, 1, 6, 10, tzinfo=_UTC)
-    bt = Backtest(account="a", cost_model=_NOFRICTION)
-    book = _BookState(last_price={"GBP_USD": 1.25})
-    closed = bt._close_at(_pos("EUR_GBP", -1, 0.8600, "100000", t), 0.8500, t, "target", book)
+    bt = Backtest(account="a", cost_models=_FREE)
+    book = BookState(last_price={"GBP_USD": 1.25})
+    closed = bt.positions.close_at(_pos("EUR_GBP", -1, 0.8600, "100000", t), 0.8500, t, "target", book)
     assert closed.pnl == pytest.approx(Decimal("1000") * Decimal("1.25"))   # £1,000 → $1,250
     assert quote_to_account("EUR_GBP", 0.85, {"USD_GBP": 0.8}) == Decimal("1.25")
     with pytest.raises(ConversionUnavailable):
-        bt._close_at(_pos("EUR_GBP", 1, 0.86, "1000", t), 0.85, t, "target", _BookState())
+        bt.positions.close_at(_pos("EUR_GBP", 1, 0.86, "1000", t), 0.85, t, "target", BookState())
 
 
 def test_usd_jpy_open_position_marked_in_dollars() -> None:
     """A ¥-denominated mark must not blow up the equity curve: a 1.0 JPY move on
     10,000 units is ~$66, i.e. a ~0.66% move on a $10,000 book — not 100%."""
     t = datetime(2026, 1, 6, 10, tzinfo=_UTC)
-    bt = Backtest(account="a", cost_model=_NOFRICTION)
-    book = _BookState(open_by_inst={"USD_JPY": _pos("USD_JPY", 1, 150.0, "10000", t)},
+    bt = Backtest(account="a", cost_models=_FREE)
+    book = BookState(open_by_inst={"USD_JPY": _pos("USD_JPY", 1, 150.0, "10000", t)},
                       last_price={"USD_JPY": 149.0})
-    assert bt._unrealised(book) == pytest.approx(-Decimal("10000") / Decimal("149"))
+    assert bt.positions.unrealised(book) == pytest.approx(-Decimal("10000") / Decimal("149"))
 
 
 def test_financing_is_direction_and_size_aware() -> None:
@@ -252,12 +264,12 @@ def test_financing_is_direction_and_size_aware() -> None:
     entry = datetime(2026, 1, 6, 12, tzinfo=_UTC)             # Tue
     exit_ts = datetime(2026, 1, 7, 12, tzinfo=_UTC)           # Wed noon — 1 rollover (Tue)
     rates = {1: Decimal("2.0"), -1: Decimal("-3.0")}          # differential ± fee, per side
-    bt = Backtest(account="a", cost_model=_NOFRICTION,
+    bt = Backtest(account="a", cost_models=_FREE,
                   financing=lambda inst, night, d: rates[d])
     one_day = Decimal("100000") * Decimal("1.1") / Decimal("100") / Decimal("365")
-    long_ = bt._carry_quote(_pos("EUR_USD", 1, 1.1, "100000", entry), exit_ts)
-    short = bt._carry_quote(_pos("EUR_USD", -1, 1.1, "100000", entry), exit_ts)
-    double = bt._carry_quote(_pos("EUR_USD", 1, 1.1, "200000", entry), exit_ts)
+    long_ = bt.positions.carry_quote(_pos("EUR_USD", 1, 1.1, "100000", entry), exit_ts)
+    short = bt.positions.carry_quote(_pos("EUR_USD", -1, 1.1, "100000", entry), exit_ts)
+    double = bt.positions.carry_quote(_pos("EUR_USD", 1, 1.1, "200000", entry), exit_ts)
     assert long_ == pytest.approx(one_day * 2)                # +2%/yr for one day
     assert short == pytest.approx(-one_day * 3)               # −3%/yr for one day
     assert double == pytest.approx(long_ * 2)
@@ -270,9 +282,9 @@ def test_weekend_is_not_billed_twice() -> None:
     fri = datetime(2026, 1, 9, 12, tzinfo=_UTC)
     mon_late = datetime(2026, 1, 12, 23, tzinfo=_UTC)
     assert business_rollovers(fri, mon_late) == [date(2026, 1, 9), date(2026, 1, 12)]
-    bt = Backtest(account="a", cost_model=_NOFRICTION,
+    bt = Backtest(account="a", cost_models=_FREE,
                   financing=lambda inst, night, d: Decimal("-3.65"))  # −0.01% of value/day
-    carry = bt._carry_quote(_pos("EUR_USD", 1, 1.0, "100000", fri), mon_late)
+    carry = bt.positions.carry_quote(_pos("EUR_USD", 1, 1.0, "100000", fri), mon_late)
     assert carry == pytest.approx(Decimal("-20"))             # 2 days × −$10, not 4
 
 
@@ -284,9 +296,9 @@ def test_summer_rollover_is_21_utc_not_22() -> None:
     entry = datetime(2025, 7, 15, 21, 30, tzinfo=_UTC)
     exit_ts = entry + timedelta(hours=24)
     assert business_rollovers(entry, exit_ts) == [date(2025, 7, 16)]
-    bt = Backtest(account="a", cost_model=_NOFRICTION,
+    bt = Backtest(account="a", cost_models=_FREE,
                   financing=lambda inst, night, d: Decimal("-3.65"))  # −0.01% of value/day
-    carry = bt._carry_quote(_pos("EUR_USD", 1, 1.0, "100000", entry), exit_ts)
+    carry = bt.positions.carry_quote(_pos("EUR_USD", 1, 1.0, "100000", entry), exit_ts)
     assert carry == pytest.approx(Decimal("-30"))             # Wed ×3, not Tue ×1
 
 
@@ -296,14 +308,14 @@ def test_gold_financing_bills_the_weekend_on_friday() -> None:
     wed = datetime(2026, 1, 7, 12, tzinfo=_UTC)
     sat = datetime(2026, 1, 10, 12, tzinfo=_UTC)              # Wed, Thu, Fri rollovers
     rate = lambda inst, night, d: Decimal("-36.5")            # −0.1% of value per day
-    gold = Backtest(account="a", cost_model=_NOFRICTION, financing=rate,
+    gold = Backtest(account="a", cost_models=_FREE, financing=rate,
                     swap_conventions={"XAU_USD": "financing_daily"})
-    carry = gold._carry_quote(_pos("XAU_USD", 1, 2000.0, "10", wed), sat)
+    carry = gold.positions.carry_quote(_pos("XAU_USD", 1, 2000.0, "10", wed), sat)
     assert carry == pytest.approx(Decimal("-20") * 5)         # Wed 1 + Thu 1 + Fri 3
-    bad = Backtest(account="a", cost_model=_NOFRICTION, financing=rate,
+    bad = Backtest(account="a", cost_models=_FREE, financing=rate,
                    swap_conventions={"XAU_USD": "made_up"})
     with pytest.raises(ValueError):
-        bad._carry_quote(_pos("XAU_USD", 1, 2000.0, "10", wed), sat)
+        bad.positions.carry_quote(_pos("XAU_USD", 1, 2000.0, "10", wed), sat)
 
 
 # -- intraday drawdown is captured, not EOD-understated (P11I-04) -------------- #
@@ -320,9 +332,9 @@ def test_intraday_drawdown_is_not_understated_by_daily_sampling() -> None:
               _ms(d0.replace(hour=12), 1.0550),               # deep intraday dip
               _ms(d0.replace(hour=16), 1.10)]                 # recovered by EOD
     script = {d0: [_order(d0, 1, 1.10, 1.00, None)]}          # wide stop, no target
-    bt = Backtest(account="a", cost_model=TEST_COSTS)
+    bt = Backtest(account="a", cost_models=_COSTS)
     r = bt.run(loop=_FakeLoop(script),
-               folds=[FoldData(Fold(0, d0, d0, d0, d0), (), states)],
+               folds=[FoldData(_fold(0, d0), states)],
                evolve_fn=_noop, spx_closes={},
                guardrail_hash="GH", expected_guardrail_hash="GH")
     # 1000 units × 0.045 dip on a ~10000 NAV ≈ 0.45% intraday DD — must NOT be 0
@@ -367,8 +379,8 @@ def test_all_open_positions_marked_each_day() -> None:
     states = [_ms2(d0, _INST, 1.10),                          # day1: open EUR_USD
               _ms2(d0.replace(hour=12), _INST, 1.05),         # day1: EUR_USD marked down
               _ms2(d0 + timedelta(days=1), other, 150.0)]     # day2: only USD_JPY ticks
-    bt = Backtest(account="a", cost_model=TEST_COSTS)
-    r = bt.run(loop=_L(), folds=[FoldData(Fold(0, d0, d0, d0, d0), (), states)],
+    bt = Backtest(account="a", cost_models=_COSTS)
+    r = bt.run(loop=_L(), folds=[FoldData(_fold(0, d0), states)],
                evolve_fn=_noop, spx_closes={},
                guardrail_hash="GH", expected_guardrail_hash="GH")
     # EUR_USD down 0.05 × 1000 = −50 on ~10000 NAV ≈ 0.5% DD, still visible on day 2

@@ -85,6 +85,20 @@ def test_cross_source_drift_flags_but_never_averages() -> None:
     assert all(t.bid == 1.10000 for t in prim)
 
 
+def test_stream_filters_like_load_but_lazily() -> None:
+    ticks = [mk_tick(T0), mk_tick(T0 + timedelta(seconds=1), bid=float("nan")),
+             mk_tick(T0 + timedelta(seconds=2))]
+    log = CapturingLogger()
+    ldr = BacktestDataLoader({"dukascopy": ListSource("dukascopy", ticks)}, log)
+    it = ldr.stream(source="dukascopy", instrument="EUR_USD", start=T0,
+                    end=T0 + timedelta(hours=1))
+    assert log.events("BACKTEST_LOAD") == []                       # nothing read yet
+    assert [t.event_time for t in it] == [ticks[0].event_time, ticks[2].event_time]
+    assert len(log.events("BACKTEST_LOAD")) == 1 and len(log.events("BACKTEST_BAD_TICK")) == 1
+    with pytest.raises(ProvenanceError):                           # refused before reading
+        ldr.stream(source="nope", instrument="EUR_USD", start=T0, end=T0 + timedelta(hours=1))
+
+
 def test_calibrate_cost_model_from_spreads() -> None:
     cm = calibrate_cost_model(observed_spreads=[0.0002, 0.0004, 0.0006],
                               slippage_fraction_of_spread=0.25)

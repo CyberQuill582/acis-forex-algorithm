@@ -92,27 +92,47 @@ class BacktestDataLoader:
 
     def load(self, *, source: str, instrument: str, start: datetime, end: datetime,
              max_plausible_spread: float | None = None) -> LoadResult:
+        stats = {"kept": 0, "rejected": 0, "weekend_dropped": 0}
+        ticks = tuple(self._filtered(self._declared(source), source, instrument, start, end,
+                                     max_plausible_spread, stats))
+        self._log.event("BACKTEST_LOAD", source=source, instrument=instrument, **stats)
+        return LoadResult(instrument=instrument, source=source, ticks=ticks,
+                          rejected=stats["rejected"], weekend_dropped=stats["weekend_dropped"])
+
+    def stream(self, *, source: str, instrument: str, start: datetime, end: datetime,
+               max_plausible_spread: float | None = None) -> Iterator[RawTick]:
+        """`load`'s filtering, yielded lazily so a multi-year window never sits in memory.
+        The source is checked now; BACKTEST_LOAD is logged when the stream is exhausted."""
+        src = self._declared(source)
+
+        def gen() -> Iterator[RawTick]:
+            stats = {"kept": 0, "rejected": 0, "weekend_dropped": 0}
+            yield from self._filtered(src, source, instrument, start, end,
+                                      max_plausible_spread, stats)
+            self._log.event("BACKTEST_LOAD", source=source, instrument=instrument, **stats)
+        return gen()
+
+    def _declared(self, source: str) -> TickSource:
         if source not in self._sources:
             raise ProvenanceError(
                 f"undeclared tick source {source!r} — provenance is mandatory "
                 f"(§13); declared: {sorted(self._sources)}")
-        kept: list[RawTick] = []
-        rejected = weekend = 0
-        for t in self._sources[source].load(instrument, start, end):
+        return self._sources[source]
+
+    def _filtered(self, src: TickSource, source: str, instrument: str, start: datetime,
+                  end: datetime, max_spread: float | None, stats: dict) -> Iterator[RawTick]:
+        for t in src.load(instrument, start, end):
             if _is_weekend(t.event_time):
-                weekend += 1
+                stats["weekend_dropped"] += 1
                 continue
-            if _bad_tick(t, max_plausible_spread):
-                rejected += 1
+            if _bad_tick(t, max_spread):
+                stats["rejected"] += 1
                 self._log.event("BACKTEST_BAD_TICK", source=source,
                                 instrument=instrument, ts=t.event_time.isoformat(),
                                 bid=t.bid, ask=t.ask)
                 continue
-            kept.append(t)
-        self._log.event("BACKTEST_LOAD", source=source, instrument=instrument,
-                        kept=len(kept), rejected=rejected, weekend_dropped=weekend)
-        return LoadResult(instrument=instrument, source=source, ticks=tuple(kept),
-                          rejected=rejected, weekend_dropped=weekend)
+            stats["kept"] += 1
+            yield t
 
     def cross_source_drift(self, *, instrument: str, primary: Sequence[RawTick],
                            secondary: Sequence[RawTick], threshold_bps: float,

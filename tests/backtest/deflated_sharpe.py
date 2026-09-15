@@ -66,12 +66,16 @@ def expected_max_sharpe(trial_variance: float, n_trials: int) -> float:
                                         + EULER_GAMMA * _Z.inv_cdf(1 - 1 / (n_trials * math.e)))
 
 
-def sharpe_threshold(trial_sharpes: Sequence[float]) -> float:
+def sharpe_threshold(trial_sharpes: Sequence[float], n_trials: int | None = None) -> float:
+    """SR0 from the trials' Sharpe variance. `n_trials` may raise N above the number of
+    Sharpe ratios supplied (trials whose returns are not available, GAP-P12D-18); it can
+    never lower it. Fewer than 2 Sharpe ratios carry no variance ⇒ 0."""
     t = [x for x in trial_sharpes if math.isfinite(x)]
     if len(t) < 2:
         return 0.0
-    mean = sum(t) / len(t)
-    return expected_max_sharpe(sum((x - mean) ** 2 for x in t) / (len(t) - 1), len(t))
+    mean = math.fsum(t) / len(t)
+    var = math.fsum((x - mean) ** 2 for x in t) / (len(t) - 1)
+    return expected_max_sharpe(var, max(len(t), n_trials or 0))
 
 
 def probabilistic_sharpe(m: ReturnMoments, threshold: float) -> float:
@@ -82,8 +86,9 @@ def probabilistic_sharpe(m: ReturnMoments, threshold: float) -> float:
     return _Z.cdf((m.sharpe - threshold) * math.sqrt(m.n - 1) / math.sqrt(denom))
 
 
-def deflated_sharpe(returns: Sequence[float], trial_sharpes: Sequence[float]) -> float:
+def deflated_sharpe(returns: Sequence[float], trial_sharpes: Sequence[float],
+                    n_trials: int | None = None) -> float:
     """DSR of the selected strategy's per-period `returns`, deflated by the trials. NaN when
     the returns carry no Sharpe ratio."""
     m = moments(returns)
-    return math.nan if m is None else probabilistic_sharpe(m, sharpe_threshold(trial_sharpes))
+    return math.nan if m is None else probabilistic_sharpe(m, sharpe_threshold(trial_sharpes, n_trials))

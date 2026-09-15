@@ -193,9 +193,11 @@ def build_paper_loop(
     session_id: str = "itest7",
     logger=None,
     regime_cycle_s: float | None = None,
+    position_gate=None,
 ) -> PaperLoop:
     """Wire the real layers from the real config (the phase-12 attach shape). A replay
-    passes `regime_cycle_s` (cfg.system.regime.cycle_seconds) and a ReplayEventLogger."""
+    passes `regime_cycle_s` (cfg.system.regime.cycle_seconds), a ReplayEventLogger, and the
+    `Backtest` as `position_gate`, so params promote only when the backtest's book is flat."""
     log = logger if logger is not None else JsonlEventLogger(
         tmp_path / "system_log.jsonl", layer="integration", session_id=session_id)
     store = MarketStateStore(tmp_path / "acis.sqlite")
@@ -208,7 +210,7 @@ def build_paper_loop(
             return book_holder[0].open_position_count() if book_holder else 0
 
     lib = ParamLibrary(tmp_path / "params.db", cfg.system.session_boundaries,
-                       cfg.system.param_stall_alert_boundaries, _Gate(), log)
+                       cfg.system.param_stall_alert_boundaries, position_gate or _Gate(), log)
     nvma = NVMA(
         cfg=cfg.system.regime,
         session_median=factory.session_median,
@@ -251,4 +253,5 @@ def build_paper_loop(
     loop = PaperLoop(factory, engine, lib, agon, governor, writer, store, log,
                      portfolio_fn, regime_cycle_s=regime_cycle_s)
     book_holder.append(loop.book)
+    loop.provenance = prov          # the attempt registry the OOS runner counts (GAP-P12D-18)
     return loop

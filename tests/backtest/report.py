@@ -73,6 +73,9 @@ class ValidationReport:
     # _MIN_TRIALS trials. NaN (the OOS returns carry no Sharpe) fails.
     trial_count: int
     deflated_sharpe: float
+    # GAP-P12D-18: the in-sample transparency record — one evolution summary per fold
+    # (training windows are not replayed through the engine; `in_sample` is not graded)
+    in_sample_evolution: tuple[Mapping, ...]
 
 
 def grade_out_of_sample(block: MetricBlock) -> dict[str, bool]:
@@ -96,7 +99,8 @@ def build_report(*, account: str, period: tuple[datetime, datetime], n_folds: in
                  rule_violations: Sequence[str], fidelity_caveats: Sequence[str],
                  equity_curve_ref: str = "", drawdown_curve_ref: str = "",
                  split: str = "walk_forward", trial_count: int = 0,
-                 deflated_sharpe: float = math.nan) -> ValidationReport:
+                 deflated_sharpe: float = math.nan,
+                 in_sample_evolution: Sequence[Mapping] = ()) -> ValidationReport:
     targets_met = grade_out_of_sample(out_of_sample)          # C-BT-1: OOS only
 
     years = (period[1] - period[0]) / timedelta(days=365.25)
@@ -119,4 +123,4 @@ def build_report(*, account: str, period: tuple[datetime, datetime], n_folds: in
         var_breach_frequency=var_breach_frequency,
         rule_violations=tuple(rule_violations), fidelity_caveats=tuple(fidelity_caveats),
         guardrail_hash=guardrail_hash, trial_count=trial_count,
-        deflated_sharpe=deflated_sharpe)
+        deflated_sharpe=deflated_sharpe, in_sample_evolution=tuple(in_sample_evolution))

@@ -1,229 +1,126 @@
 """Real-engine walk-forward harness (ACIS-09 §2/§3/§7, master §13/§15).
 
-Drives the ACTUAL ACIS decision layers — the real `MarketStateFactory`, NVMA,
-AGON and Capital Governor composed exactly as production (reusing the phase-7
-`build_paper_loop` wiring) — over walk-forward folds, per account. It is NOT a
-re-implementation (C-BT-3): a change in NVMA behaviour changes the backtest
-result, because NVMA itself runs.
+Drives the ACTUAL ACIS decision layers — the real `MarketStateFactory`, NVMA, AGON and
+Capital Governor composed exactly as production (the phase-7 `build_paper_loop` wiring)
+— over walk-forward folds, per account. It is NOT a re-implementation (C-BT-3): a change
+in NVMA behaviour changes the result, because NVMA itself runs. The position book and
+fill/close model live in `book.py`.
 
-The harness owns the position lifecycle + a DECLARED fill/close model (the
-fidelity modelling GAP-0001 mandates the report surface): an order fills at its
-`entry_price`; a position closes on a stop/target touch, an opposite-direction
-signal (reverse), or a max-hold timeout; PnL is Decimal, net of the C8
-`CostModel` round-trip friction PLUS overnight financing. This is the
-position/runtime layer the fast-loop GAPs (0075/0091b/0099) deferred — a backtest
-IS a runtime, so it lives here. Money: every quote-currency amount is converted to
-USD (`money.py`, GAP-P12D-05); financing is direction- and size-aware per real
-17:00-New-York business-day rollover (`carry.py` + `core/data/fx_clock.py`,
-GAP-P12D-06/07).
-
-Audit-hardened (phase-11 dual audit): the out-of-sample equity is ONE CONTINUOUS
-curve across folds — realised PnL and open positions persist, never reset per
-fold (GAP-P11I-03/P11E-02); every open position is marked each day off its
-instrument's LAST-SEEN price, not only the just-ticked one (GAP-P11E-03); the
-graded `period` is DERIVED from the actual OOS data span, never a caller claim
-(GAP-P11I-01); the account's §9.5 rulebook is enforced during the run and a
-breach populates `rule_violations` (GAP-P11I-02/C-BT-7); the VaR-breach rate is a
-real expanding-window delta-normal backtest, never a 0.0 stub (GAP-P11I-08/
-P11E-01). `run` grades ONLY the concatenated out-of-sample folds (C-BT-1).
+Invariants:
+  * Per fold, `evolve_fn` evolves on data before `fold.train_end` and stages params; then
+    the fold's TEST ticks replay into ONE continuous out-of-sample book (GAP-P11I-03). The
+    graded record is that book only (C-BT-1). Test ticks may be a lazy stream, iterated
+    once, so years of ticks never sit in memory.
+  * Training windows are NOT replayed through the engine: rolling folds would send the
+    engine back in time, and it is transparency only. The in-sample record is each fold's
+    evolution summary (owner ruling 2026-09-15, GAP-P12D-18).
+  * The first test tick must come at least the max hold after `fold.train_end`, checked on
+    the real data (embargo, GAP-SP12E-03).
+  * Staged params promote only at simulated session boundaries, through
+    `ParamLibrary.on_boundary`, and only when THIS book is flat: the harness is the
+    loop's `PositionGate` (ACIS-03 §7 C2; wire it with `build_paper_loop(position_gate=…)`).
+  * Each fold's test-segment daily Sharpe is a Deflated Sharpe trial (the variance). N is
+    lifted to the champions counted in the fold records plus `min_trials` (the
+    attempt-registry entries) (GAP-P12D-16/18).
+  * The graded `period` is derived from the OOS data span (GAP-P11I-01); the §9.5 rulebook
+    is enforced on the realised trades (C-BT-7).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import math
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import Callable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
-from core.data.fx_clock import business_rollovers, holds_through_weekend
+from config.schemas import ZonedTime
+from core.data.fx_clock import holds_through_weekend
 from core.data.normaliser import MarketState
 from core.optimizer.costs import CostModel
-from tests.backtest.carry import FinancingRate, financing_charge
-from tests.backtest.deflated_sharpe import deflated_sharpe
+from tests.backtest.book import BookState, PositionModel
+from tests.backtest.boundary_clock import BoundaryClock
+from tests.backtest.carry import FinancingRate
+from tests.backtest.deflated_sharpe import deflated_sharpe, moments
 from tests.backtest.metrics import (ClosedTrade, MetricBlock, _returns_from_equity,
                                     compute_metrics, rolling_var_breach_rate)
-from tests.backtest.money import quote_to_account
 from tests.backtest.report import ValidationReport, build_report
-from tests.backtest.rollover_marks import RolloverMarker
 from tests.backtest.walk_forward import Fold, require_embargo
 
 _UTC = timezone.utc
-
-
-@dataclass
-class _OpenPos:
-    instrument: str
-    direction: int
-    entry_price: float
-    size_units: Decimal
-    entry_ts: datetime
-    stop_loss: float
-    take_profit: float | None
-    strategy_type: str
-
-
-@dataclass
-class _BookState:
-    """One continuous trading record (in-sample OR out-of-sample) that PERSISTS
-    across folds — the fix for the fold-boundary equity discontinuity.
-
-    Two equity tracks are kept deliberately (GAP-P11I-04): `equity` is sampled
-    once per calendar DAY (the base for the daily-return metrics — Sharpe on a
-    252-periods/yr base, positive-months), while `peak`/`max_dd_pct` track the
-    INTRADAY high-water continuously (updated every tick) so the §14 max-drawdown
-    is measured off the intraday peak, never understated by an EOD approximation
-    (the exact failure the §13 trailing-DD glitch class condemns)."""
-    realised: Decimal = Decimal("0")
-    open_by_inst: dict[str, _OpenPos] = field(default_factory=dict)
-    last_price: dict[str, float] = field(default_factory=dict)
-    equity: list[tuple[datetime, Decimal]] = field(default_factory=list)
-    trades: list[ClosedTrade] = field(default_factory=list)
-    last_day: object = None
-    peak: Decimal | None = None                  # running intraday high-water
-    max_dd_pct: float = 0.0                       # worst intraday peak-to-trough %
-    marker: RolloverMarker = field(default_factory=RolloverMarker)   # SPX join (SP12E-06)
+NOT_REPLAYED = MetricBlock(
+    annual_sharpe=math.nan, max_drawdown_pct=math.nan, win_rate=math.nan,
+    profit_factor=math.nan, positive_months_pct=math.nan, spx_correlation=math.nan,
+    avg_trade_duration_s=math.nan, tsmom_avg_duration_s=math.nan,
+    scalp_avg_duration_s=math.nan, n_trades=0)
 
 
 @dataclass(frozen=True)
 class FoldData:
     fold: Fold
-    train_states: Sequence[MarketState]
-    test_states: Sequence[MarketState]
+    test_states: Iterable[MarketState]      # time-ordered; may be a one-shot stream
+
+
+EvolveFn = Callable[[object, FoldData], "Mapping | None"]
 
 
 class Backtest:
-    def __init__(self, *, account: str, cost_model: CostModel, rulebook=None,
+    def __init__(self, *, account: str, cost_models: Mapping[str, CostModel], rulebook=None,
                  nav: Decimal = Decimal("10000"), max_hold_s: float = 48 * 3600,
                  periods_per_year: float = 252.0,
                  financing: FinancingRate | None = None,
-                 swap_conventions: Mapping[str, str] | None = None) -> None:
+                 swap_conventions: Mapping[str, str] | None = None,
+                 session_boundaries: Sequence[ZonedTime] = ()) -> None:
         self._account = account
-        self._cost = cost_model
+        self.positions = PositionModel(costs=cost_models, max_hold_s=max_hold_s,
+                                       financing=financing, swap_conventions=swap_conventions)
         self._rulebook = rulebook                    # §9.5 account rules (or None)
         self._nav0 = nav
         self._max_hold_s = max_hold_s
         self._ppy = periods_per_year
-        self._financing = financing                  # None ⇒ no carry (caveated)
-        self._conventions = dict(swap_conventions or {})   # default tom_next
-        # global watermark over the loop's accumulating order book.
-        self._seen_orders = 0
+        self._financing = financing
+        self._clock = BoundaryClock(session_boundaries) if session_boundaries else None
+        self._active: BookState | None = None
+        self._seen_orders = 0                        # watermark over the loop's order list
 
-    # -- one replay through the REAL engine into a persistent book ------------- #
+    def open_position_count(self) -> int:
+        """The ParamLibrary `PositionGate` in a backtest: this book is the position layer."""
+        return len(self._active.open_by_inst) if self._active is not None else 0
 
-    def _replay(self, loop, states: Sequence[MarketState], book: _BookState) -> None:
-        for st in states:
+    # -- one fold's test replay through the REAL engine ------------------------- #
+
+    def _replay(self, loop, fd: FoldData, book: BookState) -> None:
+        self._active = book
+        first = True
+        for st in fd.test_states:
+            if first:                                # embargo, on the real data
+                require_embargo(fd.fold.index, fd.fold.train_end, st.timestamp, self._max_hold_s)
+                first = False
+            if self._clock is not None:
+                for boundary in self._clock.crossed(st.timestamp):
+                    loop.params.on_boundary(boundary)    # C2: promotes only when flat
             book.last_price[st.instrument] = st.mid
-            # (1) mark/close the existing position on this instrument
             pos = book.open_by_inst.get(st.instrument)
             if pos is not None:
-                closed = self._maybe_close(pos, st, book)
+                closed = self.positions.maybe_close(pos, st, book)
                 if closed is not None:
-                    book.trades.append(closed)
-                    book.realised += closed.pnl
-                    del book.open_by_inst[st.instrument]
-            # (2) run the REAL decision path (NVMA → AGON → Governor)
-            loop.on_state(st)
-            # (3) consume newly sized orders under position management
+                    book.book_close(closed, st.instrument)
+            loop.on_state(st)                        # NVMA → AGON → Governor
             new_orders = loop.book.orders[self._seen_orders:]
             self._seen_orders = len(loop.book.orders)
             for order in new_orders:
-                self._apply_order(order, st, book)
-            # (4) mark equity EVERY tick for the intraday high-water/drawdown
-            # (GAP-P11I-04), and additionally sample the daily curve once per day.
-            marked = self._nav0 + book.realised + self._unrealised(book)
-            self._mark_drawdown(book, marked)
+                self.positions.apply_order(order, st, book)
+            marked = self._nav0 + book.realised + self.positions.unrealised(book)
+            self.positions.mark_drawdown(book, marked)
             book.marker.observe(st.timestamp, marked)
             day = st.timestamp.date()
             if day != book.last_day:
                 book.equity.append((st.timestamp, marked))
                 book.last_day = day
 
-    @staticmethod
-    def _mark_drawdown(book: _BookState, equity: Decimal) -> None:
-        """Update the running intraday high-water and worst peak-to-trough %."""
-        if book.peak is None or equity > book.peak:
-            book.peak = equity
-        if book.peak and book.peak > 0:
-            dd = float((book.peak - equity) / book.peak) * 100.0
-            if dd > book.max_dd_pct:
-                book.max_dd_pct = dd
-
-    def _apply_order(self, order, st: MarketState, book: _BookState) -> None:
-        existing = book.open_by_inst.get(order.instrument)
-        if existing is not None:
-            if existing.direction == order.direction:
-                return                          # same-side dedup (GAP-0075)
-            closed = self._close_at(existing, order.entry_price, st.timestamp, "reverse", book)
-            book.trades.append(closed)
-            book.realised += closed.pnl
-            del book.open_by_inst[order.instrument]
-        book.open_by_inst[order.instrument] = _OpenPos(
-            instrument=order.instrument, direction=order.direction,
-            entry_price=order.entry_price, size_units=order.size_units,
-            entry_ts=order.sized_at, stop_loss=order.stop_loss,
-            take_profit=order.take_profit,
-            strategy_type=order.factors_snapshot.get("strategy_type", "UNKNOWN")
-            if isinstance(order.factors_snapshot, Mapping) else "UNKNOWN")
-
-    def _maybe_close(self, pos: _OpenPos, st: MarketState,
-                     book: _BookState) -> ClosedTrade | None:
-        price = st.mid
-        if pos.direction == 1:
-            if price <= pos.stop_loss:
-                return self._close_at(pos, pos.stop_loss, st.timestamp, "stop", book)
-            if pos.take_profit is not None and price >= pos.take_profit:
-                return self._close_at(pos, pos.take_profit, st.timestamp, "target", book)
-        else:
-            if price >= pos.stop_loss:
-                return self._close_at(pos, pos.stop_loss, st.timestamp, "stop", book)
-            if pos.take_profit is not None and price <= pos.take_profit:
-                return self._close_at(pos, pos.take_profit, st.timestamp, "target", book)
-        if (st.timestamp - pos.entry_ts).total_seconds() >= self._max_hold_s:
-            return self._close_at(pos, price, st.timestamp, "max_hold", book)
-        return None
-
-    def _carry_quote(self, pos: _OpenPos, exit_ts: datetime) -> Decimal:
-        """Financing over every business-day rollover held, in QUOTE currency."""
-        if self._financing is None:
-            return Decimal("0")
-        return financing_charge(
-            instrument=pos.instrument, direction=pos.direction,
-            value=pos.size_units * Decimal(str(pos.entry_price)),
-            nights=business_rollovers(pos.entry_ts, exit_ts),      # real 17:00-NY instants
-            rate=self._financing,
-            swap_convention=self._conventions.get(pos.instrument, "tom_next"))
-
-    def _close_at(self, pos: _OpenPos, exit_price: float, ts: datetime,
-                  reason: str, book: _BookState) -> ClosedTrade:
-        gross = (Decimal(str(exit_price)) - Decimal(str(pos.entry_price))) \
-            * Decimal(pos.direction) * pos.size_units
-        friction = Decimal(str(self._cost.slippage_per_side * 2
-                               + self._cost.commission_per_side * 2)) * pos.size_units
-        carry = self._carry_quote(pos, ts)
-        # all three are QUOTE-currency amounts — convert once, at the close rate
-        to_acct = quote_to_account(pos.instrument, exit_price, book.last_price)
-        return ClosedTrade(entry_ts=pos.entry_ts, exit_ts=ts,
-                           pnl=(gross - friction + carry) * to_acct,
-                           strategy_type=pos.strategy_type)
-
-    def _unrealised(self, book: _BookState) -> Decimal:
-        """Mark EVERY open position off its instrument's last-seen price, converted
-        to the account currency at that price."""
-        total = Decimal("0")
-        for pos in book.open_by_inst.values():
-            mark = book.last_price.get(pos.instrument)
-            if mark is None:
-                continue
-            total += (Decimal(str(mark)) - Decimal(str(pos.entry_price))) \
-                * Decimal(pos.direction) * pos.size_units \
-                * quote_to_account(pos.instrument, mark, book.last_price)
-        return total
-
     def _rule_violations(self, trades: Sequence[ClosedTrade]) -> tuple[str, ...]:
-        """§9.5/C-BT-7: platform rules ACTIVE during the run — a breach forces
-        passed=False. v1 enforces the rules evaluable from closed trades: min-hold
-        and weekend-holding. (News-blackout is already enforced upstream by the
-        Governor's two-layer §3.5 gate during the replay.)"""
+        """§9.5/C-BT-7: min-hold and weekend-holding, evaluable from closed trades. (The
+        news blackout is enforced upstream by the Governor's §3.5 gate during the replay.)"""
         if self._rulebook is None:
             return ()
         out: list[str] = []
@@ -232,67 +129,67 @@ class Backtest:
                 out.append("min_hold")
             if not self._rulebook.weekend_holding_allowed and holds_through_weekend(t.entry_ts, t.exit_ts):
                 out.append("weekend_holding")
-        return tuple(dict.fromkeys(out))             # dedup, order-preserving
+        return tuple(dict.fromkeys(out))
 
     # -- full walk-forward run ------------------------------------------------- #
 
-    def run(self, *, loop, folds: Sequence[FoldData],
-            evolve_fn: Callable[[object, Sequence[MarketState]], None],
+    def run(self, *, loop, folds: Sequence[FoldData], evolve_fn: EvolveFn,
             spx_closes: Mapping[date, float], guardrail_hash: str,
             expected_guardrail_hash: str, extra_caveats: Sequence[str] = (),
-            trial_sharpes: Sequence[float] = ()) -> ValidationReport:
-        """Drive the ONE composed real `loop` across walk-forward folds. Per fold:
-        `evolve_fn` evolves QIEA on the TRAIN states and freezes; the train replay
-        feeds a CONTINUOUS in-sample book (transparency only); the test replay
-        feeds a CONTINUOUS out-of-sample book — the graded record (C-BT-1).
-        `trial_sharpes`: per-period Sharpe ratios of every configuration tried (DSR)."""
-        for fd in folds:                             # GAP-SP12E-03: embargo on the real data
-            if fd.train_states and fd.test_states:
-                require_embargo(fd.fold.index, fd.train_states[-1].timestamp,
-                                fd.test_states[0].timestamp, self._max_hold_s)
-        oos, insample = _BookState(), _BookState()
+            min_trials: int = 0) -> ValidationReport:
+        oos = BookState()
+        evolution: list[Mapping] = []
+        fold_sharpes: list[float] = []
         for fd in folds:
-            evolve_fn(loop, fd.train_states)         # QIEA evolves on TRAIN only
-            self._replay(loop, fd.train_states, insample)
-            self._replay(loop, fd.test_states, oos)
+            record = evolve_fn(loop, fd)             # evolves on data before train_end only
+            if record is not None:
+                evolution.append(record)
+            start = len(oos.equity)
+            self._replay(loop, fd, oos)
+            m = moments(_returns_from_equity(oos.equity[max(start - 1, 0):]))
+            if m is not None:
+                fold_sharpes.append(m.sharpe)
 
-        # period DERIVED from the real OOS data span (GAP-P11I-01), never a claim.
-        if oos.equity:
+        if oos.equity:                               # GAP-P11I-01: derived, never claimed
             period = (oos.equity[0][0], oos.equity[-1][0])
         else:
             now = datetime.now(_UTC)
             period = (now, now)                      # no data ⇒ 0 years ⇒ cannot pass
 
+        # N = every champion the fold records report + `min_trials` (the attempt registry);
+        # without ≥2 fold Sharpes there is no trial variance, so no N may be claimed
+        evolved = sum(int(r.get("champions", 0)) for r in evolution)
+        n_trials = (max(len(fold_sharpes), min_trials + evolved) if len(fold_sharpes) >= 2
+                    else len(fold_sharpes))
         oos_returns = _returns_from_equity(oos.equity)
         caveats = (
             "tick backtest cannot fully reproduce live microstructure (GAP-0001)",
-            "fills modelled at order price ± declared C8 friction",
+            "fills modelled at order price ± each instrument's declared C8 friction",
             ("overnight financing applied per business-day rollover from the supplied "
              "dated rate model (entry price as the rollover price)"
              if self._financing is not None else
              "NO overnight financing modelled (no rate model supplied) — overnight "
              "and weekend holds are flattered"),
             "PnL converted quote→USD at the close rate (crosses via their quote leg)",
-            *(() if len(trial_sharpes) >= 2 else ("fewer than 2 trial Sharpe ratios supplied — "
-              "selection bias is uncorrected, so the run cannot pass (GAP-P12D-16)",)),
+            "in-sample block not replayed: the per-fold evolution records are the in-sample "
+            "transparency record (GAP-P12D-18)",
+            *(() if n_trials >= 2 else ("fewer than 2 fold Sharpe ratios — selection bias is "
+                                        "uncorrected, so the run cannot pass (GAP-P12D-16)",)),
             *extra_caveats,
         )
         return build_report(
             account=self._account, period=period, n_folds=len(folds),
-            in_sample=self._metrics(insample, spx_closes),
-            out_of_sample=self._metrics(oos, spx_closes), per_regime={},
+            in_sample=NOT_REPLAYED, out_of_sample=self._metrics(oos, spx_closes), per_regime={},
             guardrail_hash=guardrail_hash, expected_guardrail_hash=expected_guardrail_hash,
             var_breach_frequency=rolling_var_breach_rate(oos_returns),
             rule_violations=self._rule_violations(oos.trades), fidelity_caveats=caveats,
-            trial_count=len(trial_sharpes),
-            deflated_sharpe=deflated_sharpe(oos_returns, trial_sharpes))
+            trial_count=n_trials,
+            deflated_sharpe=deflated_sharpe(oos_returns, fold_sharpes, n_trials),
+            in_sample_evolution=evolution)
 
-    def _metrics(self, book: _BookState, spx_closes: Mapping[date, float]) -> MetricBlock:
+    def _metrics(self, book: BookState, spx_closes: Mapping[date, float]) -> MetricBlock:
         equity = book.equity or [(datetime.now(_UTC), self._nav0)]
-        # GAP-P11I-04: grade drawdown off the INTRADAY high-water, not the daily curve
         return compute_metrics(trades=book.trades, equity_curve=equity,
                                rollover_marks=book.marker.marks, spx_closes=spx_closes,
                                periods_per_year=self._ppy,
                                max_drawdown_pct_override=book.max_dd_pct)
-
-

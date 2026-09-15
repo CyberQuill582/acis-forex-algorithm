@@ -7,6 +7,7 @@ re-implementation — and produces a per-account `ValidationReport`.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 
 from config.account_doctrine import guardrail_hash
@@ -32,13 +33,13 @@ def _states(factory, n=250):
 
 
 def _two_folds(states):
-    """60-s ticks; 6 ticks are dropped before each test window so the train→test gap
-    (360 s) clears the 300-s max hold — the GAP-SP12E-03 embargo."""
-    h = len(states) // 2
-    q = h // 2
-    f0 = FoldData(Fold(0, T0, T0, T0, T0), states[:q - 6], states[q:h])
-    f1 = FoldData(Fold(1, T0, T0, T0, T0), states[h:h + q - 6], states[h + q:])
-    return [f0, f1]
+    """Two test windows over 60-s ticks, with a 10-tick gap between them. Each fold's
+    declared training ends 6 minutes before its first test tick, clearing the 300-s max
+    hold (the GAP-SP12E-03 embargo). Training windows are not replayed (GAP-P12D-18)."""
+    def fold(i, test):
+        first = test[0].timestamp
+        return FoldData(Fold(i, T0, first - timedelta(minutes=6), first, test[-1].timestamp), test)
+    return [fold(0, states[:120]), fold(1, states[130:])]
 
 
 def test_harness_drives_real_engine_and_produces_report(tmp_path, acis_config, factory) -> None:
@@ -52,7 +53,7 @@ def test_harness_drives_real_engine_and_produces_report(tmp_path, acis_config, f
     states = _states(factory)
     folds = _two_folds(states)
     gh = guardrail_hash(acis_config.guardrails)
-    bt = Backtest(account="dev_paper", cost_model=TEST_COSTS, max_hold_s=300)
+    bt = Backtest(account="dev_paper", cost_models={"EUR_USD": TEST_COSTS}, max_hold_s=300)
 
     report = bt.run(loop=loop, folds=folds, evolve_fn=lambda lp, tr: None,
                     spx_closes={}, guardrail_hash=gh,
@@ -75,7 +76,7 @@ def test_no_promoted_params_means_no_trades(tmp_path, acis_config, factory) -> N
     loop = make_loop(tmp_path, acis_config, factory, flat_portfolio, regimes=())
     loop.boot(flat_portfolio())
     states = _states(factory)
-    bt = Backtest(account="dev_paper", cost_model=TEST_COSTS, max_hold_s=300)
+    bt = Backtest(account="dev_paper", cost_models={"EUR_USD": TEST_COSTS}, max_hold_s=300)
     report = bt.run(loop=loop, folds=_two_folds(states), evolve_fn=lambda lp, tr: None,
                     spx_closes={}, guardrail_hash="GH", expected_guardrail_hash="GH")
     assert report.out_of_sample.n_trades == 0
@@ -88,7 +89,7 @@ def test_relaxed_limits_flagged_invalid(tmp_path, acis_config, factory) -> None:
     loop = make_loop(tmp_path, acis_config, factory, flat_portfolio)
     loop.boot(flat_portfolio())
     states = _states(factory)
-    bt = Backtest(account="dev_paper", cost_model=TEST_COSTS, max_hold_s=300)
+    bt = Backtest(account="dev_paper", cost_models={"EUR_USD": TEST_COSTS}, max_hold_s=300)
     report = bt.run(loop=loop, folds=_two_folds(states), evolve_fn=lambda lp, tr: None,
                     spx_closes={}, guardrail_hash="RELAXED_LIMITS",
                     expected_guardrail_hash=guardrail_hash(acis_config.guardrails))

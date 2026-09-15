@@ -38,6 +38,15 @@ def test_more_trials_deflate_more() -> None:
     assert dsr == sorted(dsr, reverse=True) and dsr[0] > dsr[-1]
 
 
+def test_n_trials_can_raise_n_but_never_lower_it() -> None:
+    """GAP-P12D-18: trials without returns (other champions, attempt-registry entries)
+    raise N; the variance still comes from the Sharpe ratios supplied."""
+    sharpes = [0.05, 0.08, 0.02, 0.06]
+    base = sharpe_threshold(sharpes)
+    assert sharpe_threshold(sharpes, n_trials=40) > base
+    assert sharpe_threshold(sharpes, n_trials=2) == base
+
+
 def test_no_selection_means_a_zero_threshold() -> None:
     assert sharpe_threshold([]) == 0.0 and sharpe_threshold([0.3]) == 0.0
     assert expected_max_sharpe(VAR, 1) == 0.0

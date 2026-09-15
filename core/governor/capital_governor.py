@@ -19,8 +19,9 @@ from typing import Callable, Mapping
 
 from config.schemas import AccountRulebook, GovernorConfig, GuardrailLimits, ZonedTime
 from core.data.errors import DataQualityError
-from core.data.fx_clock import local_to_utc, next_local, to_local
+from core.governor.calendar_gates import next_boundary, within_weekend_buffer
 from core.governor.factors import correlation_factor, liquidity_factor, vol_norm
+from core.governor.units import usd_per_base_unit
 from core.governor.marginal_alpha import MarginalAlphaEstimator
 from core.governor.portfolio_types import PortfolioState, SizedOrder
 from core.data.bars import Bar
@@ -124,7 +125,7 @@ class CapitalGovernor:
         until the next session boundary, then auto-clears — the master §8
         daily-drawdown semantics. Risk-restrictive only: it can only ever set
         or extend the halt, never shorten one already in force."""
-        until = self._next_boundary(now)
+        until = next_boundary(now, self._boundaries)
         if self._session_halt_until is None or until > self._session_halt_until:
             self._session_halt_until = until
         self._log.event("HALT_APPLIED", scope="session", reason=reason,
@@ -168,8 +169,8 @@ class CapitalGovernor:
             # notional counted ONCE per cluster (union of both legs' clusters),
             # and the currency deltas NETTED across both legs (§7.6: one
             # relationship bet, never two directional bets).
-            notional_a = balanced * Decimal(str(a.entry_price))
-            notional_b = balanced * Decimal(str(b.entry_price))
+            notional_a = balanced * usd_per_base_unit(a.instrument, a.entry_price, self._bars)
+            notional_b = balanced * usd_per_base_unit(b.instrument, b.entry_price, self._bars)
             group_notional = max(notional_a, notional_b)
             union_clusters = {c for c, members in self._clusters.items()
                               if a.instrument in members or b.instrument in members}
@@ -284,8 +285,10 @@ class CapitalGovernor:
         if self._alpha_decay:
             raw_usd *= 0.25
             snapshot["alpha_decay_throttle"] = 0.25
-        size_units = (Decimal(str(raw_usd)) / Decimal(str(signal.entry_price))
-                      ).quantize(Decimal("0.01"))
+        per_unit = usd_per_base_unit(signal.instrument, signal.entry_price, self._bars)
+        if per_unit is None:                          # a cross with no USD leg yet (GAP-P12D-22)
+            return self._zero(signal, "no_usd_rate", snapshot, now)
+        size_units = (Decimal(str(raw_usd)) / per_unit).quantize(Decimal("0.01"))
         if size_units <= 0:
             return self._zero(signal, "formula_zero", snapshot, now)
 
@@ -300,7 +303,7 @@ class CapitalGovernor:
             # GAP-0049: group legs defer exposure checks to allocate_group, which
             # runs them on the AGGREGATE (cluster counted once, deltas netted) —
             # per-leg checks here would understate the group's true exposure.
-            notional = size_units * Decimal(str(signal.entry_price))
+            notional = size_units * per_unit          # USD notional
             breach = self._exposure_breach(
                 portfolio, {c: notional for c in clusters},
                 self._delta_contributions(signal, notional), signal.instrument)
@@ -331,7 +334,7 @@ class CapitalGovernor:
                 return "drawdown_halt"
             self._session_halt_until = None   # auto-clears at the boundary (master §8)
         if portfolio.daily_drawdown_pct >= self._limits.daily_drawdown_pct:
-            self._session_halt_until = self._next_boundary(now)
+            self._session_halt_until = next_boundary(now, self._boundaries)
             self._log.event("HALT_APPLIED", scope="session",
                             reason="daily_drawdown_limit")
             return "drawdown_halt"
@@ -348,7 +351,8 @@ class CapitalGovernor:
                             account=self._rules.platform)
             return "blackout"
         if (not self._rules.weekend_holding_allowed
-                and self._within_weekend_buffer(now)):
+                and within_weekend_buffer(now, self._week_close, self._week_open,
+                                          self._cfg.weekend_entry_buffer_s)):
             return "weekend_ban"
         if (self._cfg.scalp_min_hold_conflict
                 and signal.strategy_type is StrategyType.MOMENTUM_SCALP
@@ -402,26 +406,6 @@ class CapitalGovernor:
                                 currency=ccy)
                 return "currency_delta_cap"
         return None
-
-    def _within_weekend_buffer(self, now: datetime) -> bool:
-        """GAP-0053: the no-weekend-holding entry ban covers the buffer BEFORE
-        the Friday close AND the whole closed window through the Sunday open —
-        no post-close bypass. Days and times are the declared centre's local
-        wall clock (17:00 New York — GAP-P12D-10)."""
-        close, reopen = self._week_close, self._week_open
-        local = to_local(now, close.zone)
-        wd = local.weekday()
-        if wd == 5:                                       # Saturday
-            return True
-        if wd == 6:                                       # Sunday, before the open
-            return to_local(now, reopen.zone).strftime("%H:%M") < reopen.at
-        if wd != 4:                                       # Mon–Thu
-            return False
-        gap = (local_to_utc(local.date(), close.at, close.zone) - now).total_seconds()
-        return gap <= self._cfg.weekend_entry_buffer_s    # buffer window OR past close
-
-    def _next_boundary(self, now: datetime) -> datetime:
-        return min(next_local(now, b.zone, b.at) for b in self._boundaries)
 
     def _zero(self, signal: Signal, reason: str, snapshot: dict,
               now: datetime) -> SizedOrder:
