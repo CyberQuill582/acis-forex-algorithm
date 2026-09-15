@@ -25,7 +25,7 @@ TEST_COSTS = CostModel(commission_per_side=0.0, slippage_per_side=0.00002)
 def opt_cfg(**overrides) -> OptimizerConfig:  # not test_-prefixed: pytest must not collect it
     base = dict(
         population_size=8, generations=8, qbit_resolution=8, rotation_angle_rad=0.05,
-        qiea_cycle_seconds=14_400, fitness_bars=500, fitness_min_bars=100,
+        qiea_cycle_seconds=14_400, fitness_span_days=730, fitness_min_bars=100,
         fitness_min_trades=5, holdout_fraction=0.20, holdout_min_trades=2,
         expectancy_min_r=0.0,
     )

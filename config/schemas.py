@@ -97,18 +97,12 @@ class OptimizerConfig(_Strict):
     qbit_resolution: int = Field(ge=4, le=16)
     rotation_angle_rad: float = Field(gt=0, le=0.5)
     qiea_cycle_seconds: int = Field(ge=14_400, le=86_400)  # 4h..24h (master §5)
-    fitness_bars: int = Field(gt=10)
+    fitness_span_days: int = Field(gt=0)     # master §5 v2.18: a recency span, never a bar count
     fitness_min_bars: int = Field(gt=10)     # GAP-0008 window minimum
     fitness_min_trades: int = Field(gt=0)
     holdout_fraction: float = Field(gt=0, lt=0.5)  # GAP-0008 chronological tail
     holdout_min_trades: int = Field(gt=0)
     expectancy_min_r: float = Field(ge=0)    # C9: may only ever be raised
-
-    @model_validator(mode="after")
-    def _window_order(self) -> "OptimizerConfig":
-        if self.fitness_min_bars > self.fitness_bars:
-            raise ValueError("fitness_min_bars must be <= fitness_bars")
-        return self
 
 
 _STRATEGY_TYPES = frozenset({

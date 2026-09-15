@@ -3,6 +3,8 @@
 Invariants:
   * Evolution reads ONLY labelled bars that open before the fold's `train_end`
     (`LabelledBarCache.history`), so no test-window price reaches QIEA.
+  * The window is a time span, not a bar count (master §5 v2.18, GAP-P12D-29): every
+    target-regime bar inside both the fold's train window and `fitness_span_days`.
   * Every tradeable regime is evolved on every listed instrument, each with its own C8
     cost model. The champion with the best holdout expectancy — E_R on the same
     chronological holdout tail QIEA gates on — is staged; ties keep instrument order.
@@ -18,13 +20,14 @@ Invariants:
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timedelta
 from typing import Sequence
 
 from config.schemas import AcisConfig, OptimizerConfig
 from core.optimizer.costs import CostModel
 from core.optimizer.fitness import expectancy_r, simulate_trades
 from core.optimizer.param_types import ParamSet, RegimeLabelledHistory
-from core.optimizer.qiea import QIEA
+from core.optimizer.qiea import QIEA, fitness_window
 from core.regime.regime_types import NEVER_TRADEABLE, RegimeType
 from tests.backtest.deflated_sharpe import moments
 from tests.backtest.regime_labels import LabelledBarCache
@@ -44,9 +47,10 @@ def cost_model(cfg: AcisConfig, instrument: str) -> CostModel:
 
 
 def holdout_pnls(champion: ParamSet, history: RegimeLabelledHistory, opt: OptimizerConfig,
-                 cost: CostModel, atr_period: int) -> list[float]:
-    """Net PnLs of the trades entered in the chronological holdout tail QIEA gates on."""
-    bars = history.bars[-opt.fitness_bars:]
+                 cost: CostModel, atr_period: int, now: datetime) -> list[float]:
+    """Net PnLs of the trades entered in the chronological holdout tail QIEA gates on, over
+    the same `fitness_window` QIEA read."""
+    bars = fitness_window(history, opt, now)
     n_hold = max(1, round(len(bars) * opt.holdout_fraction))
     return simulate_trades(champion, bars, cost, entry_start=len(bars) - n_hold,
                            atr_period=atr_period)
@@ -56,6 +60,7 @@ def evolve_fold(loop, fd, *, cfg: AcisConfig, cache: LabelledBarCache,
                 instruments: Sequence[str], logger) -> dict:
     opt, sig = cfg.system.optimizer, cfg.system.signals
     train_end = fd.fold.train_end
+    window_start = max(fd.fold.train_start, train_end - timedelta(days=opt.fitness_span_days))
     regimes: dict[str, dict] = {}
     champions = 0
     trial_sharpes: list[float] = []
@@ -65,7 +70,7 @@ def evolve_fold(loop, fd, *, cfg: AcisConfig, cache: LabelledBarCache,
         candidates, best, best_params = [], None, None
         for instrument in instruments:
             cost = cost_model(cfg, instrument)
-            history = cache.history(instrument, regime, fd.fold.train_start, train_end, opt.fitness_bars)
+            history = cache.history(instrument, regime, window_start, train_end, None)
             qiea = QIEA(opt, cost, logger, signal_bar_seconds=sig.signal_bar_seconds,
                         atr_period=sig.atr_period)
             champion = qiea.evolve(regime, history, seed=seed_for(fd.fold.index, regime, instrument),
@@ -75,7 +80,7 @@ def evolve_fold(loop, fd, *, cfg: AcisConfig, cache: LabelledBarCache,
                      "last_bar": history.bars[-1].ts.isoformat() if history.bars else None}
             if champion is not None:
                 champions += 1
-                pnls = holdout_pnls(champion, history, opt, cost, sig.atr_period)
+                pnls = holdout_pnls(champion, history, opt, cost, sig.atr_period, train_end)
                 res, m = expectancy_r(pnls), moments(pnls)
                 sharpe = m.sharpe if m is not None else None
                 if sharpe is not None:

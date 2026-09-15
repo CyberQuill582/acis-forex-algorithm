@@ -163,19 +163,21 @@ class LabelledBarCache:
                                   regime=RegimeType(row["regime"]))
 
     def history(self, instrument: str, regime: RegimeType, start: datetime, end: datetime,
-                n: int) -> RegimeLabelledHistory:
-        """The last `n` bars of `regime` that open at or after `start` and CLOSE by `end` (the
-        fold's train window — no bar straddling the train end, nothing from the test window).
-        Every year of the window must be cached, or it raises (GAP-P12D-24 F-I5)."""
+                n: int | None = None) -> RegimeLabelledHistory:
+        """The bars of `regime` that open at or after `start` and CLOSE by `end` (the fold's
+        train window — no bar straddling the train end, nothing from the test window): the last
+        `n` of them, or all of them when `n` is None (evolution's time-span window, master §5
+        v2.18). Every year of the window must be cached, or it raises (GAP-P12D-24 F-I5)."""
         bar = timedelta(seconds=self._spec.bar_seconds)
         picked: list[LabelledBar] = []
         for year in range((end - timedelta(microseconds=1)).year, start.year - 1, -1):
             chunk = [b for b in self.read(instrument, year)
                      if b.regime is regime and start <= b.ts and b.ts + bar <= end]
             picked = chunk + picked
-            if len(picked) >= n:
+            if n is not None and len(picked) >= n:
                 break
-        return RegimeLabelledHistory(instrument=instrument, bars=tuple(picked[-n:]),
+        return RegimeLabelledHistory(instrument=instrument,
+                                     bars=tuple(picked if n is None else picked[-n:]),
                                      bar_seconds=self._spec.bar_seconds)
 
 

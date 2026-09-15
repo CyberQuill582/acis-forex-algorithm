@@ -90,6 +90,18 @@ def test_history_takes_the_last_n_regime_bars_before_the_train_end(tmp_path) -> 
                                       datetime(2014, 1, 6, 0, 1, tzinfo=UTC)]
 
 
+def test_history_without_n_returns_every_regime_bar_in_the_window(tmp_path) -> None:
+    """GAP-P12D-29: evolution's window is a time span, so `n=None` caps nothing."""
+    cache = LabelledBarCache(tmp_path, _spec())
+    cache.write("EUR_USD", 2013, _bars(datetime(2013, 12, 31, 23, 50, tzinfo=UTC), [T, R, T, R]))
+    cache.write("EUR_USD", 2014, _bars(datetime(2014, 1, 6, tzinfo=UTC), [T, T, R, T]))
+    end = datetime(2014, 1, 6, 0, 3, tzinfo=UTC)                  # excludes the last 2014 bar
+    h = cache.history("EUR_USD", T, datetime(2013, 12, 31, 23, 51, tzinfo=UTC), end)
+    assert [b.ts for b in h.bars] == [datetime(2013, 12, 31, 23, 52, tzinfo=UTC),
+                                      datetime(2014, 1, 6, 0, 0, tzinfo=UTC),
+                                      datetime(2014, 1, 6, 0, 1, tzinfo=UTC)]
+
+
 def test_history_drops_straddling_bars_and_bars_before_the_train_start(tmp_path) -> None:
     cache = LabelledBarCache(tmp_path, _spec())
     cache.write("EUR_USD", 2013, _bars(datetime(2013, 12, 31, 23, 50, tzinfo=UTC), [T, R, T, R]))

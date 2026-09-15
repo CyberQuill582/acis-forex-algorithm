@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 
 from core.data.errors import DataQualityError
 from core.optimizer.param_types import GENE_SPECS, RegimeLabelledHistory
-from core.optimizer.qiea import QIEA, decode_gene, repair_invariants
+from core.optimizer.qiea import QIEA, decode_gene, fitness_window, repair_invariants
 from core.regime.regime_types import RegimeType
 from tests.optimizer_fixtures import (
     T0,
@@ -101,13 +103,19 @@ def test_mislabelled_bar_raises() -> None:
         qiea.evolve(REGIME, RegimeLabelledHistory("EUR_USD", bars, bar_seconds=60), seed=1, now=T0)
 
 
-def test_uses_only_last_fitness_bars() -> None:
-    """A 600-bar history evaluates on the trailing fitness_bars=500 (master Â§5)."""
-    qiea, log = make_qiea()
-    ps = qiea.evolve(REGIME, zigzag_history(600), seed=42, now=T0)
-    assert ps is not None
+def test_evolves_on_every_bar_inside_the_span_not_a_bar_count() -> None:
+    """GAP-P12D-29 (master §5 v2.18): the window is a recency span in time. Of 2,000 one-minute
+    bars, exactly the 1,440 that open within one day of `now` are used — the oldest bar on the
+    span's edge included, nothing older, and no 500-bar cap."""
+    cfg = opt_cfg(fitness_span_days=1)
+    history = zigzag_history(2000)
+    now = history.bars[-1].ts + timedelta(seconds=60)
+    window = fitness_window(history, cfg, now)
+    assert len(window) == 1440 and window[0].ts == now - timedelta(days=1)
+    qiea, log = make_qiea(cfg)
+    assert qiea.evolve(REGIME, history, seed=42, now=now) is not None
     run = log.events("EVOLUTION_RUN")[0]["data"]
-    assert run["train_bars"] + run["holdout_bars"] == 500
+    assert run["train_bars"] + run["holdout_bars"] == 1440
 
 
 # ---------------- phase-4 audit triage regressions (GAP-0036/0037/0038) ---------------- #

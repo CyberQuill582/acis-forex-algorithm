@@ -69,7 +69,7 @@ optimizer:
   qbit_resolution: 8
   rotation_angle_rad: 0.05
   qiea_cycle_seconds: 14400
-  fitness_bars: 500
+  fitness_span_days: 730   # master §5 v2.18 (GAP-P12D-29): every target-regime bar in this recency span; = the ratified 2-yr walk-forward train window
   fitness_min_bars: 300
   fitness_min_trades: 10
   holdout_fraction: 0.20

@@ -30,7 +30,7 @@ ACIS-09 Backtest/Validation ──exercises 01–07 end-to-end; owns §14 gate
 |---|---|---|---|---|---|
 | `ACIS-SPEC-DATA-001` | `ACIS-01-DATA_INGESTION.md` | Data `[DIR:core/data]` | raw feed | `MarketState` | v1.1 LOCKED (built, phase 1) |
 | `ACIS-SPEC-REGIME-002` | `ACIS-02-NVMA_REGIME.md` | NVMA `[DIR:core/regime]` | `MarketState` | `RegimeContext` | v1.2 LOCKED (built, phase 3) |
-| `ACIS-SPEC-QIEA-003` | `ACIS-03-QIEA_OPTIMIZER.md` | QIEA `[DIR:core/optimizer]` | `RegimeContext` + history | `ActiveParamSet` | v1.2 LOCKED (built, phase 4) |
+| `ACIS-SPEC-QIEA-003` | `ACIS-03-QIEA_OPTIMIZER.md` | QIEA `[DIR:core/optimizer]` | `RegimeContext` + history | `ActiveParamSet` | v1.4 LOCKED (built, phase 4; v1.4 fitness window = time span) |
 | `ACIS-SPEC-ALPHA-004` | `ACIS-04-ALPHA_ARENA.md` | Alpha Arena `[DIR:core/signals]` | `RegimeContext` + `ActiveParamSet` | `Signal` | v1.2 LOCKED (built, phase 5; AGON) |
 | `ACIS-SPEC-GOV-005` | `ACIS-05-CAPITAL_GOVERNOR.md` | Governor `[DIR:core/governor]` | `Signal` + portfolio | `SizedOrder` | v1.2 LOCKED (built, phase 6) |
 | `ACIS-SPEC-EXEC-006` | `ACIS-06-EXECUTION_ORCHESTRATOR.md` | Execution `[DIR:core/execution]` | `SizedOrder` | `FillReport` | v1.1 LOCKED (phase-8 build started 2026-07-17) |

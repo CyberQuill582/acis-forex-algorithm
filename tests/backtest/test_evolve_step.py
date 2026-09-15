@@ -70,6 +70,25 @@ def test_best_holdout_is_staged_and_nothing_after_the_train_end_is_read(tmp_path
     assert staged_again[0][0].param_set_id == params.param_set_id
 
 
+def test_fold_evolves_on_every_bar_in_the_span_not_the_last_500(tmp_path, acis_config) -> None:
+    """GAP-P12D-29 (master §5 v2.18): the fold's window is every target-regime bar inside both
+    the train window and `fitness_span_days`. With 48 h of train bars and a 1-day span, all
+    1,440 bars of the last day are read (no 500-bar cap) and nothing older."""
+    train_end = T0 + timedelta(days=2)
+    cache = LabelledBarCache(tmp_path, SPEC)
+    for instrument in ("EUR_USD", "USD_JPY"):
+        cache.write(instrument, T0.year, bars_from_closes(zigzag_closes(3000)))
+    system = acis_config.system.model_copy(update={"optimizer": opt_cfg(fitness_span_days=1)})
+    cfg = acis_config.model_copy(update={"system": system})
+    fold = Fold(0, T0, train_end, train_end + timedelta(days=7), train_end + timedelta(days=365))
+    record = evolve_fold(SimpleNamespace(params=_Stager()), FoldData(fold, ()), cfg=cfg,
+                         cache=cache, instruments=["EUR_USD", "USD_JPY"], logger=CapturingLogger())
+    eur, jpy = record["regimes"]["STRONG_TREND_UP"]["candidates"]
+    assert eur["bars"] == jpy["bars"] == 1440
+    assert eur["first_bar"] == (train_end - timedelta(days=1)).isoformat()
+    assert eur["last_bar"] == (train_end - timedelta(minutes=1)).isoformat()
+
+
 class _FixedQIEA:
     """Stands in for QIEA: returns one fixed param set for whatever regime it is asked about."""
 

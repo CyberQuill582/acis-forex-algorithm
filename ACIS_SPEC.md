@@ -1,5 +1,5 @@
 # ACIS — Adaptive Capital Intelligence System
-## Master Specification v2.17 (build authority — spec COMPLETE, build in progress)
+## Master Specification v2.18 (build authority — spec COMPLETE, build in progress)
 
 Status: BUILD AUTHORITY. Consolidates and supersedes `ACIS_Agent_Prompt.md` (Drive, v1.0), `Super_Forex_Agent.html` (Drive, v1.0 architecture brief), and the ACIS sections of the July 2026 Master Spec doc. Where those disagreed (directory layout), this document decides: the detailed `core/` layout below is canonical; the coarse 4-folder layout from the master doc is retired. If any earlier document contradicts this one, this one wins.
 
@@ -178,7 +178,7 @@ Quantum-inspired binary chromosome evolution maintaining a **regime-indexed para
 
 `ParamSet` fields and ranges (minimum set — extend only with spec edit): ema_fast 5–50, ema_slow 20–200, rsi_period 7–21, rsi_overbought 65–80, rsi_oversold 20–35, atr_multiplier_sl 1.0–3.5, atr_multiplier_tp 1.5–5.0, momentum_lookback 5–50, breakout_atr_threshold 0.5–2.0, mean_rev_zscore_entry 1.5–2.5, max_holding_periods 1–48, plus regime, fitness_score, evolved_at.
 
-Fitness = Sharpe×0.40 + WinRate×0.20 + ProfitFactor×0.20 + MaxDrawdownPenalty×(−0.20), evaluated on the last **500 bars of regime-labelled historical data for the target regime only** (never full history). QIEA reads historical data only — never live portfolio state. *(The `Sharpe` component here is the per-trade **mean/σ** shipped as `mean_sigma` — GAP-0105 — a per-regime relative rank, NOT an annualised Sharpe; the only annualised Sharpe in the system is the §14 graded metric.)*
+Fitness = Sharpe×0.40 + WinRate×0.20 + ProfitFactor×0.20 + MaxDrawdownPenalty×(−0.20), evaluated on **every bar of regime-labelled historical data for the target regime inside a declared recency span** (`fitness_span_days`, ACIS-03 — a time span, never a bar count, and never full history; v2.18, GAP-P12D-29). QIEA reads historical data only — never live portfolio state. *(The `Sharpe` component here is the per-trade **mean/σ** shipped as `mean_sigma` — GAP-0105 — a per-regime relative rank, NOT an annualised Sharpe; the only annualised Sharpe in the system is the §14 graded metric.)*
 
 **C8 — fitness is net of costs (binding).** The fitness mini-backtest must apply the **same** spread + commission + swap/slippage cost model used by the §13 backtest harness (`ACIS-09`) — the shared model is unit-tested identical in both places. Optimising on gross (mid-price) returns selects parameters that look profitable in a frictionless world and die net of costs; it is forbidden. This is the classic way a backtest lies, closed at the optimizer, not only at the final gate.
 
@@ -390,6 +390,8 @@ Both laws bind the implementing agent **and** every future spec pass. Neither ma
 > The system's job is not to make the most money possible on any given day. Its job is to **still be running, with positive expectancy, two years from now.** Every design decision must answer: *"Does this make the system more likely to survive a regime it has never seen?"* If the answer is no — redesign it.
 
 ## CHANGELOG
+
+**v2.18 (2026-09-15, owner-ratified in-chat "I ratify a" — the fitness window is a time span, GAP-P12D-29)** — §5 evaluated fitness on "the last 500 bars" of the target regime. The quick engine falsification run (GAP-P12D-28) showed that at 1-minute bars that window's 100-bar holdout almost never holds the 5 trades ACIS-03 §6.3 demands: 0 of 54 evolutions staged a champion on any market (0.0–0.3% of random ParamSets cleared both gates), so the engine never traded. §5 now evaluates every target-regime bar inside a declared recency span (`fitness_span_days` = 730, the ratified 2-year walk-forward train window; the walk-forward also bounds it by each fold's train window). "Never full history" stands; the train and holdout gates, C8 and C9 are unchanged. No guardrail, sizing, veto or staging semantics changed.
 
 **v2.17 (2026-09-13, owner-approved in-chat "I approve steps 1 to 4" — the §13 cross-check made independent, GAP-P12D-14)** — The cross-source sanity check named "Dukascopy vs HistData drift"; GAP-P12D-13 proved HistData's FX ticks are Dukascopy's own prices, so that check could never catch a Dukascopy price error. §13 now names the approved independent set: ECB daily euro reference rates, the EUR/GBP triangle, the market's clock marks (weekend, rollover spread spike, gold's daily break, US jobs-report burst — each vs one hour early/late), and a sampled gold comparison against HistData. Built as `scripts/run_data_validation.py` + `tests/backtest/validation_*.py`; the 2024 trial passed every check (ECB median 1.2–1.8 bps; rollover spike 6–13× at the real instant vs ≈1× an hour off; triangle median 0.09 bps). No guardrail, sizing, veto or staging semantics changed.
 

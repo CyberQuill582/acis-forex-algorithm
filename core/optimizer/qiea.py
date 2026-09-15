@@ -15,7 +15,7 @@ import math
 import random
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
 from config.schemas import OptimizerConfig
@@ -64,6 +64,16 @@ def repair_invariants(genes: dict[str, float | int]) -> dict[str, float | int]:
         )
     # rsi_oversold (20..35) < rsi_overbought (65..80) holds for all in-range values
     return g
+
+
+def fitness_window(history: RegimeLabelledHistory, cfg: OptimizerConfig,
+                   now: datetime) -> tuple[LabelledBar, ...]:
+    """The bars evolution reads (master §5 v2.18, GAP-P12D-29): every target-regime bar that
+    opens within `fitness_span_days` before `now`. A time span, never a bar count — a fixed
+    500 bars left the 1-minute holdout too few trades to ever stage a champion — and never
+    full history."""
+    since = now - timedelta(days=cfg.fitness_span_days)
+    return tuple(b for b in history.bars if b.ts >= since)
 
 
 @dataclass
@@ -134,17 +144,18 @@ class QIEA:
         for bar in history.bars:
             if bar.regime is not regime:
                 raise DataQualityError("bars", bar.regime, f"mislabelled bar (target {regime.value})")
-        bars = history.bars[-cfg.fitness_bars :]
+        evolved_at = now or datetime.now(timezone.utc)
+        bars = fitness_window(history, cfg, evolved_at)
         if len(bars) < cfg.fitness_min_bars:
             self._log.event(
                 "EVOLUTION_INSUFFICIENT_DATA",
                 regime=regime.value, bars=len(bars), required=cfg.fitness_min_bars,
+                span_days=cfg.fitness_span_days,
             )
             return None
 
         n_hold = max(1, round(len(bars) * cfg.holdout_fraction))
         train, holdout = bars[:-n_hold], bars[-n_hold:]
-        evolved_at = now or datetime.now(timezone.utc)
 
         rng = random.Random(seed)
         n_bits = len(_GENE_ORDER) * cfg.qbit_resolution
