@@ -24,7 +24,7 @@ from core.governor.factors import correlation_factor, liquidity_factor, vol_norm
 from core.governor.marginal_alpha import MarginalAlphaEstimator
 from core.governor.portfolio_types import PortfolioState, SizedOrder
 from core.data.bars import Bar
-from core.signals.indicators import wilder_atr
+from core.signals.indicators import AtrMemo
 from core.regime.regime_types import LiqState, RegimeContext
 from core.signals.signal_types import Signal, StrategyType
 
@@ -61,7 +61,7 @@ class CapitalGovernor:
         self._week_close = week_close
         self._week_open = week_open
         self._scalp_horizon_s = scalp_horizon_s
-        self._atr_period = atr_period
+        self._atr = AtrMemo(atr_period)   # GAP-P12D-15: recomputed only when a window changes
         self._blackout = blackout
         self._log = logger
         self.marginal_alpha = MarginalAlphaEstimator(
@@ -358,14 +358,14 @@ class CapitalGovernor:
 
     def _vol_factor(self, instrument: str, snapshot: dict) -> float:
         bars = self._bars.get(instrument)
-        if bars is None or len(bars) <= self._atr_period + 1:
+        if bars is None or len(bars) <= self._atr.period + 1:
             self._log.event("VOL_NORM_PINNED", instrument=instrument)
             snapshot["vol_norm_pinned"] = True
             return 1.0
         seq = list(bars)
         # C16 realized vol = true-range ATR / close over signal BARS (GAP-0059:
         # same unit as the declared per-bar vol_target_atr_frac target)
-        a = wilder_atr(seq, self._atr_period)
+        a = self._atr(instrument, seq)
         if not math.isfinite(a) or a <= 0:
             self._log.event("VOL_NORM_PINNED", instrument=instrument)
             snapshot["vol_norm_pinned"] = True

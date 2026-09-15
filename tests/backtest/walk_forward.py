@@ -16,19 +16,26 @@ from typing import Iterator
 class Fold:
     index: int
     train_start: datetime
-    train_end: datetime          # == test_start (exclusive boundary)
+    train_end: datetime          # exclusive; test_start = train_end + embargo
     test_start: datetime
     test_end: datetime
 
 
 def generate_folds(*, period_start: datetime, period_end: datetime,
                    train_window: timedelta, test_window: timedelta,
-                   step: timedelta) -> list[Fold]:
+                   step: timedelta, embargo: timedelta) -> list[Fold]:
     """Rolling folds across [period_start, period_end). Each fold trains on
-    `train_window` then tests the following `test_window`; the window advances by
-    `step`. Only folds whose test window fits inside the period are emitted."""
+    `train_window`, skips `embargo`, then tests the following `test_window`; the window
+    advances by `step`. Only folds whose test window fits inside the period are emitted.
+
+    GAP-SP12E-03 (López de Prado's purge/embargo): a trade opened near the end of training
+    can run into the test window, so its outcome leaks test prices into what training saw.
+    The embargo must be at least the maximum holding time; `require_embargo` checks that on
+    the real data inside the harness."""
     if train_window <= timedelta(0) or test_window <= timedelta(0) or step <= timedelta(0):
         raise ValueError("walk-forward windows and step must be positive")
+    if embargo < timedelta(0):
+        raise ValueError("embargo must be >= 0")
     # GAP-P11E-06: standard walk-forward uses NON-OVERLAPPING test windows; a
     # step smaller than the test window would replay overlapping OOS periods and
     # double-count them in the concatenated record.
@@ -40,7 +47,7 @@ def generate_folds(*, period_start: datetime, period_end: datetime,
     i = 0
     while True:
         train_end = train_start + train_window
-        test_start = train_end
+        test_start = train_end + embargo
         test_end = test_start + test_window
         if test_end > period_end:
             break
@@ -48,3 +55,12 @@ def generate_folds(*, period_start: datetime, period_end: datetime,
         train_start = train_start + step
         i += 1
     return folds
+
+
+def require_embargo(index: int, last_train: datetime, first_test: datetime,
+                    max_hold_s: float) -> None:
+    """Refuse a fold whose real train→test data gap is shorter than the maximum hold."""
+    gap = (first_test - last_train).total_seconds()
+    if gap < max_hold_s:
+        raise ValueError(f"fold {index}: train→test gap {gap:.0f} s is shorter than the "
+                         f"{max_hold_s:.0f} s max hold — an embargo is required (GAP-SP12E-03)")

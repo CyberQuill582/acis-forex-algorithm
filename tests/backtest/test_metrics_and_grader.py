@@ -36,6 +36,13 @@ def test_sharpe_zero_variance_is_zero_not_inf() -> None:
     assert annual_sharpe([0.01], 252) == 0.0                  # <2 samples
 
 
+def test_constant_nonzero_returns_have_no_sharpe() -> None:
+    """GAP-P12D-17: a plain `sum` left float dust on a long constant series — an annual
+    Sharpe of 4.5e16 from 50 × 0.01 — which would clear the §14 Sharpe > 1.5 gate."""
+    for value, n in ((0.01, 50), (0.001, 252), (-0.0007, 500)):
+        assert annual_sharpe([value] * n, 252) == 0.0
+
+
 def test_max_drawdown_peak_to_trough() -> None:
     # 100 → 120 → 90 → 130: worst DD is (120-90)/120 = 25%
     assert max_drawdown_pct(_eq([100, 120, 90, 130])) == 25.0
@@ -67,7 +74,7 @@ def test_avg_duration_carve_out_excludes_tsmom_and_scalp() -> None:
         ClosedTrade(T0, T0 + timedelta(minutes=10), Decimal("1"), "MOMENTUM_SCALP"),  # excluded
     ]
     m = compute_metrics(trades=trades, equity_curve=_eq([100, 101, 102]),
-                        spx_returns=[0.0, 0.0], periods_per_year=252)
+                        rollover_marks=(), spx_closes={}, periods_per_year=252)
     # the §14 band metric sees ONLY the 2h TREND trade
     assert m.avg_trade_duration_s == 2 * 3600
     # TSMOM + scalp are surfaced separately, never folded in
@@ -103,10 +110,10 @@ def test_generate_folds_rolling() -> None:
     folds = generate_folds(
         period_start=T0, period_end=T0 + timedelta(days=365),
         train_window=timedelta(days=180), test_window=timedelta(days=30),
-        step=timedelta(days=30))
+        step=timedelta(days=30), embargo=timedelta(days=7))
     assert len(folds) >= 2
     assert folds[0].train_start == T0
-    assert folds[0].test_start == folds[0].train_end          # contiguous
+    assert folds[0].test_start == folds[0].train_end + timedelta(days=7)   # embargo gap
     assert all(f.test_end <= T0 + timedelta(days=365) for f in folds)
 
 
@@ -118,7 +125,7 @@ def test_generate_folds_rejects_overlapping_oos() -> None:
         generate_folds(
             period_start=T0, period_end=T0 + timedelta(days=365),
             train_window=timedelta(days=180), test_window=timedelta(days=30),
-            step=timedelta(days=15))                           # step < test_window
+            step=timedelta(days=15), embargo=timedelta(days=7))   # step < test_window
 
 
 # -- grader honesty guards ---------------------------------------------------- #
@@ -137,13 +144,34 @@ def _report(**over):
     base = dict(account="dev_paper", period=two_years, n_folds=3,
                 in_sample=_block(), out_of_sample=_block(), per_regime={},
                 guardrail_hash=GH, expected_guardrail_hash=GH,
-                var_breach_frequency=0.0, rule_violations=[], fidelity_caveats=["tick"])
+                var_breach_frequency=0.0, rule_violations=[], fidelity_caveats=["tick"],
+                trial_count=12, deflated_sharpe=0.97)
     base.update(over)
     return build_report(**base)
 
 
 def test_passing_report_passes() -> None:
     assert _report().passed is True
+
+
+def test_deflated_sharpe_below_095_cannot_pass() -> None:
+    """GAP-P12D-16 (owner-ratified): every §14 metric passes, but the Sharpe does not
+    survive the correction for the trials behind it."""
+    r = _report(deflated_sharpe=0.94)
+    assert all(r.targets_met.values()) and r.passed is False
+    assert _report(deflated_sharpe=0.95).passed is True
+    assert _report(deflated_sharpe=float("nan")).passed is False       # no Sharpe at all
+
+
+def test_unrecorded_trials_cannot_pass() -> None:
+    """Fewer than 2 trials means the selection went unrecorded, so the DSR corrects nothing."""
+    assert _report(trial_count=1).passed is False
+    r = _report()
+    kwargs = dict(account=r.account, period=r.period, n_folds=3, in_sample=r.in_sample,
+                  out_of_sample=r.out_of_sample, per_regime={}, guardrail_hash=GH,
+                  expected_guardrail_hash=GH, var_breach_frequency=0.0, rule_violations=[],
+                  fidelity_caveats=["tick"])
+    assert build_report(**kwargs).passed is False                       # the defaults cannot pass
 
 
 def test_single_fold_cannot_pass() -> None:

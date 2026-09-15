@@ -41,13 +41,14 @@ train fold; the validation design is not an optimisation target.
   fold, tuning, or design decision until the design is frozen — then graded **once**
   as the meta-overfit confirmation (a "double out-of-sample" check). The driver
   physically guards it (a holdout guard) until that single final grade.
-- **Honesty enhancements — ⛔ TO BUILD (NOT yet in code), REQUIRED before any §14 pass
-  can gate live** (spec audit GAP-SP12E-03): (1) an **embargo gap** in `generate_folds`
-  (today `test_start = train_end`, zero gap — boundary leakage is NOT yet removed);
-  (2) **Deflated Sharpe + a logged trial-count** in the report (today the grader
-  applies **raw** `annual_sharpe > 1.5` with no multiple-testing deflation). These are
-  the defences against the GAP-SP12E-01 overfit risk; citing them is not shipping them
-  — they must exist in code before a "PASSED" report is trustworthy. **Deferred:**
+- **Honesty enhancements — BUILT 2026-09-15** (spec audit GAP-SP12E-03, ACIS-09 C-BT-11):
+  (1) `generate_folds(embargo=…)` leaves the gap, and `Backtest.run` refuses a fold whose
+  real train→test data gap is shorter than the max hold; (2) every report carries
+  `trial_count` and the **Deflated Sharpe** (`deflated_sharpe.py`, pinned to Bailey & López
+  de Prado's own numerical example) — pass the per-period Sharpe ratio of every
+  configuration tried as `trial_sharpes`. **Gate (owner-ratified 2026-09-15, GAP-P12D-16):**
+  `passed` requires DSR ≥ 0.95 over ≥ 2 trials; the trials are the ACIS-11 attempt-registry
+  configurations for the strategy family plus each fold's champion. **Deferred:**
   Combinatorial Purged CV (the spec mandates walk-forward; CPCV is a bigger §13
   change — documented future option, not built now).
 
@@ -84,8 +85,8 @@ Tick resolution with bid + ask throughout.
   banks → `financing.py`. **Still to build:** the historical event calendar (GAP-P12D-03).
 
 Before any §14 pass is presented: `scripts/run_data_validation.py` — ECB reference rates, the EUR/GBP triangle,
-the market's clock marks and sampled gold vs HistData (C-BT-9, GAP-P12D-14) — with every flag explained. Then: streaming evolve-driver (per-fold, never the full history in RAM) with
-embargo + Deflated Sharpe (GAP-SP12E-03), date-joined SPX (GAP-SP12E-06) → holdout guard.
+the market's clock marks and sampled gold vs HistData (C-BT-9, GAP-P12D-14) — with every flag explained. Then: streaming evolve-driver (per-fold, never the full history in RAM) feeding the embargoed
+folds, `trial_sharpes` and the downloaded SPX closes as `spx_closes` (date-joined — GAP-SP12E-06) → holdout guard.
 `data/` is git-ignored.
 
 ## §14 minimums (out-of-sample, ≥2 years) — enforced in `report.py`
@@ -102,7 +103,8 @@ embargo + Deflated Sharpe (GAP-SP12E-03), date-joined SPX (GAP-SP12E-06) → hol
 
 `passed` additionally requires (all in `build_report`, provable by test): graded on
 the **OOS block only** (C-BT-1), **≥2 years** and **>1 walk-forward fold** (C-BT-2),
-**≥30 trades** (P11I-07), **empty `rule_violations`** (§9.5, C-BT-7), and a
+**≥30 trades** (P11I-07), a **Deflated Sharpe ≥ 0.95 over ≥ 2 recorded trials**
+(C-BT-11, GAP-P12D-16), **empty `rule_violations`** (§9.5, C-BT-7), and a
 **matching production `guardrail_hash`** (C-BT-4). Loosening any of these is a
 master-spec change, not a config tweak.
 

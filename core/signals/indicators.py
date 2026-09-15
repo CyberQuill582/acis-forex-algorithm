@@ -10,6 +10,7 @@ score and named for what it is (declared deviation, ACIS-04 §6.1).
 from __future__ import annotations
 
 import math
+import operator
 from typing import Sequence
 
 from core.data.bars import Bar
@@ -23,6 +24,31 @@ def wilder_atr(bars: Sequence[Bar], period: int) -> float:
         return float("nan")
     value = atr_series(bars, period)[-1]
     return value if value > 0 else float("nan")
+
+
+class AtrMemo:
+    """`wilder_atr` memoised on the exact bar sequence (GAP-P12D-15).
+
+    Invariant: a cached value is returned only when the window holds the very same Bar
+    objects, in the same order, as the call that computed it. Bars are frozen and
+    `wilder_atr` is pure, so the memo can never change a result; it only skips the
+    recomputation. Signal-bar ATR changes only when a bar completes, so every call
+    between two bars is a hit. The key only groups windows: a wrong key costs a
+    recomputation, never a wrong value.
+    """
+
+    def __init__(self, period: int) -> None:
+        self.period = period
+        self._cache: dict[str, tuple[tuple[Bar, ...], float]] = {}
+
+    def __call__(self, key: str, bars: Sequence[Bar]) -> float:
+        hit = self._cache.get(key)
+        if (hit is not None and bars and len(hit[0]) == len(bars) and hit[0][-1] is bars[-1]
+                and all(map(operator.is_, hit[0], bars))):
+            return hit[1]
+        value = wilder_atr(bars, self.period)
+        self._cache[key] = (tuple(bars), value)
+        return value
 
 
 def bollinger_z(mids: Sequence[float], window: int = 20) -> float:

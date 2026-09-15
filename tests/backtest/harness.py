@@ -31,7 +31,7 @@ P11E-01). `run` grades ONLY the concatenated out-of-sample folds (C-BT-1).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Callable, Mapping, Sequence
 
@@ -39,11 +39,13 @@ from core.data.fx_clock import business_rollovers, holds_through_weekend
 from core.data.normaliser import MarketState
 from core.optimizer.costs import CostModel
 from tests.backtest.carry import FinancingRate, financing_charge
+from tests.backtest.deflated_sharpe import deflated_sharpe
 from tests.backtest.metrics import (ClosedTrade, MetricBlock, _returns_from_equity,
                                     compute_metrics, rolling_var_breach_rate)
 from tests.backtest.money import quote_to_account
 from tests.backtest.report import ValidationReport, build_report
-from tests.backtest.walk_forward import Fold
+from tests.backtest.rollover_marks import RolloverMarker
+from tests.backtest.walk_forward import Fold, require_embargo
 
 _UTC = timezone.utc
 
@@ -79,6 +81,7 @@ class _BookState:
     last_day: object = None
     peak: Decimal | None = None                  # running intraday high-water
     max_dd_pct: float = 0.0                       # worst intraday peak-to-trough %
+    marker: RolloverMarker = field(default_factory=RolloverMarker)   # SPX join (SP12E-06)
 
 
 @dataclass(frozen=True)
@@ -129,6 +132,7 @@ class Backtest:
             # (GAP-P11I-04), and additionally sample the daily curve once per day.
             marked = self._nav0 + book.realised + self._unrealised(book)
             self._mark_drawdown(book, marked)
+            book.marker.observe(st.timestamp, marked)
             day = st.timestamp.date()
             if day != book.last_day:
                 book.equity.append((st.timestamp, marked))
@@ -234,13 +238,18 @@ class Backtest:
 
     def run(self, *, loop, folds: Sequence[FoldData],
             evolve_fn: Callable[[object, Sequence[MarketState]], None],
-            spx_returns: Sequence[float], guardrail_hash: str,
-            expected_guardrail_hash: str,
-            extra_caveats: Sequence[str] = ()) -> ValidationReport:
+            spx_closes: Mapping[date, float], guardrail_hash: str,
+            expected_guardrail_hash: str, extra_caveats: Sequence[str] = (),
+            trial_sharpes: Sequence[float] = ()) -> ValidationReport:
         """Drive the ONE composed real `loop` across walk-forward folds. Per fold:
         `evolve_fn` evolves QIEA on the TRAIN states and freezes; the train replay
         feeds a CONTINUOUS in-sample book (transparency only); the test replay
-        feeds a CONTINUOUS out-of-sample book — the graded record (C-BT-1)."""
+        feeds a CONTINUOUS out-of-sample book — the graded record (C-BT-1).
+        `trial_sharpes`: per-period Sharpe ratios of every configuration tried (DSR)."""
+        for fd in folds:                             # GAP-SP12E-03: embargo on the real data
+            if fd.train_states and fd.test_states:
+                require_embargo(fd.fold.index, fd.train_states[-1].timestamp,
+                                fd.test_states[0].timestamp, self._max_hold_s)
         oos, insample = _BookState(), _BookState()
         for fd in folds:
             evolve_fn(loop, fd.train_states)         # QIEA evolves on TRAIN only
@@ -264,21 +273,26 @@ class Backtest:
              "NO overnight financing modelled (no rate model supplied) — overnight "
              "and weekend holds are flattered"),
             "PnL converted quote→USD at the close rate (crosses via their quote leg)",
+            *(() if len(trial_sharpes) >= 2 else ("fewer than 2 trial Sharpe ratios supplied — "
+              "selection bias is uncorrected, so the run cannot pass (GAP-P12D-16)",)),
             *extra_caveats,
         )
         return build_report(
             account=self._account, period=period, n_folds=len(folds),
-            in_sample=self._metrics(insample, spx_returns),
-            out_of_sample=self._metrics(oos, spx_returns), per_regime={},
+            in_sample=self._metrics(insample, spx_closes),
+            out_of_sample=self._metrics(oos, spx_closes), per_regime={},
             guardrail_hash=guardrail_hash, expected_guardrail_hash=expected_guardrail_hash,
             var_breach_frequency=rolling_var_breach_rate(oos_returns),
-            rule_violations=self._rule_violations(oos.trades), fidelity_caveats=caveats)
+            rule_violations=self._rule_violations(oos.trades), fidelity_caveats=caveats,
+            trial_count=len(trial_sharpes),
+            deflated_sharpe=deflated_sharpe(oos_returns, trial_sharpes))
 
-    def _metrics(self, book: _BookState, spx_returns: Sequence[float]) -> MetricBlock:
+    def _metrics(self, book: _BookState, spx_closes: Mapping[date, float]) -> MetricBlock:
         equity = book.equity or [(datetime.now(_UTC), self._nav0)]
         # GAP-P11I-04: grade drawdown off the INTRADAY high-water, not the daily curve
         return compute_metrics(trades=book.trades, equity_curve=equity,
-                               spx_returns=spx_returns, periods_per_year=self._ppy,
+                               rollover_marks=book.marker.marks, spx_closes=spx_closes,
+                               periods_per_year=self._ppy,
                                max_drawdown_pct_override=book.max_dd_pct)
 
 

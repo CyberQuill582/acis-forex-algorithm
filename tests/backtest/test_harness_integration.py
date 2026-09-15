@@ -32,10 +32,12 @@ def _states(factory, n=250):
 
 
 def _two_folds(states):
+    """60-s ticks; 6 ticks are dropped before each test window so the train→test gap
+    (360 s) clears the 300-s max hold — the GAP-SP12E-03 embargo."""
     h = len(states) // 2
     q = h // 2
-    f0 = FoldData(Fold(0, T0, T0, T0, T0), states[:q], states[q:h])
-    f1 = FoldData(Fold(1, T0, T0, T0, T0), states[h:h + q], states[h + q:])
+    f0 = FoldData(Fold(0, T0, T0, T0, T0), states[:q - 6], states[q:h])
+    f1 = FoldData(Fold(1, T0, T0, T0, T0), states[h:h + q - 6], states[h + q:])
     return [f0, f1]
 
 
@@ -53,7 +55,7 @@ def test_harness_drives_real_engine_and_produces_report(tmp_path, acis_config, f
     bt = Backtest(account="dev_paper", cost_model=TEST_COSTS, max_hold_s=300)
 
     report = bt.run(loop=loop, folds=folds, evolve_fn=lambda lp, tr: None,
-                    spx_returns=[0.0] * 400, guardrail_hash=gh,
+                    spx_closes={}, guardrail_hash=gh,
                     expected_guardrail_hash=gh)
 
     # a populated per-account report came out of the REAL engine
@@ -75,7 +77,7 @@ def test_no_promoted_params_means_no_trades(tmp_path, acis_config, factory) -> N
     states = _states(factory)
     bt = Backtest(account="dev_paper", cost_model=TEST_COSTS, max_hold_s=300)
     report = bt.run(loop=loop, folds=_two_folds(states), evolve_fn=lambda lp, tr: None,
-                    spx_returns=[0.0] * 400, guardrail_hash="GH", expected_guardrail_hash="GH")
+                    spx_closes={}, guardrail_hash="GH", expected_guardrail_hash="GH")
     assert report.out_of_sample.n_trades == 0
     assert len(loop.book.orders) == 0
 
@@ -88,6 +90,6 @@ def test_relaxed_limits_flagged_invalid(tmp_path, acis_config, factory) -> None:
     states = _states(factory)
     bt = Backtest(account="dev_paper", cost_model=TEST_COSTS, max_hold_s=300)
     report = bt.run(loop=loop, folds=_two_folds(states), evolve_fn=lambda lp, tr: None,
-                    spx_returns=[0.0] * 400, guardrail_hash="RELAXED_LIMITS",
+                    spx_closes={}, guardrail_hash="RELAXED_LIMITS",
                     expected_guardrail_hash=guardrail_hash(acis_config.guardrails))
     assert report.passed is False

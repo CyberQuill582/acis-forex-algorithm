@@ -20,6 +20,7 @@ from typing import Protocol
 from config.schemas import ZonedTime
 from core.data.errors import DataQualityError
 from core.data.fx_clock import at_local_minute
+from core.data.sqlite_wal import open_store
 from core.optimizer.param_types import ActiveParamSet, ParamSet, PendingEntry
 from core.regime.regime_types import RegimeType
 
@@ -96,13 +97,15 @@ class ParamLibrary:
         gate: PositionGate,
         logger,
     ) -> None:
-        self._db = sqlite3.connect(str(db_path))
+        self._db = open_store(db_path)
         self._db.executescript(_SCHEMA)
         self._db.commit()
         self._boundaries = boundaries
         self._stall_threshold = stall_alert_boundaries
         self._gate = gate
         self._log = logger
+        # GAP-P12D-15: regime -> (the exact active row, its parsed set); see get_active
+        self._parsed: dict[RegimeType, tuple[tuple, ActiveParamSet]] = {}
 
     # -- staging (§7.2) ------------------------------------------------------ #
 
@@ -199,17 +202,24 @@ class ParamLibrary:
     # -- reads ----------------------------------------------------------------- #
 
     def get_active(self, regime: RegimeType) -> ActiveParamSet | None:
+        """Called on every tick. The row is ALWAYS read (cheap in WAL mode,
+        core/data/sqlite_wal.py), so a promotion through any connection is visible on the
+        very next call. Only the parse is reused, and only while the row is identical: the
+        set is a pure function of the row (GAP-P12D-15)."""
         row = self._db.execute(
             "SELECT params, promoted_at, source_pending_id FROM param_active WHERE regime = ?",
             (regime.value,),
         ).fetchone()
         if row is None:
             return None
-        return ActiveParamSet(
-            regime=regime, params=_params_from_json(row[0]),
-            promoted_at=datetime.fromisoformat(row[1]),
-            source_pending_id=row[2],
-        )
+        hit = self._parsed.get(regime)
+        if hit is None or hit[0] != row:
+            hit = self._parsed[regime] = (row, ActiveParamSet(
+                regime=regime, params=_params_from_json(row[0]),
+                promoted_at=datetime.fromisoformat(row[1]),
+                source_pending_id=row[2],
+            ))
+        return hit[1]
 
     def has_active(self, regime: RegimeType) -> bool:
         return self.get_active(regime) is not None

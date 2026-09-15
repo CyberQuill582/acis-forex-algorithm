@@ -110,7 +110,7 @@ def test_oos_book_is_continuous_across_folds() -> None:
     folds = [FoldData(Fold(0, d0, d0, d0, d0), (), f0_states),
              FoldData(Fold(1, d1, d1, d1, d1), (), f1_states)]
     bt = Backtest(account="acc", cost_model=TEST_COSTS)
-    r = bt.run(loop=loop, folds=folds, evolve_fn=_noop, spx_returns=[0.0] * 8,
+    r = bt.run(loop=loop, folds=folds, evolve_fn=_noop, spx_closes={},
                guardrail_hash="GH", expected_guardrail_hash="GH")
     assert r.out_of_sample.n_trades == 2                     # BOTH folds' trades kept
     assert r.out_of_sample.win_rate == 1.0                   # both were winners
@@ -129,7 +129,7 @@ def test_period_is_derived_from_oos_data_not_fold_claim() -> None:
     folds = [FoldData(bogus, (), f0), FoldData(bogus, (), f1)]
     bt = Backtest(account="acc", cost_model=TEST_COSTS)
     r = bt.run(loop=_FakeLoop({}), folds=folds, evolve_fn=_noop,
-               spx_returns=[0.0] * 4, guardrail_hash="GH", expected_guardrail_hash="GH")
+               spx_closes={}, guardrail_hash="GH", expected_guardrail_hash="GH")
     assert r.period[0] == d0 and r.period[1] == d1           # true data span, not the claim
 
 
@@ -146,7 +146,7 @@ def test_min_hold_violation_populates_rule_violations_and_fails() -> None:
     strict = _rulebook(min_hold_seconds=3600)                # 1h min hold
     bt = Backtest(account="strict", cost_model=TEST_COSTS, rulebook=strict)
     r = bt.run(loop=_FakeLoop(script), folds=[FoldData(Fold(0, d0, d0, d0, d0), (), states)],
-               evolve_fn=_noop, spx_returns=[0.0] * 4,
+               evolve_fn=_noop, spx_closes={},
                guardrail_hash="GH", expected_guardrail_hash="GH")
     assert "min_hold" in r.rule_violations
     assert r.passed is False
@@ -164,7 +164,7 @@ def test_rule_enforcement_is_per_account() -> None:
                       rulebook=_rulebook(min_hold_seconds=3600))
     lax = Backtest(account="lax", cost_model=TEST_COSTS,
                    rulebook=_rulebook(min_hold_seconds=0))
-    common = dict(evolve_fn=_noop, spx_returns=[0.0] * 4,
+    common = dict(evolve_fn=_noop, spx_closes={},
                   guardrail_hash="GH", expected_guardrail_hash="GH")
     r_strict = strict.run(loop=_FakeLoop(dict(script)), folds=fold, **common)
     r_lax = lax.run(loop=_FakeLoop(dict(script)), folds=fold, **common)
@@ -184,7 +184,7 @@ def test_overnight_carry_reduces_pnl_of_a_held_position() -> None:
     states = [_ms(d0, 1.10), _ms(exit_ts, 1.11)]             # open, then close on target
     script = {d0: [_order(d0, 1, 1.10, 1.05, 1.11)]}
     fold = [FoldData(Fold(0, d0, d0, d0, d0), (), states)]
-    common = dict(folds=fold, evolve_fn=_noop, spx_returns=[0.0] * 4,
+    common = dict(folds=fold, evolve_fn=_noop, spx_closes={},
                   guardrail_hash="GH", expected_guardrail_hash="GH")
 
     no_carry = Backtest(account="a", cost_model=TEST_COSTS)
@@ -323,7 +323,7 @@ def test_intraday_drawdown_is_not_understated_by_daily_sampling() -> None:
     bt = Backtest(account="a", cost_model=TEST_COSTS)
     r = bt.run(loop=_FakeLoop(script),
                folds=[FoldData(Fold(0, d0, d0, d0, d0), (), states)],
-               evolve_fn=_noop, spx_returns=[0.0] * 4,
+               evolve_fn=_noop, spx_closes={},
                guardrail_hash="GH", expected_guardrail_hash="GH")
     # 1000 units × 0.045 dip on a ~10000 NAV ≈ 0.45% intraday DD — must NOT be 0
     assert r.out_of_sample.max_drawdown_pct > 0.3
@@ -369,7 +369,7 @@ def test_all_open_positions_marked_each_day() -> None:
               _ms2(d0 + timedelta(days=1), other, 150.0)]     # day2: only USD_JPY ticks
     bt = Backtest(account="a", cost_model=TEST_COSTS)
     r = bt.run(loop=_L(), folds=[FoldData(Fold(0, d0, d0, d0, d0), (), states)],
-               evolve_fn=_noop, spx_returns=[0.0] * 4,
+               evolve_fn=_noop, spx_closes={},
                guardrail_hash="GH", expected_guardrail_hash="GH")
     # EUR_USD down 0.05 × 1000 = −50 on ~10000 NAV ≈ 0.5% DD, still visible on day 2
     assert r.out_of_sample.max_drawdown_pct > 0.3

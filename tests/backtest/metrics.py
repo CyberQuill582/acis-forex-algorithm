@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Sequence
+from typing import Mapping, Sequence
 
 # strategies excluded from the §14 avg-duration band (reported separately)
 _DURATION_CARVE_OUT = frozenset({"TSMOM", "MOMENTUM_SCALP"})
@@ -80,8 +80,10 @@ def annual_sharpe(returns: Sequence[float], periods_per_year: float) -> float:
     r = [x for x in returns if math.isfinite(x)]
     if len(r) < 2:
         return 0.0
-    mean = sum(r) / len(r)
-    var = sum((x - mean) ** 2 for x in r) / (len(r) - 1)
+    # GAP-P12D-17: fsum keeps a constant series exactly constant — a plain sum of 50 × 0.01
+    # left float dust, sd ≈ 1e-18 and an annual Sharpe of 4.5e16 that cleared §14's > 1.5
+    mean = math.fsum(r) / len(r)
+    var = math.fsum((x - mean) ** 2 for x in r) / (len(r) - 1)
     sd = math.sqrt(var)
     if sd == 0.0:
         return 0.0
@@ -129,24 +131,30 @@ def positive_months_pct(equity: Sequence[tuple[datetime, Decimal]]) -> float:
     return pos / (len(months) - 1) * 100.0
 
 
-def spx_correlation(returns: Sequence[float], spx_returns: Sequence[float]) -> float:
-    """Pearson correlation of period returns. Degenerate variance → 0.0 (no
-    spurious correlation from a flat series).
+def spx_correlation(marks: Sequence[tuple[date, Decimal]],
+                    spx_closes: Mapping[date, float]) -> float:
+    """Pearson correlation of strategy and S&P 500 returns over the SAME date intervals
+    (GAP-SP12E-06: the old positional zip, which silently paired mismatched days, is gone).
 
-    CALLER PRECONDITION (GAP-SP12E-06, load-bearing): the two series MUST be
-    DATE-ALIGNED before this call — element i of `returns` and `spx_returns` must be
-    the SAME calendar day. This function zips by POSITION and cannot detect a
-    misalignment; FX and SPX trade on different calendars (FX runs on some US
-    holidays; SPX has ~252 vs FX's ~260 sessions/yr), so a positional zip of
-    un-joined series silently correlates mismatched dates and yields a meaningless,
-    usually-near-zero value — a FALSE CLEAR of the §14 SPX-corr<0.25 diversification
-    gate. The OOS driver owes a date-join of the SPX series to the equity dates, with
-    a holiday-mismatch fixture proving it (tracked to the evolve-driver build)."""
-    n = min(len(returns), len(spx_returns))
-    a = [returns[i] for i in range(n) if math.isfinite(returns[i]) and math.isfinite(spx_returns[i])]
-    b = [spx_returns[i] for i in range(n) if math.isfinite(returns[i]) and math.isfinite(spx_returns[i])]
-    if len(a) < 2:
-        return 0.0
+    `marks` is equity marked at each 17:00-New-York rollover, labelled by its New York date
+    (`rollover_marks.py`); `spx_closes` maps a date to the index close. Each pair of
+    consecutive SPX session dates (p, d) with an equity mark on both gives one sample,
+    (equity[d]/equity[p] - 1, close[d]/close[p] - 1). A US holiday or an FX-only day
+    therefore never pairs different days; the FX return simply spans the same p → d.
+    DECLARED DEVIATION: the FX mark is taken at 17:00 New York, one hour after the 16:00
+    SPX close. Fewer than 3 joined samples ⇒ NaN, which FAILS the §14 gate (NaN < 0.25 is
+    False), so missing data can never clear it. Zero variance ⇒ 0.0 (a flat series has no
+    correlation)."""
+    eq = {d: float(v) for d, v in marks}
+    days = sorted(d for d, c in spx_closes.items() if math.isfinite(c) and c > 0)
+    a: list[float] = []
+    b: list[float] = []
+    for p, d in zip(days, days[1:]):
+        if p in eq and d in eq and eq[p] != 0.0:
+            a.append(eq[d] / eq[p] - 1.0)
+            b.append(spx_closes[d] / spx_closes[p] - 1.0)
+    if len(a) < 3:
+        return math.nan
     ma, mb = sum(a) / len(a), sum(b) / len(b)
     cov = sum((x - ma) * (y - mb) for x, y in zip(a, b))
     va = sum((x - ma) ** 2 for x in a)
@@ -217,7 +225,8 @@ def rolling_var_breach_rate(returns: Sequence[float], *, z: float = _Z_99) -> fl
 
 def compute_metrics(*, trades: Sequence[ClosedTrade],
                     equity_curve: Sequence[tuple[datetime, Decimal]],
-                    spx_returns: Sequence[float],
+                    rollover_marks: Sequence[tuple[date, Decimal]],
+                    spx_closes: Mapping[date, float],
                     periods_per_year: float,
                     max_drawdown_pct_override: float | None = None) -> MetricBlock:
     """`max_drawdown_pct_override` (GAP-P11I-04): when the caller has measured the
@@ -234,7 +243,7 @@ def compute_metrics(*, trades: Sequence[ClosedTrade],
         win_rate=win_rate(trades),
         profit_factor=profit_factor(trades),
         positive_months_pct=positive_months_pct(equity_curve),
-        spx_correlation=spx_correlation(returns, spx_returns),
+        spx_correlation=spx_correlation(rollover_marks, spx_closes),
         avg_trade_duration_s=_avg_duration(trades, include=True),        # §14 band
         tsmom_avg_duration_s=_avg_duration(trades, include=False, only="TSMOM"),
         scalp_avg_duration_s=_avg_duration(trades, include=False, only="MOMENTUM_SCALP"),

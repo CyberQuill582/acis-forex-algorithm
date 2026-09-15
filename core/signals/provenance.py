@@ -12,13 +12,13 @@ promotion requires a human token (C-PRV-3 — no agent self-promotion).
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 
 from core.data.errors import DataQualityError
+from core.data.sqlite_wal import open_store
 from core.optimizer.param_library import PromotionForbiddenError
 
 
@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS reading_list (
 
 class ProvenanceStore:
     def __init__(self, db_path: str | Path, revalidation_cadence_days: int, logger) -> None:
-        self._db = sqlite3.connect(str(db_path))
+        self._db = open_store(db_path)
         self._db.executescript(_SCHEMA)
         self._db.commit()
         self._cadence = revalidation_cadence_days

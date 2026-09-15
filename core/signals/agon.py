@@ -25,6 +25,7 @@ from core.optimizer.param_types import ParamSet
 from core.regime.regime_types import LiqState, RegimeContext, RegimeType, VolClass
 from core.signals.canonical import STRATEGY_IDS
 from core.signals.indicators import (
+    AtrMemo,
     adx_proxy,
     bollinger_z,
     clamp01,
@@ -32,7 +33,6 @@ from core.signals.indicators import (
     pair_spread_z,
     rolling_correlation,
     rsi_series,
-    wilder_atr,
 )
 from core.signals.provenance import ProvenanceStore
 from core.signals.signal_types import Signal, StrategyType
@@ -83,6 +83,7 @@ class AGON:
         self._prov = provenance
         self._median = session_median
         self._log = logger
+        self._atr = AtrMemo(cfg.atr_period)   # GAP-P12D-15: recomputed only when a window changes
         # v2.11 time base: windows hold completed OHLC BARS of signal_bar_seconds
         # (ext-review C2: capacities DERIVED from config — silent starvation is
         # structurally impossible).
@@ -377,7 +378,7 @@ class AGON:
         adx_value, _ = adx_proxy(seq, self._cfg.atr_period)
         return [_Raw(StrategyType.TREND, state.instrument,
                      1 if crossed_up else -1, clamp01(adx_value / 50.0),
-                     state.mid, wilder_atr(bars, self._cfg.atr_period))]
+                     state.mid, self._atr(state.instrument, bars))]
 
     def _breakout(self, state: MarketState, regime: RegimeContext,
                   params: ParamSet) -> list[_Raw]:
@@ -387,7 +388,7 @@ class AGON:
             return []
         channel_high = max(seq[-lookback - 1:-1])
         channel_low = min(seq[-lookback - 1:-1])
-        a = wilder_atr(bars, self._cfg.atr_period)
+        a = self._atr(state.instrument, bars)
         if a <= 0 or math.isnan(a):
             return []
         threshold = params.breakout_atr_threshold * a
@@ -423,9 +424,8 @@ class AGON:
             if max(rsi_window) - rsi_now < 5.0:
                 return []
             direction = -1
-        a = wilder_atr(bars, self._cfg.atr_period)
         return [_Raw(StrategyType.MEAN_REVERSION, state.instrument, direction,
-                     clamp01(abs(z) / 2.0), state.mid, a)]
+                     clamp01(abs(z) / 2.0), state.mid, self._atr(state.instrument, bars))]
 
     def _momentum_scalp(self, state: MarketState, regime: RegimeContext,
                         params: ParamSet) -> list[_Raw]:
@@ -444,7 +444,7 @@ class AGON:
             return []
         return [_Raw(StrategyType.MOMENTUM_SCALP, state.instrument,
                      1 if slope > 0 else -1, clamp01(ratio / 3.0),
-                     state.mid, wilder_atr(bars, self._cfg.atr_period))]
+                     state.mid, self._atr(state.instrument, bars))]
 
     def _pair_divergence(self, state: MarketState, regime: RegimeContext,
                          params: ParamSet) -> list[_Raw]:
@@ -471,8 +471,8 @@ class AGON:
             dir_b = -rel.expected_sign * dir_a
             conviction = clamp01(abs(z) / 3.0) * abs(corr)
             group_id = str(uuid.uuid4())
-            atr_a = wilder_atr(list(self._bars.get(leg_a, ())), self._cfg.atr_period)
-            atr_b = wilder_atr(list(self._bars.get(leg_b, ())), self._cfg.atr_period)
+            atr_a = self._atr(leg_a, list(self._bars.get(leg_a, ())))
+            atr_b = self._atr(leg_b, list(self._bars.get(leg_b, ())))
             out.append(_Raw(StrategyType.PAIR_DIVERGENCE, leg_a, dir_a, conviction,
                             a_col[-1], atr_a, group_id))
             out.append(_Raw(StrategyType.PAIR_DIVERGENCE, leg_b, dir_b, conviction,
@@ -501,6 +501,6 @@ class AGON:
         # deviation. Exit is the signal flip / re-evaluation, not a target.
         return [_Raw(StrategyType.TSMOM, state.instrument, direction,
                      agreement / 3.0, state.mid,
-                     wilder_atr(bars, self._cfg.atr_period),
+                     self._atr(state.instrument + "/daily", bars),
                      sl_atr_mult=self._cfg.tsmom_disaster_stop_atr,
                      has_take_profit=False)]
