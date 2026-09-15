@@ -11,7 +11,8 @@ between runs, so survivors are recorded by file, code and mutation.
 | 0 | plain pytest | — | — | mutmut crashed reading UTF-8 sources with cp1252; the gate reported the crash as "surviving mutants" |
 | 1 | plain pytest, 3 test files | 630 | 272 | inflated: mutmut 2 kills only on exit code 1; pytest's 2 (collection error, an import-breaking mutant) counted as survived |
 | 2 | `--run-tests` shim, 9 test files | 626 | 81 | still 2 false survivors: same-size mutants ran a stale `.pyc` (fixed: no bytecode written) |
-| 3 | shim, no bytecode, 10 test files | see GAP-P12D-28 | see GAP-P12D-28 | the verdict |
+| 3 | shim, no bytecode, 10 test files | 626 | 43 | re-tested only run 2's survivors (mutmut 2 keeps cached kills), so not yet the verdict |
+| 4 | same, from an EMPTY cache | 626 | 44 | **the verdict**: 529 killed, 53 killed but slow ("suspicious"), 44 survived — every one in a class below (the extra one is the `continue` → `break` of the unreachable `a <= 0` guard) |
 
 ## Why each class of survivor is not a test gap
 

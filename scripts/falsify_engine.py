@@ -50,7 +50,9 @@ def plan(train_days: int, test_days: int, n_folds: int) -> list[Fold]:
 
 
 def _cache(cfg, out: Path, source: str) -> LabelledBarCache:
-    return LabelledBarCache(out / "labels", LabelSpec.for_config(cfg, source, START))
+    # one directory per market: the cache path is <instrument>/<year>, so markets sharing a root
+    # would overwrite each other's labels (the first quick run collided on the same file)
+    return LabelledBarCache(out / "labels" / source, LabelSpec.for_config(cfg, source, START))
 
 
 def _log(out: Path, name: str, layer: str, keep: int) -> ReplayEventLogger:
