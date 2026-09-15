@@ -10,8 +10,9 @@ Invariants:
     the backtest book is flat (harness.py, ACIS-03 §7).
   * Seeds derive from (fold, regime, instrument), so a rerun reproduces every champion
     (ACIS-03 §3).
-  * The returned record is the fold's in-sample transparency record; `champions` counts
-    every champion evolved, each a Deflated Sharpe trial.
+  * The returned record is the fold's in-sample transparency record. `trial_sharpes` holds
+    the holdout per-trade Sharpe of EVERY candidate champion (every instrument × regime that
+    produced one): the selection set the Deflated Sharpe deflates by (owner ruling GAP-P12D-25).
 """
 
 from __future__ import annotations
@@ -21,10 +22,11 @@ from typing import Sequence
 
 from config.schemas import AcisConfig, OptimizerConfig
 from core.optimizer.costs import CostModel
-from core.optimizer.fitness import ExpectancyResult, expectancy_r, simulate_trades
+from core.optimizer.fitness import expectancy_r, simulate_trades
 from core.optimizer.param_types import ParamSet, RegimeLabelledHistory
 from core.optimizer.qiea import QIEA
 from core.regime.regime_types import NEVER_TRADEABLE, RegimeType
+from tests.backtest.deflated_sharpe import moments
 from tests.backtest.regime_labels import LabelledBarCache
 
 
@@ -41,12 +43,13 @@ def cost_model(cfg: AcisConfig, instrument: str) -> CostModel:
                      slippage_per_side=costs.slippage_per_side)
 
 
-def holdout_expectancy(champion: ParamSet, history: RegimeLabelledHistory, opt: OptimizerConfig,
-                       cost: CostModel, atr_period: int) -> ExpectancyResult:
+def holdout_pnls(champion: ParamSet, history: RegimeLabelledHistory, opt: OptimizerConfig,
+                 cost: CostModel, atr_period: int) -> list[float]:
+    """Net PnLs of the trades entered in the chronological holdout tail QIEA gates on."""
     bars = history.bars[-opt.fitness_bars:]
     n_hold = max(1, round(len(bars) * opt.holdout_fraction))
-    return expectancy_r(simulate_trades(champion, bars, cost, entry_start=len(bars) - n_hold,
-                                        atr_period=atr_period))
+    return simulate_trades(champion, bars, cost, entry_start=len(bars) - n_hold,
+                           atr_period=atr_period)
 
 
 def evolve_fold(loop, fd, *, cfg: AcisConfig, cache: LabelledBarCache,
@@ -55,6 +58,7 @@ def evolve_fold(loop, fd, *, cfg: AcisConfig, cache: LabelledBarCache,
     train_end = fd.fold.train_end
     regimes: dict[str, dict] = {}
     champions = 0
+    trial_sharpes: list[float] = []
     for regime in RegimeType:
         if regime in NEVER_TRADEABLE:
             continue
@@ -71,9 +75,14 @@ def evolve_fold(loop, fd, *, cfg: AcisConfig, cache: LabelledBarCache,
                      "last_bar": history.bars[-1].ts.isoformat() if history.bars else None}
             if champion is not None:
                 champions += 1
-                res = holdout_expectancy(champion, history, opt, cost, sig.atr_period)
+                pnls = holdout_pnls(champion, history, opt, cost, sig.atr_period)
+                res, m = expectancy_r(pnls), moments(pnls)
+                sharpe = m.sharpe if m is not None else None
+                if sharpe is not None:
+                    trial_sharpes.append(sharpe)
                 entry.update(fitness=champion.fitness_score, holdout_e_r=res.e_r,
-                             holdout_trades=res.n_trades, param_set_id=champion.param_set_id)
+                             holdout_trades=res.n_trades, holdout_trade_sharpe=sharpe,
+                             param_set_id=champion.param_set_id)
                 if best is None or res.e_r > best["holdout_e_r"]:
                     best, best_params = entry, champion
             candidates.append(entry)
@@ -82,4 +91,4 @@ def evolve_fold(loop, fd, *, cfg: AcisConfig, cache: LabelledBarCache,
         regimes[regime.value] = {"staged_from": best["instrument"] if best else None,
                                  "candidates": candidates}
     return {"fold": fd.fold.index, "train_end": train_end.isoformat(),
-            "champions": champions, "regimes": regimes}
+            "champions": champions, "trial_sharpes": trial_sharpes, "regimes": regimes}

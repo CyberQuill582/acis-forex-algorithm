@@ -16,10 +16,12 @@ numbers (SR0 0.1132 and DSR 0.9004 at N=100; DSR 0.9505 at N=46).
 
 DECLARED DEVIATIONS (§5.6): (1) N is the number of trial Sharpe ratios supplied, or more when
 `n_trials` lifts it, treated as independent; the paper clusters correlated trials first (its
-Appendix 3). Over-counting N raises SR0 and lowers DSR. KNOWN DEVIATION (GAP-P12D-25): the
-harness currently passes each fold's out-of-sample Sharpe as the trials — dispersion over
-time, not across the alternatives selected among — so its SR0 is not the paper's. The
-owner-ruled replacement (the candidate champions at each selection) is being built. (2) The Sharpe estimator is the
+Appendix 3). Over-counting N raises SR0 and lowers DSR. (3) The trials are the candidate
+champions at each fold's selection (owner ruling GAP-P12D-25), measured on a PER-TRADE basis:
+each candidate's holdout per-trade Sharpe, against the out-of-sample per-trade return series
+— both dimensionless, so comparable across instruments. (4) The candidates are scored by
+QIEA's dual-EMA fitness harness, which is not the full multi-strategy engine being graded
+(GAP-0035), so the selection correction is approximate. (2) The Sharpe estimator is the
 engine's own rf=0 mean / sample-sd form (`metrics.annual_sharpe`, GAP-P11E-05), de-annualised.
 N < 2 means no selection was made: SR0 = 0 and DSR is the plain PSR against zero.
 """

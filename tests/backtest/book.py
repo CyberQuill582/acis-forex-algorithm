@@ -43,6 +43,8 @@ class OpenPos:
     stop_loss: float
     take_profit: float | None
     strategy_type: str
+    param_set_id: str = ""
+    group_id: str | None = None
 
 
 @dataclass
@@ -59,6 +61,7 @@ class BookState:
     peak: Decimal | None = None
     max_dd_pct: float = 0.0
     marker: RolloverMarker = field(default_factory=RolloverMarker)
+    day_anchor: Decimal | None = None      # equity at the current FX trading day's first tick
 
     def book_close(self, closed: ClosedTrade, instrument: str) -> None:
         self.trades.append(closed)
@@ -82,7 +85,10 @@ class PositionModel:
             raise ValueError(f"no C8 cost model for {instrument} — refusing a zero-cost "
                              "instrument (GAP-P12D-19)") from None
 
-    def apply_order(self, order, st: MarketState, book: BookState) -> None:
+    def apply_order(self, order, st: MarketState, book: BookState,
+                    strategy: str | None = None) -> None:
+        """`strategy` is the signal's strategy recorded by the loop (GAP-P12D-20); the
+        Governor's factors snapshot carries none, so the snapshot key is only a fallback."""
         existing = book.open_by_inst.get(order.instrument)
         if existing is not None:
             if existing.direction == order.direction:
@@ -94,8 +100,9 @@ class PositionModel:
             entry_price=order.entry_price, size_units=order.size_units,
             entry_ts=order.sized_at, stop_loss=order.stop_loss,
             take_profit=order.take_profit,
-            strategy_type=order.factors_snapshot.get("strategy_type", "UNKNOWN")
-            if isinstance(order.factors_snapshot, Mapping) else "UNKNOWN")
+            strategy_type=strategy or (order.factors_snapshot.get("strategy_type", "UNKNOWN")
+                                       if isinstance(order.factors_snapshot, Mapping) else "UNKNOWN"),
+            param_set_id=order.param_set_id, group_id=order.group_id)
 
     def maybe_close(self, pos: OpenPos, st: MarketState, book: BookState) -> ClosedTrade | None:
         price = st.mid
@@ -136,7 +143,8 @@ class PositionModel:
         to_acct = quote_to_account(pos.instrument, exit_price, book.last_price)
         return ClosedTrade(entry_ts=pos.entry_ts, exit_ts=ts,
                            pnl=(gross - friction + carry) * to_acct,
-                           strategy_type=pos.strategy_type)
+                           strategy_type=pos.strategy_type,
+                           notional_usd=pos.size_units * Decimal(str(pos.entry_price)) * to_acct)
 
     def unrealised(self, book: BookState) -> Decimal:
         total = Decimal("0")

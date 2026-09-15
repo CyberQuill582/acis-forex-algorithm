@@ -25,6 +25,7 @@ class ClosedTrade:
     exit_ts: datetime
     pnl: Decimal                 # realised, account currency (Decimal, F17)
     strategy_type: str
+    notional_usd: Decimal | None = None   # entry value in USD: pnl / notional is the trade's return
 
     @property
     def duration_s(self) -> float:

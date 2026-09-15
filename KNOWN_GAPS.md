@@ -173,11 +173,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-25: the ratified trial set does not make the gate the paper's Deflated Sharpe
 - Severity: high · Likelihood: high
-- Status: resolved (2026-09-15 — owner chose option (a), "Real selection set": the variance and N come from each fold's candidate champions on a common per-period basis; the build is tracked in GAP-P12D-24)
+- Status: resolved (2026-09-15 — owner chose option (a), "Real selection set"; BUILT the same day: the trials are every candidate champion's holdout per-trade Sharpe, N adds the attempt registry, and the graded series is the out-of-sample per-trade return)
 - Area: tests/backtest/harness.py (fold Sharpes as the variance, champions + registry as N), tests/backtest/deflated_sharpe.py (declared deviations now stale), specs/ACIS-09 C-BT-11
 - Description: Bailey & López de Prado's SR0 uses the dispersion of the Sharpe ratios of the ALTERNATIVES selected among, on the same sample. As built, the variance is one strategy's per-fold out-of-sample Sharpe spread (variation over time), and N counts per-fold champions that are pieces of the graded curve, not alternatives to it. Two consequences, both reproduced. With ordinary fold dispersion and N ≈ 180–720, the gate needs an annualised OOS Sharpe of ~2.5–3.0, against §14's 1.5. Two folds that happen to agree make the dispersion ~0 and neutralise any N (DSR 1.0000 at N = 10⁶).
 - Justification: options for the owner. (a) Use a real selection set: at each fold's selection, the candidate champions (every instrument × regime evolved), with their holdout Sharpe on a common per-period basis, give the variance and N. This is closest to the paper but needs a comparable per-period Sharpe for bar-level candidates. (b) Keep the ruled design, but declare it as a deviation, rename the statistic and set the gate level knowingly. (c) Gate on the Probabilistic Sharpe against 0 with an explicit trial-count haircut. Until decided, `passed` keeps the current gate, and deflated_sharpe.py's stale deviation note is corrected.
-- Residual: GAP-P12D-24 — build the candidate-champion Sharpe set (a per-period Sharpe comparable to the graded daily OOS Sharpe for every instrument × regime champion) and feed it to the gate; until then the current gate stands, recorded as a known deviation.
+- Build: `evolve_fold` records `holdout_trade_sharpe` for each candidate champion and a fold-level `trial_sharpes`; `ClosedTrade.notional_usd` gives every out-of-sample trade a return; `Backtest.run` gates on `deflated_sharpe(trade_returns, trials, len(trials) + min_trials)`, and with fewer than 2 trial Sharpe ratios `trial_count` stays below 2, so the run cannot pass. Common basis chosen: PER TRADE (both sides dimensionless), because candidates are bar-level holdout simulations without calendar returns. Declared deviations (in deflated_sharpe.py, the report caveats and ACIS-09 C-BT-11): the per-trade basis, and that candidates are scored by QIEA's dual-EMA fitness harness rather than the full multi-strategy engine being graded (GAP-0035).
+- Proof: `test_candidate_champion_sharpes_are_the_trials_and_the_registry_raises_n`, `test_fewer_than_two_trial_sharpes_cannot_claim_n`, `test_every_candidate_champion_with_a_sharpe_is_a_trial`, `test_best_holdout_is_staged_and_nothing_after_the_train_end_is_read` (a candidate whose holdout trades have zero variance has no Sharpe and is not a trial)
+- Residual: GAP-0035 — until the fitness harness exercises the engine's own modules, the candidate Sharpe ratios only approximate the alternatives the engine actually trades; GAP-P12D-28 — the falsification suite must show the gate fails on no edge and passes on a planted edge.
 - Linked: [[GAP-P12D-16]], [[GAP-P12D-18]], [[GAP-SP12E-03]]
 
 ## GAP-P12D-24: dual audit of 068f8b4 (Governor base-unit sizing + evolve-driver steps 1–4) — triage
@@ -192,11 +194,14 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-23: the out-of-sample evolve-driver runner (step 5) is not built
 - Severity: high · Likelihood: high
-- Status: open (2026-09-15 — steps 1–4 built in 068f8b4)
+- Status: fixed (2026-09-15 — the runner is built and runs end to end on synthetic data; it has NOT yet run on real data)
 - Area: a runner under scripts/ (to write), tests/backtest harness wiring
 - Description: no command yet runs the walk-forward on real data. The runner owns: the real portfolio snapshot for the Governor's guardrails (GAP-P12D-21), strategy attribution on trades (GAP-P12D-20), the account rulebook, per-instrument cost models, the dated financing model and date-joined SPX closes, `min_trials` from the attempt registry, the holdout guard, the observe-only warm-up (GAP-P12D-24), and writing the report plus BACKTEST_RUN.
 - Justification: the next build step; tracked on TODO.md.
-- Linked: [[GAP-P12D-18]], [[GAP-P12D-20]], [[GAP-P12D-21]], [[GAP-P12D-24]], [[GAP-P12D-03]]
+- Fix: tests/backtest/oos_runner.py `run_walk_forward` (the account's universe, rulebook, per-instrument cost models, swap conventions, clusters and session boundaries; the real portfolio snapshot; TSMOM seeding plus per-fold warm-up; per-fold evolution; attempt-registry N; production guardrail hash; BACKTEST_RUN; report JSON) and scripts/run_oos_validation.py (the holdout guard, refusal when labels are missing, Dukascopy + SPX + dated financing, data/validation/oos/<run id>/report.json).
+- Proof: `test_the_runner_grades_two_folds_end_to_end`
+- Residual: GAP-P12D-28 — the pipeline must be falsified (null, planted edge, look-ahead canary, permutation) and the mutation gate run before any real or paid run; GAP-P12D-03 — no historical event calendar, so event risk is traded through (stated in every report).
+- Linked: [[GAP-P12D-18]], [[GAP-P12D-20]], [[GAP-P12D-21]], [[GAP-P12D-24]], [[GAP-P12D-03]], [[GAP-P12D-28]]
 
 ## GAP-P12D-22: the Governor sizes every instrument as if USD were the quote currency — USD/JPY positions come out ~150× smaller than ACIS-05 defines
 - Severity: high · Likelihood: high
@@ -211,18 +216,24 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-21: a backtest must hand the Governor a real portfolio snapshot — a NAV-only one silently switches off the cluster cap, the currency-delta cap and the daily-drawdown halt
 - Severity: high · Likelihood: high
-- Status: open (2026-09-15 — to build with the OOS runner)
+- Status: fixed (2026-09-15 — built with the OOS runner)
 - Area: the evolve-driver runner's `portfolio_fn`, tests/backtest/book.py `BookState`, core/governor/capital_governor.py `_guards` / `_exposure_breach`
 - Description: the Governor zeroes an order when `portfolio.daily_drawdown_pct` reaches the guardrail limit, and applies the cluster and single-currency caps to `per_cluster_exposure` and `per_currency_delta`. The phase-7 tests pass a flat snapshot (`flat_portfolio`: empty exposures, 0% drawdown). A real replay that did the same would trade through every one of those guardrails, and ACIS-09 §6 requires the production guardrails to be active. No production builder exists yet (the live runtime, GAP-0091b).
 - Justification: the runner will derive the snapshot from the backtest book on every call: NAV; open positions; exposure and currency delta computed exactly as the Governor accumulates them (units × entry price per cluster, ± per base/quote currency); and the daily drawdown from the equity at the trading day's 17:00-New-York start (`fx_clock.trading_day`, as the Risk Monitor does). Tests pin the drawdown halt and caps firing inside a replay.
+- Fix: tests/backtest/portfolio_view.py `build_portfolio_state`, exposed as `Backtest.portfolio_state()` and wired as the loop's `portfolio_fn` by the runner. The daily anchor is set at the first observation of each FX trading day, BEFORE that tick's decisions read the portfolio.
+- Proof: `test_exposure_and_currency_delta_are_the_governors_usd_arithmetic`, `test_daily_drawdown_runs_from_the_trading_day_anchor`, `test_an_unattributed_position_is_refused`, `test_the_day_anchor_resets_at_the_new_york_rollover`
+- Residual: GAP-0091b — the live runtime still needs its own portfolio accounting from broker state; the backtest one is test-side.
 - Linked: [[GAP-P12D-22]], [[GAP-0091b]], [[GAP-P12D-18]]
 
 ## GAP-P12D-20: every trade the real engine makes is booked with strategy "UNKNOWN" — the §14 duration carve-outs never apply in a real backtest
 - Severity: medium · Likelihood: high
-- Status: open (2026-09-15 — to fix with the OOS runner)
+- Status: fixed (2026-09-15 — built with the OOS runner)
 - Area: tests/backtest/book.py `PositionModel.apply_order` (reads `factors_snapshot["strategy_type"]`), core/governor/capital_governor.py `factors_snapshot`, tests/integration/paper_loop.py `PaperBook`
 - Description: the harness takes a trade's strategy from `order.factors_snapshot["strategy_type"]`. The Governor's snapshot has no such key (its keys are the sizing factors), so every real engine trade becomes "UNKNOWN". The C-BT-8 carve-out that excludes TSMOM and MOMENTUM_SCALP from the 30 min–48 h duration band therefore never applies, and per-strategy reporting is empty. The harness tests pass because their scripted orders put the key in by hand.
 - Justification: the loop knows each order's signal. The fix records `order_id → strategy` in the paper book when the loop opens an order and has the harness read it there, falling back to the snapshot for scripted tests. A test must drive a real TSMOM order through the harness and see "TSMOM" on the closed trade.
+- Fix: `PaperBook.open(order, strategy)` records `order_id → strategy` when the loop opens an order (singles and both group legs); the harness passes it to `PositionModel.apply_order`, and positions keep their param set and group for the portfolio snapshot.
+- Proof: `test_real_engine_trades_carry_their_strategy`
+- Residual: none — every order the real loop opens carries its signal's strategy, and the portfolio snapshot refuses any position without one.
 - Linked: [[GAP-0055]], [[GAP-0009]], [[GAP-P12D-18]]
 
 ## GAP-P12D-19: the harness charged ONE cost model to every instrument — friction is in price units, so a multi-instrument run mispriced it by ~100×
@@ -241,7 +252,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Area: tests/backtest/harness.py, the evolve-driver (to build), specs/ACIS-09 §7 step 3, GAP-P12D-16's trial definition
 - Description: three problems found while designing the evolve-driver. (1) The harness replayed each fold's 2-year TRAIN window through the same engine after the previous fold's TEST year. With real rolling folds that goes back in time (the engine refuses out-of-order ticks) and adds ~20 years of replay compute, for a block that is never graded. (2) ParamSets are per regime and shared by all instruments, but QIEA evolves on one instrument's bars (prices and costs differ), and ACIS-03 does not say which. (3) The ratified trial set ("attempt-registry configurations plus per-fold champions") cannot be computed: registry entries hold descriptions, not returns, so they have no daily Sharpe.
 - Resolution: (1) no in-sample tick replay; the in-sample transparency record is each fold's evolution summary (`ValidationReport.in_sample_evolution`; `in_sample` carries a not-replayed block and a caveat). (2) Each regime evolves on EVERY enabled instrument, and the champion with the best holdout expectancy is staged; every per-instrument champion counts toward N. (3) The Deflated Sharpe variance comes from each fold's out-of-sample test-segment daily Sharpe; N = the larger of that count and `min_trials` (every champion evolved plus the attempt-registry entries for the enabled families). With fewer than 2 fold Sharpes no N may be claimed, so the run cannot pass.
-- Proof: `test_fold_sharpes_are_the_trials_and_min_trials_raises_n`, `test_a_single_fold_cannot_claim_trials`, `test_n_trials_can_raise_n_but_never_lower_it`, `test_promotion_sweeps_see_the_backtest_book_not_the_loop_order_list`
+- Proof: former `test_fold_sharpes_are_the_trials_and_min_trials_raises_n`, former `test_a_single_fold_cannot_claim_trials` (the trial set was replaced by GAP-P12D-25), `test_candidate_champion_sharpes_are_the_trials_and_the_registry_raises_n`, `test_fewer_than_two_trial_sharpes_cannot_claim_n`, `test_n_trials_can_raise_n_but_never_lower_it`, `test_promotion_sweeps_see_the_backtest_book_not_the_loop_order_list`
 - Residual: GAP-P12D-23 — the runner (step 5); GAP-P12D-24 — the audit fixes to steps 1–4.
 - Linked: [[GAP-P12D-16]], [[GAP-P12D-03]], [[GAP-SP12E-03]], [[GAP-0075]]
 

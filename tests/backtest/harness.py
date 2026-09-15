@@ -22,9 +22,11 @@ Invariants:
   * Staged params promote only at simulated session boundaries, through
     `ParamLibrary.on_boundary`, and only when THIS book is flat: the harness is the
     loop's `PositionGate` (ACIS-03 §7 C2; wire it with `build_paper_loop(position_gate=…)`).
-  * Each fold's test-segment daily Sharpe is a Deflated Sharpe trial (the variance). N is
-    lifted to the champions counted in the fold records plus `min_trials` (the
-    attempt-registry entries) (GAP-P12D-16/18).
+  * Deflated Sharpe (owner ruling GAP-P12D-25, "real selection set"): the trials are the
+    holdout per-trade Sharpe ratios of every candidate champion in the fold records; N is
+    their count plus `min_trials` (the attempt-registry entries); the graded series is the
+    out-of-sample per-trade return (pnl / USD notional). With fewer than 2 trial Sharpe
+    ratios no N may be claimed, so the run cannot pass.
   * The graded `period` is derived from the OOS data span (GAP-P11I-01); the §9.5 rulebook
     is enforced on the realised trades (C-BT-7).
 """
@@ -44,9 +46,11 @@ from core.optimizer.costs import CostModel
 from tests.backtest.book import BookState, PositionModel
 from tests.backtest.boundary_clock import BoundaryClock
 from tests.backtest.carry import FinancingRate
-from tests.backtest.deflated_sharpe import deflated_sharpe, moments
+from tests.backtest.deflated_sharpe import deflated_sharpe
+from core.governor.portfolio_types import PortfolioState
 from tests.backtest.metrics import (ClosedTrade, MetricBlock, _returns_from_equity,
                                     compute_metrics, rolling_var_breach_rate)
+from tests.backtest.portfolio_view import build_portfolio_state
 from tests.backtest.report import ValidationReport, build_report
 from tests.backtest.walk_forward import Fold, require_embargo
 
@@ -76,7 +80,10 @@ class Backtest:
                  periods_per_year: float = 252.0,
                  financing: FinancingRate | None = None,
                  swap_conventions: Mapping[str, str] | None = None,
-                 session_boundaries: Sequence[ZonedTime] = ()) -> None:
+                 session_boundaries: Sequence[ZonedTime] = (),
+                 clusters: Mapping[str, Sequence[str]] | None = None) -> None:
+        self._clusters = dict(clusters or {})
+        self._last_ts: datetime | None = None
         self._account = account
         self.positions = PositionModel(costs=cost_models, max_hold_s=max_hold_s,
                                        financing=financing, swap_conventions=swap_conventions)
@@ -92,6 +99,13 @@ class Backtest:
     def open_position_count(self) -> int:
         """The ParamLibrary `PositionGate` in a backtest: this book is the position layer."""
         return len(self._active.open_by_inst) if self._active is not None else 0
+
+    def portfolio_state(self) -> PortfolioState:
+        """The Governor's `portfolio_fn` in a replay (GAP-P12D-21): the real snapshot."""
+        book = self._active or BookState()
+        nav = self._nav0 + book.realised + self.positions.unrealised(book)
+        return build_portfolio_state(book=book, nav=nav, clusters=self._clusters,
+                                     as_of=self._last_ts or datetime.now(_UTC))
 
     # -- one fold's test replay through the REAL engine ------------------------- #
 
@@ -116,17 +130,23 @@ class Backtest:
         if self._clock is not None:                  # after the close, so a carried position frees the gate (F-I7)
             for boundary in self._clock.crossed(st.timestamp):
                 loop.params.on_boundary(boundary)    # C2: promotes only when flat
+        self._last_ts = st.timestamp
+        # the daily-limit anchor moves at the new trading day's FIRST observation, before any
+        # decision on this tick reads the portfolio (the Risk Monitor's semantics)
+        pre = self._nav0 + book.realised + self.positions.unrealised(book)
+        if book.marker.observe(st.timestamp, pre) or book.day_anchor is None:
+            book.day_anchor = pre
         if not trade:
             loop.observe_only(st)
         else:
             loop.on_state(st)                        # NVMA → AGON → Governor
             new_orders = loop.book.orders[self._seen_orders:]
             self._seen_orders = len(loop.book.orders)
+            strategy_of = getattr(loop.book, "strategy_of", {})     # GAP-P12D-20
             for order in new_orders:
-                self.positions.apply_order(order, st, book)
+                self.positions.apply_order(order, st, book, strategy_of.get(order.order_id))
         marked = self._nav0 + book.realised + self.positions.unrealised(book)
         self.positions.mark_drawdown(book, marked)
-        book.marker.observe(st.timestamp, marked)
         day = st.timestamp.date()
         if day != book.last_day:
             book.equity.append((st.timestamp, marked))
@@ -153,7 +173,6 @@ class Backtest:
             min_trials: int = 0) -> ValidationReport:
         oos = BookState()
         evolution: list[Mapping] = []
-        fold_sharpes: list[float] = []
         for fd in folds:
             record = evolve_fn(loop, fd)             # evolves on data before train_end only
             if record is not None:
@@ -161,11 +180,7 @@ class Backtest:
                 if record.get("champions") and self._clock is None:   # GAP-P12D-24 F-I6
                     raise ValueError("params were staged but this backtest declares no session "
                                      "boundaries, so they could never promote")
-            start = len(oos.equity)
             self._replay(loop, fd, oos)
-            m = moments(_returns_from_equity(oos.equity[max(start - 1, 0):]))
-            if m is not None:
-                fold_sharpes.append(m.sharpe)
 
         if oos.equity:                               # GAP-P11I-01: derived, never claimed
             period = (oos.equity[0][0], oos.equity[-1][0])
@@ -173,11 +188,10 @@ class Backtest:
             now = datetime.now(_UTC)
             period = (now, now)                      # no data ⇒ 0 years ⇒ cannot pass
 
-        # N = every champion the fold records report + `min_trials` (the attempt registry);
-        # without ≥2 fold Sharpes there is no trial variance, so no N may be claimed
-        evolved = sum(int(r.get("champions", 0)) for r in evolution)
-        n_trials = (max(len(fold_sharpes), min_trials + evolved) if len(fold_sharpes) >= 2
-                    else len(fold_sharpes))
+        # GAP-P12D-25: every candidate champion's holdout per-trade Sharpe is a trial
+        trials = [s for r in evolution for s in r.get("trial_sharpes", ()) if s is not None]
+        n_trials = len(trials) + min_trials if len(trials) >= 2 else len(trials)
+        trade_returns = [float(t.pnl / t.notional_usd) for t in oos.trades if t.notional_usd]
         oos_returns = _returns_from_equity(oos.equity)
         caveats = (
             "tick backtest cannot fully reproduce live microstructure (GAP-0001)",
@@ -190,8 +204,10 @@ class Backtest:
             "PnL converted quote→USD at the close rate (crosses via their quote leg)",
             "in-sample block not replayed: the per-fold evolution records are the in-sample "
             "transparency record (GAP-P12D-18)",
-            *(() if n_trials >= 2 else ("fewer than 2 fold Sharpe ratios — selection bias is "
-                                        "uncorrected, so the run cannot pass (GAP-P12D-16)",)),
+            "Deflated Sharpe on per-trade returns; its trials are the candidate champions scored "
+            "by QIEA's dual-EMA fitness harness, not the full engine (GAP-P12D-25, GAP-0035)",
+            *(() if n_trials >= 2 else ("fewer than 2 candidate-champion Sharpe ratios — selection "
+                                        "bias is uncorrected, so the run cannot pass (GAP-P12D-16)",)),
             *extra_caveats,
         )
         return build_report(
@@ -201,7 +217,7 @@ class Backtest:
             var_breach_frequency=rolling_var_breach_rate(oos_returns),
             rule_violations=self._rule_violations(oos.trades), fidelity_caveats=caveats,
             trial_count=n_trials,
-            deflated_sharpe=deflated_sharpe(oos_returns, fold_sharpes, n_trials),
+            deflated_sharpe=deflated_sharpe(trade_returns, trials, n_trials),
             in_sample_evolution=evolution)
 
     def _metrics(self, book: BookState, spx_closes: Mapping[date, float]) -> MetricBlock:

@@ -21,12 +21,16 @@ class RolloverMarker:
         self._next: datetime | None = None
         self._last: Decimal | None = None
 
-    def observe(self, ts: datetime, equity: Decimal) -> None:
-        """Call once per tick, after the tick's equity is known."""
+    def observe(self, ts: datetime, equity: Decimal) -> bool:
+        """Call once per tick, after the tick's equity is known. True when this tick is the
+        first of a new FX trading day (it crossed a rollover)."""
+        crossed = False
         if self._next is not None and ts >= self._next:
             if self._last is not None:
                 self.marks.append((to_local(self._next, ROLLOVER[0]).date(), self._last))
             self._next = None
+            crossed = True
         if self._next is None:
             self._next = next_local(ts, ROLLOVER[0], ROLLOVER[1])
         self._last = equity
+        return crossed

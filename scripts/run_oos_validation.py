@@ -1,0 +1,85 @@
+"""Run the §14 out-of-sample walk-forward validation for one account (ACIS-09 §7, GAP-P12D-23).
+
+    python scripts/run_oos_validation.py                                   # development plan, test years 2014–2023
+    python scripts/run_oos_validation.py --first-test-year 2014 --last-test-year 2015
+    python scripts/run_oos_validation.py --final-holdout                   # 2024–2025, ONCE, after the design is frozen
+
+Needs the Dukascopy mirror (data/dukascopy), the labelled-bar cache for every training year
+(scripts/build_labelled_bars.py) and data/macro (SPX closes + overnight rates). Writes
+data/validation/oos/<run id>/report.json and prints the verdict with its caveats.
+
+A development run is never the final grade. Before any paid or long run, the pipeline itself
+must be falsified on synthetic data (GAP-P12D-28).
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from config.account_doctrine import guardrail_hash  # noqa: E402
+from config.schemas import load_config  # noqa: E402
+from core.data.jsonl_logging import JsonlEventLogger  # noqa: E402
+from tests.backtest.data_loader import BacktestDataLoader  # noqa: E402
+from tests.backtest.financing import load_rate_table, make_financing  # noqa: E402
+from tests.backtest.oos_plan import DATA_START, HOLDOUT_END, HOLDOUT_START, HoldoutGuard, plan_folds  # noqa: E402
+from tests.backtest.oos_runner import (RunInputs, load_spx_closes, missing_labels,  # noqa: E402
+                                       report_json, run_walk_forward)
+from tests.backtest.regime_labels import LabelledBarCache, LabelSpec  # noqa: E402
+from tests.backtest.replay_logging import ReplayEventLogger  # noqa: E402
+from tests.backtest.sources import DukascopyTickSource  # noqa: E402
+
+SOURCE = "dukascopy"
+
+
+def main() -> int:
+    cfg = load_config(ROOT / "config")
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--account", default=cfg.system.active_account)
+    ap.add_argument("--first-test-year", type=int, default=2014)
+    ap.add_argument("--last-test-year", type=int, default=2023)
+    ap.add_argument("--final-holdout", action="store_true")
+    a = ap.parse_args()
+
+    folds = (plan_folds(HOLDOUT_START.year, HOLDOUT_END.year - 1) if a.final_holdout
+             else plan_folds(a.first_test_year, a.last_test_year))
+    guard = HoldoutGuard(ROOT / "data" / "validation" / "holdout_graded.json")
+    cache = LabelledBarCache(ROOT / "data" / "labelled_bars", LabelSpec.for_config(cfg, SOURCE, DATA_START))
+    missing = missing_labels(cache, sorted(cfg.instruments.enabled), folds)
+    if missing:
+        print("refused: labelled bars missing for", ", ".join(f"{i} {y}" for i, y in missing),
+              "— run scripts/build_labelled_bars.py first")
+        return 2
+    if a.final_holdout:
+        guard.begin_final(folds, config_hash=guardrail_hash(cfg.guardrails))   # graded ONCE
+    else:
+        guard.check_development(folds)
+
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ("-FINAL" if a.final_holdout else "")
+    out = ROOT / "data" / "validation" / "oos" / run_id
+    out.mkdir(parents=True, exist_ok=True)
+    log = ReplayEventLogger(JsonlEventLogger(out / "run_log.jsonl", layer="backtest", session_id=run_id),
+                            keep_per_type=200)
+    macro = ROOT / "data" / "macro"
+    report = run_walk_forward(RunInputs(
+        cfg=cfg, account=a.account, source=SOURCE,
+        loader=BacktestDataLoader({SOURCE: DukascopyTickSource(ROOT / "data" / "dukascopy")}, log),
+        cache=cache, folds=folds, spx_closes=load_spx_closes(macro / "spx_yahoo.csv"),
+        financing=make_financing(load_rate_table(macro)), work_dir=out / "engine", logger=log))
+    log.close()
+    (out / "report.json").write_text(report_json(report), encoding="utf-8")
+    print(f"{'FINAL HOLDOUT' if a.final_holdout else 'development'} run {run_id}: "
+          f"passed={report.passed}  trades={report.out_of_sample.n_trades}  "
+          f"deflated_sharpe={report.deflated_sharpe}  trials={report.trial_count}")
+    for caveat in report.fidelity_caveats:
+        print("  caveat:", caveat)
+    print("report:", out / "report.json")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

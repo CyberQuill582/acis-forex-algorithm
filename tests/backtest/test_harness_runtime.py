@@ -87,22 +87,24 @@ def _daily_fold(index: int, start: datetime, closes: list[float]) -> FoldData:
     return FoldData(_fold(index, start), (s for s in states))   # a one-shot stream
 
 
-def test_fold_sharpes_are_the_trials_and_min_trials_raises_n() -> None:
+def test_candidate_champion_sharpes_are_the_trials_and_the_registry_raises_n() -> None:
     a = datetime(2026, 2, 2, 10, tzinfo=UTC)
     b = datetime(2026, 3, 2, 10, tzinfo=UTC)
     script = {a: [_order(a, 1, 1.10, 1.00, 1.20)], b: [_order(b, 1, 1.10, 1.00, 1.20)]}
     folds = [_daily_fold(0, a, [1.10, 1.103, 1.101, 1.106, 1.104, 1.109]),
              _daily_fold(1, b, [1.10, 1.098, 1.102, 1.099, 1.104, 1.100])]
+    records = [{"fold": 0, "champions": 2, "trial_sharpes": [0.12, 0.30]},
+               {"fold": 1, "champions": 1, "trial_sharpes": [0.05]}]
     bt = Backtest(account="a", cost_models=defaultdict(lambda: TEST_COSTS), max_hold_s=5 * 86400,
                   session_boundaries=[NY_ROLL])
     loop = _FakeLoop(script)
     loop.params = _ParamsStub(bt)
-    r = bt.run(loop=loop, folds=folds,
-               evolve_fn=lambda lp, fd: {"fold": fd.fold.index, "champions": 3},
+    r = bt.run(loop=loop, folds=folds, evolve_fn=lambda lp, fd: records[fd.fold.index],
                spx_closes={}, guardrail_hash="GH", expected_guardrail_hash="GH", min_trials=7)
-    assert r.trial_count == 13                                    # 3 + 3 champions + 7 registry entries
-    assert r.in_sample_evolution == ({"fold": 0, "champions": 3}, {"fold": 1, "champions": 3})
+    assert r.trial_count == 3 + 7                                 # 3 candidate champions + 7 registry entries
+    assert r.in_sample_evolution == tuple(records)
     assert r.in_sample.n_trades == 0 and any("not replayed" in c for c in r.fidelity_caveats)
+    assert all(t.notional_usd > 0 for t in bt._active.trades)     # every trade has a return basis
 
 
 class _WarmLoop(_FakeLoop):
@@ -155,11 +157,14 @@ def test_staged_params_without_session_boundaries_are_refused() -> None:
                guardrail_hash="GH", expected_guardrail_hash="GH")
 
 
-def test_a_single_fold_cannot_claim_trials() -> None:
+def test_fewer_than_two_trial_sharpes_cannot_claim_n() -> None:
     a = datetime(2026, 2, 2, 10, tzinfo=UTC)
-    bt = Backtest(account="a", cost_models=defaultdict(lambda: TEST_COSTS), max_hold_s=5 * 86400)
-    r = bt.run(loop=_FakeLoop({a: [_order(a, 1, 1.10, 1.00, 1.20)]}),
-               folds=[_daily_fold(0, a, [1.10, 1.103, 1.101, 1.106])],
-               evolve_fn=lambda lp, fd: None, spx_closes={}, guardrail_hash="GH",
-               expected_guardrail_hash="GH", min_trials=50)
+    bt = Backtest(account="a", cost_models=defaultdict(lambda: TEST_COSTS), max_hold_s=5 * 86400,
+                  session_boundaries=[NY_ROLL])
+    loop = _FakeLoop({a: [_order(a, 1, 1.10, 1.00, 1.20)]})
+    loop.params = _ParamsStub(bt)
+    r = bt.run(loop=loop, folds=[_daily_fold(0, a, [1.10, 1.103, 1.101, 1.106])],
+               evolve_fn=lambda lp, fd: {"champions": 1, "trial_sharpes": [0.2]}, spx_closes={},
+               guardrail_hash="GH", expected_guardrail_hash="GH", min_trials=50)
     assert r.trial_count == 1 and r.passed is False               # no trial variance, no N
+    assert any("fewer than 2 candidate-champion" in c for c in r.fidelity_caveats)
