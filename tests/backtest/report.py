@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Mapping, Sequence
 
-from tests.backtest.metrics import MetricBlock
+from tests.backtest.metrics import MetricBlock, SliceStats
 
 # master §14 minimums (out-of-sample). Values mirror ACIS_SPEC.md §14 exactly;
 # tightening the grader is allowed, loosening is a master-spec change.
@@ -60,7 +60,10 @@ class ValidationReport:
     n_folds: int
     in_sample: MetricBlock            # transparency only — NEVER graded
     out_of_sample: MetricBlock        # the ONLY graded block
-    per_regime: Mapping[str, MetricBlock]
+    # v1.6 (GAP-P12D-31): trade-level attribution, NOT MetricBlocks — a subset of trades has
+    # no continuous equity curve, so Sharpe/drawdown/positive-months are undefined on it
+    per_regime: Mapping[str, SliceStats]
+    per_strategy: Mapping[str, SliceStats]
     equity_curve_ref: str
     drawdown_curve_ref: str
     targets_met: Mapping[str, bool]
@@ -94,10 +97,11 @@ def grade_out_of_sample(block: MetricBlock) -> dict[str, bool]:
 
 def build_report(*, account: str, period: tuple[datetime, datetime], n_folds: int,
                  in_sample: MetricBlock, out_of_sample: MetricBlock,
-                 per_regime: Mapping[str, MetricBlock], guardrail_hash: str,
+                 per_regime: Mapping[str, SliceStats], guardrail_hash: str,
                  expected_guardrail_hash: str, var_breach_frequency: float,
                  rule_violations: Sequence[str], fidelity_caveats: Sequence[str],
                  equity_curve_ref: str = "", drawdown_curve_ref: str = "",
+                 per_strategy: Mapping[str, SliceStats] = {},
                  split: str = "walk_forward", trial_count: int = 0,
                  deflated_sharpe: float = math.nan,
                  in_sample_evolution: Sequence[Mapping] = ()) -> ValidationReport:
@@ -118,6 +122,7 @@ def build_report(*, account: str, period: tuple[datetime, datetime], n_folds: in
     return ValidationReport(
         account=account, period=period, split=split, n_folds=n_folds,
         in_sample=in_sample, out_of_sample=out_of_sample, per_regime=dict(per_regime),
+        per_strategy=dict(per_strategy),
         equity_curve_ref=equity_curve_ref, drawdown_curve_ref=drawdown_curve_ref,
         targets_met=targets_met, passed=passed,
         var_breach_frequency=var_breach_frequency,

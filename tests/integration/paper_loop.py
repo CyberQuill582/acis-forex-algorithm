@@ -51,14 +51,20 @@ class PaperBook:
         # order_id -> the signal's strategy: the Governor's factors snapshot carries no
         # strategy, and a backtest needs it on every trade (GAP-P12D-20)
         self.strategy_of: dict[str, str] = {}
+        # order_id -> the regime ACTIVE when the order was opened: a run must be able to say
+        # which regime made or lost the money (GAP-P12D-31)
+        self.regime_of: dict[str, str] = {}
 
     def open_position_count(self) -> int:
         return len(self.orders)
 
-    def open(self, order: SizedOrder, strategy: str | None = None) -> None:
+    def open(self, order: SizedOrder, strategy: str | None = None,
+             regime: str | None = None) -> None:
         self.orders.append(order)
         if strategy is not None:
             self.strategy_of[order.order_id] = strategy
+        if regime is not None:
+            self.regime_of[order.order_id] = regime
 
     def flatten(self) -> None:
         self.closed.extend(self.orders)
@@ -130,13 +136,13 @@ class PaperLoop:
                 continue
             order = self.governor.allocate(s, portfolio, ctx, state.timestamp)
             if order.size_units > 0:
-                self.book.open(order, s.strategy_type.value)
+                self.book.open(order, s.strategy_type.value, ctx.regime.value)
         for legs in by_group.values():
             oa, ob = self.governor.allocate_group(
                 tuple(legs), portfolio, ctx, state.timestamp)
             if oa.size_units > 0 and ob.size_units > 0:
-                self.book.open(oa, legs[0].strategy_type.value)
-                self.book.open(ob, legs[1].strategy_type.value)
+                self.book.open(oa, legs[0].strategy_type.value, ctx.regime.value)
+                self.book.open(ob, legs[1].strategy_type.value, ctx.regime.value)
 
     def observe_only(self, state: MarketState) -> None:
         """Warm-up (GAP-P12D-24): feed the regime and signal windows — no signals, no orders."""

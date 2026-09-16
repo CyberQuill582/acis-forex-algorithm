@@ -49,7 +49,7 @@ from tests.backtest.carry import FinancingRate
 from tests.backtest.deflated_sharpe import deflated_sharpe
 from core.governor.portfolio_types import PortfolioState
 from tests.backtest.metrics import (ClosedTrade, MetricBlock, _returns_from_equity,
-                                    compute_metrics, rolling_var_breach_rate)
+                                    compute_metrics, rolling_var_breach_rate, slice_by)
 from tests.backtest.portfolio_view import build_portfolio_state
 from tests.backtest.report import ValidationReport, build_report
 from tests.backtest.walk_forward import Fold, require_embargo
@@ -157,8 +157,10 @@ class Backtest:
             new_orders = loop.book.orders[self._seen_orders:]
             self._seen_orders = len(loop.book.orders)
             strategy_of = getattr(loop.book, "strategy_of", {})     # GAP-P12D-20
+            regime_of = getattr(loop.book, "regime_of", {})         # GAP-P12D-31
             for order in new_orders:
-                self.positions.apply_order(order, st, book, strategy_of.get(order.order_id))
+                self.positions.apply_order(order, st, book, strategy_of.get(order.order_id),
+                                           regime_of.get(order.order_id))
         marked = self._nav0 + book.realised + self.positions.unrealised(book)
         self.positions.mark_drawdown(book, marked)
         day = st.timestamp.date()
@@ -227,7 +229,9 @@ class Backtest:
         )
         return build_report(
             account=self._account, period=period, n_folds=len(folds),
-            in_sample=NOT_REPLAYED, out_of_sample=self._metrics(oos, spx_closes), per_regime={},
+            in_sample=NOT_REPLAYED, out_of_sample=self._metrics(oos, spx_closes),
+            per_regime=slice_by(oos.trades, "regime"),
+            per_strategy=slice_by(oos.trades, "strategy_type"),
             guardrail_hash=guardrail_hash, expected_guardrail_hash=expected_guardrail_hash,
             var_breach_frequency=rolling_var_breach_rate(oos_returns),
             rule_violations=self._rule_violations(oos.trades), fidelity_caveats=caveats,

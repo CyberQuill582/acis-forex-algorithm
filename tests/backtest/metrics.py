@@ -26,6 +26,7 @@ class ClosedTrade:
     pnl: Decimal                 # realised, account currency (Decimal, F17)
     strategy_type: str
     notional_usd: Decimal | None = None   # entry value in USD: pnl / notional is the trade's return
+    regime: str | None = None             # the regime ACTIVE at entry (GAP-P12D-31 attribution)
 
     @property
     def duration_s(self) -> float:
@@ -249,3 +250,50 @@ def compute_metrics(*, trades: Sequence[ClosedTrade],
         tsmom_avg_duration_s=_avg_duration(trades, only="TSMOM"),
         scalp_avg_duration_s=_avg_duration(trades, only="MOMENTUM_SCALP"),
         n_trades=len(trades))
+
+
+# --------------------------------------------------------------------------- #
+# attribution slices (GAP-P12D-31) — which regime / strategy made or lost the money
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class SliceStats:
+    """Trade-level attribution for ONE regime or strategy.
+
+    Deliberately NOT a `MetricBlock`: a subset of trades has no continuous equity curve,
+    so Sharpe, max drawdown and positive-months are undefined on it. Inventing a per-slice
+    curve is the fabrication GAP-P11E-02 forbids. `avg_duration_s` covers every trade in the
+    slice (no §14 carve-out — this is attribution, not the graded duration band).
+    """
+
+    n_trades: int
+    net_pnl: Decimal
+    win_rate: float
+    profit_factor: float
+    avg_duration_s: float
+    gross_win: Decimal
+    gross_loss: Decimal
+
+
+def slice_stats(trades: Sequence[ClosedTrade]) -> SliceStats:
+    wins = [t.pnl for t in trades if t.pnl > 0]
+    losses = [-t.pnl for t in trades if t.pnl < 0]
+    durations = [t.duration_s for t in trades]
+    return SliceStats(
+        n_trades=len(trades),
+        net_pnl=sum((t.pnl for t in trades), Decimal("0")),
+        win_rate=win_rate(trades),
+        profit_factor=profit_factor(trades),
+        avg_duration_s=sum(durations) / len(durations) if durations else 0.0,
+        gross_win=sum(wins, Decimal("0")),
+        gross_loss=sum(losses, Decimal("0")))
+
+
+def slice_by(trades: Sequence[ClosedTrade], key: str) -> dict[str, SliceStats]:
+    """Group closed trades by `key` ("regime" or "strategy_type"). A trade whose key is
+    missing groups under UNATTRIBUTED, so a hole in attribution is VISIBLE in the report
+    instead of silently dropping trades out of the breakdown."""
+    buckets: dict[str, list[ClosedTrade]] = {}
+    for t in trades:
+        buckets.setdefault(getattr(t, key) or "UNATTRIBUTED", []).append(t)
+    return {k: slice_stats(v) for k, v in sorted(buckets.items())}

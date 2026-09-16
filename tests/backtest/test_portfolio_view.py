@@ -90,3 +90,28 @@ def test_real_engine_trades_carry_their_strategy(tmp_path, acis_config, factory)
            guardrail_hash="GH", expected_guardrail_hash="GH")
     strategies = {t.strategy_type for t in bt._active.trades}
     assert strategies and "UNKNOWN" not in strategies and "TSMOM" in strategies
+
+
+def test_real_engine_trades_carry_their_regime_and_the_report_attributes_them(
+        tmp_path, acis_config, factory) -> None:
+    """GAP-P12D-31: the run must be able to say which regime and strategy made or lost the
+    money. Before this, `per_regime` was always {} and no per-strategy breakdown existed."""
+    loop = make_loop(tmp_path, acis_config, factory, flat_portfolio)
+    loop.boot(flat_portfolio())
+    states = [s for s in (factory.build(r).state for r in flat_ticks()) if s is not None]
+    first = states[0].timestamp
+    bt = Backtest(account="dev_paper", cost_models={"EUR_USD": TEST_COSTS}, max_hold_s=300)
+    fold = FoldData(Fold(0, first - timedelta(days=2), first - timedelta(days=1), first,
+                         states[-1].timestamp), states)
+    report = bt.run(loop=loop, folds=[fold], evolve_fn=lambda lp, fd: None, spx_closes={},
+                    guardrail_hash="GH", expected_guardrail_hash="GH")
+    trades = bt._active.trades
+    assert trades, "the fixture must trade for this test to mean anything"
+    assert all(t.regime is not None for t in trades)
+    assert "UNATTRIBUTED" not in report.per_regime and report.per_regime
+    assert set(report.per_regime) == {t.regime for t in trades}
+    assert set(report.per_strategy) == {t.strategy_type for t in trades}
+    # neither breakdown loses a trade or a dollar
+    for breakdown in (report.per_regime, report.per_strategy):
+        assert sum(s.n_trades for s in breakdown.values()) == len(trades)
+        assert sum((s.net_pnl for s in breakdown.values()), Decimal("0"))             == sum((t.pnl for t in trades), Decimal("0"))

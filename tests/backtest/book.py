@@ -45,6 +45,7 @@ class OpenPos:
     strategy_type: str
     param_set_id: str = ""
     group_id: str | None = None
+    regime: str | None = None            # regime ACTIVE at entry (GAP-P12D-31)
 
 
 @dataclass
@@ -86,9 +87,11 @@ class PositionModel:
                              "instrument (GAP-P12D-19)") from None
 
     def apply_order(self, order, st: MarketState, book: BookState,
-                    strategy: str | None = None) -> None:
+                    strategy: str | None = None, regime: str | None = None) -> None:
         """`strategy` is the signal's strategy recorded by the loop (GAP-P12D-20); the
-        Governor's factors snapshot carries none, so the snapshot key is only a fallback."""
+        Governor's factors snapshot carries none, so the snapshot key is only a fallback.
+        `regime` is the regime active when the loop opened the order (GAP-P12D-31), so a
+        run can say which regime made or lost the money."""
         existing = book.open_by_inst.get(order.instrument)
         if existing is not None:
             if existing.direction == order.direction:
@@ -102,7 +105,7 @@ class PositionModel:
             take_profit=order.take_profit,
             strategy_type=strategy or (order.factors_snapshot.get("strategy_type", "UNKNOWN")
                                        if isinstance(order.factors_snapshot, Mapping) else "UNKNOWN"),
-            param_set_id=order.param_set_id, group_id=order.group_id)
+            param_set_id=order.param_set_id, group_id=order.group_id, regime=regime)
 
     def maybe_close(self, pos: OpenPos, st: MarketState, book: BookState) -> ClosedTrade | None:
         price = st.mid
@@ -143,7 +146,7 @@ class PositionModel:
         to_acct = quote_to_account(pos.instrument, exit_price, book.last_price)
         return ClosedTrade(entry_ts=pos.entry_ts, exit_ts=ts,
                            pnl=(gross - friction + carry) * to_acct,
-                           strategy_type=pos.strategy_type,
+                           strategy_type=pos.strategy_type, regime=pos.regime,
                            notional_usd=pos.size_units * Decimal(str(pos.entry_price)) * to_acct)
 
     def unrealised(self, book: BookState) -> Decimal:

@@ -13,8 +13,8 @@ import pytest
 
 from tests.backtest.metrics import (ClosedTrade, _returns_from_equity, annual_sharpe,
                                     compute_metrics, max_drawdown_pct, positive_months_pct,
-                                    profit_factor, rolling_var_breach_rate, spx_correlation,
-                                    var_breach_frequency, win_rate)
+                                    profit_factor, rolling_var_breach_rate, slice_by,
+                                    spx_correlation, var_breach_frequency, win_rate)
 
 T0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -155,3 +155,44 @@ def test_records_are_frozen_and_a_trade_has_no_notional_unless_given() -> None:
                         periods_per_year=252)
     with pytest.raises(AttributeError):
         m.n_trades = 5
+
+
+# ---------------- attribution slices (GAP-P12D-31) ---------------- #
+
+def _rt(pnl: str, strategy: str, regime: str | None, hours: int = 1) -> ClosedTrade:
+    return ClosedTrade(T0, T0 + timedelta(hours=hours), Decimal(pnl), strategy, regime=regime)
+
+
+def test_slice_by_regime_is_hand_worked() -> None:
+    trades = [_rt("100", "TREND", "STRONG_TREND_UP", hours=1),
+              _rt("-50", "TREND", "STRONG_TREND_UP", hours=3),
+              _rt("-20", "BREAKOUT", "RANGING_TIGHT", hours=2)]
+    by_regime = slice_by(trades, "regime")
+    assert set(by_regime) == {"RANGING_TIGHT", "STRONG_TREND_UP"}      # sorted, both present
+    up = by_regime["STRONG_TREND_UP"]
+    assert up.n_trades == 2 and up.net_pnl == Decimal("50")            # 100 - 50
+    assert up.gross_win == Decimal("100") and up.gross_loss == Decimal("50")
+    assert up.win_rate == pytest.approx(0.5) and up.profit_factor == pytest.approx(2.0)
+    assert up.avg_duration_s == pytest.approx(7200.0)                  # (3600 + 10800) / 2
+    tight = by_regime["RANGING_TIGHT"]
+    assert tight.n_trades == 1 and tight.net_pnl == Decimal("-20")
+    assert tight.win_rate == 0.0 and tight.profit_factor == 0.0        # no gross win
+    # every trade lands in exactly one bucket — the breakdown cannot lose money or trades
+    assert sum(s.n_trades for s in by_regime.values()) == len(trades)
+    assert sum((s.net_pnl for s in by_regime.values()), Decimal("0")) == Decimal("30")
+
+
+def test_slice_by_strategy_splits_the_same_trades_differently() -> None:
+    trades = [_rt("100", "TREND", "STRONG_TREND_UP"), _rt("-20", "BREAKOUT", "STRONG_TREND_UP")]
+    by_strategy = slice_by(trades, "strategy_type")
+    assert set(by_strategy) == {"BREAKOUT", "TREND"}
+    assert by_strategy["TREND"].net_pnl == Decimal("100")
+    assert by_strategy["BREAKOUT"].net_pnl == Decimal("-20")
+
+
+def test_an_unattributed_trade_is_visible_never_dropped() -> None:
+    """A missing regime must show up as UNATTRIBUTED — silently dropping it would hide
+    exactly the hole GAP-P12D-31 was logged to close."""
+    by_regime = slice_by([_rt("5", "TREND", None), _rt("7", "TREND", "RANGING_WIDE")], "regime")
+    assert by_regime["UNATTRIBUTED"].n_trades == 1
+    assert sum(s.n_trades for s in by_regime.values()) == 2

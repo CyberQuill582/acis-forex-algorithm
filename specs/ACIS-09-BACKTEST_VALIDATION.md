@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-BT-009` |
-| **Version** | 1.4 (**LOCKED** 2026-07-18, phase-11 start; v1.2 2026-09-11 owner-ratified: cross-check source HistData replaces TrueFX — master v2.13; v1.3 2026-09-13 owner-approved: independent validation set — master v2.17; v1.4 2026-09-15: walk-forward honesty C-BT-11 — embargo, Deflated Sharpe gate ≥ 0.95, date-joined SPX) |
+| **Version** | 1.6 (**LOCKED** 2026-07-18, phase-11 start; v1.2 2026-09-11 owner-ratified: cross-check source HistData replaces TrueFX — master v2.13; v1.3 2026-09-13 owner-approved: independent validation set — master v2.17; v1.4 2026-09-15: walk-forward honesty C-BT-11 — embargo, Deflated Sharpe gate ≥ 0.95, date-joined SPX; v1.5 2026-09-15: mutation-gate targets; v1.6 2026-09-16: per-regime + per-strategy attribution, GAP-P12D-31) |
 | **Layer / DIR** | Validation · `[DIR:tests/backtest]` (+ `scripts/`) |
 | **Consumes** | the full engine (ACIS-01…07) run in backtest mode over historical data |
 | **Emits** | a per-account validation report vs `../ACIS_SPEC.md` §14 targets (out-of-sample) |
@@ -46,7 +46,8 @@ class ValidationReport:
     split: str                        # e.g. "walk_forward" with fold boundaries
     in_sample: MetricBlock            # reported for transparency, NEVER graded vs §14
     out_of_sample: MetricBlock        # the ONLY block graded vs §14
-    per_regime: Mapping[RegimeType, MetricBlock]
+    per_regime: Mapping[str, SliceStats]      # v1.6 (GAP-P12D-31): trade-level attribution
+    per_strategy: Mapping[str, SliceStats]   # v1.6: which AGON module made or lost the money
     equity_curve_ref: str             # artifact path
     drawdown_curve_ref: str
     targets_met: Mapping[str, bool]   # per §14 metric, computed on out_of_sample ONLY
@@ -162,6 +163,7 @@ CREATE TABLE validation_report (
 **The live gate:** **phase 12** (live broker) is permitted only when a persisted per-account `ValidationReport.passed == True` on ≥2-yr out-of-sample walk-forward with the account's §9.5 rules active **and** a human sign-off record exist; ACIS-08's `acis_set_mode(live)` checks both (plus the dual-hash ack). This spec is the wall between paper and live (master §15). **Pre-phase-12 VPS deployment-readiness gate (v2.10)** runs alongside: CI running the full suite as the merge gate, the Docker scaffold, process supervision + the §8.6 watchdog deployed, and per-adapter server-side-stop verification in the §7.5 conformance suite. **Done-when (phase 11, master §15):** §14 harness green; the honesty guards are enforced in code, not just documented; never-report-in-sample proven by test; per-account grading with rules-active proven; the nine glitch classes covered; the mutation-testing quality gate configured.
 
 ## Changelog
+- **1.6 (2026-09-16)** — Attribution (GAP-P12D-31, after the engine-level falsification failed and the run could not say WHICH regime or module lost the money): every closed trade now carries the regime active at entry, and the report gains `per_strategy` beside `per_regime`. Both are `SliceStats` (trade count, net PnL, win rate, profit factor, average duration, gross win/loss), **not** `MetricBlock`s: a subset of trades has no continuous equity curve, so Sharpe, max drawdown and positive-months are undefined on it — inventing a per-slice curve is the fabrication GAP-P11E-02 forbids. A trade with no regime groups under `UNATTRIBUTED`, so a hole in attribution is visible instead of silently dropping trades. `per_regime` was previously declared but always emitted `{}`. No §14 target value, gate or guardrail changed.
 - **1.5 (2026-09-15)** — Quality gate: `deflated_sharpe.py` joins the mutation targets (the pass verdict gates on it since v1.4), and any failing test run kills a mutant — mutmut 2 counts only exit code 1, so a mutant that broke an import (pytest exit 2) was recorded as a survivor (GAP-P12D-28). No §14 target value changed.
 - **1.4 (2026-09-15)** — C-BT-11: the walk-forward embargo enforced on real fold data, and `trial_count` + `deflated_sharpe` added to `ValidationReport` (GAP-SP12E-03), with `passed` gated at a Deflated Sharpe ≥ 0.95 over ≥ 2 trials (owner-ratified, GAP-P12D-16); the date-joined SPX correlation off rollover marks, where missing overlap fails instead of passing (GAP-SP12E-06); the float-dust Sharpe fix (GAP-P12D-17). No §14 target value changed.
 - **1.3 (2026-09-13)** — Master v2.17: C-BT-9 extended with the owner-approved independent validation set (GAP-P12D-14) and the low-overlap flag (GAP-P12D-13).
