@@ -129,3 +129,12 @@
 - [x] 2026-07-15 — v2.4 any-account/any-instrument pass (F25–F31, C10–C15; §3.6/§3.7/§5.7/§7.5/§9.5).
 - [x] 2026-07-15 — Subordinate adversarial audit of v2.4 (GAP-0013–0019, all resolved in v2.5).
 - [x] 2026-07-15 — v2.5 ratification pass: owner ratified GAP-0010/0011/0012; all audit findings resolved; **spec declared complete for build**.
+
+## Constitution v0.9 (GAP-C09-01)
+
+- [ ] **GAP-C09-01** — Burn the comment-shape baseline down from 19 file/rule pairs to zero. No
+      deadline: the touched-file rule collects it phase by phase, since a file a phase edits
+      forfeits its allowance. `python scripts/governance_gate.py` is the phase gate.
+- [ ] **GAP-C09-01** — At the live-readiness terminal milestone, the dual-lens pass gains the
+      practicality-and-code-efficiency lens and runs on Fable 5 (A3); if Fable is unavailable the
+      lens still runs on the next superior tier and the report names what actually ran.

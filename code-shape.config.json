@@ -1,0 +1,4 @@
+{
+  "include": ["core", "scripts"],
+  "specs": ["ACIS_SPEC.md"]
+}

@@ -1,0 +1,38 @@
+{
+  "_": "A16 case list. Five fields per case, no prose: the ID points at the ledger. Run with `python scripts/falsify.py` (thin wrapper) or the constitution engine directly.",
+  "timeoutMs": 600000,
+  "cases": [
+    {
+      "id": "taper floor at the halt boundary",
+      "file": "core/risk/guardrails.py",
+      "anchor": "    if distance >= halt:\n        return 0.0",
+      "mutation": "    if distance >= halt:\n        return 1.0",
+      "test": "python -m pytest tests/unit/test_guardrails.py -q -x -p no:cacheprovider",
+      "expect": "test_taper_hand_vectors"
+    },
+    {
+      "id": "taper ceiling below the start boundary",
+      "file": "core/risk/guardrails.py",
+      "anchor": "    if distance <= start:\n        return 1.0",
+      "mutation": "    if distance <= start:\n        return 0.0",
+      "test": "python -m pytest tests/unit/test_guardrails.py -q -x -p no:cacheprovider",
+      "expect": "test_taper_hand_vectors"
+    },
+    {
+      "id": "equity breaker flattens and halts",
+      "file": "core/risk/guardrails.py",
+      "anchor": "        if equity_breached and not self._equity_flattened:",
+      "mutation": "        if False and not self._equity_flattened:",
+      "test": "python -m pytest tests/unit/test_guardrails.py -q -x -p no:cacheprovider",
+      "expect": "test_equity_breaker_flattens_and_halts"
+    },
+    {
+      "id": "equity breaker is one-shot per armed cycle, not per process",
+      "file": "core/risk/guardrails.py",
+      "anchor": "        self._instruments_halted.clear()\n        self._session_halted = False\n        self._equity_flattened = False",
+      "mutation": "        self._instruments_halted.clear()\n        self._session_halted = False\n        self._equity_flattened = True",
+      "test": "python -m pytest tests/unit/test_guardrails.py -q -x -p no:cacheprovider",
+      "expect": "test_equity_breaker_re_fires_after_human_rearm"
+    }
+  ]
+}
