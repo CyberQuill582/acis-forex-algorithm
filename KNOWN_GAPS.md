@@ -144,6 +144,22 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-31: engine-level falsification FAILED — the engine loses money on a market whose planted trend its own fitness code finds easily
+- Severity: critical · Likelihood: high
+- Status: open (2026-09-16 — the pre-registered answer was null FAIL, permuted FAIL, planted PASS; planted FAILED. Owner's standing rule for this case: "if planted fails, that is a finding (the engine cannot find a planted trend), not a reason to tune the test")
+- Area: the composed loop end to end — core/regime labels → core/optimizer selection → core/signals (AGON modules) → core/governor sizing → tests/backtest book; run `data/validation/falsification/20260915T231127Z` (25 folds, 817 days, EUR_USD + USD_JPY)
+- Description: on the planted market (trend episodes of 1–4 h, drift 0.15σ per step, an edge the fitness harness captures easily — 80–90 of 100 random ParamSets profitable on contiguous bars, median E_R +0.25/+0.39) the engine traded 2,018 times and LOST: annual Sharpe −0.65, profit factor 0.84, win rate 42.7%, 48% positive months. On the null market it lost about the same way: 1,864 trades, Sharpe −0.90, PF 0.83, win rate 38.6%. Almost nothing separates the two, so the pipeline's realised trading is near-independent of whether an edge exists. (Permuted was still grading when this was written.)
+- Evidence, from the planted run's own logs and report:
+  - **Horizon mismatch:** mean trade duration 477 s (~8 min) against an edge that only pays over 1–4 h. TSMOM, carved out of the §14 duration metric, held 2.3 days.
+  - **Entry spam decides the trade set:** `SIGNAL_EMITTED` 1,425,326 and `SIZED` 1,425,326, versus 2,018 booked trades. Which signals become trades is an artifact of the book's dedup, not a designed entry/holding policy — [[GAP-0075]] at full scale.
+  - **Sizing signal is inert:** `MARGINAL_ALPHA_PINNED` on all 1,425,326 sizings, so the C6 marginal-alpha term never varied.
+  - **Promotion is the exception:** 91 `PARAM_STAGED` but only 39 `PARAM_PROMOTED`, with 11,638 `PARAM_PROMOTION_STALLED` — most evolved params never reach the fast loop ([[GAP-0002]]).
+  - **Regime gate dominates:** `DISCARD_VETOED_REGIME` 2,221,512 against `VETO_APPLIED` 81,042.
+  - **The report cannot attribute:** `per_regime` is `{}` and there is no per-strategy breakdown, so the run cannot say which module lost the money. That reporting hole must close before the next diagnosis run.
+- Hypotheses to test in order (none applied — this entry is a finding, not a fix): (1) [[GAP-0035]] — QIEA selects on a dual-EMA proxy while AGON trades six different modules, so a champion's fitness need not transfer to what the engine actually does; (2) [[GAP-0075]] — with no position/holding policy the engine cannot hold a multi-hour trend, whatever it selected; (3) exit geometry — ATR-multiple SL/TP on 1-minute bars truncates a 1–4 h drift within minutes, which fits the 8-minute mean duration and the sub-1 profit factor on both markets.
+- Justification: open and blocking. This is the guard-2 evidence bar (CLAUDE.md "Operational correctness"): until the engine can capture an edge that is provably present, a §14 grade on real data cannot mean anything, and no paid training run is justified. It does NOT invalidate the GAP-P12D-29 fix — champions and trades exist now, which is what made this failure visible at all.
+- Linked: [[GAP-P12D-28]], [[GAP-P12D-29]], [[GAP-0035]], [[GAP-0075]], [[GAP-0002]], [[GAP-0091b]]
+
 ## GAP-P12D-30: evolving on a time span costs far more compute than 500 bars — about 36 minutes per instrument per fold on one core
 - Severity: medium · Likelihood: high
 - Status: open (2026-09-15 — a measured consequence of the GAP-P12D-29 fix; not yet a blocker)
