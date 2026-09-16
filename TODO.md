@@ -138,3 +138,23 @@
 - [ ] **GAP-C09-01** — At the live-readiness terminal milestone, the dual-lens pass gains the
       practicality-and-code-efficiency lens and runs on Fable 5 (A3); if Fable is unavailable the
       lens still runs on the next superior tier and the report names what actually ran.
+
+## ⛔ RETROACTIVE CONSTITUTION SWEEP — owed, one long session, before further forward work
+**Owner-directed 2026-09-16: implement SPEC_CONSTITUTION v0.9 from phase 1, however far this
+project has gone.** Everything built here was built under v0.3–v0.8, and those versions bound
+almost nothing mechanically. The phase-by-phase rule governs amendments from here on; it does
+not excuse the existing work. Run this as ONE pass, staged and green at each stage — never one
+unreviewable commit — and dual-audit it under A3 like any other phase.
+
+- [ ] **Every guard surface (A8) gets a falsification case.** The highest-value half: today's
+      case list covers the guards someone happened to think of. Enumerate the guards this
+      project's spec names, and give each one a case that goes red for its stated reason.
+- [ ] **Burn the code-shape baseline to zero**, rather than waiting for a phase to touch each
+      file. Re-write the baseline afterwards so it records zero, not history.
+- [ ] **Retire spent spec narrative** under A13's "implemented is not spent" guard — build
+      instructions for green phases, sequencing already done, changelog older than the current
+      milestone. **Propose it to the owner; never retire unilaterally.**
+- [ ] **Make the read path true end to end** and re-resolve every proof pointer.
+- [ ] **Build A15's closure check** if this project has none — it is what keeps the rest honest.
+- [ ] **Finish with the full gate green, falsification included**, then record the sweep as
+      complete in the ledger. Until then this project's adoption is PARTIAL, and says so (A10).
