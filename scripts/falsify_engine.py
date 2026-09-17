@@ -39,10 +39,17 @@ EXPECT_PASS = {"null": False, "planted": True, "permuted": False}
 
 
 def plan(train_days: int, test_days: int, n_folds: int) -> list[Fold]:
+    """Non-overlapping folds (GAP-P12D-35). Each fold's warm-up window is [train_end,
+    test_start) — the embargo — so successive test windows must be separated by the embargo
+    too, or the warm-up replays days the previous fold already graded and the engine's clock
+    jumps backwards. The ratified `oos_plan.plan_folds` has this shape; this one did not,
+    which silently suspended `max_hold` and pushed out-of-order timestamps into the equity
+    curve of every falsification run before 2026-09-17."""
     first_test = START + timedelta(days=train_days) + EMBARGO
+    step = timedelta(days=test_days) + EMBARGO
     folds = []
     for k in range(n_folds):
-        test_start = first_test + k * timedelta(days=test_days)
+        test_start = first_test + k * step
         train_end = test_start - EMBARGO
         folds.append(Fold(k, train_end - timedelta(days=train_days), train_end, test_start,
                           test_start + timedelta(days=test_days)))

@@ -125,7 +125,16 @@ class Backtest:
 
     def _replay(self, loop, fd: FoldData, book: BookState) -> None:
         self._active = book
+        # GAP-P12D-35: the book is continuous across folds, so a fold that starts before the
+        # previous one ended replays graded days twice, makes (now - entry_ts) negative (which
+        # silently suspends max_hold) and puts out-of-order points in the equity curve the
+        # Sharpe is computed from. A fold plan that overlaps is a bug, not a slow path.
         for st in fd.warmup_states:                  # observe-only: no signals, no orders
+            if self._last_ts is not None and st.timestamp < self._last_ts:
+                raise ValueError(
+                    f"fold {fd.fold.index} replays backwards: {st.timestamp.isoformat()} is "
+                    f"before the last observed tick {self._last_ts.isoformat()} — overlapping "
+                    "folds (GAP-P12D-35)")
             self._tick(loop, st, book, trade=False)
         first = True
         for st in fd.test_states:

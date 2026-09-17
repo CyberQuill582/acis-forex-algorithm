@@ -46,6 +46,7 @@ class OpenPos:
     param_set_id: str = ""
     group_id: str | None = None
     regime: str | None = None            # regime ACTIVE at entry (GAP-P12D-31)
+    entry_spread: float = 0.0            # the quoted spread paid on entry (C8, GAP-P12D-36)
 
 
 @dataclass
@@ -97,7 +98,7 @@ class PositionModel:
             if existing.direction == order.direction:
                 return                                   # same-side dedup (GAP-0075)
             book.book_close(self.close_at(existing, order.entry_price, st.timestamp,
-                                          "reverse", book), order.instrument)
+                                          "reverse", book, st.spread), order.instrument)
         book.open_by_inst[order.instrument] = OpenPos(
             instrument=order.instrument, direction=order.direction,
             entry_price=order.entry_price, size_units=order.size_units,
@@ -105,22 +106,23 @@ class PositionModel:
             take_profit=order.take_profit,
             strategy_type=strategy or (order.factors_snapshot.get("strategy_type", "UNKNOWN")
                                        if isinstance(order.factors_snapshot, Mapping) else "UNKNOWN"),
-            param_set_id=order.param_set_id, group_id=order.group_id, regime=regime)
+            param_set_id=order.param_set_id, group_id=order.group_id, regime=regime,
+            entry_spread=st.spread)
 
     def maybe_close(self, pos: OpenPos, st: MarketState, book: BookState) -> ClosedTrade | None:
         price = st.mid
         if pos.direction == 1:
             if price <= pos.stop_loss:
-                return self.close_at(pos, pos.stop_loss, st.timestamp, "stop", book)
+                return self.close_at(pos, pos.stop_loss, st.timestamp, "stop", book, st.spread)
             if pos.take_profit is not None and price >= pos.take_profit:
-                return self.close_at(pos, pos.take_profit, st.timestamp, "target", book)
+                return self.close_at(pos, pos.take_profit, st.timestamp, "target", book, st.spread)
         else:
             if price >= pos.stop_loss:
-                return self.close_at(pos, pos.stop_loss, st.timestamp, "stop", book)
+                return self.close_at(pos, pos.stop_loss, st.timestamp, "stop", book, st.spread)
             if pos.take_profit is not None and price <= pos.take_profit:
-                return self.close_at(pos, pos.take_profit, st.timestamp, "target", book)
+                return self.close_at(pos, pos.take_profit, st.timestamp, "target", book, st.spread)
         if (st.timestamp - pos.entry_ts).total_seconds() >= self.max_hold_s:
-            return self.close_at(pos, price, st.timestamp, "max_hold", book)
+            return self.close_at(pos, price, st.timestamp, "max_hold", book, st.spread)
         return None
 
     def carry_quote(self, pos: OpenPos, exit_ts: datetime) -> Decimal:
@@ -135,12 +137,16 @@ class PositionModel:
             swap_convention=self._conventions.get(pos.instrument, "tom_next"))
 
     def close_at(self, pos: OpenPos, exit_price: float, ts: datetime,
-                 reason: str, book: BookState) -> ClosedTrade:
+                 reason: str, book: BookState, exit_spread: float = 0.0) -> ClosedTrade:
+        """GAP-P12D-36: friction is the DECLARED C8 cost on both sides — `per_side_cost` is
+        `spread/2 + commission + slippage`, the same function the optimizer's fitness charges
+        (master §5 C8: one model, both places). Omitting the spread here made every graded
+        number optimistic while selection was scored against the stricter world."""
         cost = self.cost(pos.instrument)
         gross = (Decimal(str(exit_price)) - Decimal(str(pos.entry_price))) \
             * Decimal(pos.direction) * pos.size_units
-        friction = Decimal(str(cost.slippage_per_side * 2
-                               + cost.commission_per_side * 2)) * pos.size_units
+        friction = Decimal(str(cost.per_side_cost(pos.entry_spread)
+                               + cost.per_side_cost(exit_spread))) * pos.size_units
         carry = self.carry_quote(pos, ts)
         # all three are QUOTE-currency amounts — convert once, at the close rate
         to_acct = quote_to_account(pos.instrument, exit_price, book.last_price)

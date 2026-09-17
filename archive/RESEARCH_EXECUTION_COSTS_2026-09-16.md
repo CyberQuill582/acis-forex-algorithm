@@ -3,7 +3,13 @@
 **Date:** 2026-09-16
 **Status:** research artifact, OUT of the orienting read path (`archive/`). Not a spec, not a ledger entry. **Nothing here binds until the owner ratifies it.**
 **Author role:** trading-execution and market-microstructure analyst. Engine code was read (read-only); no code, config, spec or ledger was modified.
-**Companion:** [`archive/RESEARCH_FX_METHODS_2026-09-16.md`](RESEARCH_FX_METHODS_2026-09-16.md) (same date, methods/statistics lens). Where the two overlap on the cost–horizon arithmetic they agree; §3 below explains why its "continuously exposed" drag figures and mine differ, and which applies to ACIS.
+**Companions (all `archive/`, all same date, all out of the read path):**
+- [`RESEARCH_FX_METHODS_2026-09-16.md`](RESEARCH_FX_METHODS_2026-09-16.md) — methods/statistics lens. Where it and this file overlap on the cost–horizon arithmetic they agree; §3 explains why its "continuously exposed" drag figures and mine differ, and which applies to ACIS.
+- [`RESEARCH_SIGNAL_TO_POSITION_2026-09-16.md`](RESEARCH_SIGNAL_TO_POSITION_2026-09-16.md) — the full literature behind §4, with the academic citations verified. **Read it instead of §4 for the formulas**; §4 keeps only what bears on the cost argument here.
+- [`RESEARCH_EVENT_CALENDAR_2026-09-16.md`](RESEARCH_EVENT_CALENDAR_2026-09-16.md) — the full event-risk and calendar-licensing pass behind §5, including measured event-window shares and the release-time conventions a calendar must get right.
+- [`RESEARCH_FILL_FIDELITY_2026-09-16.md`](RESEARCH_FILL_FIDELITY_2026-09-16.md) — the full execution-fidelity pass behind §1.2, §1.3 and §6.5–6.8, with the OANDA legal/API citations and the regulatory record in full. **Its §10 lists nine items needing owner triage into the ledger**; §7 R15/R16 below carry the ones that bear on cost and operations.
+
+**Concurrency note (2026-09-17).** While this report was being written, a parallel agent began implementing the F1 fix as **GAP-P12D-36** (`tests/backtest/book.py` now threads `st.spread` into `close_at` and charges `per_side_cost` on both sides). F1 below is therefore written as *found*, not as *outstanding* — see the note under F1 for what that fix does and does not cover. **I made no code changes; the modifications visible in `tests/backtest/`, `scripts/falsify_engine.py` are that agent's.**
 
 ### Source grades used throughout
 
@@ -26,6 +32,10 @@
 
 with **C-BT-5** requiring "slippage/**spread** models documented". The harness fills naively at mid. **This is not a judgement call about how optimistic a cost assumption should be — it is a locked contract the code does not meet.**
 
+**Being fixed concurrently, as GAP-P12D-36.** A parallel agent is threading `st.spread` into `close_at` and charging `per_side_cost` (= `spread/2 + commission + slippage`) on both sides. That is the correct **additive** form of the fix and it closes the C8 divergence. Two things it does **not** close, both of which still need R1 and R2:
+- **The stop-trigger side.** `maybe_close` still tests `st.mid` against the stop. Live, a long's stop triggers on the **bid** (the v20 default). Charging the spread as a cost term does not move the *trigger*, so stop hits remain under-counted.
+- **The spread is still Dukascopy's.** The additive fix charges the spread that is in the tick — which is an ECN's, roughly a quarter of OANDA's (§1.2b). **It closes about a quarter of the gap it appears to close.** This is why R2, not R1, is the larger half of the fix.
+
 **F2 — The harness is ~3.9× optimistic versus a real OANDA account, and the deeper problem is that the backtest is priced on a different firm's book.** Measured Dukascopy median spread is 0.272 bps (EUR/USD) and 0.422 bps (USD/JPY) [MEASURED HERE]. OANDA's own **time-weighted average** spreads — pulled from the API behind its spreads page, its own published method — are **1.5578 pips EUR/USD and 1.5166 USD/JPY** in business hours [BROKER-PRIMARY], i.e. **1.44 and 1.01 bps round trip in spread alone**, against the harness's 0.367 and 0.267. The un-modelled gap is **1.07 bps** on EUR/USD, rising to **~3.4 bps on NZD/USD**. And Dukascopy is an ECN whose quote ACIS will never trade on: OANDA states in writing that it *"ESTABLISHES THE PRICES AT WHICH IT OFFERS TO TRADE WITH YOU"* and that those prices *"MIGHT NOT BE THE BEST PRICES AVAILABLE"*. **So the Dukascopy bid/ask is a legitimate reference mid and an illegitimate tradeable spread** — which makes R3 (charge OANDA's spread around the Dukascopy mid), not R1, the change that does most of the work. Realistic all-in round trip on EUR/USD ≈ **1.5 bps**; §3's tables were already built on that number.
 
 **F3 — That 4× understatement is almost certainly *why* evolution selected an 8-minute holding period.** Break-even information coefficient (expected gross edge ÷ per-trade standard deviation) at an 8-minute hold on EUR/USD is **0.091 at the modelled 0.37 bps** — reachable by an 11-gene search on in-sample data — and **0.371 at a realistic 1.5 bps**, which no retail FX system produces. The minimum viable holding period at a plausible IC of 0.05 moves from **27 minutes (modelled cost) to 7.3 hours (real cost)** [DERIVED HERE, §3]. The cost model is not a detail downstream of GAP-P12D-31; it is a plausible *cause* of it.
@@ -42,7 +52,7 @@ with **C-BT-5** requiring "slippage/**spread** models documented". The harness f
 
 **F6d — The graded backtest is not the engine, in more ways than the cost model.** ACIS-09 §7.2(c) (LOCKED) requires the test replay to run "through the real ACIS loops … honouring … **Execution fill modelling** … exactly as production" and §7.2(d) to "collect **FillReports**". In fact the harness imports nothing from `core/execution/`; the fill model, the position de-duplication that turns 1,425,326 sized orders into 2,018 trades, and the only time-based exit all live in `tests/backtest/`, not in `core/`. Meanwhile the live engine's primary event defence (`MACRO_EVENT` via `macro_events_imminent`) is inert in the backtest because there is no historical calendar. **Several behaviours that decide what the backtest trades are the harness's; several the live engine will run are missing from it.** Every §14 number inherits that.
 
-**F7 — Ranked, the single highest-value change is not more research: it is charging the spread in `book.py` and re-running the falsification.** It is a few lines, it is spec-mandated by C8, and it changes the break-even IC at the engine's realised 8-minute horizon from 0.091 to 0.158 — before any of the harder modelling upgrades. Everything else in §7 is downstream of getting the headline number honest.
+**F7 — Ranked, the highest-value change is not more research: it is pricing the backtest on OANDA's spread rather than Dukascopy's, and re-running the falsification.** Charging the tick's own spread (R1, already under way as GAP-P12D-36) is necessary, spec-mandated, and closes about **a quarter** of the gap; charging the *destination broker's* spread around the Dukascopy mid (R2) closes **60–80%** of it. Together they move the break-even IC at the engine's realised 8-minute horizon from 0.091 to ~0.37 — from "a search can manufacture this in-sample" to "nothing produces this". **Then re-run the falsification (R3) before any paid walk-forward**, because R2 is the change most likely to invalidate the current OOS results, and it is better to learn that from a local run than from a paid one. Everything else in §7 is downstream of getting the headline number honest.
 
 ---
 
@@ -149,7 +159,7 @@ Round-trip spread cost = one full spread crossed. Dukascopy medians measured in 
 
 **How optimistic are we, on the best available numbers?** The harness charges 0.367 bps on EUR/USD against a realistic **1.44 bps of spread alone** — **3.9× optimistic**, an absolute gap of **1.07 bps per round trip**. Adding measured retail slippage (§1.3) puts the realistic all-in round trip at **≈1.5 bps**, which is exactly the central estimate §3's tables are built on. **The better data did not move the conclusion; it tightened it.**
 
-**Gold is the honest exception, and it deserves flagging rather than smoothing.** OANDA's $0.565 spread is **1.32 bps at September-2026 gold ($4,266)** — *tighter* than the 1.794 bps median measured in the Dukascopy archive. In absolute dollars the comparison inverts (OANDA $0.565 vs Dukascopy ≈$0.23–0.36 at 2013–2020 gold prices), because gold tripled across the sample. **A date-matched comparison is required before anyone calibrates XAU/USD**, and the naive assumption "the broker is always wider than the ECN" is false for this instrument. One more reason `XAU_USD` must not be enabled on a cost constant copied from a major (R11).
+**Gold is the honest exception, and it deserves flagging rather than smoothing.** OANDA's $0.565 spread is **1.32 bps at September-2026 gold ($4,266)** — *tighter* than the 1.794 bps median measured in the Dukascopy archive. In absolute dollars the comparison inverts (OANDA $0.565 vs Dukascopy ≈$0.23–0.36 at 2013–2020 gold prices), because gold tripled across the sample. **A date-matched comparison is required before anyone calibrates XAU/USD**, and the naive assumption "the broker is always wider than the ECN" is false for this instrument. One more reason `XAU_USD` must not be enabled on a cost constant copied from a major (R12).
 
 **On "quoted versus effective spread".** The classical academic distinction (effective spread = 2×|trade price − mid|, capturing price improvement inside the quote) is not the one that matters here. What matters is that **OANDA is a principal, not a venue**, and says so in writing [BROKER-PRIMARY, US Additional Disclaimer, Dec 2025]:
 
@@ -388,7 +398,7 @@ An IC of 0.418 is not a hard target; it is a category error. An IC of 0.10 is th
 
 ## 4. SIGNAL-TO-POSITION MECHANICS
 
-> **Source-confidence note.** The web-search budget was exhausted before this section (see Limitations). The pysystemtrade material below is **verified by direct fetch** of the repository's own documentation. The academic results are **cited from knowledge and not re-verified in this session** — they are standard, load-bearing results that any of the named papers will confirm, but treat the exact formulas as **[ACADEMIC, unverified citation]** and check them before implementing. The *structure* of the recommendation does not depend on any one of them.
+> **Source note.** This section is a summary. The formulas and measured numbers were extracted from the primary documents (PDF text extraction, not search snippets) by the companion pass — **[`RESEARCH_SIGNAL_TO_POSITION_2026-09-16.md`](RESEARCH_SIGNAL_TO_POSITION_2026-09-16.md), which is the authoritative version and should be read before implementing anything here.** The pysystemtrade material in §4.3 is additionally verified by my own direct fetch of the repository's documentation. What this section adds is the mapping onto ACIS's actual code.
 
 ### 4.1 The central design choice: target position vs event-based entry
 
@@ -406,23 +416,37 @@ The production-systematic convention is the opposite. A target-position (state-b
 
 **This is the structural answer to F6c.** The `max_holding_periods` gene cannot reach the engine because the engine has nothing to apply it to. A target-position layer is the thing that would give it somewhere to live.
 
-### 4.2 No-trade bands: the theory, and the one number that matters
+### 4.2 No-trade bands and partial adjustment — the theory, now verified
 
-The foundational result is that **with proportional transaction costs, the optimal policy is not to track the optimal portfolio — it is to do nothing inside a band around it, and trade only to the band's edge when you leave it.** Constantinides (1986) established the band structure for a proportional-cost portfolio problem; Davis & Norman (1990) gave the rigorous singular-control treatment; Leland (2000) worked the practical rebalancing case. [ACADEMIC, unverified citations]
+*(Formulas and measured numbers in this subsection are extracted from the primary documents by the companion pass; see [`RESEARCH_SIGNAL_TO_POSITION_2026-09-16.md`](RESEARCH_SIGNAL_TO_POSITION_2026-09-16.md) for the full derivations and citations. Grades [A] academic / [P] practitioner are its.)*
 
-The result worth remembering is the **scaling**: band half-width grows roughly as the **cube root** of the proportional cost, `w ∝ (c/γσ²)^{1/3}` (Constantinides-type asymptotics). Two consequences for ACIS:
+**The two shapes, and you need both, because real costs are both.**
 
-- **Costs matter less than linearly for band design.** Quadrupling the cost (§1's 0.37 → 1.5 bps) widens the optimal band by only `4^{1/3} ≈ 1.59×`. So the band width is *robust* to exactly the cost uncertainty this report is otherwise complaining about — which makes it a safe thing to adopt before the cost model is perfect.
-- **But turnover is very sensitive to the band.** Widening a band by 1.6× typically cuts turnover by far more, because crossings of a wider band are rarer than linearly.
+| cost model | optimal policy | canonical result |
+|---|---|---|
+| **linear / proportional** (the spread) | a **no-trade band** around the target, **trading to the nearest edge** when you leave it | Constantinides; Davis–Norman; Guasoni **Thm 4.7**: band half-width **∝ ε^(1/3)**, welfare loss **∝ ε^(2/3)** [A] |
+| **quadratic / impact** | a **fixed partial-adjustment fraction** toward the target | Gârleanu–Pedersen: `x_t = (1 − a/λ)·x_{t−1} + (a/λ)·aim_t`, with `a/λ = ½(√(ρ² + 4γ/λ) − ρ) ≈ √(γ/λ)` — **quadruple the cost ⇒ halve the trading rate** [A] |
 
-**Gârleanu & Pedersen (2013), "Dynamic Trading with Predictable Returns and Transaction Costs"** [ACADEMIC, unverified citation] is the version most directly applicable to a multi-signal system. Its two results:
+**The band's robustness is the reason to adopt it before the cost model is finished.** Welfare loss scales as **ε^(2/3)**, so a band that is somewhat wrong costs very little — wide bands are nearly free, and a single band constant across instruments is defensible. That is exactly the property §1's cost uncertainty needs: the band does not have to wait for R2.
 
-1. **Partial adjustment toward an "aim portfolio".** The optimal position is a weighted average of where you are and where you want to be: `x_t = (1 − a)·x_{t−1} + a·aim_t`, with the trading rate `a ∈ (0,1]` **decreasing in transaction cost** and increasing in risk aversion. You never jump to the target; you always move a fixed fraction of the way.
-2. **The aim portfolio overweights slow signals.** Because a fast-decaying signal's edge will be gone before you have finished trading into it, the aim shrinks each signal in proportion to its own decay rate. **A signal that decays faster than you can trade into it is worth approximately nothing after costs, no matter how strong it is.**
+**Measured effect sizes** [A]:
 
-Result 2 is the formal statement of §3's conclusion and of the GAP-P12D-31 diagnosis ("horizon mismatch: mean trade duration 477 s against an edge that only pays over 1–4 h"). It also says something ACIS's optimizer cannot currently express: **the right response to a fast signal under high costs is not to trade it faster, it is to weight it down.**
+| technique | measured result | source |
+|---|---|---|
+| **Netting across signals before execution** | turnover **24.09% → 6.71% monthly = −72.15%**; also raised tradeable characteristics from 6 to 15 | DeMiguel et al., RFS 2020 |
+| **Banding / hysteresis (momentum)** | turnover **−52%**, costs **−48%**, gross **−6%**, **net +34%** (0.68 → 0.91 %/mo) | Novy-Marx & Velikov |
+| Banding across 23 anomalies | turnover −41%, costs −42%; "the single most effective cost-mitigation technique" and the only one to consistently yield net gains | Novy-Marx & Velikov, FAJ 2019 |
+| **Ignoring costs entirely** | commodity futures: Markowitz gross SR **0.83 → net −9.84**; GP's dynamic rule keeps **0.58 net** | Gârleanu–Pedersen 2013 |
+| **Getting the adjustment rate wrong** | same market, same signals: 10% weight-on-Markowitz nets **−0.41**; 3% nets **+0.46** | Gârleanu–Pedersen 2013 |
+| **Penalise modelled cost by ~5–8×** | `γ_trade ≈ 6` optimal over 410 backtests; wrong values "so poor the curve does not fit in the plotting area". Carver's version is ×2, justified by estimation asymmetry — you know costs far more precisely than gross returns | Boyd et al. §2.3/§7 [A]; Carver [P] |
 
-The convex-optimisation formulation of the same idea — **Boyd et al., "Multi-Period Trading via Convex Optimization"** (the `cvxportfolio` library) [ACADEMIC/PRACTITIONER, unverified citation] — puts a turnover penalty directly in the objective rather than filtering trades afterwards. The general finding across this literature: **penalising turnover inside the objective dominates post-hoc trade filtering**, because the optimiser can then choose a *different, cheaper* position rather than being denied the expensive one.
+**Half-life matching has an exact formula.** Shrink signal *k* by **`1/(1 + φ_k·a/γ)`** [A]. On GP's own calibration a 2.4-day signal is shrunk **~74× more** than a 206-day one, and that mechanism alone is worth **+26% net Sharpe** over speed-only control. This is the formal statement of §3's conclusion and of the GAP-P12D-31 diagnosis ("mean trade duration 477 s against an edge that only pays over 1–4 h"): **the right response to a fast signal under high costs is not to trade it faster, it is to weight it down.**
+
+**One empirical result that decides the architecture.** A cost penalty in the objective alone has a **hard turnover floor** — every forecast sign-flip trades regardless of how high the penalty is cranked [P, Carver]. **The band is what catches that.** So the answer is not "penalty *or* band"; it is both, and the band is the part that binds at the sign flip, which is exactly where ACIS's `apply_order` reversal path lives.
+
+**Two second-order results that bite budgets** [P]:
+- **Turnover has a floor** from vol scaling, FX revaluation and rolls — Carver measures **2.53 round trips/year on a *constant* forecast**. Budget net of it.
+- **Portfolio turnover ≈ IDM × single-instrument turnover** (instrument diversification multiplier ≈ 2.0 when diversified). A per-instrument cost budget therefore understates realised cost by roughly the IDM.
 
 ### 4.3 What a production system actually implements — verified
 
@@ -447,17 +471,28 @@ pysystemtrade also **costs strategies in Sharpe-ratio terms as `SR cost × turno
 
 The same system applies **forecast capping and thresholding** upstream of position sizing: forecasts are scaled to a target average absolute value and capped (`forecast_scalar`, `forecast_cap`), and a documented variant zeroes small forecasts entirely — *"If f<10 then g=0. If 10≤f≤20 then g=3(f−10). If f>20 then g=30"* [PRACTITIONER, VERIFIED, qoppac blog] — a dead-zone plus a linear ramp. ACIS has the first half of this already: AGON's `conviction_discard` threshold is a dead-zone on conviction. What it lacks is the *position* band downstream.
 
-### 4.4 The techniques, ranked by cost reduction per unit of implementation risk
+### 4.4 The techniques, ranked — with measured evidence, not intuition
 
-| technique | cost-drag reduction | risk of destroying the edge | ACIS status |
-|---|---|---|---|
-| **1. Position netting across strategies/instruments before execution** | Large and essentially free — two modules wanting opposite positions currently produce two round trips and one flat book | **None.** It is an identity, not a model change | **Absent.** Governor emits one `SizedOrder` per `Signal`; nothing nets them |
-| **2. No-trade band / buffering with trade-to-edge** | Large; this is the main lever | Low, and *quantifiable* — the band's width is one number you can sweep | **Absent** |
-| **3. Target-position representation** | Prerequisite for 1, 2 and 5 | Low; it changes plumbing, not signals | **Absent** |
-| **4. Minimum holding time / trade throttle** | Moderate | **Moderate — this is the risky one.** A hard min-hold prevents a *correct* exit, which is a different thing from preventing an unnecessary entry. Prefer the band | §9.5 supports a platform min-hold as a *constraint*; not a cost tool |
-| **5. Turnover penalty inside the fitness objective** | Moderate-to-large, and it changes *what gets selected* rather than filtering afterwards | Low | **Absent** — C8 charges cost per simulated trade, which is not the same as penalising turnover in the objective |
-| **6. Signal smoothing / hysteresis (EWMA the forecast; Schmitt-trigger entry/exit thresholds)** | Moderate | Moderate — smoothing adds lag, which costs edge on a fast signal and costs nothing on a slow one | Partially present: `conviction_discard` is a one-sided threshold, not hysteresis |
-| **7. Half-life matching (weight each signal by its decay rate)** | Large *for the right reason* — it removes signals that were never affordable | Low; it is the Gârleanu-Pedersen aim-portfolio result | **Absent**, and it is the direct fix for the horizon mismatch in GAP-P12D-31 |
+Ranking and measurements from the companion pass; ACIS status is mine, from the code.
+
+| rank | technique | measured effect | risk to the edge | ACIS status |
+|---|---|---|---|---|
+| **1** | **Net to one target position per instrument before sizing** | **turnover −72.15%** (24.09% → 6.71% monthly) [A] | **None** — it is an identity, not a model change | **Absent.** The Governor emits one `SizedOrder` per `Signal`; nothing nets them |
+| **2** | **No-trade band ≈10% of the *average* position, trade to the edge** | turnover **−52%**, costs −48%, gross −6%, **net +34%**; "the single most effective cost-mitigation technique" [A] | Low, and *quantifiable* — one number to sweep; welfare loss ∝ ε^(2/3) | **Absent** |
+| **3** | **Per-instrument cost penalty in the objective** | beats a uniform band, because a band is cost-blind; penalise at **~5–8× nominal** (`γ_trade ≈ 6`) [A/P] | Low | **Absent** — C8 charges cost per simulated trade, which is *not* the same as penalising turnover in the objective |
+| **4** | **Half-life weighting** — shrink signal *k* by `1/(1 + φ_k·a/γ)` | **+26% net Sharpe** over speed-only control; a 2.4-day signal shrunk ~74× more than a 206-day one [A] | Low | **Absent**, and it is the direct fix for the GAP-P12D-31 horizon mismatch |
+| **5** | **Partial-adjustment rate** `a/λ ≈ √(γ/λ)` | **knife-edge**: same market, same signals — 10% weight nets **−0.41**, 3% nets **+0.46** [A] | **High if guessed.** No safe default; derive it | **Absent** |
+| **6** | Forecast scaling / capping | standard; reduces tail turnover | Low | Partially present — `conviction_discard` is a one-sided dead-zone, not hysteresis |
+| **7** | Patient execution | small at this size | Low | n/a at retail size (§6.7) |
+| **8** | ⚠️ **Cheap-universe filtering** | **cut net returns in 10 of 21 cases** [A] | **HIGH** — keep the signal, gate the *trade* | n/a |
+| **9** | ⚠️ **Minimum hold / trade throttle / reduced rebalance frequency** | **NEGATIVE.** "A two-thirds reduction in trading frequency generally yields roughly only a one-third reduction in turnover and transaction cost, as more of the portfolio turns over at each rebalance point." At equal realised cost, banding nets **0.91 vs 0.85** [A] | **HIGHEST** — it batches trades rather than removing them; buys staleness at nearly full price | §9.5 supports a platform min-hold as a *constraint*; it is **not** a cost tool |
+
+**Rank 9 is the correction that matters most for ACIS.** The intuitive response to an 8-minute mean holding period is "impose a minimum hold". The measured evidence says that is the **worst** of the available techniques and is dominated at equal cost by a state band. Carver's production system uses **no min-hold and no trades-per-day cap anywhere**; his throttle is design-time signal selection (the "speed limit"), not a runtime order gate. §7 R6 is written accordingly.
+
+**Three documented ways to destroy the edge while trying to save cost** [A/P]:
+1. **Sizing the band off the *current* position** — it collapses to zero width at the sign flip, producing *maximum* churn exactly where turnover is worst. Use the **average** absolute position.
+2. **Mis-setting the adjustment rate** — see rank 5's −0.41 vs +0.46.
+3. **Time-based throttling** — rank 9.
 
 ### 4.5 What this means concretely for ACIS
 
@@ -510,6 +545,12 @@ Then the event-window share of all triggers is `1.2 %×25 / (1.2 %×25 + 98.8 %�
 
 **Cost consequence.** If 15–25 % of trades are entered in windows where realistic execution cost is 10–30 bps (spread widening + in-flight displacement + bounded-slippage rejects on the fills you *wanted*), the error in mean per-trade cost is `0.20 × 20 bps = 4 bps` — against a modelled total cost of **0.37 bps**. That is a **~10× error on the cost of the average trade**, concentrated in the trades most likely to be the strategy's apparent winners in a mid-fill backtest.
 
+**Measured, replacing my estimate.** The companion event-risk pass measured the window share directly across US/EU/DE/GB/JP releases for 2019: Tier-1 windows are **0.29% of trading minutes at ±2 min and 0.64% at ±5 min**, yet carry an estimated **10–30% of EUR/USD's annual return variance**. Its net-PnL conclusion: the current flat friction overstates net PnL by **10–55% of the edge for a mildly event-seeking system, and can invert the sign for a breakout system**. That is narrower than my ±15-minute framing and *more* alarming per minute — the variance concentration is extreme even in a window under two-thirds of one percent of the clock. See [`RESEARCH_EVENT_CALENDAR_2026-09-16.md`](RESEARCH_EVENT_CALENDAR_2026-09-16.md) for the derivation.
+
+**And the sharper point from that pass, which I had ranked too low: the real damage is the left tail, not the PnL number.** Event-window stop slippage corrupts the **Kupiec VaR tally** and the **intraday-drawdown gate** — i.e. **§14's honesty gates can pass while being wrong, for a reason the gates are structurally unable to detect.** A gate that cannot see its own blind spot is worse than a missing gate, because it confers confidence. This outranks the cost error itself.
+
+**A cheap decisive test exists, and it belongs in `falsify_engine.py`:** run the walk-forward with and without an event filter. **If the edge survives only when trading through releases, the edge is a cost-model artifact.** That is a one-bit answer to the question this whole section is circling, and it costs one extra run.
+
 **This is the single most likely reason a backtest of this engine would look better than reality, after F1.**
 
 ### 5.2b What the engine's existing defences do and do not catch (fair reading)
@@ -557,6 +598,16 @@ The honest minimum for §14 credibility is: **build the historical calendar, and
 
 **Effort estimate, honestly:** step 1 is a few hundred lines of a polite scraper over 26 archived BLS pages plus the Fed's calendars, and it gets you the events that produced every number in §5.1. Steps 2–3 are the long tail. **Do step 1 first and measure the §5.3 with/without-blackout difference on US events alone** — if that difference is already large, the case for steps 2–3 makes itself, and if it is small, that is a finding too.
 
+**Licensing, from the companion pass — the tempting sources are the prohibited ones.** Forex Factory's ToS prohibits **copying** its calendar database (not merely redistributing it); Investing.com prohibits "use, store, reproduce"; and TradingView's §3 names **algorithmic decision-making as prohibited non-display use** — TradingView being the tempting one precisely because it works unauthenticated and returns DST-aware UTC minutes. **None of these is a clean path for a system that will trade on the output.** The BLS + Fed + FRED route in the table above is.
+
+**⚠️ Blocking before any calendar is encoded — three release-time conventions that could not be verified from primary sources**, each worth **30–90 minutes of error on the highest-impact events in the sample**:
+
+1. **FOMC statement time transitions** — 14:15 → 14:00 ET, and the 12:30 press-conference-day regime in 2011–2012.
+2. **ECB** — 13:45 → 14:15 CET, circa February 2022.
+3. **BoE Bank Rate** release time.
+
+And one structural warning: **the BoJ has no scheduled release minute at all** — a schedule-derived calendar cannot produce one, so BoJ events need a different treatment (or an explicit widened window) rather than a fabricated timestamp. Given §5.1's measurement that the release *minute* carries a ~22σ move, **a 30-minute timestamp error does not blur the blackout — it puts it on the wrong side of the event entirely**, which is strictly worse than no calendar because it would license trading in the exact window it was built to exclude. This is the §13 "calendar DST shift" glitch class in a different guise, and it is why step 4's `{zone, at}` storage is not optional.
+
 ---
 
 ## 6. DATA AND FILL FIDELITY
@@ -571,7 +622,7 @@ The honest minimum for §14 credibility is: **build the historical calendar, and
 | always fills | the dealer **declines** rather than repricing (IG: 1.03% unfilled, 100% at requested price or better) | **both** — cheaper fills, and phantom positions |
 | stop fills exactly at `stop_loss`, tested on mid | v20 `StopLossOrder` fills *"by the first price that is equal to or **worse** than the threshold"*; default trigger is bid for a long exit | optimistic, and worst exactly when it matters |
 | no gap-through | weekend and event gaps jump the level; a `priceBound` stop is **cancelled**, not filled | optimistic in the tail, potentially unbounded |
-| ~~no partial fills~~ **correct at our size** | OANDA fills FX/metals market orders **FOK** — *"There are no partial fills"*; its large-transaction threshold is **$100,000,000 in 10 s** | **none — do not model a ladder** (§7 R14) |
+| ~~no partial fills~~ **correct at our size** | OANDA fills FX/metals market orders **FOK** — *"There are no partial fills"*; its large-transaction threshold is **$100,000,000 in 10 s** | **none — do not model a ladder** (§6.5 (g), and §7 explicitly rejects it) |
 | constant per-instrument slippage | fat-tailed in the extreme, but the constant is **already conservative** vs IG's measured 0.053 pips | small; **not where the error is** |
 | replays every Dukascopy tick | the live client stream is aggregated; OANDA notes *"prices can change more than once a second"* | **a look-ahead class**, not a cost error (§6.6) |
 
@@ -636,84 +687,164 @@ The Code requires the provider to disclose "*whether, and if so how, changes to 
 > *"Last look should **not** be used for purposes of information gathering with no intention to accept the Client's request to trade."*
 > *"Market Participants **should not conduct trading activity that utilises the information from the Client's trade request during the last look window**. Such trading activity would include (1) any pricing activity on FX E-Trading Platforms that incorporates information from the trade request and (2) any hedging activity that incorporates information from the trade request."*
 
+**Factual correction, worth recording because the premise is widely repeated.** There was **no 2025 FX Global Code revision to last look or pre-hedging.** Principle 17 was reviewed in the 2021 Three-Year Review and **confirmed unchanged**; the accompanying *Execution Principles Working Group Report on Last Look* (Aug 2021) is explicitly **not part of the Code**, though its hardest line is worth quoting — *"Incorporating any delay that is additional to what is required to complete the price and validity check is considered contrary to Principle 17"* — and it requires disclosure of whether the price check is symmetrical or asymmetrical and of the *"Last Look window maximum and minimum length (in m/s)"*. The 2024 review (published January 2025) amended **P9, P10, P35, P50 and P51 only**. Pre-hedging did move in 2025, but at **IOSCO**, not the GFXC. If any ACIS document asserts a 2025 Code change to last look or pre-hedging, it is wrong.
+
 The Code's own worked examples make the mechanism concrete and are worth reading as a description of the failure mode: a provider that *"places buy orders at levels below the 13 price [during the window]. If these buy orders are filled, the liquidity provider confirms and fills the Market Participant's trade request, but when these orders are not filled, neither is the Market Participant's trade request"* — the Code labels this a misuse. And on partial rejection: a bank that trades 50 million during the window but fills the client only 45 million, keeping the favourable 5 million — *"Market Participants that utilise the information from trade requests … should always pass on to their Client all volume that is traded in that period."*
 
 **Why this matters to ACIS specifically, and it is not the obvious reason.** The asymmetry is not that you sometimes get rejected; it is *which* requests get rejected. A last-look price check rejects when the market has moved **against the provider** in the window — i.e. **in your favour**. So the fills you keep are systematically the ones where the market moved against you. **A backtest that always fills is not merely optimistic by the average reject rate; it is optimistic by the conditional mean of the fills it wrongly keeps.** That is exactly the structure of §5's adverse selection, arriving by a different route, and it bites hardest in the same windows — fast markets, releases, and the moments a breakout module wants to trade.
 
-Quantified reject rates and the implicit bps cost to the taker are **[UNVERIFIABLE in this session]** — the academic work on this (Oomen's papers on last look and aggregator execution; Cartea & Jaimungal) was not retrievable within the remaining budget, and OANDA publishes no fill statistics (§1.3). What *is* established from primary sources: the practice exists, the Code obliges disclosure of typical hold time and purpose, and its documented misuses are all mechanisms for asymmetric outcomes against the client.
+**Quantified, from the academic work.** Oomen (2017), *Last look*, Quantitative Finance 17(7), 1057–1070 [ACADEMIC] models the mechanism directly. On his baseline calibration (15 homogeneous LPs, nominal spread 1, one-tick latency buffer): *"the price is about **50% more likely to move over the latency buffer against the LP that wins the deal request** than it is to move in its favour (i.e. 60% in trader's favour and 40% in LP's favour)."* Reject rates as a function of the price-check tolerance δ:
 
-**OANDA's own model sits in between.** It is a principal/market maker, so its quote embeds its markup and there is no price improvement to model (§1.2). Its published mechanism is a **bounded-slippage** one — upper/lower bound on the web platform, "maximum deviation" on MT4, with the order **cancelled** rather than filled beyond the bound [BROKER-PRIMARY]. Functionally that is a client-controlled version of the same thing: in a fast market you get **no fill** rather than a bad fill. For ACIS this is the more important modelling object than slippage, because a cancelled entry is a *position you do not have*, and the backtest currently has it.
+| tolerance | rejects, left tail | rejects, right tail |
+|---|---|---|
+| δ = ½ (half the intended spread capture) | **28.5%** | 14.1% |
+| δ = 1 | 8.1% | 2.9% |
 
-**What narrows the gap, ranked** (this is the evidence behind R1/R4/R7/R9/R10):
+Oomen's central result is the one to encode: **last-look design changes *execution risk* — which of your orders happen — while the effective transaction cost can be held constant by adjusting the quoted spread.** "No last look" is not free; it is paid for in spread. Cartea, Jaimungal & Walton (*Foreign Exchange Markets with Last Look*, arXiv:1806.04460) [ACADEMIC] state the modelling consequence in one sentence worth pasting into a spec: *"with the Last Look option the costs of only accepted trades from STs is reduced to zero, but **the most profitable trades executed by the ST are cancelled**."*
+
+A zero-tolerance symmetric check is not hypothetical: **XTX Markets' eFX disclosure (18 Sep 2025)** [BROKER-PRIMARY] states *"XTX uses **zero hold time**"*, a last-look window that *"typically (99th percentile) ranges from a minimum of **0 m/s** to a maximum of **1 m/s**"*, and a price check applied *"**symmetrically and without any tolerance applied i.e. if the price has moved at all, in either direction, the trade request will be rejected**"*.
+
+**An order-of-magnitude floor for the implicit cost.** There is no published "last look costs retail takers X bps" figure. The nearest rigorous analogue is the FCA's own measurement in a *firm-quote, exchange-traded* market — **FCA Occasional Paper 50** (Aquilina, Budish & O'Neill, Jan 2020) [REGULATORY/ACADEMIC]: the "latency-arbitrage tax" is **0.42–0.53 bps** against an average value-weighted effective spread of *"just over 3 basis points"*, i.e. **~17% of the cost of liquidity**. In OTC FX, last look exists precisely to move that cost back onto the taker, so **0.4–0.5 bps is a defensible floor** for what being the slow side costs. The empirical retail analogue is the FXCM regulatory record in §1.3: **$3.04–$3.70 per affected trade**.
+
+**OANDA's own model sits in between, and is better than the folklore.** It is a principal, so its quote embeds its markup and there is no price improvement to model (§1.2). Its slippage is **symmetric by written policy** (§1.3). What it retains is the **rejection** right: §9(c) of the US Customer Agreement — *"OANDA will have no obligation to execute any Order"* (other than a close-out) — plus, on the platform side, a client-set bound ("upper/lower bound", MT4 "maximum deviation") under which a fast-market order is **cancelled rather than slipped**. For ACIS this is the more important modelling object than slippage, because a cancelled entry is a *position you do not have*, and the backtest currently has it.
+
+**What narrows the gap, ranked** (the evidence behind §7's R1, R2, R4, R7, R9 and R10):
 
 | change | what it fixes | share of the gap closed | evidence |
 |---|---|---|---|
-| **(a) fill at bid/ask, stops triggered on the executable side** | the half-spread per side, and the stop-trigger optimism | **largest** — it is the whole of F1 | §1.1 measured spreads; ACIS-09 C-BT-5 requires it |
-| **(b) broker markup on the raw ECN spread** | ECN-vs-principal quote difference | large — the remaining ~2.3× | §1.2 OANDA published typicals |
-| **(c) stops fill at the worse of the level and the next price (gap-through)** | the tail, which is where drawdown lives | large in the tail, nil in the median | §6.4 measured gaps: median 3.9 bps, p95 47 bps, max 59 bps EUR/USD |
-| **(d) reject probability conditioned on short-horizon volatility** | last look / bounded-slippage cancellation, and its adverse selection | moderate, concentrated in fast markets | FX Global Code P17; OANDA bounded-slippage policy |
-| **(e) fat-tailed, volatility-conditional slippage** | the p99 the constant has no representation of | moderate | §1.3 — but note the *median* is already roughly right |
-| **(f) latency delay before the fill price is taken** | signal-to-fill drift | **small in calm markets** — 0.09–0.13 bps at 50–300 ms | §6.3 measured |
-| **(g) session/volatility-dependent spread instead of the raw quote** | **unnecessary** — the raw tick spread already carries this | nil | §1.1: using `st.spread` per tick (change (a)) gets it for free |
+| **(a) charge OANDA's spread around the Dukascopy mid** | the backtest is priced on a different firm's book | **60–80% of the total** — 1.07 bps/RT on EUR/USD, ~3.4 on NZD/USD | §1.2b; OANDA time-weighted averages [BROKER-PRIMARY] |
+| **(b) fill at the executable side; stops triggered on the bid (long) / ask (short)** | mid-fill optimism, and the stop-trigger side | large, and it is the whole of F1 | ACIS-09 C-BT-5; v20 default trigger *"ask for buy, bid for sell"* |
+| **(c) stops fill at the worse of the level and the next price (gap-through)** | the tail, which is where drawdown lives | ~10% of expected value, **most of the tail risk** | v20: fills *"by the first price… equal to or **worse** than the threshold"*; §6.4 measured gaps; §6.8 CHF outcomes |
+| **(d) rejects, conditioned on the price having moved *in your favour*** | last look / bounded cancellation, and its adverse selection | 5–10% normal, much more in stress | Oomen; Cartea et al.; IG 1.03% unfilled; XTX zero-tolerance |
+| **(e) latency delay before the fill price is taken** | signal-to-fill drift, **and it forecloses a bug class** | 2–5% at 100 ms; far more in event windows | §6.3 measured; OANDA CA §9(c) makes it contractual |
+| **(f) fat-tailed, volatility-conditional slippage** | the p99 the constant cannot express | 3–5%, and more of the variance | §1.3 — **do not double-count** with (a)–(c) |
+| **(g) a liquidity ladder / VWAP walk** | **nothing — explicitly rejected** | zero | FOK, *"no partial fills"*; $100m/10 s threshold is 200× our size |
 
-Note (g): a synthetic spread model would be a step *backwards*. The tick archive already contains the true per-tick spread, including the rollover spike and the NFP widening measured in §1.1 and §5.1. **Change (a) picks all of that up at no modelling cost** — which is a large part of why R1 ranks first.
+Two corrections to the intuitive ordering, both earned from the primary sources:
+
+- **(a) outranks (b).** My earlier reading was that charging the tick's own spread would be sufficient. It is not: the tick's spread is *Dukascopy's*, and OANDA's is ~4× wider. The right construction uses the Dukascopy **mid** as the reference price and applies an OANDA-calibrated spread whose **level** is anchored on OANDA's published time-weighted averages and whose **shape** — session profile, rollover spike, the NFP widening measured in §5.1 — is taken from the tick archive. The archive is still doing real work; it is supplying the shape, not the level.
+- **(f) is not where the money is.** IG's measured mean negative stop slippage is 0.053 pips on EUR/USD, occurring 7% of the time — *smaller* than our declared constant. A volatility-conditional slippage model is the change most likely to become an unfalsifiable fudge factor, so **tie its parameters to the public, dated IG table and put the citation in `declared_deviations`**, or leave it alone.
 
 ---
 
+### 6.6 Feed-resolution parity — a look-ahead class, not a cost error
+
+**The backtest replays every Dukascopy tick. The live engine will not see them.** OANDA's own API best-practices note says only that *"prices can change more than once a second"* for a client stream, and its pacing guidance is 2 new connections/s and 100 requests/s [BROKER-PRIMARY]. Dukascopy `.bi5` files, by contrast, carry sub-second tick sequences — §1.1 measured 770,149 EUR/USD ticks in 8 days, i.e. tens of thousands per active hour.
+
+`harness._tick` calls `loop.on_state(st)` on **every** decoded tick. So any decision that depends on intra-second tick structure — NVMA's `tick_velocity`, a breakout threshold crossed by one transient print, the exact tick at which a stop is tested — is a decision made on **information the live feed will never deliver**.
+
+This is not a slippage question and it will not be fixed by any cost change. **It is a look-ahead class**, and it is a natural extension of the work already done for GAP-P12D-28: the existing canary refuses a fold whose evolution cites a bar at or after its train end. The analogous canary here fails a run in which a decision depends on tick detail finer than the live feed's realistic resolution. Two cheap forms:
+
+1. **Downsample the replay feed** to a declared live-equivalent resolution (e.g. at most one state per 250 ms, taking the last tick in each bucket) and assert that the graded result is not materially different from the full-tick replay. A large difference *is* the finding.
+2. **Assert on `tick_velocity`'s provenance** — it is computed from Dukascopy quote density, which §1.1's source notes are not trade counts and which the live venue will not reproduce. NVMA's `DEAD_MARKET` veto and the momentum-scalp module both read it. This belongs in `declared_deviations` whatever else is decided.
+
+A caveat that cuts the other way and should be recorded honestly: Dukascopy emits **repeated-price ticks** (an LP requoting the same best bid/offer still writes a record), so tick *counts* overstate activity in a source-specific way. Any feature conditioned on quote density inherits that.
+
+### 6.7 OANDA order mechanics that change the model — and two operational landmines
+
+All [BROKER-PRIMARY], from the v20 API reference and OANDA's legal documents.
+
+**Mechanics the harness should mirror:**
+
+- **Market orders are `FOK` by default** and *"Restricted to FOK or IOC for a MarketOrder"*. Fill-or-kill means **no partial fills** — the order is rejected instead. With a maximum ticket of $500k against a $100,000,000-in-10-seconds large-transaction threshold, ACIS is **200× below** the size at which OANDA charges the VWAP of its own hedge. **Model fills as all-or-nothing at one price; model rejection; do not build a liquidity ladder.**
+- **`StopLossOrder` fills *"by the first price that is equal to or worse than the threshold"*.** Gap-through is passed to the client. This is the direct authority for R4.
+- **Trigger side is configurable** — *"based on the bid, ask, mid, default (ask for buy, bid for sell) or inverse"*. The **default** triggers a long's stop on the **bid**. A backtest triggering on the mid systematically **under-counts stop hits**; the backtest must use the same convention as the live account, and that convention is an account setting, not a constant.
+- **The real cancel/reject enums matter for reconciliation.** A fill-time bound breach is `OrderCancelReason.BOUNDS_VIOLATION`; `MARKET_HALTED`, `INSUFFICIENT_LIQUIDITY` and `FIFO_VIOLATION` are also `OrderCancelReason`, while pre-trade validation failures (`PRICE_BOUND_INVALID`, `UNITS_MINIMUM_NOT_MET`, `UNITS_LIMIT_EXCEEDED`, `INSTRUMENT_NOT_TRADEABLE`) are `TransactionRejectReason`. `INSTRUMENT_BID_HALTED` / `INSTRUMENT_ASK_HALTED` describe **one-sided** halts — a state `core/data`'s `DataQualityError` path does not currently distinguish.
+
+**Landmine 1 — a bounded stop can disappear in the gap.** From the v20 order reference: a **`StopOrder` with a `priceBound` is *cancelled*, not filled, if the market gaps through both the price and the bound.** A "protective" bound therefore converts a bad fill into **no protection at all**, precisely in the event the stop exists for. Master §279 makes broker-side stops law ("position risk is bounded even if ACIS vanishes"); this is the one configuration in which that law silently fails. When the outstanding three-loop work threads `SizedOrder.stop_loss` to the venue, the bound must be **absent or wide enough that cancellation is impossible**, and there must be a reconciliation path that detects a cancelled-not-filled stop. This is a guardrail-adjacent finding.
+
+**Landmine 2 — the customer agreement reaches automated systems.** OANDA US Customer Agreement §11(f), Event of Default (iv): OANDA may act if *"we reasonably believe you have acted in an unfair or abusive manner, for example, but not limited to, **using any ultra-high speed trading or automated or mass data entry system**"*. ACIS is an autonomous automated system. The clause is broad, discretionary and needs no notice. Separately, §9(c): *"**OANDA will have no obligation to execute any Order**"* (other than a close-out), and §9(g) permits rejection *"in its sole discretion"*. **This belongs in `OPERATIONS_LEDGER.md` as counterparty/venue risk before the first live fill**, with a stated plan for a force-closed account — it is exactly the class of surprise the standing operational-referent pass exists to catch, and it is knowable *now* rather than after it happens.
+
+**One instrument that makes the operational pass easy, and should be used from day one.** OANDA offers, on request, a **Trade Execution Report**: *"all the transactions OANDA executed, in the same currency pair, in the **15 minute windows before and after** execution of the customer's transaction… up to 15 transactions from each time period."* [BROKER-PRIMARY]. That is a purpose-built instrument for the CLAUDE.md guard-3 operational-referent check: compare the modelled fill against the realised one **and against OANDA's own contemporaneous population**. Every other number in this report is an estimate from someone else's data; this is the only mechanism that measures *our* fills at *our* broker, and it is available on request rather than reverse-engineered from logs.
+
+### 6.8 Tail calibration: what a stop that does not stop actually costs
+
+[REGULATORY] **FCA CP18/38 §3.47**, on the January 2015 SNB de-peg:
+
+> *"German regulator BaFin reported that **one client lost €280,000 from an initial investment of €28,000**… **A UK retail client lost £2.7mn from a £200,000 initial investment.**"*
+
+**10× and 13.5× the initial stake, through stops, in one event.** ACIS's GAP-0108 treatment (a −35% CHF gap with ceilings raised to 7.5% after proven equity-floor survival) is in the right spirit; these regulator-reported outcomes are the calibration target for whether the equity floor survives a stop that does not stop — and they are only reachable in a model that implements R4's gap-through fill. A harness that books the stop at the stop price cannot produce them at all.
+
+The same event is also the canonical reminder that **the counterparty can fail in the event that triggers the stop**: FXCM lost $225m and breached regulatory capital; Alpari UK entered insolvency; Global Brokers NZ ceased operations. That is an `OPERATIONS_LEDGER.md` risk, not a fill-model parameter, but it belongs in the same paragraph as the equity floor.
+
 ## 7. RECOMMENDATIONS, ranked by value-for-effort
 
-Tags: **[implementation]** = a code/test change inside existing spec authority. **[spec-level]** = changes a declared rule, a config schema, or a §14 claim, and therefore **requires owner ratification** before anyone writes it.
+Tags: **[implementation]** = a code/test change inside existing spec authority. **[spec-level]** = changes a declared rule, a config schema, or a §14 claim, and therefore **requires owner ratification** before anyone writes it. **[operational]** = belongs in `OPERATIONS_LEDGER.md` before the first live fill.
 
 ### Tier 1 — do these before any paid run or any further falsification attempt
 
-**R1. [implementation] Fill at the executable side of the book, not the mid.** *Effort: ~20 lines + tests. Value: decisive.*
-In `tests/backtest/book.py`: open at `st.ask` for a long and `st.bid` for a short; close at the opposite side; trigger a long's stop on `st.bid` and its target on `st.bid` (mirror for shorts). `apply_order` and `maybe_close` already receive the full `MarketState`, so `bid`/`ask`/`spread` are in hand — no plumbing needed. This makes the spread **structural** rather than an added term, uses the *actual* tick spread (so event-window and rollover widening are priced automatically), and simultaneously fixes F4's stop optimism. Keep `slippage_per_side` as the residual friction on top.
-*Measured effect:* EUR/USD round trip moves from 0.367 → ~0.64 bps at the median and considerably more in the 5 % of minutes that matter. Break-even IC at the engine's realised 8-minute hold moves 0.091 → 0.158.
+**R1. [implementation] Fill at the executable side of the book, not the mid.** *Effort: ~20 lines + tests. Value: high, and it is a locked-spec conformance fix.*
+In `tests/backtest/book.py`: open at the ask for a long and the bid for a short; close at the opposite side; trigger a long's stop and target on the **bid** (mirror for shorts — this matches OANDA v20's default trigger, *"ask for buy, bid for sell"*). `apply_order` and `maybe_close` already receive the full `MarketState`, so `bid`/`ask`/`spread` are in hand — no plumbing needed. This makes the spread **structural** rather than an added term and simultaneously fixes F4's stop-trigger optimism. Keep `slippage_per_side` as the residual friction on top.
+*Measured effect:* EUR/USD round trip moves from 0.367 → ~0.64 bps at the median, more in the minutes that matter; break-even IC at the realised 8-minute hold moves 0.091 → 0.158.
 *Note:* this is the **C8-conformant** version. Do **not** also call `per_side_cost(spread)` on top, or the spread is charged twice.
-*Authority:* R1 needs no ratification. `specs/ACIS-09-BACKTEST_VALIDATION.md` v1.1 (LOCKED) already **requires** it — "spread + slippage models are applied so backtest fills are **not naively at mid**", C-BT-5 — and master §5 C8 requires the harness and the fitness path to share one model. R1 brings the code into conformance with locked specs; it does not change them.
+*Authority:* no ratification needed. `specs/ACIS-09-BACKTEST_VALIDATION.md` v1.1 (LOCKED) already **requires** it — *"spread + slippage models are applied so backtest fills are **not naively at mid**"*, C-BT-5 — and master §5 C8 requires the harness and the fitness path to share one model. R1 brings the code into conformance; it does not change the spec.
+**But R1 alone is not enough — see R3, which is now the larger half of the same fix.**
 
-**R2. [implementation] Re-run the GAP-P12D-28 falsification suite after R1, unchanged in every other respect.** *Effort: a re-run. Value: decisive.*
-The planted/null/permuted verdict is currently the project's single most important open result (GAP-P12D-31). It was produced under a cost model that is ~4× optimistic. Whatever the verdict becomes, it will mean something different — and if planted still fails at a higher cost, the diagnosis in GAP-P12D-31 (horizon mismatch, exit geometry, entry spam) is confirmed rather than confounded.
+**R2. [spec-level] Price the backtest on the *destination broker's* spread, not the data source's.** *Effort: one function + a per-instrument calibration table + a regression test each. Value: the single largest item in this report.*
+Use the Dukascopy **mid** as the reference price and synthesise the spread as `spread(instrument, session, realised_vol)`, with the **level** anchored on OANDA's published time-weighted averages (§1.2) and the **shape** — session profile, the 21:00-UTC rollover spike, the NFP widening in §5.1 — measured from the tick archive.
+*Why this outranks R1:* the tick's own spread is **Dukascopy's**, and OANDA's is ~4× wider. OANDA states in writing that it *"ESTABLISHES THE PRICES AT WHICH IT OFFERS TO TRADE WITH YOU"* and that those prices *"MIGHT NOT BE THE BEST PRICES AVAILABLE"*. The backtest is currently priced on a different firm's book.
+*Measured effect:* closes **1.07 bps/RT on EUR/USD, 0.59 on USD/JPY, ~3.4 on NZD/USD** — **60–80% of the total fidelity gap**, and more than everything else in this report combined.
+*Note on entity:* OANDA UK/EU quotes EUR/USD "typical" at 0.6 pips while the US entity's time-weighted average is 1.56–1.70. **Which entity ACIS attaches to is a cost-model input.** Calibrate to the one that will actually be traded.
+*Note on gold:* do **not** assume the broker is always wider. OANDA's $0.565 XAU/USD spread is 1.32 bps at September-2026 gold, *tighter* than the 1.794 bps median measured in the archive. XAU needs a date-matched calibration (§1.2b).
+*Related cleanup:* `data_loader.calibrate_cost_model` already exists and is **not used** by `oos_runner`. Either wire it into this or retire it (§18 lean-build law).
+*Requires ratification* because C8 and §13 v2.9 describe the calibration and a broker-spread term changes them.
 
-**R3. [spec-level] Declare a per-instrument broker markup on top of the raw ECN spread, and wire `calibrate_cost_model` into the graded path.** *Effort: one config key + schema + wiring. Value: high.*
-Dukascopy is an ECN top-of-book; ACIS will trade a principal broker. Calibrating from the published typicals: EUR/USD 0.272 bps measured vs 0.55 bps OANDA-typical ⇒ **×2.0**; USD/JPY 0.422 vs 0.87 ⇒ **×2.1**. A declared `broker_spread_multiplier` (or an additive markup in price units) per instrument, applied in the harness, closes the remaining ~2.3× gap in F2. This is spec-level because C8 and §13 v2.9 describe the calibration and a new declared term changes them. Related: `data_loader.calibrate_cost_model` already exists and is **not used** by `oos_runner`; either wire it or retire it (§18 lean-build law).
+**R3. [implementation] Re-run the GAP-P12D-28 falsification suite after R1+R2, unchanged in every other respect.** *Effort: a re-run. Value: decisive.*
+The planted/null/permuted verdict is the project's most important open result (GAP-P12D-31), and it was produced under a cost model ~4× optimistic. Whatever the verdict becomes it will mean something different — and if planted still fails at honest cost, the GAP-P12D-31 diagnosis (horizon mismatch, exit geometry, entry spam) is *confirmed* rather than confounded. **R2 is the change most likely to invalidate current OOS results, which is exactly why it must precede a paid walk-forward run rather than follow one.**
 
-**R4. [implementation] Stops fill at the worse of the stop level and the next observed executable price (gap-through).** *Effort: ~10 lines + a glitch test. Value: high, concentrated in the tail.*
-§13 already lists "weekend gap through a stop level" as a required glitch class; `holds_through_weekend` exists in the harness. What is missing is that the *fill price* still assumes the level. Measured weekend gaps are in §6.4 — this is the difference between a modelled and a real worst case.
+**R4. [implementation] Stops fill at the worse of the stop level and the next observed executable price (gap-through).** *Effort: ~10 lines + a glitch test. Value: ~10% of expected value, most of the tail risk.*
+Authority is broker-primary: OANDA v20's `StopLossOrder` fills *"by the first price that is equal to or **worse** than the threshold"*. §13 already lists "weekend gap through a stop level" as a required glitch class and `holds_through_weekend` exists — what is missing is that the *fill price* still assumes the level. Calibration inputs: the measured weekend gaps in §6.4 (EUR/USD median 3.9 bps, p95 47, max 59; XAU max 155) and the CHF-de-peg client outcomes in §6.8 (**10× and 13.5× initial stake**, regulator-reported). **A harness that books the stop at the stop price cannot produce those outcomes at all**, which means the equity floor has never been tested against the event it exists for.
+*Include in the same change:* (i) the correct trigger side (R1), (ii) a test for the `BOUNDS_VIOLATION` case in which a **bounded stop is cancelled rather than filled** (§6.7, Landmine 1), (iii) a weekend-gap replay driven by the measured distribution.
 
-**R5. [spec-level] Build the historical Tier-1 event calendar and grade the engine twice — with and without the live blackout policy.** *Effort: significant (see §5.4 for sources). Value: high, and it is a validity issue, not only a cost issue.*
-Today the backtest grades a policy the live engine will not run (master §3.5 blackout is a live-only gate). The difference between the two grades **is** the measurement of how much backtest PnL comes from minutes the live engine is forbidden to trade. On §5.2's arithmetic that share is plausibly 15–25 % of trades.
+**R5. [spec-level] Build the historical Tier-1 event calendar and grade the engine twice — with and without the live blackout policy.** *Effort: significant; §5.4 has verified, licence-clean sources. Value: high, and it is a validity issue, not only a cost issue.*
+Today the backtest grades a policy the live engine will not run (`macro_events_imminent` is never true without a calendar, so `MACRO_EVENT` is inert — §5.2b). The difference between the two grades **is** the measurement of how much backtest PnL comes from minutes the live engine is forbidden to trade; §5.2 puts that share at plausibly 15–25% of entries. Start with BLS + the Fed (public domain, authoritative Eastern-Time timestamps, 2000–2025) and measure the difference on US events alone before building the long tail.
 
 ### Tier 2 — do these before live, after Tier 1 has changed the numbers
 
-**R6. [spec-level] Give the Governor a target position with a no-trade band, and let the band set the holding period.** *Effort: substantial. Value: the highest of anything in Tier 2, and it subsumes three open gaps.*
-This is §4.5 in full. Summary: (a) one **target position per instrument**, netted across all live signals, instead of one `SizedOrder` per `Signal`; (b) a **no-trade band** around the held position, sized off the instrument's *average* absolute position rather than its current one, trading **to the band's edge** rather than to the target; (c) the band width — not stop/target geometry and not `apply_order`'s dedup — sets the holding period.
-*Why this one and not a minimum-hold rule:* a hard min-hold blocks a *correct* exit, which is a different and worse thing than declining an unnecessary entry; the band declines the entry. Carver's production system uses `buffer_size: 0.10` with `buffer_trade_to_edge: True` [PRACTITIONER, verified], and the band-width result is robust to cost uncertainty (`w ∝ c^{1/3}`: quadrupling the cost widens the band only 1.59×), so it can be adopted *before* the cost model is perfect.
-*What it closes:* GAP-0075 (no position/holding policy), the F6c unit mismatch (`max_holding_periods` finally has somewhere to apply), the §14 duration-floor failure in §3.3b, and a large share of §1's cost drag — with one mechanism, at the layer §2's Layer Communication Law already assigns to it.
+**R6. [spec-level] Give the Governor a target position with a no-trade band, and let the band set the holding period.** *Effort: substantial. Value: the highest in Tier 2; it subsumes three open gaps.*
+§4.5 in full: (a) one **target position per instrument**, netted across all live signals, instead of one `SizedOrder` per `Signal`; (b) a **no-trade band** around the held position, sized off the instrument's *average* absolute position rather than its current one, trading **to the band's edge**; (c) the band width — not stop/target geometry, not `apply_order`'s dedup — sets the holding period.
+*Why this and not a minimum-hold rule:* a hard min-hold blocks a *correct* exit, which is worse than declining an unnecessary entry; the band declines the entry. Carver's production system ships `buffer_size: 0.10` with `buffer_trade_to_edge: True` [PRACTITIONER, verified], and the band-width result is robust to cost uncertainty (`w ∝ c^{1/3}`: quadrupling cost widens the band only 1.59×), so it can be adopted *before* the cost model is perfect.
+*What it closes:* GAP-0075, the F6c unit mismatch (`max_holding_periods` finally has somewhere to apply), the §14 duration-floor failure in §3.3b, and a large share of §1's cost drag — one mechanism, at the layer the Layer Communication Law already assigns to it.
 **Requires ratification:** ACIS-05 and master §6 describe signal→`SizedOrder` sizing, not target-position management.
 
-**R6b. [implementation, inside R6 or before it] Net positions across signals before they become orders.** *Effort: small. Value: free.*
-The Governor currently emits one order per surviving signal; nothing nets two modules that want opposite positions in the same instrument, so they produce two round trips and a flat book. Netting before execution is an identity, not a model change — it cannot destroy an edge — and it is the cheapest item in §4.4. It can be done independently of the full target-position rework.
+**R6b. [implementation, before or inside R6] Net positions across signals before they become orders.** *Effort: small. Value: free.*
+The Governor emits one order per surviving signal; nothing nets two modules wanting opposite positions in the same instrument, so they produce two round trips and a flat book. Netting is an identity, not a model change — it cannot destroy an edge — and it is the cheapest item in §4.4.
 
-**R7. [implementation] Model rejection, not just slippage.** OANDA's bounded-slippage mechanism **cancels** rather than slips in a fast market [BROKER-PRIMARY]. A backtest that always fills is optimistic about *having the position* in exactly the conditions where a breakout module wants one. A declared per-instrument reject probability conditioned on realised short-horizon volatility is a closer model than any slippage constant.
+**R7. [implementation] Model rejects, and make them *adversely selected*.** *Effort: moderate. Value: 5–10% normal, much more in stress — but only if done correctly.*
+**Not** `P(reject) = p`. An unconditional probability removes trades *at random*, which closes none of the gap and can make the backtest look **better**. The real mechanism rejects when the price has moved **in your favour** between signal and arrival. Evidence: Cartea et al. — *"the most profitable trades executed by the ST are cancelled"*; Oomen's tolerance-dependent rates (28.5%/14.1% at δ=½; 8.1%/2.9% at δ=1); XTX's zero-tolerance symmetric check; and IG's retail form of the same thing — *"100% at requested price or better"* **and** 1.03% unfilled are one mechanism seen twice, so **the rejection rate *is* the slippage**.
+*Calibration:* IG 1.03% and Pepperstone 0.68% are the normal-conditions anchors; **no public event-window figure exists**, so make that a declared, stressed parameter (5–15%) rather than a guess presented as a measurement.
+*Second half of the change:* once an order is rejected the system must decide whether to re-send at a worse price or skip. That is a §5 conflict-table question, not an execution-model detail.
 
-**R8. [implementation] Route the graded replay through `core/execution/` — this is spec-required, not optional.** *Effort: moderate. Value: high; it is a locked-contract gap.*
-`specs/ACIS-09-BACKTEST_VALIDATION.md` §7.2(c) requires the replay to honour "**Execution fill modelling**" and §7.2(d) to "collect **FillReports**". `harness.py` imports nothing from `core/execution/` (§6.2). Until the replay actually runs through `ExecutionOrchestrator`, partials, rejections and reroutes cannot appear in any graded run, and the outstanding server-side-stop threading (GAP-0091b/0099/0075) has no backtest that would catch a regression. If routing it is deferred, the deviation must be added to `fidelity_caveats` **and** to `KNOWN_GAPS.md` — an undeclared departure from a locked spec is the finding, whichever way it is resolved. (Note: R8 and R1 are independent. R1 is 20 lines and fixes the *price*; R8 is larger and fixes *whether the order happened*.)
+**R8. [implementation] Route the graded replay through `core/execution/` — spec-required, not optional.** *Effort: moderate. Value: high; a locked-contract gap.*
+`specs/ACIS-09-BACKTEST_VALIDATION.md` §7.2(c) requires the replay to honour *"Execution fill modelling"* and §7.2(d) to *"collect FillReports"*. `harness.py` imports nothing from `core/execution/` (§6.2). Until it does, rejections and reroutes cannot appear in a graded run, and the outstanding server-side-stop threading (GAP-0091b/0099/0075) has no backtest that would catch a regression. If deferred, the deviation must go into `fidelity_caveats` **and** `KNOWN_GAPS.md` — an undeclared departure from a locked spec is the finding either way. (R8 and R1/R2 are independent: R1/R2 fix the *price*; R8 fixes *whether the order happened*.)
 
-**R9. [implementation] Add a latency delay to fills.** Take the fill from the first tick ≥ N ms after the signal tick. §6.3 measures the cost at ~0.1 bps per side calm-market — real, but an order of magnitude below R1. Its value is in event windows.
+**R9. [implementation] Add a latency delay before the fill price is taken.** *Effort: low. Value: 2–5% of expected value at 100 ms — but do it anyway.*
+Take the fill from the first tick at or after `t_signal + Δ`. This is not a modelling preference: OANDA's contract defines the fill as the price *"at the time such Order is **received at the OANDA Trading System server**"*. §6.3 measures the calm-market cost at ~0.09–0.13 bps at 50–300 ms — an order of magnitude below R2 — and the event-window cost at many multiples of that. **Do it for the bug class it forecloses, not the EV it removes.**
+*Prefer an explicit time delay to "fill at the next tick":* tick intervals vary by orders of magnitude between the London open and Sunday night, so "next tick" silently makes Δ *small when volatility is high* — exactly backwards.
 
-**R10. [implementation] Volatility-conditional, fat-tailed slippage instead of a constant.** The constant 0.2 bps is a defensible median and an indefensible mean. Draw from a distribution conditioned on realised volatility over the preceding minute; the p99 is what kills accounts, and the current model has no p99.
+**R10. [implementation] Volatility-conditional, fat-tailed slippage — last, and tied to a public table.** *Effort: moderate. Value: 3–5%, and more of the variance.*
+This is the change most likely to become an unfalsifiable fudge factor, and the constant it replaces is **already conservative**: IG's measured mean negative stop slippage on EUR/USD is 0.053 pips (~0.05 bps) occurring 7% of the time, against our declared 0.18 bps per side. So: **do not raise the slippage constant to "fix" the cost model** — that tunes the one parameter that is defensible. If this is done at all, tie its parameters to IG's public, dated best-execution table and cite it in `declared_deviations`, and take care not to double-count with R1/R2/R4.
+
+**R11. [implementation] Feed-resolution parity canary.** *Effort: low. Value: closes a look-ahead class, not an EV gap.*
+The harness calls `loop.on_state` on every Dukascopy tick; the live client stream is aggregated (OANDA: *"prices can change more than once a second"*). Any decision depending on intra-second tick structure — `tick_velocity`, a breakout crossed by one transient print, the exact tick a stop is tested on — uses information the live feed will never deliver. Cheapest form: downsample the replay to a declared live-equivalent resolution and assert the graded result does not materially change; a large difference **is** the finding. Natural extension of the GAP-P12D-28 canary work. See §6.6.
 
 ### Tier 3 — cheap, do when convenient
 
-**R11. [implementation] Calibrate and declare costs for the diversification basket before enabling any of it.** `GBP_USD`, `AUD_USD`, `USD_CAD`, `EUR_GBP`, `USD_CHF`, `XAU_USD` currently declare **no** `costs` block. `PositionModel.cost` correctly refuses them, so nothing is silently free — but the onboarding step is unfinished, and gold's measured spread (1.79 bps median, ~6× EUR/USD) means a cost constant copied from a major would be badly wrong.
+**R12. [implementation] Calibrate and declare costs for the diversification basket before enabling any of it.** `GBP_USD`, `AUD_USD`, `USD_CAD`, `EUR_GBP`, `USD_CHF`, `XAU_USD` declare **no** `costs` block. `PositionModel.cost` correctly refuses them, so nothing is silently free — but the onboarding step is unfinished, the OANDA spreads in §1.2 differ by up to **3×** across the basket (NZD/USD 3.93 bps vs USD/JPY 1.01), and gold needs the date-matched treatment in §1.2b. A constant copied from a major would be badly wrong in both directions.
 
-**R11b. [implementation] Fix the USD/CAD triple-swap day before `USD_CAD` is enabled.** *Effort: one config/table entry + a test. Value: small but it is a latent bug with a named §13 glitch class.*
-OANDA, verbatim: *"USD/CAD settles on a T+1 basis and therefore has its three-day financing applied on a **Thursday**."* `config/instruments.yaml` declares `USD_CAD: swap_convention: tom_next`, and `carry._TRIPLE_DAY["tom_next"] = 2` (Wednesday). Nothing is wrong today because `USD_CAD` is disabled — but §13 lists "triple-swap Wednesday flipping carry math in backtests" as a required glitch class, and this is that class, pre-loaded. The same table should grow entries for settlement-centre holidays (a US holiday on the value date adds a day; the New Year cluster can carry 4–6 swap-days in one roll) and for brokers like IG that triple the tom/next on Wednesday and the **admin fee on Friday** — a single multiplier over the whole charge cannot express that.
+**R12b. [implementation] Fix the USD/CAD triple-swap day before `USD_CAD` is enabled.** *Effort: one table entry + a test.*
+OANDA, verbatim: *"USD/CAD settles on a T+1 basis and therefore has its three-day financing applied on a **Thursday**."* `config/instruments.yaml` declares `USD_CAD: swap_convention: tom_next` and `carry._TRIPLE_DAY["tom_next"] = 2` (Wednesday). Nothing is wrong today because it is disabled — but §13 lists "triple-swap Wednesday flipping carry math in backtests" as a required glitch class, and this is that class pre-loaded. The same table should also grow settlement-centre holidays (a US holiday on the value date adds a day; the New Year cluster can carry 4–6 swap-days in one roll) and the IG pattern of tripling the tom/next on Wednesday but the **admin fee on Friday** — a single multiplier over the whole charge cannot express that.
 
-**R12. [implementation] Bound the financing model with a sensitivity band rather than chase exact swap tables.** At ≤48 h, financing is 0.27–1.1 bps per night (§2). Running the graded backtest at the model rate ±X and reporting the spread of outcomes is cheaper and more honest than reverse-engineering a broker's weekly-repriced table, and it is the only approach that survives the broker changing the table.
+**R13. [implementation] Bound the financing model with a sensitivity band rather than chasing exact swap tables.** At ≤48 h, financing is 0.27–1.65 bps per night (§2.4). Running the graded backtest at the model rate ±X and reporting the spread of outcomes is cheaper and more honest than reverse-engineering a table the broker reprices weekly — OANDA's own moved FX +20 bps/side and gold +120 bps/side in six months. Add the one-line falsifier from §2.5: assert `long_rate + short_rate < 0` per instrument and record the implied markup.
 
-**R13. [documentation] Record the C8 divergence (F1) as a ledger entry regardless of whether R1 is taken.** Master §5 C8 says the two paths use the same model and `test_cost_model_semantics` is cited as proof; the test pins `CostModel`'s arithmetic but never asserts that `book.py` calls it. That is a live claim in the read path that the code contradicts.
+**R14. [documentation] Record the C8 divergence (F1) as a ledger entry regardless of whether R1 is taken.** Master §5 C8 says the two paths use the same model and cites `test_cost_model_semantics` as proof; that test pins `CostModel`'s arithmetic but never asserts `book.py` calls it. That is a live claim in the read path the code contradicts. Also repair the `fidelity_caveats` line *"fills modelled at order price ± each instrument's declared C8 friction"*, which is literally true and materially misleading (§6.2).
+
+**R15. [operational] Three entries for `OPERATIONS_LEDGER.md`, all knowable now rather than after the fact.**
+1. **The `priceBound` stop-cancellation trap** (§6.7, Landmine 1) — a bounded `StopOrder` is *cancelled, not filled*, if the market gaps through both. Master §279 makes broker-side stops law; this is the one configuration in which that law silently fails. Guardrail-adjacent.
+2. **OANDA US Customer Agreement §11(f)(iv)** (§6.7, Landmine 2) — an Event of Default may be declared for *"using any ultra-high speed trading or automated or mass data entry system"*, at OANDA's discretion, without notice. ACIS is an autonomous automated system. Needs a stated plan for a force-closed account. Related: §9(c), *"OANDA will have no obligation to execute any Order"*.
+3. **Counterparty failure in the same event as the price gap** (§6.8) — in January 2015 FXCM lost $225m and breached capital, Alpari UK entered insolvency, Global Brokers NZ closed. The broker can fail in the event that triggers the stop.
+
+**R16. [operational] Use OANDA's Trade Execution Report from the first live fill.** On request OANDA will provide *"all the transactions OANDA executed, in the same currency pair, in the **15 minute windows before and after** execution of the customer's transaction"*, up to 15 each side. Every other number in this report is an estimate from someone else's data; this is the only mechanism that measures **our** fills at **our** broker, and it is available on request rather than reverse-engineered from logs. It is precisely the standing operational-referent instrument CLAUDE.md's guard 3 asks for, and it feeds `OPERATIONS_LEDGER.md` directly.
 
 ### Limitations of this report — what I could NOT verify
 
@@ -723,8 +854,10 @@ Recorded so nobody treats a gap as a clean bill of health:
 - **Interactive Brokers' primary pricing pages returned HTTP 403** throughout; the "honest benchmark" tier table in §2 is [PRACTITIONER]-graded and should be re-verified before it is relied on.
 - **No authoritative free gold forward/lease curve exists** post-30-Jan-2015 (§2.2d). `DEFAULT_GOLD_LEASE_PCT = 0.25` with a declared sensitivity band remains the honest treatment.
 - **The web-search budget for this session was exhausted** partway through. The gap was filled two ways. First, direct fetches of known primary URLs, which **did** succeed and are the backbone of several sections: the **FX Global Code Principle 17** text (§6.5, extracted from `globalfxc.org/docs/fx_global.pdf`), **pysystemtrade's own buffering documentation** (§4.3), **OANDA's pricing and core-commission pages** (§1.2), **BLS's archived release schedules, copyright statement and bot policy** (§5.4), and the **Federal Reserve FOMC archives** (§5.4). Second — and more valuably — measurements from this repo's own tick archive, which are stronger evidence than any secondary source would have been.
-- **The academic citations in §4.2 are from knowledge and were NOT re-verified** (Constantinides 1986, Davis & Norman 1990, Leland 2000, Gârleanu & Pedersen 2013, Boyd et al.). They are standard results and the section's *structure* does not depend on any one of them, but **check the exact formulas before implementing**. §4.3's pysystemtrade material, by contrast, is verbatim from a direct fetch.
-- **Quantified last-look reject rates and their bps cost to the taker could not be retrieved** (§6.5). The mechanism and its documented misuses are primary-sourced from the Code; the magnitude is not.
+- **§4's academic citations were subsequently verified** by the companion pass and the numbers in §4.2/§4.4 are extracted from the primary PDFs, not from memory. Where that pass could not obtain a source it says so: **Grinold's *Linear/Nonlinear Trading Rules* (JPM 2018/19) is paywalled** and is the closest published analogue to band-plus-partial-adjustment; Kolm & Ritter (Risk 2015) and Levine & Pedersen (FAJ 2016) were not located; internal-crossing rates at named multi-strategy funds have no primary source and are marked unverifiable.
+- **Event-window reject and slippage rates do not exist in the public record** at any retail broker (§1.3, §7 R7). IG's 1.03% and Pepperstone's 0.68% are normal-conditions anchors only. This is the largest genuine hole, and it sits exactly where §5 says this engine does a disproportionate share of its trading.
+- **Three release-time conventions are unverified and block calendar encoding** — FOMC (14:15→14:00, and the 2011–12 press-conference regime), ECB (13:45→14:15 c. Feb 2022), BoE Bank Rate — each a 30–90 minute error on the highest-impact events (§5.4).
+- **Not reached at all:** published weekend-gap studies (irrelevant — §6.4 measures it from our own data), IOSCO's 2025 pre-hedging final report, several broker execution-quality pages, and a rigorous published Dukascopy-vs-other-source comparison. All are tooling gaps, not evidence of absence.
 - Where a claim rests only on a review aggregator it is tagged [UNVERIFIABLE].
 - **All [MEASURED HERE] figures are from a *sample*** — 8 trading days for spreads and volatility, 10 NFP releases, 76 weekends, 4 days for latency — chosen to span 2013–2025. They are the right order of magnitude and should not be treated as precise. The full archive (35,008 day files) is on disk; re-running the same scripts over all of it is cheap and would make every table exact.
 - **The information-coefficient values in §3 are illustrative**, not measured. The *structure* of §3.2/§3.3 (break-even IC = c/(σ·√h), h_min = (c/(IC·σ))²) is exact arithmetic; the choice of "plausible IC = 0.03–0.05" is a judgement informed by published systematic-FX results, and a reader who disagrees should substitute their own and re-read the tables — the conclusion that the modelled cost makes an 8-minute horizon look viable and the real cost does not is robust across the whole plausible range.
@@ -757,28 +890,40 @@ Caveats that apply to all of them: **tick-weighted, not time-weighted** (so busy
 
 ---
 
-## State at checkpoint (2026-09-16)
+## State at completion (revised 2026-09-17)
 
-**Status: COMPLETE.** All seven brief questions are answered. This section exists only so a resumed session knows where things stand.
+**Status: COMPLETE.** All seven brief questions are answered, and the report has been revised once, after the four parallel research streams returned, to replace estimates with their measurements. Nothing below is outstanding work on this document.
 
-**Finished:**
-- §0 — the code as actually read (`book.py`, `costs.py`, `fitness.py`, `carry.py`, `financing.py`, `money.py`, `data_loader.py`, `sources.py`, `harness.py`, `agon.py`, `nvma.py`, `venue.py`, `orchestrator.py`, `fragmenter.py`, `instruments.yaml`, `report.py`, ACIS_SPEC §3.7/§7.5/§13/§14, `specs/ACIS-09`).
-- §1 COST REALISM — spreads measured from this repo's own ticks; OANDA published pricing verified by direct fetch; the 4× / 2.3× optimism quantified.
-- §2 FINANCING — full, from the financing research stream plus primary broker tables.
-- §3 HOLDING HORIZON — break-even-IC and minimum-hold arithmetic, derived and cross-checked two ways.
-- §4 SIGNAL-TO-POSITION — pysystemtrade buffering verified verbatim; academic results cited from knowledge and **flagged as unverified**.
-- §5 EVENT RISK — NFP behaviour measured from our ticks; calendar sources verified against BLS/Fed/FRED/ECB primary pages with licensing checked.
-- §6 FILL FIDELITY — latency and weekend gaps measured; FX Global Code Principle 17 extracted verbatim; ranked modelling changes.
-- §7 RECOMMENDATIONS — three tiers, tagged [implementation] / [spec-level].
-- Appendix A — reproduction method for every measured number.
+**What the revision changed** (the earlier draft is superseded, not merely extended):
 
-**Unfinished / would do next if resumed:**
-1. **Re-run the Appendix-A measurements over the full 35,008-day archive** rather than the 8/10/76/4-day samples. Cheap, and it makes every table exact rather than order-of-magnitude.
-2. **Compute the exact ΔSharpe for the missing spread** from the falsification run's own `ClosedTrade.pnl` / `notional_usd` (§1.4 currently gives two estimates, 1.1–3.3 and 1.9, instead of the measurement).
-3. **Verify the §4.2 academic formulas** (Gârleanu–Pedersen trading rate, Constantinides band scaling) against the papers — the web-search budget ran out before this was possible.
-4. **Retrieve quantified last-look reject rates and their bps cost** (§6.5 has the mechanism, not the magnitude).
-5. Three parallel research streams (event risk, signal-to-position, fill fidelity) had not returned when this was written; their sections were completed from direct primary-source fetches instead. If their reports land, they can only *enrich* §4, §5.4 and §6.5 — nothing in those sections depends on them.
+1. **§1.2 rebuilt on OANDA's own time-weighted average spreads** (live API, 1.5578 pips EUR/USD business-hours) in place of the marketing "typical" figure I first used. The UK/EU 0.6-pip figure turned out to be an **entity** difference, not a contradiction — which makes the attached entity a cost-model input.
+2. **The headline fix changed rank.** Charging the tick's own spread (R1) closes roughly a **quarter** of the gap, because the tick's spread is Dukascopy's and OANDA's is ~4× wider. **R2 — charge OANDA's spread around the Dukascopy mid — is now the largest single item in the report.** The earlier draft had this backwards and said so about (g); that has been corrected in §6.5.
+3. **§1.3 reversed on slippage.** IG's published best-execution distributions show our declared 0.18 bps/side constant is **already conservative** (IG's measured mean negative stop slippage on EUR/USD is 0.053 pips, 7% of the time). The slippage term is not the problem, and raising it would be tuning the one defensible parameter.
+4. **§4.2/§4.4 rebuilt on verified numbers** — netting −72.15% turnover, banding −52% turnover for **+34% net**, and the finding that **minimum holding times have *negative* measured evidence** and are dominated by a state band at equal cost. That last one reverses the intuitive response to the 8-minute holding period and is why R6 is a band, not a min-hold.
+5. **§5.2 and §5.4 replaced my estimates with measurements** (Tier-1 windows are 0.29%/0.64% of minutes at ±2/±5 min but carry 10–30% of annual variance), added the licensing findings (Forex Factory prohibits *copying*; TradingView prohibits algorithmic non-display use), and added the **three unverified release-time conventions that block calendar encoding**.
+6. **§6.6–6.8 added**: feed-resolution parity as a look-ahead class; the OANDA order mechanics including the **`priceBound` stop-cancellation trap**; and the CHF-de-peg tail calibration (10× and 13.5× stake, regulator-reported).
+7. **§7 reordered and extended** to R1–R16, with new operational items.
 
-**Ledger note (CLAUDE.md closure law).** This file is a research artifact and is **not** a ledger entry. The findings that need owner decisions — chiefly **F1** (harness charges no spread; violates master §5 C8 and `specs/ACIS-09` C-BT-5 / §7.2), **F6c** (`max_holding_periods` is in bars, 1–48 minutes, and never reaches the engine), **F6d** (graded replay bypasses `core/execution/`, against ACIS-09 §7.2(c)/(d)), and **R11b** (USD/CAD triple-swap day is Thursday, not Wednesday) — are **defects against locked specs, not opinions**, and should be written into `KNOWN_GAPS.md` with IDs before this session ends. F1 in particular must not be filed under GAP-0001, for the reason in F6b.
+**Concurrency.** F1 is being fixed in parallel as **GAP-P12D-36**. F1 records what that fix does and does not cover. **I made no code, config, spec or ledger changes and no commits**; the modifications visible in `tests/backtest/` and `scripts/falsify_engine.py` belong to that agent.
+
+**If resumed, the next things worth doing** (none blocks the report):
+1. Re-run Appendix A's measurements over the full 35,008-day archive rather than the 8/10/76/4-day samples — cheap, and it makes every table exact.
+2. Compute the exact ΔSharpe for the missing spread from the falsification run's own `ClosedTrade.pnl` / `notional_usd` (§1.4 currently offers two estimates, 1.1–3.3 and 1.9, instead of the measurement).
+3. Measure the Dukascopy top-of-book size distribution per instrument — it settles the "$100k order" question from data already on disk, and XAU/NZD are the interesting cases.
+4. Acquire Grinold, *Linear/Nonlinear Trading Rules* (JPM 2018/19) — paywalled, and the closest published analogue to R6's band-plus-partial-adjustment.
+
+**Ledger note (CLAUDE.md closure law).** This file is a research artifact and is **not** a ledger entry. The items needing owner decisions are **defects against locked specs, not opinions**, and should be written into `KNOWN_GAPS.md` with IDs before this session ends:
+
+| finding | against |
+|---|---|
+| **F1** harness charges no spread (being fixed as GAP-P12D-36, but see the two residuals under F1) | master §5 C8; `specs/ACIS-09` C-BT-5 |
+| **F2/R2** the backtest is priced on a different firm's book | §13 v2.9 cost calibration |
+| **F6c** `max_holding_periods` is in bars (1–48 minutes) and never reaches the engine | GAP-0035/GAP-0075 adjacent |
+| **F6d/R8** graded replay bypasses `core/execution/` | `specs/ACIS-09` §7.2(c)/(d) |
+| **R4** the `priceBound` stop-cancellation trap | master §279 broker-side-stop law — **guardrail-adjacent** |
+| **R12b** USD/CAD triple-swap day is Thursday, not Wednesday | §13 triple-swap glitch class |
+| **R15** OANDA §11(f)(iv) automated-trading Event of Default | `OPERATIONS_LEDGER.md`, before the first live fill |
+
+F1 in particular must **not** be filed under GAP-0001, for the reason in F6b.
 
 **Nothing in the repo was modified by this work** other than the creation of this file. No code, config, spec or ledger was touched; no commit was made; no test suite or backtest was run.
