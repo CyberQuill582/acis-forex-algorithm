@@ -1,5 +1,7 @@
 # RESEARCH — Execution venue choice for ACIS (2026-09-17)
 
+> **RESUME LINE (for a fresh session):** Brief = *"execution-venue analyst: decide where ACIS actually executes — OANDA, Dukascopy, a hybrid, or something else — for a Kenya-resident owner running a deterministic Python engine, 30 min–48 h holds, ~$10k modelled NAV, hard requirement of server-side stops."* Mid-pass the owner **decided on the prop-firm route (~$6,000 funded account; shortlist The5ers, FundedNext, Apex Trader Funding, FTMO)**, which demoted §1–§2 to background and made §3.1 the live section. **This document was checkpointed under an imminent usage limit; §9 lists exactly what is unfinished and how to resume.** Read-only pass: no engine code, config, spec or ledger file was modified, nothing was committed.
+
 **Question put to this pass:** the backtest uses Dukascopy tick data and the spec (§3, §7.5) names OANDA v20 as the primary execution adapter. Where should this system actually execute — OANDA, Dukascopy, a hybrid, or something else?
 
 **Status:** research only. No engine code, config, spec or ledger file was modified; nothing was committed. Findings that belong in the ledger are listed in §7 for the owner to file.
@@ -196,9 +198,74 @@ It is not perfect, and the honest caveats are:
 
 ## 3. IS NEITHER THE RIGHT ANSWER?
 
-*(This section integrates two parallel primary-source sweeps run for this pass: one on alternative brokers, one on the prop-firm route. Their findings are summarised here with grades preserved.)*
+*(This section integrates a parallel primary-source sweep on the prop-firm route. A second sweep on alternative retail brokers — IBKR / LMAX / Pepperstone / IC Markets / Saxo / CMA-Kenya licensees — **was still running when this document was checkpointed and its findings are NOT here.** See §9.)*
 
-<!-- AGENT_FINDINGS -->
+### 3.1 The prop-firm route — the owner's chosen path (decision taken 2026-09-17)
+
+**Mid-pass the owner decided on the prop-firm route: a ~$6,000 funded account, shortlist The5ers, FundedNext, Apex Trader Funding, FTMO.** That decision demotes §1–§2 to background: the venue is then chosen *for* him by the firm, and the questions that matter become rule-fit, platform/API, and payout reliability. What follows is the prop research that completed; §9 records what the shortlist change left unresearched.
+
+**All three firms researched are simulated environments.** This is the most important structural fact about the whole route and it is stated in their own terms, not inferred:
+
+> "Simulated Trading simulates trading on financial markets… **No actual trading is taking place and there is no execution of trades in financial markets.**"
+> — FTMO Challenge Terms and Conditions, cl. 5.2, last updated 4 August 2026 **(a) PRIMARY**
+
+The5ers' T&C likewise describes "a simulated training environment" with "fictitious funds" that "do not represent any currency" **(a)**; Atlas describes "simulated capital in a simulated trading environment" **(c)**. **None of the three names its underlying broker or liquidity provider anywhere in its published terms (a, full-text searched).**
+
+> ⚠️ **This inverts the operational-correctness design in `CLAUDE.md`.** Guard 3 (runtime ledger discipline) and the standing operational-referent audit both assume a *real broker fill* to reconcile the model against. On a prop account there is no external referent: the counterparty is the firm's own simulation, priced by rules it may change at discretion (FTMO T&C 7.3 reserves the right "to determine, at our own discretion, whether certain simulated trades, practices, strategies, or situations qualify as… a Forbidden Trading Practice"; cl. 5.6 reserves the right to modify any element of the service). **GAP-0001-style live-vs-modelled fill comparison cannot be performed against a prop account.** The prop route is a way to trade size without capital; it is *not* a validation environment, and it must not be allowed to substitute for one.
+
+#### Hard-filter results
+
+| | **FTMO** | **The5ers** | **Atlas Funded** |
+|---|---|---|---|
+| 30 min–48 h holds + weekends | **Only on Swing, which is 2-Step only** | ✅ | ✅ (explicit) |
+| Custom Python drives the account | ✅ **best — cTrader Open API** | ⚠️ MT5 terminal bridge **+ written pre-approval** | ⚠️ MT5 bridge, **no API documented** |
+| Server-side stops survive disconnect | ✅ | ✅ | ✅ (and risk rules push toward always-on stops) |
+| Algo explicitly permitted | ✅ | ⚠️ only with prior written approval | ✅ **clearest statement of the three** |
+| Kenya accepted | ✅ **verified against the published list** | ✅ **verified against the published list** | ❌ **(X) no list published at all** |
+| Rule determinism for a kill-switch | Medium | **Low** | **High** |
+
+#### The findings that actually decide it
+
+1. **⛔ The5ers prohibits "Bulk Trading" — "multiple trades are open simultaneously"** (Prohibited Trading Practices page, **(a)**). An 8-instrument portfolio engine has multiple positions open essentially all the time. Taken literally this is **incompatible with the strategy**. Its "One-Sided Bets" rule ("consistently takes positions in one single direction") compounds it for a momentum system during a sustained USD trend. Combined with the written-approval gate and the fact that **The5ers publishes neither equity-vs-balance nor static-vs-trailing drawdown semantics (X)**, it is the **worst rule-fit of the three despite looking usable on paper.** Given the owner has shortlisted it, this is the single most urgent thing to clarify in writing before paying.
+
+2. **💰 FTMO charges 0.7% of realised P&L on every non-account-currency position** (T&C 5.3.4, **(a)**): "a flat adjustment fee of **0.7% from the realised profit and loss** at the moment the position is closed… The adjustment reduces a realised profit and **increases a realised loss** accordingly." On a USD account that hits USD/JPY, USD/CHF, USD/CAD, EUR/GBP — **5 of the 8 declared instruments**. It is not a spread; it is a symmetric percentage haircut on |P&L|, applied hundreds of times a year. **It appears in no spread table and is currently absent from the harness cost model.** This is a first-order term for this strategy and must be modelled before any FTMO purchase.
+
+3. **FTMO's 48-hour holds force the 2-Step Swing route.** Standard accounts: "you are required to close your positions shortly before the markets close for the weekend or if the rollover (market break) lasts longer than 2 hours" **(a)** — flatly incompatible. Swing removes all news and holding restrictions, but "is available exclusively within the FTMO Challenge: 2-Step" **(a)**, runs **1:30 leverage** (vs 1:100 Standard), and existing Standard accounts cannot be converted. Silver lining: on Swing there is **no news restriction at all**, so the unbuilt historical event calendar is not needed for FTMO compliance.
+
+4. **FTMO's 2,000/day cap is ambiguous and could bite.** Its FAQ says "200 orders at a time and 2000 max positions per day"; its Forbidden Practices page says "more than **2,000 server requests per day**" **(a, both)**. At ~30 round trips/day the *position* count is a non-issue; the *request* count is not — a polling loop blows through it trivially. **If FTMO is chosen the engine must be event-driven off the streaming channel, not polling, with an instrumented request counter.** No page disambiguates the two **(X)**.
+
+5. **Atlas has the most engine-friendly rules, and the one blocking unknown.** Daily limit recalculated "Each day at **Midnight UTC**… based on the **higher of your account's balance or equity**", "fixed for the following day — **it does not adjust intraday**"; max drawdown "**fixed from your starting balance**" (static) for every model except Instant Funded, whose trailing "locks at your initial balance" once 5% profit is hit **(a)**. Minimum hold **3 minutes** (a 10× margin for this strategy). Weekend/overnight holding explicitly permitted across all stages. News: evaluation unrestricted; funded restricts only trades *opened or closed* within ±5 min of high-impact releases — **"Trades that are already open and held through the news event are not impacted."** EAs explicitly allowed, including "Algorithmic trading systems – Designed to follow predefined risk management rules", with no prior-approval requirement and no numeric request cap. Pricing verified: 2-Step $10K **$79** / $25K **$160** / $50K **$240** / $100K **$443**. Payouts: crypto ≤$3,000 fee-free, Rise above that ($50 fee) — both workable rails for a Kenyan resident. **But Atlas publishes no restricted-country list at all — Kenya acceptance is UNVERIFIED (X), and that is the blocking question.**
+
+6. **A sizing constraint the Governor must enforce at Atlas:** "One-Sided Risk Exposure" caps risk on a single trade at **50% of the account's daily drawdown limit** **(a)**. On a 2-Step account with a 5% daily limit that is a hard 2.5%-of-account cap per trade. Separately, an "Excessive Risk-Taking" breach triggers if "80% or more of your trades show excessive risk-taking or are placed without a stop-loss" — which *aligns* with §279, but makes the stop mandatory in practice.
+
+7. **FTMO's discretionary correlated-exposure clause is the soft risk.** T&C 7.5 tests "Risk per Trade Idea" cumulatively across "a specific symbol (**or correlated symbols**)" **(a)**. USD/JPY, GBP/USD, AUD/USD, USD/CHF and USD/CAD are heavily USD-correlated; FTMO retains discretion to treat simultaneous same-direction USD exposure as a single oversized trade idea. The engine's linked-groups machinery (§9.5) is the right place to model this, but the rule is discretionary and therefore not fully modellable.
+
+8. **Daily-boundary timezone mismatch at every firm.** FTMO resets at **00:00 CE(S)T**; Atlas at **00:00 UTC**. Neither is the engine's 17:00-New-York daily-loss boundary (master v2.14). Whichever is chosen needs a new `{zone, at}` entry in the risk layer — a real change, not a config tweak.
+
+9. **❌ Nobody publishes spreads or commissions.** FTMO explicitly refuses: "The account specification can be seen directly in the trading platform… right-click on the relevant instrument, and choose 'Specification'" **(a)**. The5ers and Atlas publish none. **For a strategy with hundreds of round trips per instrument-year this is the largest unpriced variable in the entire comparison**, and it is resolvable only by opening a free trial and reading the specs off the platform. Treat it as a mandatory pre-purchase step.
+
+10. **The5ers is MT5-only** (all program pages, **(a)**) — no cTrader, no documented REST/FIX. **Atlas runs TradeLocker, MT5 and Match-Trader**, with no API documented anywhere in its 68-article help centre **(X)**. **Only FTMO offers cTrader**, and therefore the only genuinely server-side API path on the shortlist.
+
+#### The cTrader Open API is the reason FTMO leads on engineering
+
+https://help.ctrader.com/open-api/ **(a) PRIMARY, read directly:** Protobuf or JSON over a persistent connection; **official Python SDK (`github.com/spotware/OpenApiPy`)**; "Perform all possible types of trading operations permitted in official cTrader applications" (→ order with attached stop); "Retrieve and process information about past, current and pending operations (including deals, orders and positions)" (→ **the post-reconnect reconciliation requirement, met natively**); real-time streaming plus historical bars; rate limits 50 req/s general, 5 req/s historical. Available to "anyone registered with a cTrader-affiliated broker".
+
+**This runs on Linux, in-process, with no terminal and no Windows dependency** — it is the only option on the shortlist compatible with the existing `python:3.11-slim` Docker + systemd deployment, and it is the repo's already-ratified next adapter (§7.5 order: cTrader → DXtrade → TradeLocker → Match-Trader → IBKR → futures gateways). **The ratified adapter order was right.**
+
+⚠️ **(X) Unverified and high-value:** no FTMO page states whether connecting via the **Open API** (rather than the cTrader GUI) is permitted account usage. FTMO advertises the Open API on its own platforms page and nothing in its Forbidden Practices list prohibits API connectivity — but **this is the single most important question to put to FTMO in writing before paying.**
+
+#### Alternatives touched, and the two shortlist firms that could not be reached
+
+- **Alpha Capital Group** — confirmed to offer **MetaTrader 5, cTrader, TradeLocker and DXtrade** **(a)**, i.e. the only alternative found that matches FTMO's API strength. Its drawdown rules, hold-time rules and restricted-country list were not reached **(X)**. **Worth a dedicated pass specifically because of cTrader.**
+- **Funding Pips** — HTTP 429 on both attempts, help centre 404. Not assessed.
+- **Blueberry Funded** — bot-mitigation interstitial. Not assessed.
+- **E8 Markets** — not reached.
+- **FundedNext (shortlisted by the owner)** — **NOT RESEARCHED.** The homepage confirms only that it offers "prop trading challenge accounts for **CFDs and Futures**" with "up to 95% reward share" in "**a simulated environment**" **(a)**; `/faq` returns 404 and no rules page was reachable before the checkpoint. Platforms, drawdown semantics, news/weekend rules, consistency rule, minimum trading days and Kenya acceptance are all **unknown**.
+- **Apex Trader Funding (shortlisted by the owner)** — **NOT VERIFIED; both `apextraderfunding.com` and `support.apextraderfunding.com` returned HTTP 403** to this session. ⚠️ **The coordinator explicitly asked whether Apex is futures-only rather than FX, and I must not answer that from memory.** What can be said honestly: every platform Apex is publicly associated with — **Rithmic, Tradovate, NinjaTrader** — is an exchange-traded **futures** order-routing stack with no spot-FX capability, which is strong circumstantial evidence for futures-only, graded **(c) UNVERIFIED**. **If that is right, Apex is disqualified for this system as it stands:** ACIS's enabled universe is spot FX and spot gold; futures would mean CME FX futures (6E/6J/M6E/M6A) and GC/MGC, which is a *different instrument class* carrying master §3.7's roll-or-flatten lifecycle risk (still open as **GAP-0109**) and a §7.5 adapter tier the spec deliberately ordered **last**. **This must be confirmed before Apex gets any further consideration.**
+
+#### One economic note on a ~$6,000 funded account
+
+At the owner's stated size the evaluation fee is a large fraction of the capital at risk: Atlas's verified 2-Step $10K challenge is **$79**, i.e. ~1.3% of a $6,000 notional account, and it is **not refundable at Atlas (X — refundability not stated)** while FTMO's 2-Step fee **"may be refunded with the first Reward withdrawal"** **(a)**. Against that, §4's arithmetic still applies to the *funded* account: at the prototype's ~1,800 round trips/year and L≈2, modelled trading costs run to tens of percent of account equity per year. **A prop account does not make the turnover problem go away — it makes it someone else's money and adds a hard 4–5% daily kill-switch on top.** At ~900 trades/instrument-year the system would very likely hit a prop daily-loss or max-drawdown breach before it hit a profit target, and a breach at a prop firm is terminal (fee forfeited, account closed) where at a personal account it is merely a drawdown.
 
 ---
 
@@ -232,7 +299,46 @@ At a $10,000 NAV with risk-based sizing and ATR-width stops, **L ≈ 2–3** is 
 
 ## 5. RECOMMENDATION
 
-<!-- RECOMMENDATION -->
+### 5.1 The ranking
+
+The owner's mid-pass decision (prop route, ~$6,000 funded account) changes the ranking, so both are given — the second is the one that now binds.
+
+**Given the prop-firm decision, ranked:**
+
+1. **FTMO — 2-Step Swing, on cTrader via the Open API.** The only shortlisted firm with a real server-side API and an official Python SDK; the only one compatible with the existing Linux Docker/systemd deployment; Kenya verified accepted against the published list; fee refundable on first payout; Swing removes every news and holding restriction, which also removes the need for the unbuilt event calendar. **Two conditions before paying:** (i) get FTMO to confirm **in writing** that connecting via the cTrader Open API is permitted account usage; (ii) model the **0.7% non-USD realised-P&L adjustment** in the harness, because it is invisible in every spread table and touches 5 of 8 instruments.
+2. **Atlas Funded.** Best rules of the three by a clear margin — midnight-UTC anchor on the higher of balance/equity, fixed intraday, static max drawdown from starting balance, explicit algorithmic permission with no approval gate and no request cap, 3-minute minimum hold, weekend holding explicit, open positions unaffected by news, verified low fees and workable crypto/Rise payout rails. **Blocked on one question: Kenya acceptance, which Atlas publishes nowhere.** Ranked second only because its Python path is an MT5 terminal bridge — a Windows dependency that breaks the current deployment — and because its help centre is internally inconsistent about its own model taxonomy.
+3. **FundedNext — unranked, unresearched.** Confirmed only as a simulated CFD-and-futures prop firm. Cannot be placed until its rules are read.
+4. **Apex Trader Funding — provisionally disqualified, pending verification.** Its associated platforms (Rithmic/Tradovate/NinjaTrader) are futures-only stacks. If that holds, it is the wrong instrument class for this engine and pulls in the §3.7 roll-or-flatten lifecycle risk (GAP-0109, still open) and the §7.5 adapter tier the spec deliberately put last.
+5. **The5ers — recommend against.** Its published "Bulk Trading" prohibition ("multiple trades are open simultaneously") is prima facie incompatible with an 8-instrument portfolio engine; "One-Sided Bets" compounds it for a momentum system; automated trading needs prior written approval; and it publishes neither the equity/balance basis nor the static/trailing nature of its drawdown — the two facts an engine needs to model its own kill-switch. Usable only if it clarifies Bulk Trading in writing, and even then it is the least deterministic rule set on the shortlist.
+
+**If the prop decision were reversed (personal capital), ranked:**
+
+1. **A cTrader broker (Pepperstone / IC Markets class) on the Open API** — same engineering argument, without the simulated-counterparty problem, and it preserves the operational-referent audit. *Kenya eligibility and costs for these were the subject of the second research sweep, which did not return before this checkpoint.*
+2. **OANDA Global Markets (BVI) on MT5** — the spec's named venue, but **not** via v20, which OANDA excludes from this division. Tight published spreads (1.0 pip EUR/USD ≈ 0.93 bps), easy onboarding, but: no negative balance protection, no compensation scheme, 0.01-lot sizing granularity, a Windows-only Python path, and an Event-of-Default clause naming automated systems.
+3. **Dukascopy Bank SA** — the best *protections* on the list (FINMA bank, CHF 100,000 deposit insurance) and the only venue that collapses the backtest/execution data mismatch entirely. Held back by two things: FIX is FX-only so XAU/USD needs a Java JForex sidecar, and its commission tier at $10k equity erases the ECN cost advantage. **It becomes the right answer at ≥ $50k of personal capital**, and at ≥ $250k it is not close.
+4. **IBKR / LMAX / Saxo** — not assessed here; the sweep did not return.
+
+### 5.2 The single most important trade-off
+
+**Server-side API reach versus everything else.**
+
+Every other axis on this comparison turns out to be second-order for this system at this size. Cost between venues is noise (§4: 0.04 bps/round trip at $10k — 0.14% of NAV per year even at the prototype's churn). Execution model is largely irrelevant at 30 min–48 h. Leverage is something the Governor should be *refusing*, not shopping for.
+
+What is **not** second-order is whether a deterministic Python process running unattended on a Linux VPS can place an order with an attached server-side stop, and reconcile its positions after a reconnect, **without a Windows terminal in the loop.** Exactly one option on the whole shortlist does that: **cTrader Open API.** Everything else — OANDA BVI, The5ers, Atlas, Dukascopy's full instrument set — puts a GUI terminal or a JVM between the Risk Monitor and the venue's stop order. Under §279 and the §2 Layer Communication Law that is not a packaging detail; it is a new, unsupervised failure surface in the one path that is supposed to survive the engine vanishing.
+
+That is why the ratified §7.5 adapter order (cTrader first) turns out to be correct, and why the spec's *primary* adapter (OANDA v20) turns out to be unavailable. **The spec was right about the direction and wrong about the first stop.**
+
+### 5.3 The thing I would say even though it was not asked
+
+§4's arithmetic is the uncomfortable part of this pass. At the prototype's ~900 trades/instrument-year, modelled costs run to roughly **a third of NAV per year at every venue examined** — and that is before the prop route adds a 4–5% daily kill-switch whose breach is terminal. Combined with the live ledger's own open findings (GAP-P12D-40: MEAN_REVERSION giving back almost exactly what TREND earns; GAP-P12D-41: the backtest priced on the wrong firm's book), **the venue is not currently the binding constraint on this system — turnover and the mean-reversion module are.** Choosing a venue is worth doing now because it unblocks adapter work and the cost calibration that GAP-P12D-41 needs. It should not be mistaken for progress on profitability.
+
+### 5.4 What I need to know from the owner to firm this up
+
+1. **Is the ~$6,000 prop account the whole plan, or a supplement to personal capital?** If prop is the only path, the operational-referent audit (guard 1) has no referent and the §14 out-of-sample record has to be earned somewhere else. If it is a supplement, the personal account should be chosen for *audit quality* and the prop account for *size*, and they need not be the same firm.
+2. **Is XAU/USD actually in the v1 live universe?** It changes the answer materially — it disqualifies Dukascopy FIX, it is the instrument with the least-verified cost at every venue, and it is the one where a futures-only firm like Apex would fail hardest.
+3. **Will he accept a Windows VPS?** If yes, MT5-based options (OANDA BVI, The5ers, Atlas) reopen and the ranking loosens. If no — and the existing Docker/systemd work says no — the field narrows to cTrader almost immediately.
+4. **What turnover does he intend to run at?** §4 is a function of R. At R ≈ 300 the whole cost question is manageable at any venue; at R ≈ 1,800 no venue saves it.
+5. **Is he willing to ask three firms a written question and wait?** The four blocking unknowns (FTMO/Open-API permission, Atlas/Kenya, The5ers/Bulk-Trading, and every firm's actual spreads) are all answerable by email or a free trial, and all four are cheap relative to the cost of picking wrong.
 
 ---
 
@@ -287,3 +393,30 @@ At a $10,000 NAV with risk-based sizing and ATR-width stops, **L ≈ 2–3** is 
 - MetaTrader5 Python package (Windows x86-64 wheels only) — https://pypi.org/project/MetaTrader5/
 
 **Carried from the 2026-09-16 pass** (`archive/PARTIAL_oanda_execution_research_2026-09-16.md`, `archive/PARTIAL_execution_fidelity_dukascopy_vs_oanda_2026-09-16.md`) — OANDA Additional Disclaimer Dec 2025; OANDA Europe Order Execution Policy May 2026; OANDA US Customer Agreement Mar 2026; v20 order/transaction/pricing definitions; CFTC v. FXCM 2011; FCA Final Notice FXCM 2014; FCA CP18/38; FCA Occasional Paper 50; GFXC last-look report; Oomen 2017; Cartea et al. 2018; IG best-execution Apr–Jun 2024; CFTC PR 8224-20.
+
+---
+
+## 9. UNFINISHED — how to resume this pass
+
+**Checkpointed 2026-09-17 under an imminent weekly usage limit.** Nothing below was abandoned for lack of interest; it was cut for budget.
+
+**Tooling state that will shape a resume:** this session's **WebSearch budget was fully exhausted (200/200)** before this pass began. Everything above was reached by **direct WebFetch / curl against primary URLs**. "Could not verify" below therefore sometimes means *tooling gap*, not *does not exist*. A fresh session with search budget will close several of these quickly.
+
+### 9.1 Still running when this was written
+- **A second research sweep on alternative retail brokers — Interactive Brokers (IDEALPRO), LMAX, Pepperstone, IC Markets, Saxo, plus the CMA Kenya licensed-broker register and CME micro-FX-futures routes — had not returned.** Its brief asked for, per venue: the entity a Kenyan resident can actually open, minimum deposit, leverage, all-in round-trip cost for EUR/USD, USD/JPY and XAU/USD at retail size, whether stops rest server-side, unit granularity, API type and quality for an always-on Python algo, and the regulator plus client-money protection. **If that report is recoverable, it belongs in §3 and in the §5.1 "personal capital" ranking, both of which currently say the sweep did not return.**
+
+### 9.2 Blocking unknowns, in priority order
+1. **(X) Apex Trader Funding: futures-only or does it offer FX?** Both `apextraderfunding.com` and `support.apextraderfunding.com` returned **HTTP 403** to this session. The coordinator explicitly said to verify rather than assume, so no answer is asserted. Circumstantial evidence only (its associated platforms Rithmic/Tradovate/NinjaTrader are futures-only stacks), graded **(c)**. **Resume via a search engine or a browser session, not WebFetch.**
+2. **(X) FundedNext: everything.** Only the homepage was reachable ("prop trading challenge accounts for CFDs and Futures", "up to 95% reward share", "a simulated environment") — `/faq` is 404. Need: platforms (does it offer cTrader?), daily-loss and max-drawdown semantics (equity vs balance, static vs trailing, anchor time), news rules, weekend holding, minimum trading days, consistency rule, EA permission, restricted-country list, fee schedule, payout rails.
+3. **(X) Does FTMO permit connecting via the cTrader Open API** rather than the cTrader GUI? Highest-value single question on the whole shortlist — it is what makes FTMO rank first. Ask FTMO support in writing.
+4. **(X) Is Kenya accepted by Atlas Funded?** Atlas publishes no restricted-country list at all. Ask support in writing.
+5. **(X) The5ers "Bulk Trading"** — does holding 8 simultaneous positions in different instruments breach it? Ask in writing before paying.
+6. **(X) Actual spreads and commissions at every prop firm.** FTMO explicitly refuses to publish and directs you to the platform's Market Watch; The5ers and Atlas publish none. **This is the largest unpriced variable in the comparison.** Only resolvable by opening a free trial and reading the instrument specs off the platform. Do this before committing to any firm.
+7. **(X) Alpha Capital Group's rules** (drawdown, hold time, news, restricted countries). It is the only non-shortlist firm confirmed to offer **cTrader** and is therefore the only candidate that could plausibly beat FTMO on the axis that matters most. Worth a dedicated pass.
+
+### 9.3 Non-blocking, carried from §6
+The OANDA-OGM and Dukascopy unknowns in §6 remain open but are now **secondary** given the prop decision. The two worth keeping alive regardless of route: **OGM's real (not "typical") spread**, because GAP-P12D-41's calibration target depends on it; and **financing/swap**, which is unmodelled at every venue examined and is a first-order cost term at 30 min–48 h holds.
+
+### 9.4 Not done, and arguably should be
+- **Payout reliability and reputation** for the four shortlisted firms was in the narrowed brief and was **not researched at all** — it needs secondary sources (Trustpilot, payout-proof aggregators, prop-firm failure history), and this session had no search budget. Note the live repo comment that **MyFundedFX shut in Feb 2026**, which is why `config/platform_rules.yaml` already carries 2–3 firms as insurance. Counterparty failure is a real risk class here and it is currently unassessed.
+- **DXtrade and Match-Trader API reach** was not investigated. If FTMO's Open API answer comes back negative, these are the next place to look for a server-side API path, and they are the next two entries in the ratified §7.5 adapter order.
