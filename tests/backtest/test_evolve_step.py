@@ -7,7 +7,11 @@ import random
 from datetime import timedelta
 from types import SimpleNamespace
 
-from tests.backtest.evolve_step import evolve_fold
+from tests.backtest.evolve_step import cost_model, evolve_fold
+
+
+def _costs(cfg, **kw):
+    return {i: cost_model(cfg, i, **kw) for i in ("EUR_USD", "USD_JPY")}
 from tests.backtest.harness import FoldData
 from tests.backtest.regime_labels import LabelledBarCache, LabelSpec
 from tests.backtest.walk_forward import Fold
@@ -40,7 +44,8 @@ def _run(tmp_path, acis_config, n_bars: int):
     loop = SimpleNamespace(params=_Stager())
     fold = Fold(0, T0, TRAIN_END, TRAIN_END + timedelta(days=7),      # only the cached year
                 TRAIN_END + timedelta(days=365))
-    record = evolve_fold(loop, FoldData(fold, ()), cfg=_cfg(acis_config), cache=cache,
+    cfg = _cfg(acis_config)
+    record = evolve_fold(loop, FoldData(fold, ()), cfg=cfg, costs=_costs(cfg), cache=cache,
                          instruments=["EUR_USD", "USD_JPY"], logger=CapturingLogger())
     return record, loop.params.staged
 
@@ -82,7 +87,8 @@ def test_fold_evolves_on_every_bar_in_the_span_not_the_last_500(tmp_path, acis_c
     cfg = acis_config.model_copy(update={"system": system})
     fold = Fold(0, T0, train_end, train_end + timedelta(days=7), train_end + timedelta(days=365))
     record = evolve_fold(SimpleNamespace(params=_Stager()), FoldData(fold, ()), cfg=cfg,
-                         cache=cache, instruments=["EUR_USD", "USD_JPY"], logger=CapturingLogger())
+                         costs=_costs(cfg), cache=cache, instruments=["EUR_USD", "USD_JPY"],
+                         logger=CapturingLogger())
     eur, jpy = record["regimes"]["STRONG_TREND_UP"]["candidates"]
     assert eur["bars"] == jpy["bars"] == 1440
     assert eur["first_bar"] == (train_end - timedelta(days=1)).isoformat()
@@ -109,7 +115,8 @@ def test_every_candidate_champion_with_a_sharpe_is_a_trial(tmp_path, acis_config
         cache.write(instrument, T0.year, bars)
     loop = SimpleNamespace(params=_Stager())
     fold = Fold(0, T0, TRAIN_END, TRAIN_END + timedelta(days=7), TRAIN_END + timedelta(days=365))
-    record = evolve_fold(loop, FoldData(fold, ()), cfg=_cfg(acis_config), cache=cache,
+    cfg = _cfg(acis_config)
+    record = evolve_fold(loop, FoldData(fold, ()), cfg=cfg, costs=_costs(cfg), cache=cache,
                          instruments=["EUR_USD", "USD_JPY"], logger=CapturingLogger())
     eur, jpy = record["regimes"]["STRONG_TREND_UP"]["candidates"]
     assert eur["holdout_trade_sharpe"] is not None and jpy["holdout_trade_sharpe"] is not None

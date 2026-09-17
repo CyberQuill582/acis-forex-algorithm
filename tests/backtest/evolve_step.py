@@ -6,7 +6,8 @@ Invariants:
   * The window is a time span, not a bar count (master §5 v2.18, GAP-P12D-29): every
     target-regime bar inside both the fold's train window and `fitness_span_days`.
   * Every tradeable regime is evolved on every listed instrument, each with its own C8
-    cost model. The champion with the best holdout expectancy — E_R on the same
+    cost model — the caller's map, which is the SAME map the graded book charges
+    (master §5 C8 "one model, both places"; GAP-P12D-36/46). The champion with the best holdout expectancy — E_R on the same
     chronological holdout tail QIEA gates on — is staged; ties keep instrument order.
   * Params are STAGED only. Promotion happens later, at a simulated session boundary when
     the backtest book is flat (harness.py, ACIS-03 §7).
@@ -21,7 +22,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from config.schemas import AcisConfig, OptimizerConfig
 from core.optimizer.costs import CostModel
@@ -38,12 +39,19 @@ def seed_for(fold_index: int, regime: RegimeType, instrument: str) -> int:
     return int.from_bytes(digest[:4], "big")
 
 
-def cost_model(cfg: AcisConfig, instrument: str) -> CostModel:
+def cost_model(cfg: AcisConfig, instrument: str, *, stress: float = 1.0,
+               spread_floor: float = 0.0) -> CostModel:
+    """The declared C8 model for `instrument`, optionally stressed (GAP-P12D-46).
+
+    `stress`/`spread_floor` are RUN properties: the caller builds the map ONCE and hands
+    the same instances to selection and to grading, so a stressed run cannot select in a
+    cheap world and be graded in an expensive one (the GAP-P12D-36 defect class)."""
     costs = cfg.instruments.instruments[instrument].costs
     if costs is None:
         raise ValueError(f"{instrument} declares no C8 costs — onboard it before evolving on it")
     return CostModel(commission_per_side=costs.commission_per_side,
-                     slippage_per_side=costs.slippage_per_side)
+                     slippage_per_side=costs.slippage_per_side,
+                     stress=stress, spread_floor=spread_floor)
 
 
 def holdout_pnls(champion: ParamSet, history: RegimeLabelledHistory, opt: OptimizerConfig,
@@ -56,8 +64,10 @@ def holdout_pnls(champion: ParamSet, history: RegimeLabelledHistory, opt: Optimi
                            atr_period=atr_period)
 
 
-def evolve_fold(loop, fd, *, cfg: AcisConfig, cache: LabelledBarCache,
-                instruments: Sequence[str], logger) -> dict:
+def evolve_fold(loop, fd, *, cfg: AcisConfig, costs: Mapping[str, CostModel],
+                cache: LabelledBarCache, instruments: Sequence[str], logger) -> dict:
+    """`costs` is the run's cost map — the SAME instances the graded book charges. It is
+    required, not derived from `cfg` here, so the two sides cannot drift apart."""
     opt, sig = cfg.system.optimizer, cfg.system.signals
     train_end = fd.fold.train_end
     window_start = max(fd.fold.train_start, train_end - timedelta(days=opt.fitness_span_days))
@@ -69,7 +79,11 @@ def evolve_fold(loop, fd, *, cfg: AcisConfig, cache: LabelledBarCache,
             continue
         candidates, best, best_params = [], None, None
         for instrument in instruments:
-            cost = cost_model(cfg, instrument)
+            try:
+                cost = costs[instrument]
+            except KeyError:
+                raise ValueError(f"no C8 cost model supplied for {instrument} — the run's cost "
+                                 "map must cover every evolved instrument") from None
             history = cache.history(instrument, regime, window_start, train_end, None)
             qiea = QIEA(opt, cost, logger, signal_bar_seconds=sig.signal_bar_seconds,
                         atr_period=sig.atr_period)

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.optimizer.param_types import RegimeLabelledHistory
-from tests.backtest.evolve_step import evolve_fold
+from tests.backtest.evolve_step import cost_model, evolve_fold
 from tests.backtest.harness import Backtest, FoldData, refuse_lookahead
 from tests.backtest.regime_labels import LabelledBarCache, LabelSpec
 from tests.backtest.test_evolve_step import _cfg, _Stager
@@ -48,7 +48,10 @@ def _run_with(cache, acis_config):
     bt = Backtest(account="a", cost_models=defaultdict(lambda: None))
     return bt.run(loop=_FakeLoop({}), folds=[FoldData(fold, [_ms(first, 1.10)])],
                   evolve_fn=lambda lp, fd: evolve_fold(SimpleNamespace(params=_Stager()), fd,
-                                                       cfg=_cfg(acis_config), cache=cache,
+                                                       cfg=_cfg(acis_config),
+                                                       costs={i: cost_model(_cfg(acis_config), i)
+                                                              for i in ("EUR_USD", "USD_JPY")},
+                                                       cache=cache,
                                                        instruments=["EUR_USD", "USD_JPY"],
                                                        logger=CapturingLogger()),
                   spx_closes={}, guardrail_hash="GH", expected_guardrail_hash="GH")

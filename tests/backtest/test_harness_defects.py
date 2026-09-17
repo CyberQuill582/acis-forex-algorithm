@@ -18,7 +18,7 @@ from decimal import Decimal
 import pytest
 
 from core.optimizer.costs import CostModel
-from scripts.falsify_engine import plan
+from tests.backtest.synthetic_grade import plan   # the shared fold plan (was scripts/falsify_engine)
 from tests.backtest.book import BookState, PositionModel
 from tests.backtest.harness import Backtest, FoldData
 from tests.backtest.test_harness_regressions import _FakeLoop, _ms, _order

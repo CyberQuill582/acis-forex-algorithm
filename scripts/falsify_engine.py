@@ -15,84 +15,18 @@ from __future__ import annotations
 import argparse
 import math
 import sys
-import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from config.schemas import load_config  # noqa: E402
-from core.data.jsonl_logging import JsonlEventLogger  # noqa: E402
-from tests.backtest.data_loader import BacktestDataLoader  # noqa: E402
-from tests.backtest.oos_plan import EMBARGO  # noqa: E402
-from tests.backtest.oos_runner import RunInputs, report_json, run_walk_forward, train_years  # noqa: E402
-from tests.backtest.regime_labels import LabelledBarCache, LabelSpec, label_instrument_year  # noqa: E402
-from tests.backtest.replay_logging import ReplayEventLogger  # noqa: E402
-from tests.backtest.synthetic_market import KINDS, MarketSpec, SyntheticMarket, synthetic_spx  # noqa: E402
-from tests.backtest.walk_forward import Fold  # noqa: E402
+from tests.backtest.oos_runner import train_years  # noqa: E402
+from tests.backtest.synthetic_grade import FIRST_MID, START, grade, label_year, plan  # noqa: E402
+from tests.backtest.synthetic_market import KINDS, MarketSpec  # noqa: E402
 
-START = datetime(2014, 1, 6, tzinfo=timezone.utc)              # a Monday
-FIRST_MID = {"EUR_USD": 1.10, "GBP_USD": 1.30, "USD_JPY": 110.0, "AUD_USD": 0.75,
-             "USD_CHF": 0.95, "USD_CAD": 1.30, "NZD_USD": 0.70, "XAU_USD": 1800.0}
 EXPECT_PASS = {"null": False, "planted": True, "permuted": False}
-
-
-def plan(train_days: int, test_days: int, n_folds: int) -> list[Fold]:
-    """Non-overlapping folds (GAP-P12D-35). Each fold's warm-up window is [train_end,
-    test_start) — the embargo — so successive test windows must be separated by the embargo
-    too, or the warm-up replays days the previous fold already graded and the engine's clock
-    jumps backwards. The ratified `oos_plan.plan_folds` has this shape; this one did not,
-    which silently suspended `max_hold` and pushed out-of-order timestamps into the equity
-    curve of every falsification run before 2026-09-17."""
-    first_test = START + timedelta(days=train_days) + EMBARGO
-    step = timedelta(days=test_days) + EMBARGO
-    folds = []
-    for k in range(n_folds):
-        test_start = first_test + k * step
-        train_end = test_start - EMBARGO
-        folds.append(Fold(k, train_end - timedelta(days=train_days), train_end, test_start,
-                          test_start + timedelta(days=test_days)))
-    return folds
-
-
-def _cache(cfg, out: Path, source: str) -> LabelledBarCache:
-    # one directory per market: the cache path is <instrument>/<year>, so markets sharing a root
-    # would overwrite each other's labels (the first quick run collided on the same file)
-    return LabelledBarCache(out / "labels" / source, LabelSpec.for_config(cfg, source, START))
-
-
-def _log(out: Path, name: str, layer: str, keep: int) -> ReplayEventLogger:
-    return ReplayEventLogger(JsonlEventLogger(out / "logs" / f"{name}.jsonl", layer=layer,
-                                              session_id=f"falsify-{name}"), keep_per_type=keep)
-
-
-def _label(spec: MarketSpec, instrument: str, year: int, out: Path) -> tuple[str, str, int, int, float]:
-    t0, cfg, market = time.perf_counter(), load_config(ROOT / "config"), SyntheticMarket(spec)
-    log = _log(out, f"labels_{spec.kind}_{instrument}_{year}", "labels", 20)
-    n = label_instrument_year(cfg=cfg, loader=BacktestDataLoader({market.name: market}, log),
-                              source=market.name, instrument=instrument, year=year,
-                              cache=_cache(cfg, out, market.name), logger=log, data_start=START)
-    log.close()
-    return spec.kind, instrument, year, n, time.perf_counter() - t0
-
-
-def _grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold]) -> dict:
-    t0, cfg, market = time.perf_counter(), load_config(ROOT / "config"), SyntheticMarket(spec)
-    log = _log(out, f"run_{spec.kind}", "backtest", 200)
-    report = run_walk_forward(RunInputs(
-        cfg=cfg, account=account, source=market.name,
-        loader=BacktestDataLoader({market.name: market}, log), cache=_cache(cfg, out, market.name),
-        folds=folds, spx_closes=synthetic_spx(START, spec.days), financing=None,
-        work_dir=out / "engine" / spec.kind, logger=log))
-    log.close()
-    (out / f"{spec.kind}.json").write_text(report_json(report), encoding="utf-8")
-    oos = report.out_of_sample
-    return {"kind": spec.kind, "passed": report.passed, "trades": oos.n_trades,
-            "sharpe": oos.annual_sharpe, "dsr": report.deflated_sharpe, "trials": report.trial_count,
-            "champions": [r["champions"] for r in report.in_sample_evolution],
-            "failed": sorted(k for k, ok in report.targets_met.items() if not ok),
-            "seconds": time.perf_counter() - t0}
 
 
 def main() -> int:
@@ -122,12 +56,13 @@ def main() -> int:
 
     results = {}
     with ProcessPoolExecutor(max_workers=a.workers) as ex:
-        labels = [ex.submit(_label, specs[k], i, y, out)
+        labels = [ex.submit(label_year, specs[k], i, y, out, ROOT)
                   for k in a.kinds for i in instruments for y in train_years(folds)]
         for fut in as_completed(labels):
             kind, instrument, year, n, secs = fut.result()
             print(f"  labelled {kind} {instrument} {year}: {n:,} bars in {secs:,.0f} s", flush=True)
-        for fut in as_completed([ex.submit(_grade, specs[k], out, a.account, folds) for k in a.kinds]):
+        for fut in as_completed([ex.submit(grade, specs[k], out, a.account, folds, ROOT)
+                                 for k in a.kinds]):
             r = fut.result()
             results[r["kind"]] = r
             print(f"  graded {r['kind']:8s} passed={r['passed']} trades={r['trades']} "
