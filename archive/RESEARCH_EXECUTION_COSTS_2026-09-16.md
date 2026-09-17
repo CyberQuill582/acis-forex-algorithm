@@ -26,7 +26,7 @@
 
 with **C-BT-5** requiring "slippage/**spread** models documented". The harness fills naively at mid. **This is not a judgement call about how optimistic a cost assumption should be — it is a locked contract the code does not meet.**
 
-**F2 — Even the fitness path is ~2.3× optimistic, and the harness path ~4× optimistic, versus a real OANDA account.** Measured Dukascopy median spread is 0.272 bps (EUR/USD) and 0.422 bps (USD/JPY) [MEASURED HERE]. OANDA's published typical spreads are **0.6 pips EUR/USD and 1.3 pips USD/JPY** [BROKER-PRIMARY], i.e. 0.55 and 0.87 bps round trip in spread alone; OANDA's core-pricing commission is **USD 0.70 per 10,000 units per leg** [BROKER-PRIMARY] = 1.28 bps round trip *before* spread. A realistic all-in retail round trip on EUR/USD is **1.0–2.3 bps, central ≈1.5 bps**. The harness models 0.37.
+**F2 — The harness is ~3.9× optimistic versus a real OANDA account, and the deeper problem is that the backtest is priced on a different firm's book.** Measured Dukascopy median spread is 0.272 bps (EUR/USD) and 0.422 bps (USD/JPY) [MEASURED HERE]. OANDA's own **time-weighted average** spreads — pulled from the API behind its spreads page, its own published method — are **1.5578 pips EUR/USD and 1.5166 USD/JPY** in business hours [BROKER-PRIMARY], i.e. **1.44 and 1.01 bps round trip in spread alone**, against the harness's 0.367 and 0.267. The un-modelled gap is **1.07 bps** on EUR/USD, rising to **~3.4 bps on NZD/USD**. And Dukascopy is an ECN whose quote ACIS will never trade on: OANDA states in writing that it *"ESTABLISHES THE PRICES AT WHICH IT OFFERS TO TRADE WITH YOU"* and that those prices *"MIGHT NOT BE THE BEST PRICES AVAILABLE"*. **So the Dukascopy bid/ask is a legitimate reference mid and an illegitimate tradeable spread** — which makes R3 (charge OANDA's spread around the Dukascopy mid), not R1, the change that does most of the work. Realistic all-in round trip on EUR/USD ≈ **1.5 bps**; §3's tables were already built on that number.
 
 **F3 — That 4× understatement is almost certainly *why* evolution selected an 8-minute holding period.** Break-even information coefficient (expected gross edge ÷ per-trade standard deviation) at an 8-minute hold on EUR/USD is **0.091 at the modelled 0.37 bps** — reachable by an 11-gene search on in-sample data — and **0.371 at a realistic 1.5 bps**, which no retail FX system produces. The minimum viable holding period at a plausible IC of 0.05 moves from **27 minutes (modelled cost) to 7.3 hours (real cost)** [DERIVED HERE, §3]. The cost model is not a detail downstream of GAP-P12D-31; it is a plausible *cause* of it.
 
@@ -103,36 +103,84 @@ Median spread by UTC hour, EUR/USD: flat at **0.25–0.33 bps** from 00h to 19h,
 
 ### 1.2 What a retail broker actually charges
 
-| Source | Instrument | Published figure | Grade |
-|---|---|---|---|
-| OANDA UK "Our Pricing" | EUR/USD | **0.6 pips** typical spread | [BROKER-PRIMARY] |
-| OANDA UK "Our Pricing" | USD/JPY | **1.3 pips** typical spread | [BROKER-PRIMARY] |
-| OANDA help centre, core pricing FAQ | all FX | **"A commission of 0.70 USD per 10,000 units is applied to each 'leg' of a trade"**; core spread example quoted at **0.2 pips**; "spreads as low as 0.0" on majors | [BROKER-PRIMARY] |
-| OANDA "Spreads & margins" | all | "spreads could be wider than usual at certain times…"; "rate volatility and changes in global market liquidity can lead to **significant spread increases around market openings and closings, following news announcements**"; weekend "rates or 'gaps' may change significantly when trading resumes" | [BROKER-PRIMARY] |
-| BrokerChooser / review aggregators | EUR/USD | OANDA standard account ≈ **0.9–1.4 pips**; ~0.6 pips is the 50-broker average | [UNVERIFIABLE] |
+**The number that settles this is OANDA's own time-weighted average spread, not its marketing "typical".** Pulled 2026-09-16 from the API backing `oanda.com/us-en/trading/spreads-margin/` (`labs-api.oanda.com/v1/spreads/spread-stability-and-average`) [BROKER-PRIMARY]. OANDA's own stated method: *"The average spread is calculated as a **time-weighted** 'mean' (average) of our quoted spread for the last month and last three months… Time-weighted refers to the time a spread was displayed rather than using the number of prices published with a given spread."*
 
-Converted to bps of notional, round trip (one full spread crossed per round trip):
+| Pair | 50% of time | 80% of time | avg 24 h (1 mo) | **avg business hrs (1 mo)** | avg 24 h (3 mo) |
+|---|---|---|---|---|---|
+| EUR/USD | 1.6 | 1.6 | 1.6505 | **1.5578** | 1.6960 |
+| GBP/USD | 1.8 | 2.0 | 2.1984 | **1.8288** | 2.2715 |
+| USD/JPY | 1.5 | 1.6 | 1.6899 | **1.5166** | 1.7213 |
+| AUD/USD | 1.3 | 1.3 | 1.5034 | **1.3162** | 1.4857 |
+| USD/CHF | 1.6 | 1.7 | 1.8930 | **1.5890** | 1.9211 |
+| USD/CAD | 1.8 | 1.8 | 1.9989 | **1.7660** | 2.0786 |
+| NZD/USD | 2.4 | 2.4 | 2.5707 | **2.3579** | 2.6056 |
+| **XAU/USD** | 56.1 | 63.2 | 57.1015 | **56.4535** | 61.4819 |
 
-| Model | EUR/USD round trip |
-|---|---|
-| **ACIS harness today** | **0.367 bps** |
-| ACIS fitness path (Dukascopy median spread) | 0.639 bps |
-| OANDA UK spread-only, 0.6 pips | 0.550 bps (spread only, **no slippage**) |
-| OANDA US standard, ~1.4 pips | 1.284 bps (spread only) |
-| OANDA core pricing (0.70/10k/leg + 0.2 pip spread) | **1.468 bps** before slippage |
-| Realistic all-in central estimate | **≈1.5 bps** (range 1.0–2.3) |
+*(pips; XAU at `pipLocation −2`, so 56.45 ≈ **$0.565** — unit inferred, confirm against a practice account)*
 
-**How optimistic are we?** The harness is **≈4×** optimistic (range 2.7–6.3×). The fitness path is **≈2.3×** optimistic. Both understatements are *multiplicative on the thing that decides viability*, which is why §3 matters more than the headline ratio.
+Other OANDA-primary figures:
 
-**On "quoted versus effective spread":** the distinction that matters for ACIS is not the classical academic one (effective spread = 2×|trade price − mid|, which captures price improvement inside the quote). It is that (a) an ECN's top-of-book quote is for an indicative size that may be smaller than a retail order, and (b) a principal/market-maker broker's quote already embeds its markup, so its *quoted* spread **is** its effective spread and there is no price improvement to hope for. Practically: **do not model price improvement.** Model half the broker's quoted spread per side plus slippage, and treat the Dukascopy quote as the *raw* price that the broker marks up.
+| Source | Figure | Grade |
+|---|---|---|
+| OANDA US marketing "typical spreads" | EUR/USD **1.4**, GBP/USD 2.0, USD/JPY 1.4, AUD/USD 1.4, USD/CHF 1.8, USD/CAD 2.2, NZD/USD 1.7 pips | [BROKER-PRIMARY] |
+| OANDA **UK/EU** "Our Pricing" | EUR/USD **0.6**, USD/JPY **1.3** pips | [BROKER-PRIMARY] |
+| OANDA help centre, core pricing FAQ | *"A commission of **0.70 USD per 10,000 units** is applied to each 'leg' of a trade"*; core spread example 0.2 pips | [BROKER-PRIMARY] |
+| OANDA US Additional Disclaimer (Dec 2025) | *"you pay the equivalent of **half the spread, on average, for each (opening or closing) trade**"* | [BROKER-PRIMARY] |
+| OANDA US Customer Agreement §9(e) | *"Spreads may widen or narrow at any time at OANDA's sole discretion… **there is no limit to how wide the Spread may be**."* | [BROKER-PRIMARY] |
 
-### 1.3 Slippage at retail size
+**Note the entity spread.** OANDA UK/EU quotes EUR/USD at 0.6 pips "typical"; the US entity's *measured, time-weighted* average is **1.56–1.70 pips**. Both are OANDA-primary and both are true of their own entity. **Use the time-weighted average of the entity you will actually trade** — time-weighted is what you pay, whereas "typical" is a modal figure that ignores the hours the spread is wide. Which entity ACIS attaches to is therefore a **cost-model input**, not an administrative detail.
 
-This is the weakest-evidenced part of the whole picture and should be treated as such.
+### 1.2b The headline comparison
 
-- OANDA publishes **no fill statistics**: their own education page on slippage gives one worked example ("a buy order placed at 1.1200 filled at 1.1203" = 3 pips) and describes the *mechanism* (upper/lower bound on web, "maximum deviation" on MT4, orders cancelled rather than filled beyond the bound) but **no default tolerance and no distribution** [BROKER-PRIMARY]. An explicit negative result: the disclosure a strategy of this cadence would need does not exist publicly.
-- The **bounded-slippage mechanism itself changes the modelling problem**: with a deviation bound set, a market order in a fast market is **cancelled, not slipped**. A backtest that always fills is therefore wrong in *both* directions — too cheap when it fills, and too optimistic about having a position at all. §6 recommends modelling this as a reject probability rather than as extra slippage.
-- The declared **0.2 bps per side** (0.00002 on EUR/USD) is defensible as a *median, calm-market* number: it is 0.7× the measured median half-spread, which is the right order for a small order hitting a firm quote. It is **not** defensible as an unconditional constant, because slippage is the classic fat-tailed quantity and the mean is dominated by the tail.
+Round-trip spread cost = one full spread crossed. Dukascopy medians measured in §1.1; OANDA business-hours time-weighted averages from the table above.
+
+| Pair | OANDA (bps RT) | Dukascopy measured (bps RT) | **un-modelled gap** | ACIS harness charges |
+|---|---|---|---|---|
+| **EUR/USD** | **1.44** | 0.272 | **1.17 bps** | 0.367 bps |
+| **USD/JPY** | **1.01** | 0.422 | **0.59 bps** | 0.267 bps |
+| GBP/USD | 1.44 | — | ~1.2 | no costs declared |
+| AUD/USD | 1.99 | — | ~1.5 | no costs declared |
+| USD/CHF | 1.81 | — | ~1.4 | no costs declared |
+| USD/CAD | 1.29 | — | ~1.0 | no costs declared |
+| **NZD/USD** | **3.93** | — | **~3.4** | not in the universe |
+| XAU/USD | 1.32 at gold $4,266 | **1.794** | **see below** | no costs declared |
+
+*(quote prices assumed: EURUSD 1.08, GBPUSD 1.27, USDJPY 150, AUDUSD 0.66, USDCHF 0.88, USDCAD 1.37, NZDUSD 0.60)*
+
+**How optimistic are we, on the best available numbers?** The harness charges 0.367 bps on EUR/USD against a realistic **1.44 bps of spread alone** — **3.9× optimistic**, an absolute gap of **1.07 bps per round trip**. Adding measured retail slippage (§1.3) puts the realistic all-in round trip at **≈1.5 bps**, which is exactly the central estimate §3's tables are built on. **The better data did not move the conclusion; it tightened it.**
+
+**Gold is the honest exception, and it deserves flagging rather than smoothing.** OANDA's $0.565 spread is **1.32 bps at September-2026 gold ($4,266)** — *tighter* than the 1.794 bps median measured in the Dukascopy archive. In absolute dollars the comparison inverts (OANDA $0.565 vs Dukascopy ≈$0.23–0.36 at 2013–2020 gold prices), because gold tripled across the sample. **A date-matched comparison is required before anyone calibrates XAU/USD**, and the naive assumption "the broker is always wider than the ECN" is false for this instrument. One more reason `XAU_USD` must not be enabled on a cost constant copied from a major (R11).
+
+**On "quoted versus effective spread".** The classical academic distinction (effective spread = 2×|trade price − mid|, capturing price improvement inside the quote) is not the one that matters here. What matters is that **OANDA is a principal, not a venue**, and says so in writing [BROKER-PRIMARY, US Additional Disclaimer, Dec 2025]:
+
+> *"OANDA IS ACTING AS A COUNTERPARTY IN THESE TRANSACTIONS… **OANDA ESTABLISHES THE PRICES AT WHICH IT OFFERS TO TRADE WITH YOU. THE PRICES OANDA OFFERS MIGHT NOT BE THE BEST PRICES AVAILABLE.**"*
+
+and in its EU execution policy: *"We will act as **principal and not as your agent**… we therefore act as **the sole trading venue** for those Orders"*; the shown price is *"an **average of the pricing, excluding outliers**, available from those third parties… in respect of transactions of a **Normal Market Size**"*.
+
+**The consequence is stronger than "add a markup".** The Dukascopy bid/ask is **a different firm's quote**. It is a legitimate *reference mid* and an illegitimate *tradeable spread*. So the correct fix is not merely "charge the spread that is in the tick" (§7 R1) but "charge **OANDA's** spread around the Dukascopy **mid**" (§7 R3) — and on these numbers **R3 does most of the work, not R1**.
+
+### 1.3 Slippage at retail size — better evidenced than expected, and smaller than feared
+
+The strongest public data is **IG's best-execution disclosure, Apr–Jun 2024** [BROKER-PRIMARY] — a large, dated, per-instrument sample (31.5 million trades filled, £2.3 trillion notional per quarter):
+
+| | stops: 0 slip | stops: negative | limits: positive | limits: 0 | avg negative (pips) | avg positive (pips) |
+|---|---|---|---|---|---|---|
+| EUR/USD | 93% | **7%** | 49% | 51% | **0.053** | 0.086 |
+| GBP/USD | 88% | 12% | 57% | 43% | 0.062 | 0.083 |
+| USD/JPY | 87% | **13%** | 59% | 41% | **0.097** | 0.107 |
+| AUD/USD | 96% | 4% | 43% | 57% | 0.090 | 0.083 |
+| USD/CAD | 93% | 7% | 53% | 47% | 0.005 | 0.009 |
+| *US 500 (contrast)* | 76% | 24% | — | — | 0.140 | — |
+
+Headline: *"**98.97% of orders filled**"*; *"**100% of successfully filled orders executed at requested price or better**"*. Pepperstone publishes *"a **99.32%** fill rate, with no dealer intervention"* for Q1 2026 [BROKER-PRIMARY].
+
+**Three conclusions, and the second is uncomfortable for the obvious fix.**
+
+1. **Our declared slippage constant is fine — arguably conservative.** `slippage_per_side = 0.00002` on EUR/USD is **0.18 bps per side**; IG's measured mean negative stop slippage is **0.053 pips ≈ 0.05 bps**, and it occurs only 7% of the time. **The slippage term is not the problem; the spread term is.** Anyone tempted to "fix the cost model" by raising the slippage constant would be tuning the one parameter that is already defensible.
+2. **"100% at requested price or better" and "1.03% unfilled" are the same mechanism seen twice.** The dealer does not give you a worse price on an at-quote order — **it declines the order instead. The rejection rate *is* the slippage.** That is the retail form of last look, and it means a backtest that always fills is optimistic in a way no slippage constant can express (§6.5, §7 R7).
+3. **OANDA's slippage is symmetric by written policy**, which is better than the folklore: *"The pricing and execution components of our Trading Platform **do not apply asymmetrical slippage parameters. Positive and negative slippage are handled with strict symmetry**…"* (OANDA Europe Order Execution Policy §11.2) [BROKER-PRIMARY]. Historically this was not universal, and the measured cost of the asymmetric era is on the public record: the **CFTC's 2011 order against FXCM** found that *"for market orders during the relevant period, FXCM's customers were denied the benefit of any positive price slippage, but forced to bear the consequences of any negative slippage"* — **$8,261,937 taken from 57,000 customers over 2.5 years**; the **FCA's 2014 Final Notice** on the same conduct gives the per-trade magnitude: **$6,725,106 across 2,214,053 trades = $3.04 per trade**, with FCA's own figure *"The average slippage retained… was approximately **$3.70**."* On a $100k ticket that is ≈0.3–0.4 pips. [REGULATORY]
+
+**What remains genuinely unknown: event-window slippage and reject rates.** No broker or regulator publication breaks execution statistics out by release window. IG's 1.03% and Pepperstone's 0.68% are *normal-conditions* anchors only. The event-window figure should be a **declared, stressed parameter** (5–15%), never a guess presented as a measurement — which matters, because §5 argues that 15–25% of this engine's entries originate in exactly those windows.
 
 ### 1.4 What this does to a few-bps edge
 
@@ -517,13 +565,15 @@ The honest minimum for §14 credibility is: **build the historical calendar, and
 
 | harness assumption | reality | direction of error |
 |---|---|---|
-| fill at `state.mid` | buy at ask, sell at bid | optimistic by ½ spread **per side** |
-| fill at the tick concurrent with the signal | order arrives 30–300 ms later | optimistic; grows with volatility |
-| always fills | bounded-slippage cancels; MM rejects | **both** — cheaper fills, and phantom positions |
-| stop fills exactly at `stop_loss`, tested on mid | triggers on bid, fills at or through | optimistic, worst exactly when it matters |
-| no gap-through | weekend and event gaps jump the level | optimistic in the tail |
-| no partial fills | partials at size/in fast markets | small at retail size |
-| constant per-instrument slippage | fat-tailed, volatility-conditional | understates the mean badly |
+| fill at `state.mid` | buy at ask, sell at bid, **on OANDA's book, not Dukascopy's** | optimistic by ≈1.07 bps/RT on EUR/USD (§1.2b) |
+| the tradeable spread is the one in the tick | Dukascopy is an ECN; OANDA is a principal that *sets* its prices | optimistic by ~4× — the largest single term |
+| fill at the tick concurrent with the signal | contractually, the fill is at the price on **OANDA's server when the order arrives** | optimistic; ~0.05 bps at 100 ms, far more in event windows |
+| always fills | the dealer **declines** rather than repricing (IG: 1.03% unfilled, 100% at requested price or better) | **both** — cheaper fills, and phantom positions |
+| stop fills exactly at `stop_loss`, tested on mid | v20 `StopLossOrder` fills *"by the first price that is equal to or **worse** than the threshold"*; default trigger is bid for a long exit | optimistic, and worst exactly when it matters |
+| no gap-through | weekend and event gaps jump the level; a `priceBound` stop is **cancelled**, not filled | optimistic in the tail, potentially unbounded |
+| ~~no partial fills~~ **correct at our size** | OANDA fills FX/metals market orders **FOK** — *"There are no partial fills"*; its large-transaction threshold is **$100,000,000 in 10 s** | **none — do not model a ladder** (§7 R14) |
+| constant per-instrument slippage | fat-tailed in the extreme, but the constant is **already conservative** vs IG's measured 0.053 pips | small; **not where the error is** |
+| replays every Dukascopy tick | the live client stream is aggregated; OANDA notes *"prices can change more than once a second"* | **a look-ahead class**, not a cost error (§6.6) |
 
 ### 6.2 The graded backtest never touches the execution layer
 
@@ -672,7 +722,10 @@ Recorded so nobody treats a gap as a clean bill of health:
 - **OANDA publishes no fill or slippage statistics.** Their education page gives one worked example (3 pips) and the bounded-slippage mechanism, and no distribution. §1.3's slippage numbers are therefore the **weakest-evidenced** part of the report, and the declared 0.2 bps/side is defended only as a *median calm-market* figure, never as a mean.
 - **Interactive Brokers' primary pricing pages returned HTTP 403** throughout; the "honest benchmark" tier table in §2 is [PRACTITIONER]-graded and should be re-verified before it is relied on.
 - **No authoritative free gold forward/lease curve exists** post-30-Jan-2015 (§2.2d). `DEFAULT_GOLD_LEASE_PCT = 0.25` with a declared sensitivity band remains the honest treatment.
-- **The web-search budget for this session was exhausted** partway through. The gap was filled with direct fetches of known primary URLs and — more valuably — with measurements taken from this repo's own tick archive, which is stronger evidence than any of the secondary sources would have been. Where a claim rests only on a review aggregator it is tagged [UNVERIFIABLE].
+- **The web-search budget for this session was exhausted** partway through. The gap was filled two ways. First, direct fetches of known primary URLs, which **did** succeed and are the backbone of several sections: the **FX Global Code Principle 17** text (§6.5, extracted from `globalfxc.org/docs/fx_global.pdf`), **pysystemtrade's own buffering documentation** (§4.3), **OANDA's pricing and core-commission pages** (§1.2), **BLS's archived release schedules, copyright statement and bot policy** (§5.4), and the **Federal Reserve FOMC archives** (§5.4). Second — and more valuably — measurements from this repo's own tick archive, which are stronger evidence than any secondary source would have been.
+- **The academic citations in §4.2 are from knowledge and were NOT re-verified** (Constantinides 1986, Davis & Norman 1990, Leland 2000, Gârleanu & Pedersen 2013, Boyd et al.). They are standard results and the section's *structure* does not depend on any one of them, but **check the exact formulas before implementing**. §4.3's pysystemtrade material, by contrast, is verbatim from a direct fetch.
+- **Quantified last-look reject rates and their bps cost to the taker could not be retrieved** (§6.5). The mechanism and its documented misuses are primary-sourced from the Code; the magnitude is not.
+- Where a claim rests only on a review aggregator it is tagged [UNVERIFIABLE].
 - **All [MEASURED HERE] figures are from a *sample*** — 8 trading days for spreads and volatility, 10 NFP releases, 76 weekends, 4 days for latency — chosen to span 2013–2025. They are the right order of magnitude and should not be treated as precise. The full archive (35,008 day files) is on disk; re-running the same scripts over all of it is cheap and would make every table exact.
 - **The information-coefficient values in §3 are illustrative**, not measured. The *structure* of §3.2/§3.3 (break-even IC = c/(σ·√h), h_min = (c/(IC·σ))²) is exact arithmetic; the choice of "plausible IC = 0.03–0.05" is a judgement informed by published systematic-FX results, and a reader who disagrees should substitute their own and re-read the tables — the conclusion that the modelled cost makes an 8-minute horizon look viable and the real cost does not is robust across the whole plausible range.
 
@@ -701,3 +754,31 @@ Caveats that apply to all of them: **tick-weighted, not time-weighted** (so busy
 **Two of these are worth promoting into the test suite rather than leaving in a research file:** the NFP spread/displacement measurement is a ready-made §13 glitch-class fixture, and the weekend-gap distribution is the empirical input R4 needs.
 
 ---
+
+---
+
+## State at checkpoint (2026-09-16)
+
+**Status: COMPLETE.** All seven brief questions are answered. This section exists only so a resumed session knows where things stand.
+
+**Finished:**
+- §0 — the code as actually read (`book.py`, `costs.py`, `fitness.py`, `carry.py`, `financing.py`, `money.py`, `data_loader.py`, `sources.py`, `harness.py`, `agon.py`, `nvma.py`, `venue.py`, `orchestrator.py`, `fragmenter.py`, `instruments.yaml`, `report.py`, ACIS_SPEC §3.7/§7.5/§13/§14, `specs/ACIS-09`).
+- §1 COST REALISM — spreads measured from this repo's own ticks; OANDA published pricing verified by direct fetch; the 4× / 2.3× optimism quantified.
+- §2 FINANCING — full, from the financing research stream plus primary broker tables.
+- §3 HOLDING HORIZON — break-even-IC and minimum-hold arithmetic, derived and cross-checked two ways.
+- §4 SIGNAL-TO-POSITION — pysystemtrade buffering verified verbatim; academic results cited from knowledge and **flagged as unverified**.
+- §5 EVENT RISK — NFP behaviour measured from our ticks; calendar sources verified against BLS/Fed/FRED/ECB primary pages with licensing checked.
+- §6 FILL FIDELITY — latency and weekend gaps measured; FX Global Code Principle 17 extracted verbatim; ranked modelling changes.
+- §7 RECOMMENDATIONS — three tiers, tagged [implementation] / [spec-level].
+- Appendix A — reproduction method for every measured number.
+
+**Unfinished / would do next if resumed:**
+1. **Re-run the Appendix-A measurements over the full 35,008-day archive** rather than the 8/10/76/4-day samples. Cheap, and it makes every table exact rather than order-of-magnitude.
+2. **Compute the exact ΔSharpe for the missing spread** from the falsification run's own `ClosedTrade.pnl` / `notional_usd` (§1.4 currently gives two estimates, 1.1–3.3 and 1.9, instead of the measurement).
+3. **Verify the §4.2 academic formulas** (Gârleanu–Pedersen trading rate, Constantinides band scaling) against the papers — the web-search budget ran out before this was possible.
+4. **Retrieve quantified last-look reject rates and their bps cost** (§6.5 has the mechanism, not the magnitude).
+5. Three parallel research streams (event risk, signal-to-position, fill fidelity) had not returned when this was written; their sections were completed from direct primary-source fetches instead. If their reports land, they can only *enrich* §4, §5.4 and §6.5 — nothing in those sections depends on them.
+
+**Ledger note (CLAUDE.md closure law).** This file is a research artifact and is **not** a ledger entry. The findings that need owner decisions — chiefly **F1** (harness charges no spread; violates master §5 C8 and `specs/ACIS-09` C-BT-5 / §7.2), **F6c** (`max_holding_periods` is in bars, 1–48 minutes, and never reaches the engine), **F6d** (graded replay bypasses `core/execution/`, against ACIS-09 §7.2(c)/(d)), and **R11b** (USD/CAD triple-swap day is Thursday, not Wednesday) — are **defects against locked specs, not opinions**, and should be written into `KNOWN_GAPS.md` with IDs before this session ends. F1 in particular must not be filed under GAP-0001, for the reason in F6b.
+
+**Nothing in the repo was modified by this work** other than the creation of this file. No code, config, spec or ledger was touched; no commit was made; no test suite or backtest was run.
