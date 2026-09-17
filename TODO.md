@@ -1,16 +1,24 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **STATUS (2026-09-17): SPEC COMPLETE (master v2.18). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the VPS deployment gate is ✅, the untrained-baseline freeze is ENFORCED (tag `baseline-untrained-v1`), the full Dukascopy tick set is downloaded and validated, and the evolve-driver + walk-forward runner exist. 804 green; ledger 183 entries, 0 violations.**
+> **STATUS (2026-09-17): SPEC COMPLETE (master v2.18). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the VPS deployment gate is ✅, the untrained-baseline freeze is ENFORCED (tag `baseline-untrained-v1`), the full Dukascopy tick set is downloaded and validated, and the evolve-driver + walk-forward runner exist. 812 green; ledger 184 entries, 0 violations. The cost-stress ladder (GAP-P12D-46) is built and its full run is in flight — read its verdict first.**
 > `ACIS_SPEC.md` v2.12 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
 
-## ⚠ START HERE — handover from the 2026-09-16/17 session (research + falsification)
+## ⚠ START HERE — handover from the 2026-09-17 session (the cost-stress ladder)
 
-**What that session established, in one line:** the engine is NOT edge-blind — it separates a planted edge (+1.11 Sharpe) from noise (—2.77) — but the harness grading it was wrong in three ways, two of which are now fixed, and the strategy's holding horizon is the defect that dominates everything else.
+**What this session did, in one line:** built the DO-FIRST test the venue question was blocked on — the cost-stress ladder ([[GAP-P12D-46]], commit 67330fb) — and launched the full run; the ladder's own mechanism is tested, and the run's verdict is the first thing to read next session.
 
-**State:** 804 tests green, ledger clean (183 entries). Working tree committed. No agents or background jobs are running. Eight research reports are in `archive/` (all committed): FX methods, statistics, code-grounded, blind audit, execution costs, signal-to-position, fill fidelity, event calendar, plus two venue reports dated 2026-09-17.
+**🔴 FIRST ACTION NEXT SESSION: read the ladder verdict.** `data/validation/cost_stress/20260917T083216Z/ladder.json` (progress in `data/validation/cost_stress/detached_ladder.log`). It grades the PLANTED synthetic market — the only market with a known edge — at 1x / 2x / 3x / 5x the declared C8 cost, changing nothing else, over 25 folds and 985 days. Three possible verdicts, and they are three DIFFERENT findings:
+  * **NO EDGE TO STRESS** — §14 already fails at 1x. Then the venue question is moot, the ladder's `net_pnl` column measures sensitivity only, and the real work is the holding horizon ([[GAP-P12D-38]]/[[GAP-P12D-40]]), not the cost model. **This is the expected outcome** given that the last graded run failed `avg_duration`, `win_rate` and `profit_factor` — but the ladder's PnL slope is still the number decision 6 needs.
+  * **FRAGILE** — §14 met at 1x but not at 2x. Then turnover decides the strategy and the cost calibration is genuinely blocking.
+  * **SURVIVES** — §14 met at 2x. Then the venue choice has real headroom.
+  If the run is still going or died, the command is `python scripts/cost_stress_ladder.py --rungs 1 2 3 5 --workers 4`; a rung is ~4-5 h on this laptop and labels are cost-independent, so a restart re-labels (~30 min) before grading.
+
+**Caution on the +1.11 / −2.77 attribution numbers:** that run (`falsification/20260916T185248Z`, started 18:52 UTC on 2026-09-16) predates commit b2c9d60 by ~12 hours, so it ran WITHOUT the spread charge and WITH the backwards fold plan. The *separation* it showed survives — both markets were graded identically wrong — but its ratios are contaminated like every other pre-fix run. The ladder run is the first engine-level grade on the fixed harness.
+
+**State:** 812 tests green (8 new), ledger clean (184 entries). Working tree committed. **One background job IS running:** the ladder (`scripts/cost_stress_ladder.py`, 4 workers, launched 2026-09-17 08:32 UTC, expect ~6 h). Eight research reports are in `archive/` (all committed): FX methods, statistics, code-grounded, blind audit, execution costs, signal-to-position, fill fidelity, event calendar, plus two venue reports dated 2026-09-17.
 
 **FIXED this session** (implementation only, with regressions, no spec change): [[GAP-P12D-35]] the falsification fold plan replayed 7 days backwards at every boundary; [[GAP-P12D-36]] the graded book never charged the spread (master §5 C8 violation). Attribution by regime and strategy now exists in every report ([[GAP-P12D-31]]).
 
@@ -24,7 +32,9 @@
 | 5 | A prop account is SIMULATED — guard 3 and the operational-referent audit lose their external referent there. Defer guard 3, or pair with a small live account? | [[GAP-P12D-44]] | audit doctrine |
 | 6 | Cost calibration target (do NOT ratify the OANDA number — it is probably a max-vs-avg error of ~45%) | [[GAP-P12D-41]], [[GAP-P12D-46]] | spec-level |
 
-**DO FIRST, needs no decision and no money:** the **cost-stress ladder** ([[GAP-P12D-46]]) — re-run the walk-forward at 1x / 2x / 3x / 5x cost on data already on disk; pass = meets §14 at 2x. If the edge survives only at 1x, the venue question is moot and that is a bigger finding than any of the above. Then re-run falsification on the now-fixed harness with an engine-level positive control ([[GAP-P12D-37]]) and confirm the module ranking before touching decision 3.
+**DO FIRST, needs no decision and no money:** ~~the **cost-stress ladder** ([[GAP-P12D-46]])~~ — **BUILT AND LAUNCHED 2026-09-17** (commit 67330fb; read its verdict first, above). Next after it: re-run falsification on the now-fixed harness with an engine-level positive control ([[GAP-P12D-37]]) and confirm the module ranking before touching decision 3. Note the ladder and the falsification runner now share ONE label-and-grade path (`tests/backtest/synthetic_grade.py`), so a rung and a falsification run differ in exactly one input.
+
+**Why the ladder could not be run on real ticks** (and what that costs): a real-data walk-forward needs labelled bars that do not exist yet (`data/labelled_bars/` is empty), and at the measured ~691 ticks/s replay speed one Dukascopy test year is tens of hours — [[GAP-P12D-12]] is still the binding blocker. So the ladder grades the synthetic planted market: it prices the engine's *turnover* against its *edge*, which is the quantity the venue question turns on, but it is NOT a statement about real-market edge. Do not quote a ladder rung as a §14 result on real data.
 
 **Do NOT repeat these mistakes** (each cost this session real time): do not quote any §14 ratio from a run before 2026-09-17 (contaminated — [[GAP-P12D-35]]/[[GAP-P12D-36]], and ~79% of "trades" in the big run were zero-duration artifacts, [[GAP-P12D-38]]); do not treat a research agent's claim as fact without checking it against the code (one headline claim was refuted on measurement, and several were sharpened); and check whether a test file already exists before writing one (this session overwrote `test_falsification_harness.py` and only the ledger-closure check caught it).
 
