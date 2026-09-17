@@ -198,7 +198,7 @@ It is not perfect, and the honest caveats are:
 
 ## 3. IS NEITHER THE RIGHT ANSWER?
 
-*(This section integrates a parallel primary-source sweep on the prop-firm route. A second sweep on alternative retail brokers — IBKR / LMAX / Pepperstone / IC Markets / Saxo / CMA-Kenya licensees — **was still running when this document was checkpointed and its findings are NOT here.** See §9.)*
+*(This section integrates two parallel primary-source sweeps: §3.1 the prop-firm route, §3.2 alternative retail brokers. Both returned. Like the rest of this pass they ran with **zero WebSearch budget** — every finding is a directly-fetched primary URL, and every "not found" means "not reachable this session", never "does not exist".)*
 
 ### 3.1 The prop-firm route — the owner's chosen path (decision taken 2026-09-17)
 
@@ -267,6 +267,72 @@ https://help.ctrader.com/open-api/ **(a) PRIMARY, read directly:** Protobuf or J
 
 At the owner's stated size the evaluation fee is a large fraction of the capital at risk: Atlas's verified 2-Step $10K challenge is **$79**, i.e. ~1.3% of a $6,000 notional account, and it is **not refundable at Atlas (X — refundability not stated)** while FTMO's 2-Step fee **"may be refunded with the first Reward withdrawal"** **(a)**. Against that, §4's arithmetic still applies to the *funded* account: at the prototype's ~1,800 round trips/year and L≈2, modelled trading costs run to tens of percent of account equity per year. **A prop account does not make the turnover problem go away — it makes it someone else's money and adds a hard 4–5% daily kill-switch on top.** At ~900 trades/instrument-year the system would very likely hit a prop daily-loss or max-drawdown breach before it hit a profit target, and a breach at a prop firm is terminal (fee forfeited, account closed) where at a personal account it is merely a drawdown.
 
+### 3.2 Alternative retail brokers — and the finding that beats both OANDA and Dukascopy
+
+**The CMA Kenya register changes the answer.** Read directly at `https://licensees.cma.or.ke/licenses/5/` — **NON-DEALING ONLINE FOREIGN EXCHANGE BROKER (a) PRIMARY**. Fourteen licensees, of which two matter here:
+
+| Lic. | Entity |
+|---|---|
+| **128** | **Pepperstone Markets Kenya Ltd** |
+| **199** | **IC Markets (KE) Ltd** |
+
+Others on the register: EGM Securities (FX Pesa) 107, Scope Markets 123, Exinity Capital East Africa 135, HFM Investments 155, Windsor Markets Kenya 156, Exness KE 162, Ingot Ke 173, Admirals KE 178, FP Markets 193, Anzo Capital 219, TPXMGLOBAL Kenya 233, Ava Trade Kenya 262. Separately, `/licenses/17/` (DEALING online FX): Empire FX Trade 203, CC Kenya Securities t/a Capital.com 244.
+
+**What a CMA-licensed local entity buys him:** local recourse under the Capital Markets Act, the Capital Markets (Online Foreign Exchange Trading) Regulations 2017 and the Conduct of Business (Market Intermediaries) Regulations 2011 — both brokers' Kenyan T&Cs name these as the governing client-money rules **(a)**; KES as a base currency and fee-free wire via a Kenyan bank at IC Markets **(a)**; and **leverage set by the local entity at 1:400** at both, not the 1:500 offshore or 1:30 EU figure. **Neither lists M-Pesa on any reachable page (X).** **Whether Kenya's Investor Compensation Fund extends to online FX brokers is unverified — assume it does not until proven.**
+
+#### The grid
+
+| | **IC Markets (KE)** | **Pepperstone Kenya** | **IBKR (IB LLC)** | **LMAX (Mauritius)** | **Saxo** |
+|---|---|---|---|---|---|
+| Kenyan can onboard | ✅ CMA 199; site redirects Kenyans to the KE entity **(a)** | ✅ CMA 128 **(a)** | ✅ on IBKR's own country list **(a)**; entity = IB LLC **(b, inferred)** | ✅ Kenya in the application dropdown **(a)** | ❌ **no African country in the selector; "If your country is not listed, we are currently unable to open an account" (a)** |
+| Client money | Pooled + segregated **(a)** | Trust account, segregated **(a)** | SIPC — but spot FX is not a security and is likely outside it | ❌ **title transfer: "we will not hold such money in a bank account which is separate from our own money… In the event of our insolvency you rank as a general creditor" (ToB 18.2) (a)** | Danish Guarantee Fund (moot) |
+| Negative balance protection | ❌ not in contract **(a)** | ✅ **T&Cs Apr 2026 v5 cl. 6.2 (a)** | n/a | ❌ **(a)** | unverified |
+| Min deposit | $200 **(a)** | **$10** **(a)** | $0 **(a)** | MU not published | moot |
+| Commission | cTrader **$3.00/100k/side → $0.60 RT** on 10k units **(a)** | cTrader **$6 RT/lot → $0.60 RT**; scales pro-rata below 1 lot **(a)** | **0.20 bps, min $2.00/order** **(a)** | 0.0025%/side → $0.55 RT **(a)** | USD 1 minimum ticket fee **(a)** |
+| **All-in RT, 10,000 units EUR/USD** | **≈$0.70** | **≈$0.70** | **$4.00+** | $0.55 + spread + **$0.50/RT amortised data fee** | $1.00–3.00 |
+| XAU/USD RT ($10k notional) | ≈$1.50 **(a)** | ≥$1.40 **(a)** | $4.00 + 1.1% p.a. carry, **IBUK entity only** | unknown | not published |
+| Server-side stops | ✅ **+ "freeze level of 0", no minimum stop distance (a)** | ✅ **(a)** | ✅ held in IBKR's system (simulated, not native) | ✅ at LMAX Global — ⚠️ **attached SL/TP not available over FIX; Cancel-on-Disconnect exists** | ✅ |
+| Unit granularity | 0.01 lot = 1,000 units **(a)** | 0.01 lot = 1,000 units **(a)** | integer base-currency units (excellent — but cost kills it) | 1,000 units / 1 oz **(a)** | native units |
+| Python API | ✅ **cTrader Open API + documented cTrader FIX** **(a)** | ✅ cTrader Open API **(a)** | ✅ Web API / TWS API | ❌ **FIX 4.4 + .NET/Java only; balance & positions impossible over FIX** | ✅ REST+WS — ❌ **20-min token, no cert auth for retail** |
+
+#### Why the other four are out
+
+- **Interactive Brokers — ruled out on cost, decisively.** Commission is 0.20 bps of trade value with a **USD 2.00 minimum per order** **(a)**. On $10,000 notional 0.20 bps is $0.20, so the minimum binds: **$4.00 per round trip = 4.0 bps**, roughly **10× a raw-spread cTrader broker**, and it stops binding only at $100,000 notional per order. Worse for this system: *"Orders that persist overnight will be considered a new order for the purposes of determining order minimums"* **(a)** — a resting protective stop that survives the day re-incurs the minimum. Two further operational hazards: a **10 req/s** global limit with an IP penalty box, and *"A single username can only have one brokerage session active at a time across all IB platforms"* **(a)** — logging into Client Portal by hand kills the algo's session. IBKR is excellent at ≥1 standard lot; its FX pricing is structurally hostile to the fine-grained unit sizing that is hard requirement (3). (Also: US Spot Gold is US-residents-only; a Kenyan would need **IBKR UK unallocated XAUUSD**, and whether an IB LLC client can reach it is **unverified (X)**.)
+- **Saxo — apparently cannot onboard a Kenyan at all.** No African country appears in the country selector, and the help centre states outright that an unlisted country cannot be opened **(a)**. Even if eligible, a **20-minute access token / 40-minute refresh token with certificate auth reserved for "select IBs and White Label Clients"** means a >40-minute outage needs a human at a browser — disqualifying for an unattended engine.
+- **LMAX — takes Kenyans, into the entity with no client-money segregation.** LMAX Broker Mauritius Terms of Business §18.2 is a **title-transfer clause**: the money becomes theirs and the client ranks as a general creditor on insolvency **(a)**. "Segregat", "retail", "negative balance" and "compensation" appear **zero times** in the 45-page document. Add a **$300/month market-data fee** (≈36% of a $10k NAV), no published spreads anywhere, and the fact that **balance and positions are not retrievable over FIX** — LMAX's own FAQ directs you to write a .NET or Java program, i.e. a JVM sidecar beside the Python engine.
+- **CME micro FX futures — ruled out on sizing, not cost.** One M6E ≈ **$14,500 notional ≈ 1.45× the entire account**, in indivisible 1-contract steps: a risk-targeted sizer wanting ~$12,500 must round to 0 or 1, a quantisation error of 100% or +16%. MGC micro gold ≈ 4× NAV. Coverage breaks (the JPY micro is **MJY**, not M6J; **there is no EUR/GBP future at all**), **MJY is inverse-quoted** so long USD/JPY = short MJY and every price, ATR, stop distance and PnL sign inverts, and quarterly physical-delivery rolls force four exogenous flattenings per instrument-year — making GAP-0109 load-bearing rather than optional. And the cost intuition is backwards: M6E ≈ 1.4 bp vs cTrader Raw ≈ 0.6–0.9 bp. ⚠️ **Every CME page returned 403 to this session — the contract specs are AMP Global Clearing's republication (b), not CME primary.**
+- **FXCM** — international clients are served by **Stratos Global LLC (St Vincent & the Grenadines)**, whose FSA does not license or supervise forex brokers, and FIX API needs a **$5,000 minimum balance** (half the NAV). **Darwinex Zero** is a track-record programme at €45/month, not an execution venue.
+
+#### ⚠️ The cTrader finding that lands directly on ACIS code
+
+From Spotware's own `OpenApiMessages.proto`, `ProtoOANewOrderReq`, **verbatim (a) PRIMARY**:
+
+```
+optional double stopLoss = 11;  // The absolute Stop Loss price. Not supported for MARKET orders.
+optional int64  relativeStopLoss = 19;  // Specified in 1/100000 of unit of a price.
+        // For BUY stopLoss = entryPrice - relativeStopLoss, for SELL stopLoss = entryPrice + relativeStopLoss.
+```
+
+**You cannot attach an absolute-price stop to a MARKET order on cTrader.** `SizedOrder.stop_loss` is an absolute price; it must be converted to an integer *distance* in 1/100000 price units, and that distance is applied to the **actual fill price** — so a slipped fill silently shifts the resting stop away from the level the Risk Monitor computed. The alternatives are worse: a pending order with an absolute stop, or market-in-then-`ProtoOAAmendPositionSLTPReq`, which leaves a naked window and violates §279 outright. **This needs an explicit conversion layer plus a post-fill assertion that the resting stop is within tolerance of the intended price.** It is a design constraint on the ACIS-13 cTrader adapter, not a detail — and it is the kind of thing that would have been discovered at integration time, expensively.
+
+Other verified cTrader Open API mechanics **(a)**: `live.ctraderapi.com:5035` protobuf / `:5036` JSON, both TCP and WebSocket; OAuth 2.0 with one-time browser consent then refreshable tokens (suitable headless); 50 req/s general, **5 req/s historical**, heartbeat ≤10 s; `ProtoOAReconcileReq` returns open positions + pending orders and `ProtoOADeal` carries both `volume` and `filledVolume`, so **partial fills are first-class** and the reconnect-reconciliation requirement is met natively; `ProtoOAGetTrendbarsReq` covers M1…MN1 — ⚠️ **no H2/H6/H8 and no tick-bar period, so any such bar must be aggregated, not fetched.**
+
+⚠️ **SDK health:** the official `ctrader-open-api` (spotware/OpenApiPy) is Twisted-based, latest non-yanked release **0.9.2, 26 Jun 2024** (0.9.3 yanked) — ~27 months stale. Spotware's own docs say *"If you intend to use JSON, there is no need to use our SDKs"*. **For a deterministic fast loop, hand-rolling a thin JSON/WebSocket client on port 5036 is almost certainly better than pulling a Twisted reactor into the decision path** — and it keeps the §16 adapter-tier SDK exception unused.
+
+#### One contractual term that is a blocker
+
+**IC Markets (KE) T&Cs cl. 3.1(l) (a) PRIMARY, verbatim:** *"an Open Position must remain open for the minimum period of time as determined by us and cannot be Closed Out by you during this period."* **The period is not stated anywhere in the document.** A 30-minute-hold strategy is directly exposed to an unquantified, unilaterally-determined minimum holding period. **Get this in writing before funding.** Pepperstone Kenya has no equivalent term and a *narrow* algo clause (manipulation and latency abuse only) — a meaningful contrast with OANDA BVI's broad "automated or mass data entry system" Event of Default.
+
+#### A live external-referent defect this sweep turned up
+
+v20's own `InstrumentFinancing.financingDaysOfWeek` shows **day-of-week rollover charging, not per-second accrual (a)**. **If the ACIS financing/carry model encodes per-second OANDA financing, that is a spec-vs-world error** of exactly the class §13/§5 care about. Worth a gap entry regardless of which venue wins, since the carry model outlives the adapter choice.
+
+#### Spread data: verified for nobody
+
+**Commissions were verified for every venue; average spreads for none.** Pepperstone publishes average-spread tables with a stated period but **the numeric rows are client-side JS and absent from the served HTML** across four pages. IC Markets' table renders server-side and is **arithmetically self-contradictory** — EUR/USD Standard MIN 0.8 against Standard AVG 0.1, an average below its own minimum; minors reconcile (`Std AVG = Raw AVG + 1.00`), majors do not. **Reject those cells.** LMAX, OANDA BVI and Saxo publish nothing fetchable.
+
+> **Recommendation: do not take any published spread into the cost model.** The repo already holds 2.79 B Dukascopy ticks and a working harness. Capture a week of live top-of-book from a demo token at the shortlisted broker and measure the spread distribution directly. That is cheaper and more honest than any broker's table, and it is precisely what the operational-referent guard exists for — and it is the only thing that will close GAP-P12D-41 honestly.
+
 ---
 
 ## 4. COST ARITHMETIC THAT DECIDES IT
@@ -293,7 +359,11 @@ At a $10,000 NAV with risk-based sizing and ATR-width stops, **L ≈ 2–3** is 
 2. **Turnover is the decision.** At R = 1,800 the *absolute* cost is **33% of NAV per year** at either venue. No FX system with a 30 min–48 h horizon earns 33% of NAV gross with any reliability. **At today's turnover the system is unprofitable at every venue on this list, and the venue question is moot until turnover comes down.** This is the same conclusion GAP-P12D-41 reached from the other end, and it is reinforced, not weakened, by the corrected (lower) OGM spread.
 3. **The decision-relevant differences are therefore not cost.** They are, in descending order: **(i) whether an API exists that this Python engine can actually drive on Linux; (ii) what happens to the owner in a CHF-2015 event; (iii) whether the venue lets an algo trade at all.**
 4. **Gold is a wash and is the most uncertain line.** Neither venue's gold cost is properly established (OGM publishes nothing; Dukascopy metals commission is 1.5× the FX rate). If XAU/USD stays in the live universe, its cost must be sampled from a demo account at whichever venue wins, not modelled from the FX number.
-5. **Financing is the term nobody has priced.** At 30 min–48 h holds a meaningful fraction of positions carry overnight. Dukascopy publishes its method *and its markup*; OANDA BVI publishes neither. On carry-negative pairs held two nights, financing can rival the spread. **This is an open hole in the cost model at both venues.**
+5. **The 8-instrument case is far worse, and it is the one the spec declares.** §4's table counts only the two *enabled* instruments (~1,800 RT/yr). The declared universe is eight. At ~900 round trips per instrument-year across all eight — **7,200 RT/yr** — the second sweep's arithmetic at 10,000 units per trade gives **≈$5,040/yr at the cheapest venue found (cTrader Raw, ≈$0.70/RT), i.e. ~50% of a $10,000 NAV**, and ≈$28,800 (288%) at IBKR. Even the two enabled instruments alone cost ~$1,260/yr ≈ 12.6% of NAV at the best venue. **The venue choice moves this by roughly ±15%; the turnover and size assumptions move it by 5–10×.**
+
+   > **Concrete next action that outranks choosing a venue:** re-run the §14 honesty gate with a per-round-trip cost floor of **0.7 pips EUR/USD equivalent** wired in, and ask the walk-forward whether the edge survives it. If it does not, the answer is fewer and larger trades — not a cheaper broker.
+
+6. **Financing is the term nobody has priced.** At 30 min–48 h holds a meaningful fraction of positions carry overnight. Dukascopy publishes its method *and its markup*; OANDA BVI publishes neither. On carry-negative pairs held two nights, financing can rival the spread. **This is an open hole in the cost model at both venues.**
 
 ---
 
@@ -311,12 +381,13 @@ The owner's mid-pass decision (prop route, ~$6,000 funded account) changes the r
 4. **Apex Trader Funding — provisionally disqualified, pending verification.** Its associated platforms (Rithmic/Tradovate/NinjaTrader) are futures-only stacks. If that holds, it is the wrong instrument class for this engine and pulls in the §3.7 roll-or-flatten lifecycle risk (GAP-0109, still open) and the §7.5 adapter tier the spec deliberately put last.
 5. **The5ers — recommend against.** Its published "Bulk Trading" prohibition ("multiple trades are open simultaneously") is prima facie incompatible with an 8-instrument portfolio engine; "One-Sided Bets" compounds it for a momentum system; automated trading needs prior written approval; and it publishes neither the equity/balance basis nor the static/trailing nature of its drawdown — the two facts an engine needs to model its own kill-switch. Usable only if it clarifies Bulk Trading in writing, and even then it is the least deterministic rule set on the shortlist.
 
-**If the prop decision were reversed (personal capital), ranked:**
+**If the prop decision were reversed (personal capital), ranked — now fully researched:**
 
-1. **A cTrader broker (Pepperstone / IC Markets class) on the Open API** — same engineering argument, without the simulated-counterparty problem, and it preserves the operational-referent audit. *Kenya eligibility and costs for these were the subject of the second research sweep, which did not return before this checkpoint.*
-2. **OANDA Global Markets (BVI) on MT5** — the spec's named venue, but **not** via v20, which OANDA excludes from this division. Tight published spreads (1.0 pip EUR/USD ≈ 0.93 bps), easy onboarding, but: no negative balance protection, no compensation scheme, 0.01-lot sizing granularity, a Windows-only Python path, and an Event-of-Default clause naming automated systems.
-3. **Dukascopy Bank SA** — the best *protections* on the list (FINMA bank, CHF 100,000 deposit insurance) and the only venue that collapses the backtest/execution data mismatch entirely. Held back by two things: FIX is FX-only so XAU/USD needs a Java JForex sidecar, and its commission tier at $10k equity erases the ECN cost advantage. **It becomes the right answer at ≥ $50k of personal capital**, and at ≥ $250k it is not close.
-4. **IBKR / LMAX / Saxo** — not assessed here; the sweep did not return.
+1. **Pepperstone Markets Kenya Ltd (CMA licence 128), cTrader, via the Open API.** CMA-licensed so there is local recourse; **contractual negative-balance protection (T&Cs Apr 2026 v5 cl. 6.2)**; **$10** minimum deposit; 1:400; 1,000-unit granularity; server-side stops; ≈**$0.70 all-in per round trip** on 10,000 units; a *narrow* algo clause covering manipulation and latency abuse only; and **no minimum-holding-period term**. It is the best combination of protection and API reach available to this owner.
+2. **IC Markets (KE) Ltd (CMA licence 199), cTrader.** ~$0.10/round trip cheaper than Pepperstone (≈$720/yr at high turnover), the only broker found that **documents a retail FIX API** on cTrader, and it commits to a **"freeze level of 0" with no minimum stop distance** — which matters directly for resting tight protective stops. Ranked second only because of two contractual gaps: **no negative-balance protection clause at all**, and **cl. 3.1(l)'s unquantified, unilaterally-determined minimum holding period**, which is an unbounded risk to a 30-minute-hold strategy. **It moves to first if IC answers that in writing satisfactorily.**
+3. **Dukascopy Bank SA** — the best *protections* on the list (FINMA bank, CHF 100,000 deposit insurance) and the only venue that collapses the backtest/execution data mismatch entirely. Held back by two things: FIX is FX-only so XAU/USD needs a Java JForex sidecar, and its commission tier at $10k equity erases the ECN cost advantage. **It becomes the right answer at ≥ $50k of personal capital**, and at ≥ $250k it is not close. (One cheap question worth asking: if the volume tier is assessed *monthly* rather than on equity, this system's turnover sits well inside the $18/million band and Dukascopy is materially cheaper than modelled — the assessment window is unverified.)
+4. **OANDA Global Markets (BVI) on MT5** — the spec's named venue, but **not** via v20, which OANDA excludes from this division. Tight published spreads (1.0 pip EUR/USD ≈ 0.93 bps), easy onboarding, but: no negative balance protection, no compensation scheme, 0.01-lot sizing granularity, a Windows-only Python path, and a broad Event-of-Default clause naming automated systems. **Beaten on every axis by the two CMA-licensed cTrader brokers.**
+5. **Ruled out: Interactive Brokers** (the $2.00 minimum commission per order makes it ~10× more expensive at 0.1 lot, and a resting overnight stop re-incurs it); **Saxo** (cannot onboard a Kenyan; and a 20-minute token with no retail cert auth); **LMAX** (Mauritius entity takes client money by title transfer — general creditor on insolvency — plus a $300/month data fee and no positions over FIX); **CME micro FX futures** (one M6E ≈ 1.45× NAV in indivisible steps, no EUR/GBP contract, inverse-quoted MJY, quarterly roll); **FXCM** (SVG entity, $5,000 FIX minimum); **Darwinex Zero** (not an execution venue).
 
 ### 5.2 The single most important trade-off
 
@@ -367,6 +438,10 @@ That is why the ratified §7.5 adapter order (cTrader first) turns out to be cor
 6. **No negative balance protection at OGM.** "All negative balances are payable" (§1.3, §6.11). The equity-floor/CHF-gap scenario work (GAP-0108) assumes losses stop at zero; at this entity they contractually do not.
 7. **Financing is unmodelled at both candidate venues.** Dukascopy discloses a tiered, activity-dependent, marked-up method; OANDA OGM discloses nothing retrievable. At 30 min–48 h holds this is a first-order cost term with no calibration source.
 8. **Feed-resolution parity canary** (carried from the prior pass, and reinforced): assert that no decision depends on tick detail finer than the live feed delivers. The hybrid makes this a look-ahead risk, not a latency risk.
+9. **cTrader cannot attach an absolute-price stop to a MARKET order.** `ProtoOANewOrderReq.stopLoss` is documented "Not supported for MARKET orders"; only `relativeStopLoss` (a distance in 1/100000 price units, applied to the *actual fill price*) is available. `SizedOrder.stop_loss` is an absolute price, so the ACIS-13 cTrader adapter needs an explicit conversion layer **plus a post-fill assertion that the resting stop is within tolerance of the intended level** — otherwise a slipped fill silently moves the stop away from what the Risk Monitor computed. Guardrail-adjacent (§279); belongs in the ACIS-06 conformance suite alongside GAP-P12D-42.
+10. **The OANDA financing model may be wrong about the world.** v20's `InstrumentFinancing.financingDaysOfWeek` describes **day-of-week rollover charging, not per-second accrual**. If the carry model encodes per-second financing, that is a spec-vs-world defect, and it outlives the venue choice.
+11. **No published spread is trustworthy for calibration.** Pepperstone's tables are client-side JS; IC Markets' table is arithmetically self-contradictory on majors (Standard MIN 0.8 vs Standard AVG 0.1); LMAX, OANDA BVI and Saxo publish nothing fetchable. **GAP-P12D-41 cannot be closed from published tables** — it needs a week of live top-of-book capture from a demo token at the chosen venue.
+12. **cTrader trendbar coverage gap.** `ProtoOAGetTrendbarsReq` offers M1…MN1 only — **no H2/H6/H8 and no tick-bar period.** Any such bar in the backtest must be built by aggregation, and the adapter must not silently substitute a different period.
 
 ---
 
@@ -402,8 +477,9 @@ That is why the ratified §7.5 adapter order (cTrader first) turns out to be cor
 
 **Tooling state that will shape a resume:** this session's **WebSearch budget was fully exhausted (200/200)** before this pass began. Everything above was reached by **direct WebFetch / curl against primary URLs**. "Could not verify" below therefore sometimes means *tooling gap*, not *does not exist*. A fresh session with search budget will close several of these quickly.
 
-### 9.1 Still running when this was written
-- **A second research sweep on alternative retail brokers — Interactive Brokers (IDEALPRO), LMAX, Pepperstone, IC Markets, Saxo, plus the CMA Kenya licensed-broker register and CME micro-FX-futures routes — had not returned.** Its brief asked for, per venue: the entity a Kenyan resident can actually open, minimum deposit, leverage, all-in round-trip cost for EUR/USD, USD/JPY and XAU/USD at retail size, whether stops rest server-side, unit granularity, API type and quality for an always-on Python algo, and the regulator plus client-money protection. **If that report is recoverable, it belongs in §3 and in the §5.1 "personal capital" ranking, both of which currently say the sweep did not return.**
+### 9.1 Returned after the first checkpoint, now folded in
+- The alternative-broker sweep (IBKR / LMAX / Pepperstone / IC Markets / Saxo / CMA-Kenya register / CME micro FX) **completed and is integrated as §3.2**, with the personal-capital ranking in §5.1 rewritten accordingly. Its two highest-value findings — **the CMA Kenya register (Pepperstone 128, IC Markets 199)** and **the cTrader `stopLoss` "Not supported for MARKET orders" constraint** — are also reflected in §7.
+- **New blocking question from that sweep, added to the list below:** IC Markets (KE) T&Cs **cl. 3.1(l)** imposes an unstated minimum holding period determined unilaterally by the broker. For a 30-minute-hold strategy that is the single contractual term most worth resolving before funding anything.
 
 ### 9.2 Blocking unknowns, in priority order
 1. **(X) Apex Trader Funding: futures-only or does it offer FX?** Both `apextraderfunding.com` and `support.apextraderfunding.com` returned **HTTP 403** to this session. The coordinator explicitly said to verify rather than assume, so no answer is asserted. Circumstantial evidence only (its associated platforms Rithmic/Tradovate/NinjaTrader are futures-only stacks), graded **(c)**. **Resume via a search engine or a browser session, not WebFetch.**

@@ -1,10 +1,33 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **STATUS (2026-07-21): SPEC COMPLETE (master v2.12). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase-12 in progress: the pre-phase-12 VPS deployment-readiness gate is ✅ (CI merge gate · Docker · systemd supervision + §8.6 watchdog · §279 server-side-stop conformance) and the untrained-baseline freeze is ENFORCED (tag `baseline-untrained-v1`); 522 green.**
+> **STATUS (2026-09-17): SPEC COMPLETE (master v2.18). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the VPS deployment gate is ✅, the untrained-baseline freeze is ENFORCED (tag `baseline-untrained-v1`), the full Dukascopy tick set is downloaded and validated, and the evolve-driver + walk-forward runner exist. 804 green; ledger 183 entries, 0 violations.**
 > `ACIS_SPEC.md` v2.12 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
+
+## ⚠ START HERE — handover from the 2026-09-16/17 session (research + falsification)
+
+**What that session established, in one line:** the engine is NOT edge-blind — it separates a planted edge (+1.11 Sharpe) from noise (—2.77) — but the harness grading it was wrong in three ways, two of which are now fixed, and the strategy's holding horizon is the defect that dominates everything else.
+
+**State:** 804 tests green, ledger clean (183 entries). Working tree committed. No agents or background jobs are running. Eight research reports are in `archive/` (all committed): FX methods, statistics, code-grounded, blind audit, execution costs, signal-to-position, fill fidelity, event calendar, plus two venue reports dated 2026-09-17.
+
+**FIXED this session** (implementation only, with regressions, no spec change): [[GAP-P12D-35]] the falsification fold plan replayed 7 days backwards at every boundary; [[GAP-P12D-36]] the graded book never charged the spread (master §5 C8 violation). Attribution by regime and strategy now exists in every report ([[GAP-P12D-31]]).
+
+**DECISION POINTS — owner-owned, nothing may proceed past them by agent action:**
+| # | Decision | Entry | Why it is the owner's |
+|---|---|---|---|
+| 1 | The Deflated Sharpe gate is INVERTED (2 tight trials pass at 0.9979, 180 honest ones fail at 0.0000) and currently unsatisfiable (planted needed annual Sharpe 76). Fix the trial basis, or replace it with PBO/CSCV? | [[GAP-P12D-33]], [[GAP-P12D-37]] | the gate is owner-ratified (GAP-P12D-16) |
+| 2 | §14 is internally inconsistent — "positive months > 70%" implies Sharpe 1.82, stricter than the 1.5 beside it; and the win-rate floor biases selection toward negative-skew geometry. Restate? | master §14 | master-spec text |
+| 3 | MEAN_REVERSION gives back what TREND earns (—6.63 vs +6.64, 6.3% win rate). Disable or re-gate? | [[GAP-P12D-40]] | ACIS-04 module set |
+| 4 | Prop firm choice for the ~$6k account, and the payout/reputation research still owed | venue items below | owner's capital |
+| 5 | A prop account is SIMULATED — guard 3 and the operational-referent audit lose their external referent there. Defer guard 3, or pair with a small live account? | [[GAP-P12D-44]] | audit doctrine |
+| 6 | Cost calibration target (do NOT ratify the OANDA number — it is probably a max-vs-avg error of ~45%) | [[GAP-P12D-41]], [[GAP-P12D-46]] | spec-level |
+
+**DO FIRST, needs no decision and no money:** the **cost-stress ladder** ([[GAP-P12D-46]]) — re-run the walk-forward at 1x / 2x / 3x / 5x cost on data already on disk; pass = meets §14 at 2x. If the edge survives only at 1x, the venue question is moot and that is a bigger finding than any of the above. Then re-run falsification on the now-fixed harness with an engine-level positive control ([[GAP-P12D-37]]) and confirm the module ranking before touching decision 3.
+
+**Do NOT repeat these mistakes** (each cost this session real time): do not quote any §14 ratio from a run before 2026-09-17 (contaminated — [[GAP-P12D-35]]/[[GAP-P12D-36]], and ~79% of "trades" in the big run were zero-duration artifacts, [[GAP-P12D-38]]); do not treat a research agent's claim as fact without checking it against the code (one headline claim was refuted on measurement, and several were sharpened); and check whether a test file already exists before writing one (this session overwrote `test_falsification_harness.py` and only the ledger-closure check caught it).
+
 
 ## Standing rules (owner-directed)
 - **Always maintain this to-do list.** Every session: check items off with date, add newly discovered work, never delete (strike through with date instead).
