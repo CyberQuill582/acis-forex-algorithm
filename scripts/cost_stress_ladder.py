@@ -43,6 +43,30 @@ def rung_tag(stress: float, floor: float) -> str:
     return f"rung_{stress:g}x" + (f"_floor{floor:g}" if floor else "")
 
 
+def decompose(rows: list[dict]) -> dict:
+    """Split the 1x result into direction and friction — the number the ladder exists for.
+
+    Net PnL is linear in the stress multiplier for a FIXED trade set (friction scales, gross
+    does not), so the least-squares slope over the rungs estimates the friction charged at 1x
+    and, with it, the gross PnL before any cost. Selection also moves with cost, so this is an
+    estimate, not an identity — but it answers the only question that matters before a venue is
+    chosen: is the result priced by cost, or by direction?"""
+    pts = [(r["cost_stress"], float(r["net_pnl"])) for r in rows if not r["spread_floor"]]
+    if len(pts) < 2:
+        return {}
+    n = len(pts)
+    sx, sy = sum(x for x, _ in pts), sum(y for _, y in pts)
+    denom = n * sum(x * x for x, _ in pts) - sx * sx
+    if not denom:
+        return {}
+    slope = (n * sum(x * y for x, y in pts) - sx * sy) / denom
+    net_1x = dict(pts).get(1.0)
+    friction_1x = -slope
+    return {"friction_per_1x": friction_1x,
+            "gross_pnl_1x": (net_1x + friction_1x) if net_1x is not None else None,
+            "friction_share_of_1x": (abs(friction_1x) / abs(net_1x)) if net_1x else None}
+
+
 def verdict(rows: list[dict], bar: float) -> str:
     """The entry's bar, stated in one line. `passed` is the full §14 gate; net PnL is the
     quantity the ladder is really about, because §14 can fail for reasons friction never
@@ -56,9 +80,18 @@ def verdict(rows: list[dict], bar: float) -> str:
     if one["passed"]:
         return (f"FRAGILE: §14 met at 1x but NOT at {bar:g}x — the edge is priced by turnover, "
                 "so venue cost decides it")
-    kept = (float(two["net_pnl"]) / float(one["net_pnl"])) if float(one["net_pnl"]) else float("nan")
-    return (f"NO EDGE TO STRESS: §14 fails at 1x already (net PnL {float(one['net_pnl']):,.2f}, "
-            f"{kept:.0%} of it left at {bar:g}x) — the ladder measures sensitivity only")
+    n1, n2 = float(one["net_pnl"]), float(two["net_pnl"])
+    if n1 > 0:
+        tail = f"net PnL {n1:,.2f} at 1x, {n2 / n1:.0%} of it left at {bar:g}x"
+    else:
+        # a ratio of two losses is not a "fraction kept" — 115% of a loss means it GREW by 15%
+        tail = (f"net PnL {n1:,.2f} at 1x is ALREADY A LOSS before stressing; "
+                f"{bar:g}x deepens it by a further {n1 - n2:,.2f}")
+    share = decompose(rows).get("friction_share_of_1x")
+    if share is not None:
+        tail += f", and friction is only ~{share:.0%} of it — the rest is direction"
+    return (f"NO EDGE TO STRESS: §14 fails at 1x already ({tail}) — no cost calibration and no "
+            "venue choice can rescue this")
 
 
 def main() -> int:
@@ -119,7 +152,8 @@ def main() -> int:
     line = verdict(rows, a.bar)
     (out / "ladder.json").write_text(json.dumps(
         {"kind": a.kind, "account": a.account, "folds": len(folds), "days": days,
-         "bar": a.bar, "quick": a.quick, "verdict": line, "rungs": rows}, indent=1), encoding="utf-8")
+         "bar": a.bar, "quick": a.quick, "verdict": line, "cost_decomposition": decompose(rows),
+         "rungs": rows}, indent=1), encoding="utf-8")
     print("\n" + ("quick run: a shape check only — under two graded years nothing can pass, "
                   "so no verdict" if a.quick else line))
     print("ladder:", out / "ladder.json")

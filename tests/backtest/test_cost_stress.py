@@ -156,3 +156,37 @@ def test_the_ladder_verdict_separates_no_edge_from_fragile_from_survives() -> No
     assert verdict(rows, 2.0).startswith("SURVIVES")
     assert verdict(rows[:1], 2.0).startswith("no verdict")
     assert rung_tag(2.0, 0.0) == "rung_2x" and rung_tag(1.0, 0.0004) == "rung_1x_floor0.0004"
+
+
+def test_a_ratio_of_two_losses_is_never_reported_as_a_fraction_kept() -> None:
+    """The 2026-09-17 run printed "115% of it left at 2x" for a 1x result that was already a
+    LOSS — 115% of a loss means the loss GREW by 15%, the opposite of what "left" reads as.
+    A negative 1x result is stated as a deepening, never as a share retained."""
+    import sys
+    sys.path.insert(0, str(ROOT_SCRIPTS))
+    from cost_stress_ladder import verdict
+
+    rows = [{"cost_stress": 1.0, "spread_floor": 0.0, "passed": False, "net_pnl": "-147.84"},
+            {"cost_stress": 2.0, "spread_floor": 0.0, "passed": False, "net_pnl": "-170.62"}]
+    line = verdict(rows, 2.0)
+    assert "ALREADY A LOSS" in line and "deepens it by a further 22.78" in line
+    assert "% of it left" not in line
+
+
+def test_the_decomposition_separates_friction_from_direction() -> None:
+    """The number the ladder exists for: net PnL is linear in the multiplier for a fixed trade
+    set, so the slope over the rungs recovers the friction charged at 1x — and with it whether
+    the result is priced by cost or by direction. A planted market that loses 89% of its money
+    on direction cannot be rescued by any venue."""
+    import sys
+    sys.path.insert(0, str(ROOT_SCRIPTS))
+    from cost_stress_ladder import decompose
+
+    # gross +100, friction -30 per 1x: net = 100 - 30k
+    rows = [{"cost_stress": k, "spread_floor": 0.0, "net_pnl": str(100.0 - 30.0 * k)}
+            for k in (1.0, 2.0, 3.0, 5.0)]
+    d = decompose(rows)
+    assert d["friction_per_1x"] == pytest.approx(30.0)
+    assert d["gross_pnl_1x"] == pytest.approx(100.0)
+    assert d["friction_share_of_1x"] == pytest.approx(30.0 / 70.0)
+    assert decompose(rows[:1]) == {}

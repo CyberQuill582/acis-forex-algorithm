@@ -144,6 +144,28 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-49: the cost question is SETTLED and it was never the problem — on the planted market the engine loses 89% of its money on DIRECTION, and TSMOM is the sink
+- Severity: critical · Likelihood: high
+- Status: open (2026-09-17/18 — the cost-stress ladder's first full run, `data/validation/cost_stress/20260917T083216Z`: planted market, 25 folds, 985 days, 2.05 graded years, 4 rungs, ~10.5 h. The FIRST engine-level grade on the harness fixed by [[GAP-P12D-35]]/[[GAP-P12D-36]])
+- Area: core/signals/agon.py `_tsmom` (and its §14 duration carve-out), core/optimizer selection, specs/ACIS-04 module set; supersedes the module ranking in [[GAP-P12D-40]]
+- Description: the ladder graded ONE market four times, changing nothing but the C8 cost map.
+  | rung | trades | net PnL | Sharpe | PF | win rate | avg dur |
+  |---|---|---|---|---|---|---|
+  | 1x | 2,141 | **−147.84** | −1.12 | 0.787 | 0.392 | 771 s |
+  | 2x | 1,880 | −170.62 | −1.29 | 0.755 | 0.429 | 738 s |
+  | 3x | 1,973 | −183.77 | −1.39 | 0.743 | 0.389 | 826 s |
+  | 5x | 1,784 | −214.25 | −1.61 | 0.707 | 0.369 | 693 s |
+  Every §14 metric fails at every rung. Three findings, in order of consequence:
+  **(1) The venue question is moot, and for a stronger reason than "the edge is fragile".** Net PnL is linear in the multiplier for a fixed trade set, so the least-squares slope over the rungs estimates the friction charged at 1x: **$16.15 per 1x, implying GROSS (pre-friction) PnL of −$131.69 at 1x**. Friction is ~11% of the loss; ~89% is direction. **At zero cost this still loses.** No cost calibration ([[GAP-P12D-41]]/[[GAP-P12D-46]]), no venue choice ([[GAP-P12D-43]]/[[GAP-P12D-45]]) and no spread overlay can rescue it. The 1.072-vs-1.5578 pip reconciliation is no longer on the critical path.
+  **(2) This is the PLANTED market** — the positive control, whose only edge is 1–4 h trending episodes the fitness harness finds easily. The engine loses on it over two graded years. [[GAP-P12D-31]]'s failure therefore REPRODUCES on the fixed harness; it was not an artifact of the fold rewind or the uncharged spread.
+  **(3) The module ranking of [[GAP-P12D-40]] is SUPERSEDED.** Per-strategy at 1x: **TSMOM −152.49** on 455 trades — the entire loss, since everything else nets +4.65 — then MEAN_REVERSION −10.05 (win rate 0.088), PAIR_DIVERGENCE −0.09, **BREAKOUT +1.66 (PF 1.855)**, **TREND +13.14 (PF 2.037)**. TREND and BREAKOUT do capture the planted edge. MEAN_REVERSION is still broken but is 15x smaller than TSMOM, so the owner's pending decision 3, framed around MEAN_REVERSION, is aimed at the wrong module.
+  The genuine edges are thin: at 5x TREND flips to −15.19 and BREAKOUT to −1.11, while TSMOM barely moves (−152.49 → −175.41 for 4x more friction on 455 trades). TSMOM loses on direction, not cost — consistent with the owner's own earlier external review finding an unfaithful TSMOM.
+  Duration ~771 s (12.8 min) at every rung, still under the §14 30-minute floor ([[GAP-P12D-38]] churn). Deflated Sharpe 0.00 over ~106 trials at every rung, uninformative while the Sharpe is negative ([[GAP-P12D-33]]).
+- Caveats, stated so this is not over-read: it is ONE synthetic market (planted), two instruments, `financing=None`, and no event calendar — it is a statement about the engine's behaviour on a market with a known answer, NOT a §14 result on real data. The decomposition's linearity assumes a fixed trade set, and selection moves with cost (trade counts vary 1,784–2,141), so the 11% is an estimate, not an identity.
+- Justification: open. It reframes the phase-12 critical path: the binding defect is the engine's directional behaviour (TSMOM first, then the regime gate that feeds MEAN_REVERSION), not the cost model, not the data source, and not the venue. Disabling or re-gating a module is a spec-level change to ACIS-04 and needs owner ratification — do not take it on one synthetic run.
+- Proof: `data/validation/cost_stress/20260917T083216Z/ladder.json` (verdict + `cost_decomposition` + per-rung `per_strategy`); mechanism tests `test_the_decomposition_separates_friction_from_direction`, `test_a_ratio_of_two_losses_is_never_reported_as_a_fraction_kept`
+- Linked: [[GAP-P12D-46]], [[GAP-P12D-41]], [[GAP-P12D-45]], [[GAP-P12D-43]], [[GAP-P12D-31]], [[GAP-P12D-40]], [[GAP-P12D-38]], [[GAP-P12D-33]], [[GAP-0035]]
+
 ## GAP-P12D-48: the labelled-bar cache key does not cover the synthetic MarketSpec — two different price paths under one source name would share labels silently
 - Severity: medium · Likelihood: medium
 - Status: mitigated 2026-09-17 (found while building the cost-stress ladder; the hazard is structural, the mitigation is conventional)
@@ -235,7 +257,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   Whole-run effect: planted annual Sharpe **+1.11** against null **-2.77** - a 3.9-Sharpe separation. The earlier contaminated full run put all three markets inside a 0.4-Sharpe band ([[GAP-P12D-31]], verdict already withdrawn under [[GAP-P12D-37]]); that band was an artifact, and this run supersedes it as the engine's measured behaviour.
 - Caveats on this run, stated so it is not over-read: it still carries the [[GAP-P12D-35]] fold-plan rewind and the [[GAP-P12D-36]] uncharged spread, so the magnitudes are optimistic and the fold boundaries are unsound; it grades 180 days over 6 folds, which is below any §14 claim; and `passed=False` remains uninformative while [[GAP-P12D-37]]'s gate is unsatisfiable. What it establishes is the RANKING and the SIGN of each module's contribution, which no previous run could say at all. Note also that the zero-duration artifact population of [[GAP-P12D-38]] does NOT appear here (944 trades = 244+430+2+268, durations 333-2790 s), so that defect is specific to conditions this run did not reproduce.
 - Justification: open. The obvious remedy - disable or re-gate MEAN_REVERSION - is a spec-level change to ACIS-04's module set and needs owner ratification, and it should not be taken on one synthetic run: the honest sequence is (1) fix the harness defects, (2) re-run with attribution, (3) confirm the ranking holds, (4) then propose the change with the evidence. The deeper question is not the module but the gate that feeds it: a classifier that calls a trending market "ranging" for 432 trades is the root cause, which is what [[GAP-P12D-39]] and the research agents' regime findings are about.
-- Linked: [[GAP-P12D-31]], [[GAP-P12D-37]], [[GAP-P12D-39]], [[GAP-0035]], [[GAP-P12D-35]], [[GAP-P12D-36]]
+- **SUPERSEDED 2026-09-18 by [[GAP-P12D-49]] on the point of module ranking.** The full-scale run on the FIXED harness (25 folds, 2.05 graded years, spread charged, fold plan sound) puts TSMOM at −152.49 and MEAN_REVERSION at −10.05 — MEAN_REVERSION is still broken (win rate 0.088) but is 15x smaller than the real sink. This entry's other claims stand and are strengthened: TREND (+13.14, PF 2.04) and BREAKOUT (+1.66, PF 1.86) DO capture the planted edge. What changes is the remedy: re-gating MEAN_REVERSION alone would not have moved the result.
+- Linked: [[GAP-P12D-31]], [[GAP-P12D-37]], [[GAP-P12D-39]], [[GAP-P12D-49]], [[GAP-0035]], [[GAP-P12D-35]], [[GAP-P12D-36]]
 
 ## GAP-P12D-37: the falsification VERDICT IS VOID - the pass gate was unsatisfiable before the first tick, and the suite has no positive control
 - Severity: critical - Likelihood: high
