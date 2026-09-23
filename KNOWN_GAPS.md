@@ -144,6 +144,33 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-50: the AWS second copy of the tick set is GONE — the 2.79 B-tick archive now exists on ONE laptop disk
+- Severity: critical · Likelihood: high
+- Status: open (verified 2026-09-23 by direct API inventory after the account was reinstated; account 565257597310, IAM user `acis-data`)
+- Area: the phase-12 data layer's redundancy (master §13 provenance), OOS_VALIDATION.md, `data/dukascopy`
+- Description: the AWS account was placed on hold 2026-09-15 for KYC verification and its resources were terminated before it was reinstated, exactly as the hold notice warned ("any resources currently running on your account are subject to termination and might not be recoverable"). Measured inventory after reinstatement, with permission errors surfaced rather than swallowed:
+  - **EC2 instances: 0** across all 17 standard regions (`describe_instances` succeeds and returns empty — this is a real zero, not a denied call)
+  - **EBS volumes: 0**, **snapshots: 0**, **Elastic/public IPv4: 0** — so the "kept disk" that held the second copy no longer exists
+  - **S3: one bucket** `acis-transfer-565257597310`, **3 objects, 11.79 MB total**: `code/acis-72ac110.bundle` (943 KB git bundle), `server/manifest.jsonl` (10.85 MB — the download provenance record), `server/COMPLETE` (45 B). No tick data.
+  - **RDS: NOT VERIFIABLE** — `describe_db_instances` is `AccessDenied` for this scoped IAM user, in every region. An RDS MySQL `db.t4g.micro` may still exist and still bill. Only the root user / console can confirm or delete it.
+  The laptop copy is intact and complete: **12 GB, exactly 35,008 `.bi5` files**, all 8 instruments plus EUR_GBP, `COMPLETE` marker present (verified 2026-09-18). So nothing is lost — but the sha256-proven redundancy that master §13 leaned on is gone, and the archive that took days to download now has a single point of failure on one consumer laptop.
+- Justification: open. It does not block any current work (every labelling and ladder run since has read the laptop copy), but it converts a recorded two-copy guarantee in the read path into a false claim, and the read path has been corrected accordingly. A replacement second copy is an owner spending decision (S3 Glacier Deep Archive for ~12 GB is cents per month; an external disk is a one-off), so it is not taken unilaterally.
+- Proof: `server/manifest.jsonl` in the bucket is the surviving provenance record of the original download and should NOT be deleted in any cost cleanup; the laptop-side count is reproducible with `find data/dukascopy -name "*.bi5" | wc -l` (35,008).
+- Residual: GAP-P12D-50 — this entry owns (a) the owner's choice of a replacement second copy, and (b) correcting every read-path claim that asserts two copies.
+- Linked: [[GAP-P12D-14]], [[GAP-P12D-12]], [[GAP-0001]], tests/backtest/OOS_VALIDATION.md
+
+## GAP-P12D-51: the development laptop's clock is ~16 minutes slow and the Windows Time service is not running
+- Severity: medium · Likelihood: high
+- Status: open (measured 2026-09-23: AWS's own STS `Date` header read 19:48:52Z while the laptop read 19:33:03Z — a +949 s offset; `w32tm /query /status` reports "the service has not been started", and `Start-Service w32time` fails without elevation)
+- Area: the host environment of every run — `core/data/jsonl_logging.py` timestamps, run-id generation in `scripts/*.py`, and any future paper/live session
+- Description: the laptop that runs the engine is a quarter of an hour behind real time, with no time service to correct it. Consequences, in order of severity:
+  1. **AWS API calls could not be signed at all** until a signing-time offset was applied — SigV4 rejects a signature outside a 15-minute window, and 949 s is just outside it. This is how the skew was discovered.
+  2. **Every wall-clock timestamp this project has written is ~16 minutes early**, including JSONL event logs and the `%Y%m%dT%H%M%SZ` run-ids (e.g. the cost-stress run directory `20260917T083216Z`). Replay RESULTS are unaffected — the backtest takes its time base from tick and bar timestamps in the data, never from the wall clock — so no graded number is in question. What is affected is the ability to correlate a log line with an external event, which is exactly what the operational-referent audit will need from the first live fill.
+  3. A 16-minute-wrong clock in live trading would misalign session boundaries, the 17:00-New-York rollover and any venue reconciliation. The §13 clock-skew glitch class is tested in code; this is the same defect in the host.
+- Justification: open and NOT fixable by this agent — starting `w32time` needs administrator rights. The AWS work was unblocked by reading AWS's own clock and patching the signing timestamp only (a scratchpad helper; it changes no system setting and no AWS resource), which is a workaround for one tool, not a fix.
+- Residual: GAP-P12D-51 — this entry owns the host fix (an elevated `net start w32time` plus `w32tm /resync`, and setting the service to Automatic so it does not recur) and a pre-live check that the engine refuses to start, or at least logs loudly, when host time is more than a few seconds off a reference.
+- Linked: [[GAP-P12D-10]], [[GAP-P12D-07]], [[GAP-0001]]
+
 ## GAP-P12D-49: the cost question is SETTLED and it was never the problem — on the planted market the engine loses 89% of its money on DIRECTION, and TSMOM is the sink
 - Severity: critical · Likelihood: high
 - Status: open (2026-09-17/18 — the cost-stress ladder's first full run, `data/validation/cost_stress/20260917T083216Z`: planted market, 25 folds, 985 days, 2.05 graded years, 4 rungs, ~10.5 h. The FIRST engine-level grade on the harness fixed by [[GAP-P12D-35]]/[[GAP-P12D-36]])
