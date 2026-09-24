@@ -6,7 +6,7 @@
 - **Reviewed commit (BASE):** `7695ed04abfeaa7535e237afcac25fb983025ff0`, checked out read-only at `/tmp/review-acis`.
 - **Date:** 2026-09-24, 18:04–~20:40 UTC.
 - **Web searches used:** 1 WebSearch plus 6 WebFetch calls (the budget is 12 searches).
-- **Framing discipline:** my first results table was committed at `ce4a668` (18:42 UTC), **before** I opened any local VALIDATOR file. §2.6 then reconciles my results with it.
+- **Framing discipline:** my first results were committed at `ce4a668` (commit time 18:40:31 UTC), **before** I opened any local VALIDATOR file. That commit holds the two result files, `sim_out_iid_v1.json` and `sim_out_planted_md05.json`. A `cd` slip misfiled the rendered table text into `reports/evidence/`. It is committed unchanged as `evidence/C1/first_results_table_1840.txt`, and its file time (18:40:31) is recorded in this report. §2.6 then reconciles my results with VALIDATOR's.
 - **Data:** synthetic only. Nothing here touched market data, bundled datasets or `.bi5` fixtures. Every number can be reproduced from `reports/evidence/C1/` (see §2.9).
 - **Compute:** at most 2 worker processes (`multiprocessing.Pool(2)`, BLAS pinned to 1 thread). Other lanes shared the machine, so the load average was 4–6.
 

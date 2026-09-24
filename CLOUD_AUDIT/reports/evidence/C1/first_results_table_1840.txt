@@ -1,0 +1,76 @@
+
+## FIRST RESULTS TABLE (committed 18:42 UTC, BEFORE any VALIDATOR file was opened)
+Pass rates (fraction of replications a protocol "passes"), 8 instruments, daily, 12y dev + 2y holdout,
+pool of 4,536 rule configs, 1 bp/side cost. Wilson 95% CI half-width ~ +/-2.2 pp at 5% (R=400),
+~ +/-5.6 pp at 50% (R=300). Source: evidence/C1/sim_out_iid_v1.json, sim_out_planted_md05.json.
+
+### Null: iid (R=400; first code version, lacks the two *bonfK* columns) = FPR
+```
+iid_v1 R= 400 wall 427
+proto                    N1_K1     N1_K20    N60_K1    N60_K20   N1000_K1  N1000_K20
+WF_asbuilt_DSR           0.000     0.000     0.000     0.000     0.000     0.000    
+WF_asbuilt_DSR+S14       0.000     0.000     0.000     0.000     0.000     0.000    
+WF_PSR0_keepbest         0.037     0.530     0.033     0.505     0.035     0.425    
+WF_DSR_repairedK         0.037     0.000     0.033     0.000     0.035     0.000    
+WF_DSR_NxK_dev           0.037     0.003     0.000     0.000     0.000     0.000    
+SPA_keepbest             0.037     0.545     0.040     0.400     0.048     0.165    
+SPA_union                0.037     0.052     0.040     0.055     0.048     0.062    
+StepM_keepbest           0.037     0.545     0.035     0.390     0.048     0.160    
+StepM_union              0.037     0.052     0.035     0.055     0.048     0.060    
+HLZ_bonf_keepbest        0.030     0.565     0.022     0.347     0.037     0.090    
+HLZ_bonf_NK              0.030     0.040     0.022     0.035     0.037     0.013    
+HLZ_BHY_NK               0.030     0.020     0.003     0.007     0.005     0.000    
+MinBTL_gate_NK           0.432     0.370     0.297     0.223     0.235     0.138    
+Holdout_once             0.033     0.055     0.065     0.048     0.055     0.048    
+Holdout_keepbest         0.033     0.565     0.065     0.438     0.055     0.287    
+STACK_WFrepK+Holdout     0.000     0.000     0.003     0.000     0.003     0.000    
+CPCV_PBO<0.5&z             -         -       0.003     0.065     0.003     0.013    
+CPCV_PBO<0.2               -         -       0.028     0.475     0.040     0.140    
+```
+
+### Planted multi-day edge, best config true annual Sharpe ~0.5-0.65 (R=300) = power
+```
+planted_md05 R= 300 wall 318
+proto                    N1_K1     N1_K20    N60_K1    N60_K20   N1000_K1  N1000_K20
+WF_PSR_bonfK             0.647     0.363     0.057     0.117     0.067     0.093    
+WF_asbuilt_DSR           0.000     0.000     0.000     0.000     0.000     0.000    
+WF_asbuilt_DSR+S14       0.000     0.000     0.000     0.000     0.000     0.000    
+WF_PSR0_keepbest         0.647     0.897     0.057     0.680     0.067     0.540    
+WF_DSR_repairedK         0.647     0.000     0.057     0.000     0.067     0.010    
+WF_DSR_NxK_dev           0.647     0.000     0.000     0.000     0.000     0.000    
+SPA_keepbest             0.707     0.923     0.320     0.793     0.400     0.630    
+SPA_union                0.707     0.407     0.320     0.363     0.400     0.420    
+StepM_keepbest           0.707     0.923     0.313     0.787     0.393     0.607    
+StepM_union              0.707     0.400     0.313     0.350     0.393     0.413    
+HLZ_bonf_keepbest        0.727     0.923     0.283     0.773     0.340     0.530    
+HLZ_bonf_NK              0.727     0.393     0.283     0.273     0.340     0.190    
+HLZ_BHY_NK               0.727     0.277     0.157     0.137     0.163     0.067    
+MinBTL_gate_NK           0.967     0.857     0.733     0.727     0.730     0.670    
+Holdout_once             0.227     0.170     0.123     0.167     0.143     0.160    
+Holdout_keepbest         0.227     0.770     0.123     0.657     0.143     0.460    
+STACK_WFrepK+Holdout     0.157     0.000     0.007     0.000     0.007     0.003    
+STACK_WFbonfK+Holdout    0.157     0.063     0.007     0.023     0.007     0.020    
+CPCV_PBO<0.5&z             -         -       0.090     0.373     0.087     0.157    
+CPCV_PBO<0.2               -         -       0.337     0.837     0.330     0.543    
+   N1_wf_oos_annual_sr 0.651 sd 0.348 nan 0
+   N1_asbuilt_dsr 0.003 sd 0.022 nan 0
+   N1_asbuilt_sr0_annual 2.609 sd 0.579 nan 0
+   N1_n_trials 10.000 sd 0.000 nan 0
+   N1_holdout_annual_sr 0.619 sd 0.750 nan 0
+   N1_dev_best_is_annual_sr 0.657 sd 0.319 nan 0
+   N60_wf_oos_annual_sr 0.024 sd 0.341 nan 0
+   N60_asbuilt_dsr 0.000 sd 0.000 nan 0
+   N60_asbuilt_sr0_annual 4.117 sd 0.316 nan 0
+   N60_n_trials 89.967 sd 0.576 nan 0
+   N60_holdout_annual_sr 0.254 sd 0.763 nan 0
+   N60_dev_best_is_annual_sr 0.820 sd 0.205 nan 0
+   N1000_wf_oos_annual_sr 0.020 sd 0.334 nan 0
+   N1000_asbuilt_dsr 0.000 sd 0.000 nan 0
+   N1000_asbuilt_sr0_annual 4.101 sd 0.308 nan 0
+   N1000_n_trials 90.000 sd 0.000 nan 0
+   N1000_holdout_annual_sr 0.344 sd 0.787 nan 0
+   N1000_dev_best_is_annual_sr 1.061 sd 0.184 nan 0
+```
+Reading: the as-built gate passes nothing (FPR 0, power 0; its SR0 alone is ~2.6-4.1 annual). The 2-year-train
+walk-forward selection destroys a real 0.5 edge at N>=60 (realised OOS Sharpe ~0.02). Keep-best-of-K inflates
+every per-revision test to 40-57% FPR under the null.
