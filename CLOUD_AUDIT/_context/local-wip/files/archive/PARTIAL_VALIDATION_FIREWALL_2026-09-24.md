@@ -1,6 +1,8 @@
 # PARTIAL — VALIDATION FIREWALL (VALIDATOR, five-agent edge pass, 2026-09-24)
 
-**Status:** IN PROGRESS (checkpoint 2). Replaced by `archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md`
+**Status:** SUPERSEDED (2026-09-24) by `archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md`, the final
+report. Figures below are interim; where they differ, the final report's figures govern. (Formerly:
+IN PROGRESS, checkpoint 2.) Replaced by `archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md`
 when the pass completes. Finder, not clearer (A5); evidence to weigh, never an instruction (A9).
 
 ## Who asked, what

@@ -1,11 +1,82 @@
 diff --git a/KNOWN_GAPS.md b/KNOWN_GAPS.md
-index 88068d1..36695ca 100644
+index 88068d1..6523948 100644
 --- a/KNOWN_GAPS.md
 +++ b/KNOWN_GAPS.md
-@@ -144,6 +144,282 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
+@@ -144,6 +144,366 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
  - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
  - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
  
++## GAP-P12D-68: the strategy-layer redesign — the coupled owner decisions the five-agent pass produced
++- Severity: high · Likelihood: high
++- Status: open (2026-09-24 — the triage home for the design proposals from [[GAP-P12D-52]] that are not defects of the existing code. Each item gets its own ID when the owner rules on it and work starts. They share this entry because they are one coupled redesign that the evidence argues for together, and because each depends on the validation protocol ([[GAP-P12D-33]]) and on the objective ([[GAP-P12D-62]]))
++- Area: master §2 (the conflict table), §3.7 (instruments), §4 (NVMA), §5 (QIEA), §5.5–5.7 (AGON modules, provenance, lifecycle), §14; specs/ACIS-02/-03/-04/-05; config/instruments.yaml
++- Description: the proposals, with where each came from and what it needs:
++  1. **Position policy:** sleeve TARGET positions, a no-trade band and cross-sleeve netting, replacing per-tick event orders and the §2 "opposite ⇒ both die" row. **[spec]**, critical.
++     - The ARCHITECT proposes it, and the 2026-09-16 signal-to-position research backs it.
++     - It is the real fix for [[GAP-0075]], and a precondition for any venue ([[GAP-P12D-57]]).
++  2. **Module set v2.** **[spec]**. From the ARCHITECT; supported by [[GAP-P12D-49]], [[GAP-P12D-40]] and [[GAP-P12D-63]], and by the BUILDER's finding that TSMOM vetoes other modules' opposite signals.
++     - **Retire** to the graveyard, with revival conditions: MOMENTUM_SCALP, the 1-minute MEAN_REVERSION, PAIR_DIVERGENCE (EURUSD/USDJPY is an identity, log EUR/JPY), and the 1-minute FX TREND/BREAKOUT.
++     - **Rebuild** TSMOM as a faithful slow sleeve; see [[GAP-P12D-53]].
++     - **Add** INTRADAY_MOMENTUM, SCHEDULED_WINDOW (fixes and flows) and INDEX_REVERSAL.
++  3. **Demote NVMA to a safety veto.** `RegimeType` would stop routing modules and keying parameters, and the regime factor would leave sizing. **[spec]**. The evidence: the label recovers 3.7% of the planted signal ([[GAP-P12D-32]] code-grounded report), and [[GAP-P12D-39]].
++  4. **Retire per-regime QIEA from the live parameter path.** Parameters would be literature-fixed and pooled, and "evolution" would become the §5.7 hypothesis lifecycle. **[spec]**. The per-regime sample fragmentation is in the 2026-09-16 statistics report.
++  5. **Declare index CFDs and energies** (US500, US100, GER40, XTI) with exchange-anchored calendars. That is where the strongest prop-compatible evidence lives: intraday momentum, which holds "everywhere" (Baltussen et al. 2021). **[impl]** for config, but with the owner's go (the diversification-basket precedent).
++  6. **RSIM:** a fast bar-level, target-position research simulator. It imports the SAME C8 `CostModel`, financing and calendars and includes a prop-rules engine, and it carries the reconciliation test with the tick harness that the VALIDATOR specified. **[impl]**.
++  7. **A hypothesis registry with pre-registration and a look budget.** It records origin, numeric falsifiers and data-segment looks, and extends the existing provenance store. **[impl]** plus **[spec]**, with the replication/discovery standards: t ≥ 2 after publication for published priors; t ≥ 3 plus honest-N DSR/PBO for novel ideas.
++  8. **A cost-robustness gate:** gross/cost ≥ 3 at registration, and net > 0 at 2× cost at validation. **[spec]**.
++  9. **Track A demo scope.** Run ONE minimal pre-registered sleeve at minimum size, not the six-module engine, so the demo doubles as forward incubation, the only uncontaminated test ([[GAP-P12D-66]]). **[owner decision]**.
++  10. **TSMOM account fit.** FTMO Standard funded accounts ban weekend holds, so the choice is Swing or a declared Friday-flat variant. **[spec]**.
++
++  The ARCHITECT's 13-hypothesis pre-registered slate (archive/RESEARCH_EDGE_FACTORY_2026-09-24.md §4) is the first input to item 7. It was selected WITH LLM help, so under [[GAP-P12D-66]] it can be falsified on history but certified only forward.
++- Justification: open, owner-owned. Nothing here is built, and nothing is a defect of existing code; each item changes a ratified design. Recommended order:
++  1. First, the validation protocol ([[GAP-P12D-33]]), the look register ([[GAP-P12D-64]]) and the leakage suite ([[GAP-P12D-65]]), so that any redesign is graded honestly.
++  2. Then the position policy (item 1), which is also a Track A blocker.
++  3. Then the module set and instruments (items 2 and 5) together with RSIM (item 6).
++- Linked: [[GAP-P12D-52]], [[GAP-0075]], [[GAP-P12D-49]], [[GAP-P12D-62]], [[GAP-P12D-33]], [[GAP-P12D-66]], [[GAP-P12D-39]]
++
++## GAP-P12D-67: the ratified 2-year rolling train window throws a real edge away — it realises Sharpe 0.15 from a true 0.44
++- Severity: high · Likelihood: medium
++- Status: open (2026-09-24 — measured by the VALIDATOR in [[GAP-P12D-52]] on synthetic data: 60 configurations, 12 development years. Not re-run by the lead; the scripts are in the session scratchpad under validator/)
++- Area: tests/backtest/OOS_VALIDATION.md (walk-forward design RATIFIED 2026-07-21: 2-year train / 1-year test / 1-year step), tests/backtest/oos_plan.py
++- Description: selecting on a 2-year rolling train window is so noisy that most of a genuine edge is lost to selection error. With a true best-config Sharpe of 0.44, the realised out-of-sample Sharpe is only 0.15. Training on all prior years instead (an expanding window) lifts detection power from 66% to 74% at a true 0.94.
++- Justification: open, owner-owned, because the fold design is ratified. It bears directly on "iterate until we find the edge": a design that discards most of a real edge makes a true negative likelier, and pushes the iterator to keep revising, which is the false-positive channel in [[GAP-P12D-64]]. Proposal: an expanding train window, or CPCV per the VALIDATOR's option C ([[GAP-P12D-33]]).
++- Linked: [[GAP-P12D-52]], [[GAP-P12D-33]], [[GAP-P12D-64]]
++
++## GAP-P12D-66: an LLM-originated hypothesis cannot be certified on any history the model was trained on — for this session that is ALL of 2012–2025, the holdout included
++- Severity: high · Likelihood: high
++- Status: open (2026-09-24 — proposed by the VALIDATOR and the ARCHITECT in [[GAP-P12D-52]]. The lead verified the anchor source: Gençay, arXiv 2608.27734 (27 Aug 2026) "rejects every LLM-discovered strategy (across two frontier models, search budgets up to one hundred candidates, and five repeated runs)". The VALIDATOR quotes five more 2023–2026 papers on LLM memorisation and look-ahead)
++- Area: master §5.6/§5.7 (provenance, the hypothesis lifecycle), specs/ACIS-11 (the attempt registry), the research factory ([[GAP-P12D-68]] item 7), the §14 grading
++- Description: LLMs reproduce financial history from before their cutoff. So when an LLM helps generate or refine a strategy hypothesis — this session's agents included — a backtest over the model's training window tests the model's memory, not the market. This session's model cutoff is June 2026, which covers the entire Dukascopy set (2012–2025) AND the locked 2024–25 holdout. The ARCHITECT's slate was selected with LLM help. Proposed rule, for the owner to ratify:
++  - record each hypothesis's origin and the generating model's cutoff;
++  - an LLM-originated or LLM-refined hypothesis may be KILLED on any history, but counts toward a pass only on data after that cutoff, i.e. forward on the demo;
++  - hypotheses fully specified by a dated paper are exempt.
++- Justification: open, owner-owned (§5.6/§5.7 are master-spec text). It makes forward incubation on the demo account the certifying stage, not a formality, which aligns Track B with the owner's demo priority.
++- Linked: [[GAP-P12D-52]], [[GAP-P12D-68]], [[GAP-P12D-65]], [[GAP-P12D-62]]
++
++## GAP-P12D-65: look-ahead leakage passes every statistical gate — only a structural future-scramble test over EVERY decision day catches it, and ACIS has no such test
++- Severity: critical · Likelihood: medium
++- Status: open (2026-09-24 — found by the VALIDATOR in [[GAP-P12D-52]]. The lead REPRODUCED it with an independent seed (777, 20 edge-free markets): a configuration that peeks one bar ahead on 5% of bars passed walk-forward + PSR in 75% of runs, CPCV + PBO in 100% and PBO ≤ 0.10 in 90%. A future-scramble test at 30 sampled decision times caught it in 19 of 20, with 0 false alarms on honest configurations. The VALIDATOR's figures were 80% / 100% / 87.5% and 40 of 40)
++- Area: tests/backtest/harness.py `refuse_lookahead`, tests/backtest/test_lookahead_canary.py, the whole grading path, and any future research simulator ([[GAP-P12D-68]] item 6)
++- Description: statistics cannot deflate a leak away. A leaky strategy's advantage is real in-sample and out-of-sample alike, so DSR, PBO and CPCV all pass it. Gençay (arXiv 2608.27734) reports the same: a leaky oracle with Sharpe 35 "survives Deflated Sharpe and probability-of-backtest-overfitting testing". Only STRUCTURAL tests catch it. The core one scrambles every price after time t and asserts that no decision at or before t changes, and it must cover every decision day: sampling a few catches only 15–67% (VALIDATOR), 19 of 20 at 30 samples (lead). ACIS's only look-ahead defence, `refuse_lookahead`, checks that evolution records cite no bar past the train end. It cannot see a leak inside a module, the labeller or the bar builder.
++- Justification: open. **[impl]:** build the VALIDATOR's structural leakage suite (eight tests listed in archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md) as a standing gate, run over every decision day. It needs no ratification, because it is a test that tightens only.
++- Linked: [[GAP-P12D-52]], [[GAP-P12D-28]], [[GAP-P12D-33]], [[GAP-P12D-66]]
++
++## GAP-P12D-64: re-scoring pipeline revisions on the same history is the real false-positive channel, and ACIS counts none of them
++- Severity: critical · Likelihood: high
++- Status: open (2026-09-24 — measured by the VALIDATOR in [[GAP-P12D-52]] on synthetic data. It agrees with the 2026-09-16 statistics report's untested warning about the "outer loop" ([[GAP-P12D-33]] secondary finding). Not re-run by the lead)
++- Area: the research process itself; the attempt registry (specs/ACIS-11); tests/backtest/report.py; the owner's "iterate until we find the edge"
++- Description: every time the pipeline, gene ranges, regime definitions, fitness weights or cost model change and are re-scored against 2012–2023, that is another trial. Nothing counts it. On pure noise:
++  - keeping the best of 5 uncounted revisions passes 9–19% of the time;
++  - the best of 20 passes 21–37%;
++  - at 24 years of data it is still 26%.
++
++  The honest single-look tests (walk-forward + PSR, one pre-registered configuration, the 2-year holdout) stay at 2–6% false positives. It is the ITERATION that manufactures the false pass. The iteration the owner asked for is exactly what this entry guards. At our data length, also: no protocol reliably detects a Sharpe near 0.5 in 12 years (power 25% at a true 0.44), so "no pass" is the NORMAL outcome even when an edge exists. That is a limit of the data, not a verdict on the engine.
++- Justification: open.
++  - **[impl], no ratification needed:** a look register, written BEFORE every grade.
++  - **[spec]:** raise the gate's threshold for every recorded look. That is part of the VALIDATOR's option C in [[GAP-P12D-33]], the owner's decision.
++  - **Until the register exists,** read any real-data pass after more than one revision as unproven.
++- Linked: [[GAP-P12D-52]], [[GAP-P12D-33]], [[GAP-P12D-67]], [[GAP-P12D-68]]
++
 +## GAP-P12D-63: MOMENTUM_SCALP can never fire on the synthetic falsification markets, so no falsification run has ever tested it
 +- Severity: medium · Likelihood: high
 +- Status: open (2026-09-24 — found by the BUILDER agent in [[GAP-P12D-52]] while refuting [[GAP-P12D-38]]. The lead VERIFIED the consequence: zero MOMENTUM_SCALP trades in every ladder rung's per-strategy attribution)
@@ -40,7 +111,9 @@ index 88068d1..36695ca 100644
 +    - G3: P(breach within 6 months) ≤ 0.25;
 +    - G4: the order and request profile fits the firm's caps.
 +  - **Anti-playbook as a §17 extension.** The EV-maximising risk at zero edge is "bold play", variance harvesting that firms police. ACIS must never size up because its edge is weak.
-+  - **Pending:** the VALIDATOR's prop-gate design (brief §3 task 7), then the owner's ruling. Until then, read any prop or demo pass as an option paying out, never as evidence of edge.
++  - **The VALIDATOR's prop-gate design (2026-09-24).** Under illustrative rules, a zero-edge strategy passes 49.7% of challenges and Sharpe 1.0 passes 74.9%, so position size matters more than edge. Estimates of P(pass) from records of two years or less swing by 10–40 points, and their 95% bands cover the truth only 75–92% of the time. So gate on EV and breach risk computed at the LOWER confidence bound of the Sharpe, next to a zero-edge baseline at the same size. That agrees with the ECONOMIST's G1.
++  - **The §14 "Sharpe > 1.5" row, measured:** it detects a true Sharpe of 0.94 only 1.5% of the time, yet lets noise through 7–11% of the time on 2-year windows under continued iteration.
++  - **Until the owner rules,** read any prop or demo pass as an option paying out, never as evidence of edge.
 +- Linked: [[GAP-P12D-52]], [[GAP-P12D-61]], [[GAP-P12D-33]], [[GAP-P12D-37]], [[GAP-P12D-44]]
 +
 +## GAP-P12D-61: ACIS's realised risk is ~0.04% of NAV a day — 20–30× below what a prop account needs — because the Governor sizes a fixed notional, not a loss budget
@@ -194,7 +267,7 @@ index 88068d1..36695ca 100644
 +  - **Scope:** it changes no code and no threshold. It changes what a reader would expect of a 2-instrument TSMOM.
 +- Linked: [[GAP-P12D-52]], [[GAP-P12D-49]], [[GAP-P12D-32]]
 +
-+## GAP-P12D-52: five-agent edge pass (2026-09-24) — findings and triage (4 of 5 in)
++## GAP-P12D-52: five-agent edge pass (2026-09-24) — findings and triage (5 of 5 in, triage complete)
 +- Severity: high · Likelihood: high
 +- Status: open (2026-09-24 — owner directive: five agents are to find out what the paid minority of prop-firm algo traders actually does, fix what is derailing ACIS, and find bleeding-edge ways to iterate to an edge without overfitting or poor backtesting producing "false encouragement". The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`. All five run on Opus, and each is a finder, not a clearer)
 +- Area: the venue (does it fit a fully automated prop engine, and which demo venue); the objective function for a prop account; the validation protocol ([[GAP-P12D-33]]/[[GAP-P12D-37]]); the strategy slate and research factory; the fixes that need no ratification ([[GAP-P12D-37]] oracle, [[GAP-P12D-38]], [[GAP-P12D-34]], TSMOM attribution)
@@ -279,13 +352,24 @@ index 88068d1..36695ca 100644
 +    Its own count: 828 passed, 6 skipped. It reports 12 falsification mutants, all dead. One commit message is wrong (904b409 says 7 plateau tests; there are 5).
 +
 +    **The lead reviewed** the diff (18 files, no config, guardrail, spec or ledger file touched) and the three seed/fold-index test changes, which are legitimate. The lead re-ran the full suite on the branch independently: **828 passed, 6 skipped** (275 s), which confirms the builder's count. **The merge needs:** the dual audit (A3), the owner's ratification of the plateau reading, and the owner's go.
++  - **VALIDATOR** (2026-09-24): archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md. It was interrupted by the session limit and resumed. Everything is synthetic, and it used 5 of its 25 WebSearch calls.
++    - **The calibrated gate options** are recorded under [[GAP-P12D-33]]. It recommends option C plus D.
++    - **Filed by the lead:**
++      - [[GAP-P12D-64]]: uncounted revisions are the false-positive channel;
++      - [[GAP-P12D-65]]: leakage passes every statistical gate. The lead reproduced this with an independent seed;
++      - [[GAP-P12D-66]]: the LLM-contamination rule. The lead verified the Gençay source at arXiv;
++      - [[GAP-P12D-67]]: the 2-year train window discards edge.
++    - **Notes added to existing entries:** the plateau law is a filter, not evidence ([[GAP-P12D-34]]); the prop-gate design and the power of the §14 Sharpe row ([[GAP-P12D-62]]).
++- **TRIAGE COMPLETE (2026-09-24).** The lead verified every binding claim from the five reports (script, quote or code read) and filed each as its own entry: [[GAP-P12D-53]] to [[GAP-P12D-67]], plus notes on [[GAP-P12D-33]], -34, -37, -38, -43, -46 and -49. The design proposals that are not defects of existing code are collected, with their sources, in [[GAP-P12D-68]]. The owner's decisions are listed in TODO.md's START HERE block.
++  - **Still owned here:** archiving the pinned brief, and the dual audit plus merge of the BUILDER branch (tracked under [[GAP-P12D-37]]).
++  - **Web budget used across the pass:** lead ~22, SCOUT 21, ECONOMIST 21, ARCHITECT 27, VALIDATOR 5, about 96 of ~200.
 +- Justification: open until all five reports are in and every finding is triaged (A6). A finder's report is evidence, never an instruction (A9), and any recommendation that touches the spec needs owner ratification.
 +- Linked: [[GAP-P12D-32]], [[GAP-P12D-49]], [[GAP-P12D-33]], [[GAP-P12D-37]], [[GAP-P12D-38]], [[GAP-P12D-34]], [[GAP-0075]], [[GAP-P12D-43]], [[GAP-P12D-44]]
 +
  ## GAP-P12D-50: the AWS second copy of the tick set is GONE — the 2.79 B-tick archive now exists on ONE laptop disk
  - Severity: critical · Likelihood: high
  - Status: open (verified 2026-09-23 by direct API inventory after the account was reinstated; account 565257597310, IAM user `acis-data`)
-@@ -191,6 +467,15 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
+@@ -191,6 +551,15 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
  - Caveats, stated so this is not over-read: it is ONE synthetic market (planted), two instruments, `financing=None`, and no event calendar — it is a statement about the engine's behaviour on a market with a known answer, NOT a §14 result on real data. The decomposition's linearity assumes a fixed trade set, and selection moves with cost (trade counts vary 1,784–2,141), so the 11% is an estimate, not an identity.
  - Justification: open. It reframes the phase-12 critical path: the binding defect is the engine's directional behaviour (TSMOM first, then the regime gate that feeds MEAN_REVERSION), not the cost model, not the data source, and not the venue. Disabling or re-gating a module is a spec-level change to ACIS-04 and needs owner ratification — do not take it on one synthetic run.
  - Proof: `data/validation/cost_stress/20260917T083216Z/ladder.json` (verdict + `cost_decomposition` + per-rung `per_strategy`); mechanism tests `test_the_decomposition_separates_friction_from_direction`, `test_a_ratio_of_two_losses_is_never_reported_as_a_fraction_kept`
@@ -301,7 +385,15 @@ index 88068d1..36695ca 100644
  - Linked: [[GAP-P12D-46]], [[GAP-P12D-41]], [[GAP-P12D-45]], [[GAP-P12D-43]], [[GAP-P12D-31]], [[GAP-P12D-40]], [[GAP-P12D-38]], [[GAP-P12D-33]], [[GAP-0035]]
  
  ## GAP-P12D-48: the labelled-bar cache key does not cover the synthetic MarketSpec — two different price paths under one source name would share labels silently
-@@ -238,6 +523,11 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
+@@ -221,6 +590,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
+   - Shape run (32 days, 2 rungs): 21 trades and net +0.19 at 1x; 7 trades and net −0.10 at 3x. The mechanism works — stress changes selection as well as the charge.
+ - Justification: open. It supersedes the arithmetic in [[GAP-P12D-41]] without contradicting its direction — the harness still under-charges — and it makes the cheap test available before any venue is chosen or any money spent.
+ - Proof (the ladder mechanism only, not the calibration): `test_stress_multiplies_the_whole_per_side_cost`, `test_a_cheaper_than_declared_world_is_refused`, `test_the_spread_floor_only_ever_raises_the_spread`, `test_the_book_charges_exactly_the_stressed_friction`, `test_selection_and_grading_hold_the_same_stressed_cost_map`, `test_a_stressed_run_declares_itself_and_a_declared_run_stays_silent`, `test_the_ladder_verdict_separates_no_edge_from_fragile_from_survives`
++- **2026-09-24, a cost term for FTMO** (SCOUT agent in [[GAP-P12D-52]], grade (a), FTMO T&C). FTMO applies a 0.7% adjustment to realised P&L on non-USD instruments, and it cuts both ways. It hits 4 of the 8 declared instruments and 1 of the 2 enabled (USD_JPY); the prior pass said 5, which was wrong. The share of expectancy it removes is 0.007·(PF+1)/(PF−1): 3.5% at PF 1.5, 7.7% at PF 1.2, 14.7% at PF 1.1. It belongs in the C8 model as a per-instrument, per-account term, not as a spread, once FTMO is the chosen account.
+ - Linked: [[GAP-P12D-41]], [[GAP-P12D-43]], [[GAP-P12D-45]], [[GAP-P12D-36]], [[GAP-P12D-48]], [[GAP-0001]]
+ 
+ ## GAP-P12D-47: Dukascopy tick volume is SWFX volume only — two modules read it as if it were market volume
+@@ -238,6 +608,11 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
  - Description: OANDA's v20 REST/streaming API is documented as available to all divisions **except OANDA Global Markets Ltd (BVI)** — which is the division a Kenyan resident onboards to. If that holds, the execution adapter the spec names first cannot be built for this owner at all: his OANDA route is MT5, whose `MetaTrader5` PyPI package ships **Windows-only wheels** against our `python:3.11-slim` container, so it also breaks the phase-12 deployment gate's platform assumption. Two further regressions reported against the same division: the minimum ticket is **0.01 lots (1,000 units)**, not the 1-unit granularity the Governor's risk-based sizing assumes, and the terms state "all negative balances are payable" — i.e. **no negative-balance protection**, which contradicts the assumption behind the GAP-0108 CHF-gap work that losses stop at the equity floor. The agent also reports OGM's terms name "automated or mass data entry system" and "Scalping" as Events of Default actionable without notice — an `OPERATIONS_LEDGER.md` item before any first live fill.
  - Consequence for [[GAP-P12D-41]]: its 1.5578 pip / 1.44 bps figure came from OANDA's **US** division series; the BVI division publishes 1.0 pip and its own spread endpoint returns HTTP 500, so no measured series exists for the division we would actually trade. The optimism ratio is reported as ~2.5x, not 3.9x. Do not calibrate to the earlier number.
  - Justification: open, spec-level, and it lands AFTER the owner chose the prop-firm route (2026-09-17), so OANDA may be moot for execution anyway. It is filed because master §3 still names OANDA as the execution feed and §13 leans on it for cost calibration — whichever venue wins, the spec text must stop asserting an adapter the owner cannot use.
@@ -313,7 +405,7 @@ index 88068d1..36695ca 100644
  - Linked: [[GAP-P12D-41]], [[GAP-0108]], [[GAP-0001]], [[GAP-0109]]
  
  ## GAP-P12D-44: a prop account is a SIMULATED environment — guard 2 and the operational-referent audit lose their external referent there
-@@ -295,9 +585,24 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
+@@ -295,9 +670,24 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
  - Also: the suite has **no positive control**. An oracle strategy replayed through the same harness (a rule with perfect knowledge of the planted drift sign) would have exposed both this and the 30-minute duration floor in minutes, before any 6-hour run. Nothing in the suite asserts that the harness can recognise a strategy known to be good.
  - Consequence: [[GAP-P12D-31]]'s verdict is WITHDRAWN as a verdict. The engine may still be badly broken - independent evidence in [[GAP-P12D-39]] says it is - but this run did not establish it, and no further conclusion may be drawn from it.
  - Justification: open and blocking. Build the positive control FIRST and make it the suite's first gate; fix or suspend the DSR gate for falsification purposes ([[GAP-P12D-33]] owns the gate itself, owner-ratified); then re-run. No paid compute until an oracle can pass this harness.
@@ -338,7 +430,7 @@ index 88068d1..36695ca 100644
  - Severity: high - Likelihood: high
  - Status: open (2026-09-16 - found by the blind adversarial agent by exact rational arithmetic on the report's own averages; VERIFIED by the author)
  - Area: tests/backtest/metrics.py (`win_rate`, `profit_factor`, `n_trades` include every closed trade), core/signals/agon.py `_momentum_scalp`, tests/backtest/book.py open/close on the same tick
-@@ -344,6 +649,11 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
+@@ -344,6 +734,26 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
  - Description: `passed` requires `deflated_sharpe >= 0.95` over >= 2 trials — our headline defence against a Sharpe inflated by selection. `sharpe_threshold` estimates the trial VARIANCE from the trial Sharpe ratios supplied, so the fewer and more alike the recorded trials, the smaller the variance, the lower SR0, and the easier the gate. `_MIN_TRIALS = 2` permits exactly the degenerate case. Author's numerical check on one fixed graded record (per-trade Sharpe 0.123 over 560 trades, i.e. a record that would meet §14): **2 near-identical trials => SR0 0.0000, DSR 0.9979, PASS; 180 honestly recorded trials (sd 0.20) => SR0 0.5465, DSR 0.0000, fail; the same 180 with N lifted to the ~108,000 configurations actually evaluated => DSR 0.0000, fail.** Both directions are wrong: under-recording is REWARDED, and honest recording refuses every run, because the trials are per-trade Sharpe ratios measured on holdouts of as few as `holdout_min_trades = 5` trades (sampling sd alone ~0.45) while the graded Sharpe is a per-trade figure over thousands of trades — the two are not draws from the same null, which is what the paper's SR0 assumes. The formula itself is faithful (`test_reproduces_the_papers_numerical_example` pins the paper's SR0 0.1132 / DSR 0.9004 at N=100); the INPUTS are wrong. Consistent with the observed runs: the failed falsification reported `dsr=0.0` at 88-121 trials.
  - Secondary: the recorded trial count understates the true search by ~600x — `population_size 20 x generations 30` = 600 configurations are evaluated and maximised over per QIEA run, and only champions are recorded (gated-out runs record nothing at all, adding survivorship truncation). The multiple-testing exposure that actually threatens the final grade — the OUTER design loop, every pipeline/gene-range/fitness revision re-evaluated against the same history — is counted nowhere.
  - Justification: open and RAISED, not fixed. The gate is owner-ratified (GAP-P12D-16), and a live §14 pass would currently rest on it. It is guardrail-adjacent in spirit: it is the gate that decides whether a result may be believed. Two candidate remedies, both needing owner ratification because they change a ratified gate: (a) make the trial basis commensurate (trials and graded record measured over comparable samples, e.g. `holdout_min_trades >= 30`, and a floor under the trial variance) and re-ratify the 0.95 threshold against it; (b) replace the DSR as primary gate with PBO via CSCV, which reuses evaluations already performed and tests the question actually posed by a search. Until then, treat any DSR-based pass as unproven and do not present one as evidence.
@@ -346,11 +438,26 @@ index 88068d1..36695ca 100644
 +  1. **The gate refuses perfect knowledge.** Deflated by the engine's own planted trial sets, the oracle positive control scores DSR 0.000: the ratified gate refuses a strategy KNOWN to be good ([[GAP-P12D-37]]).
 +  2. **Every QIEA evaluation is now logged** (genes, fitness, holdout; gated-out runs included; ~45 KB per evolve call). That makes the true trial count, and PBO/CSCV, computable. It is logging only: no gate reads it.
 +
-+  The gate decision is still the owner's. The VALIDATOR's calibrated options are pending.
++  The gate decision is still the owner's.
++- **2026-09-24, the VALIDATOR's calibrated options** ([[GAP-P12D-52]]; archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md). The setting was synthetic: 60 configurations on 12 development + 2 holdout years; 4 edge-free market kinds × 300 runs; planted best-config Sharpes of 0.19, 0.44 and 0.94 × 200 runs. **The gate as built passes NOTHING:** 0 of 1,800 edge-free markets and 0 of 1,200 planted, even at a true Sharpe of 0.94. That agrees with the BUILDER's oracle scoring DSR 0.000. The owner chooses:
++  - **A. Keep as built.** It passes nothing.
++  - **B1. DSR on daily out-of-sample returns**, with N = recorded looks and the trial variance taken from theory. False positives 0.3–2.3%; power 9–14% at 0.44 and 58–62% at 0.94.
++  - **B2. B1 with an effective N.** False positives 1.3–4.3%; power 14.5% and 73.5%.
++  - **C (RECOMMENDED).** CPCV + PBO ≤ 0.20 on the research simulator, with the CPCV threshold raised for every recorded look. Then ONE confirmation run through the real engine, graded by B2. False positives 2.0–5.0% for one look and 3.0–5.5% after 20 looks. Power 25% at 0.44 and 87% at 0.94 (83% after 20 looks); at 24 years, 55% and 99%.
++  - **D, needed under ANY option:** the oracle positive control ([[GAP-P12D-37]], built on a branch), a structural leakage suite ([[GAP-P12D-65]]), and a look register written before every grade ([[GAP-P12D-64]]).
++
++  **Rejected as gates,** each with its measured false-positive rate:
++  - Rademacher Anti-Serum: its bound costs ~4.6 of annual Sharpe, so it has no power.
++  - "Random entries, same exits": 83–89%.
++  - The ±10% plateau test: 93–99%.
++  - PBO on its own: 96% on markets where every configuration loses.
++  - The cross-instrument holdout passes noise 10–23% unless it is residualised on the development instruments' P&L; residualised, it passes 2.7–4.7%.
++
++  The Masters permutation test is more powerful (43% / 96%, false positives 3–8%), but needs 60 full re-runs of the search, so it can run only on a fast research simulator.
  - Linked: [[GAP-P12D-16]], [[GAP-P12D-32]], [[GAP-P12D-25]], [[GAP-SP12E-03]], [[GAP-P12D-31]], [[GAP-0035]]
  
  ## GAP-P12D-34: the §5.6 parameter-plateau law is spec-mandated and entirely unimplemented
-@@ -352,6 +662,14 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
+@@ -352,6 +762,15 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
  - Area: ACIS_SPEC.md §5.6 anti-overfitting law, core/optimizer/qiea.py (selection), specs/ACIS-03 §6, specs/ACIS-11
  - Description: master §5.6 binds: "Parameter plateaus required — a strategy that dies at +/-10% on any parameter fails." Nothing in the optimizer, the harness or the validation path computes or enforces this. QIEA selects the single best-scoring individual, which is the peak-picking the law exists to forbid. The spec also requires reported metrics to be read against an attempt registry; the registry exists for strategies but does not count parameter configurations (see GAP-P12D-33's secondary finding).
  - Justification: open. This is the cheapest genuine anti-overfitting device available to us — perturb the champion's genes by +/-10% and require the neighbourhood to survive — and it is already law, so implementing it needs no ratification, only building. It directly attacks the failure mode the falsification exposed: parameters that score well in selection and do nothing in execution.
@@ -361,15 +468,16 @@ index 88068d1..36695ca 100644
 +  - **Effect:** it refuses 11–14 of 30 champions on the repo's zigzag fixtures. Its rate on the planted market is not yet measured.
 +  - **Existing tests:** three changed seed or fold index only. The lead reviewed them: each tests determinism or ID traceability, not plateau behaviour, and the refused seed's rejection is pinned by its own test.
 +  - **The gene search space is unchanged**, so no re-baseline.
++  - **The plateau law is a filter, not evidence.** The VALIDATOR measured the ±10% plateau test as a GATE on its own: it passes noise 93–99% of the time ([[GAP-P12D-33]] options). The spec requires it, and it removes knife-edge champions, but a champion passing it proves nothing.
 +  - **Close** when it merges after audit.
  - Linked: [[GAP-P12D-33]], [[GAP-0035]], [[GAP-P12D-31]], [[GAP-0008]]
  
  ## GAP-P12D-32: external research pass — findings and triage (report 1 of 5 in)
 diff --git a/TODO.md b/TODO.md
-index 24d4b70..b1ce867 100644
+index 24d4b70..4273456 100644
 --- a/TODO.md
 +++ b/TODO.md
-@@ -12,6 +12,68 @@
+@@ -12,6 +12,102 @@
  
  **⚠ Read this before starting, and say it to the owner again if he has not acknowledged it:** a demo run proves the **plumbing**, not the **edge**. [[GAP-P12D-49]] measured the engine LOSING on its own positive control (the planted market: −147.84 at 1x, Sharpe −1.12, ~89% of the loss on direction, not cost). **So the demo is expected to lose money.** That is an acceptable and useful outcome — it proves feed → regime → signal → sizing → order → fill → risk works end to end against a real venue — but "it trades" must never be reported or read as "it works". The edge question is Track B. Live money stays gated on §14 minimums out-of-sample + explicit human sign-off regardless (CLAUDE.md; never enable live yourself).
  
@@ -380,6 +488,31 @@ index 24d4b70..b1ce867 100644
 +- find bleeding-edge ways to iterate to an edge without overfitting, and without poor backtesting producing false encouragement.
 +
 +The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, then one section per agent. All five run on Opus, and all are finders, not clearers (A5). **Pass rule:** no agent backtests a strategy on real data, and the 2024–25 holdout stays untouched.
++
++**ALL FIVE REPORTS ARE IN, AND TRIAGE IS COMPLETE (2026-09-24).** Every binding claim was verified by the lead (script, quote or code read) and filed: GAP-P12D-53 to -68.
++
++**The pass's verdict in five lines:**
++1. Only FTMO and E8 can run ACIS at all.
++2. ACIS as built cannot safely touch any prop account yet: the restart budget reset, the $9k floor, sub-minimum orders, gap trading, and the daily-limit semantics.
++3. Its risk is 20–30× too small for a prop account to pay.
++4. A zero-edge strategy is +EV on a prop account, and leakage passes every statistical gate, so neither a pass nor a payout is evidence.
++5. The honest path is: fix the grader (option C+D) → redesign the strategy layer onto documented edges ([[GAP-P12D-68]]) → certify forward on the demo.
++
++**OWNER DECISIONS OWED, in recommended order.** Nothing below is applied until the owner rules.
++- [ ] **D1. Validation protocol** ([[GAP-P12D-33]]): options A/B1/B2/C/D. The recommendation is **C+D**. D (the oracle control, a leakage suite, a look register) needs no ratification and can start at once.
++- [ ] **D2. The prop objective** ([[GAP-P12D-62]]): "PropEV" with a zero-edge control, beside or instead of §14's Sharpe, positive-months and win-rate rows for prop accounts.
++- [ ] **D3. The LLM-contamination rule** ([[GAP-P12D-66]]): LLM-originated hypotheses certify only on post-cutoff data, i.e. the demo.
++- [ ] **D4. Walk-forward train window** ([[GAP-P12D-67]]): an expanding window instead of the ratified 2-year rolling one.
++- [ ] **D5. The redesign package** ([[GAP-P12D-68]]): the position policy (critical, also a Track A blocker), module set v2, NVMA as a safety veto only, retiring per-regime QIEA, declaring index CFDs and energies, RSIM, the registry, the cost gate, the demo scope, and TSMOM's account fit.
++- [ ] **D6. Guardrail-adjacent fixes; human-only, each RAISED:**
++  - [[GAP-P12D-55]] restart persistence (critical);
++  - [[GAP-P12D-56]] the equity floor per account;
++  - [[GAP-P12D-54]] and [[GAP-P12D-60]] rulebook corrections;
++  - [[GAP-P12D-59]] daily-limit semantics and a pre-breach flatten;
++  - [[GAP-P12D-61]] the Governor's risk unit (with, never ahead of, the edge).
++- [ ] **D7. Spec wording** ([[GAP-P12D-53]]): correct §5.6's century-study figure.
++- [ ] **D8. The plateau law's reading of "dies"** ([[GAP-P12D-34]]), and the go-ahead to dual-audit and merge the BUILDER branch.
++- [ ] **D9. The venue** (from the SCOUT): the OANDA token test, then the FTMO Free Trial as demo venue (a §15 deviation); send the drafted firm emails; the equity floor for the demo account.
 +- [x] 2026-09-24 **SCOUT** — prop-venue due diligence: the owner's outstanding PROP-FIRM RESEARCH (a)–(f) below, the filter for compatibility with automation on funded accounts, and the **demo-venue recommendation that feeds Track A step 1**. Report: archive/RESEARCH_PROP_VENUES_2026-09-24.md. **IN.**
 +  - **Only FTMO and E8 Markets pass the hard filter:** both let an unattended engine on Linux trade a funded account via the cTrader Open API.
 +  - **The report ranks FTMO 2-Step Swing $10k first.**
@@ -409,7 +542,16 @@ index 24d4b70..b1ce867 100644
 +  - [[GAP-P12D-62]]: on a prop account a ZERO-edge strategy is already +EV, so a pass or a payout proves nothing about skill. It proposes a "PropEV" objective with a zero-edge control, for the owner to rule on after the VALIDATOR's gate design lands.
 +
 +  **For the owner:** read any demo or prop pass as an option paying out, never as evidence of edge. Certifying a Sharpe of 0.5 would take ~12 years of out-of-sample data. The evidence has to come from capped-downside forward trading.
-+- [ ] **VALIDATOR** — the measured false-positive rate and power of candidate validation protocols; options for [[GAP-P12D-33]]/[[GAP-P12D-37]]; the data budget; forward incubation on the demo; a rule against LLM contamination. Report: RESEARCH_VALIDATION_FIREWALL_2026-09-24.md.
++- [x] 2026-09-24 **VALIDATOR** — the measured false-positive rate and power of candidate validation protocols; options for [[GAP-P12D-33]]/[[GAP-P12D-37]]; the data budget; forward incubation on the demo; a rule against LLM contamination. Report: RESEARCH_VALIDATION_FIREWALL_2026-09-24.md. **IN.**
++  - **The DSR gate as built passes NOTHING,** true or false: 0 of 1,800 edge-free markets and 0 of 1,200 planted, even at a true Sharpe of 0.94.
++  - **The recommendation is option C+D** (see [[GAP-P12D-33]]): CPCV+PBO on a research simulator, then one confirmation run through the real engine.
++  - **Filed:**
++    - [[GAP-P12D-64]]: uncounted revisions are what manufactures false passes;
++    - [[GAP-P12D-65]]: leakage passes every statistical gate (lead-reproduced), so only structural tests catch it;
++    - [[GAP-P12D-66]]: an LLM-originated hypothesis certifies only on data after the model's cutoff, which here means only forward on the demo;
++    - [[GAP-P12D-67]]: the 2-year train window discards edge.
++  - **Data limit:** 12 years cannot reliably detect a Sharpe near 0.5, so "no pass" is the normal outcome even with an edge.
++  - **Design proposals that are not defects** are collected in [[GAP-P12D-68]].
 +- [x] 2026-09-24 **ARCHITECT** — the research factory, a pre-registered candidate slate, and the architecture fit, working blind first. Report: RESEARCH_EDGE_FACTORY_2026-09-24.md. **IN.** The lead verified two findings from primary sources and filed them:
 +  - [[GAP-P12D-53]]: §5.6 misquotes the century trend study. Its net Sharpe is 0.76 over 67 markets; the "≈0.4" is the per-market gross figure. This needs an owner ruling.
 +  - [[GAP-P12D-54]]: the `ftmo` rulebook is wrong about FTMO in both directions, the schema cannot express FTMO's daily-loss rule, and the engine's 2% daily guardrail does NOT keep ACIS inside FTMO's daily limit when floating losses cross midnight. RAISED; this needs a human config commit.
@@ -438,7 +580,7 @@ index 24d4b70..b1ce867 100644
  ### TRACK A — get a demo account trading (the owner's priority)
  Critical path, in order. Steps 1 and 2 are the real blockers; do not start 3 before 2 is LOCKED.
  
-@@ -145,17 +207,17 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
+@@ -145,17 +241,17 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
        **2026-09-15 result — quick run DONE (exit 3), and it found GAP-P12D-29:** 0 trades on all three markets, because no fold staged a champion. The 500-bar evolution window's 100-bar holdout almost never holds the 5 trades the gate needs (0.0–0.3% of random ParamSets clear both gates, on every market). The synthetic test itself is sound: the fitness harness finds the planted edge on contiguous bars (80–90/100 ParamSets positive vs 0–1/100 on null/permuted). **The owner ratified (a) the same day ("I ratify a") and it is BUILT:** master v2.18, ACIS-03 v1.4, `fitness_span_days: 730`, 796 green. NEXT: the quick run re-run on the fix (expect champions and trades), then the full run. **Memory limit (2026-09-15):** the first re-run at `--workers 3` was killed for low memory during grading. The laptop has 7.9 GB, and with Chrome/Edge/Docker open its committed memory was already 14.5 of 17.8 GB. Relaunched with `--workers 1` at 16:31 UTC; it was killed about a minute later, while labelling and before any evolution code ran. So the cause is the machine's free memory (1.0 GB free, 14.3 of 17.8 GB committed, with no ACIS process running), not the run itself. **Owner chose (2026-09-15):** close Chrome/Edge/Docker and relaunch the quick run here in the session (not a detached task, not the server). The option (a) change was committed first, on the owner's go (f1d0669). Relaunched at 20:52 UTC after Chrome's windows were closed (committed memory 14.2 → 11.1 GB, 1.4–1.5 GB free), but it was killed again about 40 s in, while labelling. Chrome was still running in the background (11 processes, 1.47 GB), plus Edge webviews (845 MB). The session's memory kill fires on whole-machine free memory, so an in-session run needs Chrome quit from the tray (and ideally `wsl --shutdown`), or a detached run outside the session. **Owner chose (2026-09-16): the detached run.** `python scripts/falsify_engine.py --quick --workers 1` runs via Start-Process outside the session (PID 9624, launched 22:28 UTC 2026-09-15), logging to `data/validation/falsification/detached_quick.log` (+ `.err`). Read that log to pick this up in ANY session; the run writes its per-market reports under `data/validation/falsification/<run id>-quick/`. **QUICK RUN DONE 2026-09-15 23:10 UTC (run `20260915T222826Z-quick`): the fix works mechanically** — champions per fold null [2,3,2] / planted [2,6,1] / permuted [1,1,0], trades 122 / 250 / 14, Sharpe -4.42 / +0.92 / +1.93, exit 3 (no verdict by design, under two graded years). **FULL RUN LAUNCHED 2026-09-15 23:11 UTC** detached, PID 13656, `python scripts/falsify_engine.py --workers 2`, log `data/validation/falsification/detached_full.log` (+ `.err`); expect ~6-12 h. **FULL RUN RESULT 2026-09-16 (run `20260915T231127Z`): FALSIFICATION FAILED — planted FAILED when it had to pass (Sharpe -0.65, PF 0.84, 2,018 trades); null failed as expected (-0.90, 1,864 trades) and permuted too (-0.49, 2,111 trades). Script verdict: `FALSIFICATION FAILED — wrong answer on: planted` (exit 1). All three markets lose inside a 0.4-Sharpe band. **ATTRIBUTION DIAGNOSTIC LAUNCHED 2026-09-16 18:52 UTC** (owner: "lets make the AWS worth the cash"): detached PID 15260, `python scripts/falsify_engine.py --kinds planted null --train-days 60 --test-days 30 --graded-days 180 --workers 2`, log `data/validation/falsification/detached_diag.log`; ~2 h. Purpose is ATTRIBUTION, not a verdict — it grades under two years, so planted cannot pass and the run WILL print `FALSIFICATION FAILED`; do not read that exit code as a second verdict. What to read instead: `per_regime` and `per_strategy` in `planted.json` vs `null.json` — which regime and which AGON module bleeds, and whether anything behaves differently on the market that HAS the edge. That names one cause among the three GAP-P12D-31 suspects (GAP-0035 proxy-vs-AGON, GAP-0075 no holding policy, ATR exits truncating a 1-4 h drift at ~8 min).
      - [ ] **External research pass LAUNCHED 2026-09-16 (owner: "run an external research agent … use web search extensively").** One agent, given the full build context and the measured failure, researching: optimiser/execution consistency, signal-to-position and holding policy, exit design and horizon matching, whether this approach works at retail FX scale net of ~1 bp round-trip costs, whether regime switching survives the evidence, parameter-optimisation methodology and overfitting controls, what to build instead, and anti-patterns. It writes `archive/RESEARCH_FX_METHODS_2026-09-16.md` with sourced claims graded academic / practitioner / unverifiable. **It is a FINDER, not a decider** (CLAUDE.md audit law): every recommendation it makes that touches the spec needs owner ratification, and its claims about our own code must be verified against the code before they bind. It also carries the external-referent question we cannot ask ourselves — whether the §14 targets (Sharpe > 1.5, PF > 1.4, 70% positive months) are realistic at this scale at all. **REPORT 1 OF 5 IS IN (GAP-P12D-32, `archive/RESEARCH_FX_METHODS_2026-09-16.md`).** Author-verified already: the optimiser scores every candidate under a ≤48-MINUTE hold (`fitness.py:126` counts `max_holding_periods` in 1-min bars) while the engine runs to 48 h — a ~60× selection-vs-execution horizon mismatch; and §14 is internally inconsistent ("positive months > 70%" implies Sharpe 1.82, stricter than the stated 1.5). Author-REFUTED: the claim that the synthetic markets are ~9× too volatile (measured 1.13×). Its sourced verdict that a net OOS Sharpe > 1.5 is unachievable at retail FX scale (realistic 0.3–0.7) is an OWNER decision on §14 and must not be adopted single-source — check the citations, and wait for the other four agents, one of which was given no framing so it can attack premises this one accepted. Triage all five together (GAP-P12D-32). **REPORT 2 OF 5 (statistics/methodology) IS IN** — `archive/RESEARCH_STATS_METHODOLOGY_2026-09-16.md`. It found, and the author VERIFIED numerically, that the Deflated Sharpe gate is INVERTED: 2 near-identical trials pass at DSR 0.9979 while 180 honestly recorded trials fail at 0.0000 on the same record (**GAP-P12D-33, critical, RAISED — the gate is owner-ratified, so nothing was changed**). It also found the §5.6 parameter-plateau law is entirely unimplemented (**GAP-P12D-34** — already law, so it needs building, not ratifying). Do not present any DSR-based pass as evidence until P12D-33 is resolved. **REPORT 3 OF 5 (code-grounded) IS IN** — `archive/RESEARCH_CODE_GROUNDED_2026-09-16.md`. Two harness BUGS author-verified: **GAP-P12D-35** the falsification fold plan rewinds the clock 7 days at every fold boundary (the ratified `plan_folds` is clean — verified — so no §14 number is implicated, but every falsification run so far is contaminated) and **GAP-P12D-36** the graded book never charges the spread, a direct C8 violation. Fix BOTH before re-running falsification. Its dominant claim — that the NVMA regime label recovers only ~3.7% of the planted drift and that STRONG_TREND_DOWN carries the WRONG SIGN, making the label a near-noise gate — is NOT yet author-verified and is the single most consequential claim in any report so far; verify it before acting on it. **REPORT 4 OF 5 (BLIND adversarial) IS IN and it is the most consequential** - `archive/AUDIT_BLIND_FALSIFICATION_2026-09-16.md`. Author-VERIFIED: **GAP-P12D-37, the falsification verdict is VOID** (the DSR gate demanded an annual Sharpe of 76.2 on planted, 18.6 null, 20.8 permuted, against a section-14 target of 1.5 - unsatisfiable before the first tick, and the hurdle RISES with real edge because trial dispersion widens); **GAP-P12D-38**, only 407 of planted's 2,018 trades are in the duration band and about 1,598 are zero-duration scalp artifacts inside `win_rate` and `profit_factor`; **GAP-P12D-39**, `trend_direction` is computed every cycle and read by nothing. **Order of work is now: (1) build a POSITIVE CONTROL - an oracle must pass the harness - and make it the first gate; (2) fix GAP-P12D-35 fold plan and GAP-P12D-36 spread; (3) resolve the DSR gate GAP-P12D-33/37 (OWNER decision, it is ratified); (4) only then re-run falsification.** No paid compute until an oracle can pass. **ATTRIBUTION DIAGNOSTIC LANDED 2026-09-17 (run `20260916T185248Z`) and it names the mechanism - GAP-P12D-40:** planted Sharpe **+1.11** vs null **-2.77** (a 3.9-Sharpe separation, so the engine is NOT edge-blind); TREND +6.64 PF 2.21 and BREAKOUT +1.72 PF 2.48 both capture the planted edge, while MEAN_REVERSION gives back -6.63 at a **6.3% win rate** over 430 trades, concentrated in RANGING_TIGHT/RANGING_WIDE. Both the code-grounded and the blind agents predicted this in advance, independently. Sequence stands: fix the harness (P12D-35/36), re-run with attribution, confirm the ranking, THEN propose the ACIS-04 module change to the owner. **P12D-35/36 are now FIXED (2026-09-17).**
      - [ ] **ALL FIVE RESEARCH AGENTS ARE IN (2026-09-17)**, plus three companion agents they spawned. Reports in `archive/`, all committed: FX methods, statistics, code-grounded, blind audit, execution costs, signal-to-position, fill fidelity, event calendar. **Author-verified code audit (owner asked): NO agent modified engine code, config, specs or ledgers** — `git status`/`git diff` showed the only touched code files were the author's own GAP-P12D-35/36 fixes, and one agent proactively flagged those as not its own. Two new critical findings: **GAP-P12D-41**, the backtest is priced on Dukascopy ECN spreads while the intended venue quotes ~4x wider (spec-level, and a bigger error than the C8 fix just made), and **GAP-P12D-42**, an OANDA `priceBound` can void a protective stop on a gap (guardrail-adjacent, raised only). Design evidence to weigh when the module question is settled: the signal-to-position literature is unanimous that position formation should be a continuous TARGET position with a no-trade band, that netting across signals is the single largest free saving (-72% turnover measured), and that minimum-hold throttles have NEGATIVE measured evidence — all three bear directly on [[GAP-0075]] and on any fix for GAP-P12D-40.
