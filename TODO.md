@@ -1,6 +1,6 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **STATUS (2026-09-17): SPEC COMPLETE (master v2.18). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the VPS deployment gate is ✅, the untrained-baseline freeze is ENFORCED (tag `baseline-untrained-v1`), the full Dukascopy tick set is downloaded and validated, and the evolve-driver + walk-forward runner exist. 814 green; ledger 185 entries, 0 violations. The cost-stress ladder has RUN: the cost question is settled and was never the problem — read GAP-P12D-49 first.**
+> **STATUS (2026-09-17): SPEC COMPLETE (master v2.19). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the VPS deployment gate is ✅, the untrained-baseline freeze is ENFORCED (tag `baseline-untrained-v1`), the full Dukascopy tick set is downloaded and validated, and the evolve-driver + walk-forward runner exist. 814 green; ledger 185 entries, 0 violations. The cost-stress ladder has RUN: the cost question is settled and was never the problem — read GAP-P12D-49 first.**
 > `ACIS_SPEC.md` v2.12 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
@@ -29,6 +29,48 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 4. A zero-edge strategy is +EV on a prop account, and leakage passes every statistical gate, so neither a pass nor a payout is evidence.
 5. The honest path is: fix the grader (option C+D) → redesign the strategy layer onto documented edges ([[GAP-P12D-68]]) → certify forward on the demo.
 
+**OWNER DELEGATION (2026-09-24, night, in chat):** *"automode is on ... if you reach decision points and have recommendations among many, proceed with the recommendations instead of waiting for me because Ill just choose the recommendations youll give."*
+- **How the lead applies it:**
+  - each decision taken under this delegation is recorded below as **DELEGATED**, for the owner to review on waking;
+  - code changes go to branches and follow the dual-audit law.
+- **What stays human-only**, because CLAUDE.md's guard-integrity law outranks a blanket delegation:
+  - NO guardrail VALUE, NO equity-floor value, and NO `platform_rules.yaml` value is changed;
+  - tightening-only guard CODE is built on branches and never merged without the owner seeing it.
+
+**NIGHT RUN (2026-09-24): five agents launched by the lead.** All are Opus, run without subagents, and write only their own files and branches.
+- **Roster and resume handles:**
+  - AUDIT-INTERNAL `a0cd7f51de98aa6dd` and AUDIT-EXTERNAL `a8b7e5d6992adfc12`: the BUILDER branch, under the pinned brief `AUDIT_BRIEF_BUILDER_2026-09-24.md`. Reports: AUDIT_BUILDER_BRANCH_{INTERNAL,EXTERNAL}_2026-09-24.md in archive/.
+  - BUILDER-2 `a8937e82f9a7a5391`: the structural leakage suite T1/T2/T7, the look register and the T6 gap-through exit ([[GAP-P12D-65]], [[GAP-P12D-64]]). It stacks on the BUILDER branch.
+  - BUILDER-3 `a9e00713d15bb5082`: the prop-safety TIGHTENING fixes, based on main:
+    - restart persistence, [[GAP-P12D-55]];
+    - lot-step/minimum-lot enforcement and a request budget, [[GAP-P12D-57]];
+    - the pre-close ban always on, [[GAP-P12D-58]];
+    - daily-reset rules and a declared initial capital, [[GAP-P12D-54]]/[[GAP-P12D-59]].
+  - SPEC-AUTHOR `ac17d6698ee060d8e`: drafts `specs/ACIS-13-VENUE_ADAPTERS.md` v0.1 (cTrader Open API), DRAFT and NOT LOCKED.
+- **Every code change is BUILT, PENDING AUDIT, on a branch.** Nothing merges to main without the dual audit and the owner seeing it.
+
+**OWNER DIRECTIVES (2026-09-24, before sleeping):**
+- (1) "let them continue". The night run goes on.
+- (2) **Audits are ONLY the constitution's two per phase.** No extra audit agents unless the owner asks. It is recorded in CLAUDE.md's audit section and in memory.
+- (3) **After a session-limit reset, RESUME the running agents with `SendMessage`; NEVER relaunch them.** Their handles are listed above.
+
+**DECISIONS TAKEN UNDER THE OWNER'S DELEGATION (2026-09-24 night). Each is the lead's stated recommendation; the owner should review them on waking.**
+- **D1 = option C + D (DELEGATED).**
+  - D is being built tonight: the oracle (already on the BUILDER branch), the leakage suite and the look register.
+  - C needs the research simulator (RSIM, [[GAP-P12D-68]] item 6), so it comes next.
+  - The ratified DSR gate is NOT edited until C's replacement exists, is audited, and the §14 / ACIS-09 C-BT-11 amendment is written.
+- **D3, the LLM-contamination rule: ADOPTED (DELEGATED)** ([[GAP-P12D-66]]). Applied as master §5.6 text. It is tightening only.
+- **D7, the century-study correction: APPLIED (DELEGATED)** ([[GAP-P12D-53]]). A factual correction to §5.6.
+- **D8, the plateau reading of "dies": ADOPTED (DELEGATED), as the BUILDER defined it** ([[GAP-P12D-34]]). The ACIS-03 v1.5 text goes in with the branch merge.
+- **D6, guardrail-adjacent items.**
+  - The TIGHTENING code is being built on a branch.
+  - VALUES stay human-only: the equity floor ([[GAP-P12D-56]]) and the `platform_rules.yaml` corrections. The drafts will be ready for the owner to commit.
+- **D2, D4 and D5 are ADOPTED IN DIRECTION (DELEGATED); their spec text lands with their builds, not tonight:**
+  - D2: PropEV beside §14, tightening;
+  - D4: an expanding window for the engine confirmation run;
+  - D5: the redesign in the recommended order, position policy first.
+- **D9 stays with the owner:** the token test needs the owner's token.
+
 **STEP 1 RATIFIED BY THE OWNER (2026-09-24, in chat: "i ratify the whole of step 1").** Step 1 of the lead's plan, with its status:
 - [ ] **The OANDA practice-token test.** No token exists on this machine: the lead checked environment variable names only. The OWNER runs it; the command is in the lead's reply. **Ratified with a condition: if it fails, the FTMO Free Trial on cTrader via the Open API is the demo venue.** That is a SPEC §15 deviation; apply the §15 amendment (the SCOUT's draft, report §7) once the result is known.
 - [x] 2026-09-24 **Commit** the pass: the brief, the 4 reports and 4 checkpoints, the ledger and TODO updates, and a `.gitignore` entry keeping `.claude/worktrees/` out of git.
@@ -51,7 +93,7 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - [[GAP-P12D-54]] and [[GAP-P12D-60]] rulebook corrections;
   - [[GAP-P12D-59]] daily-limit semantics and a pre-breach flatten;
   - [[GAP-P12D-61]] the Governor's risk unit (with, never ahead of, the edge).
-- [ ] **D7. Spec wording** ([[GAP-P12D-53]]): correct §5.6's century-study figure.
+- [x] 2026-09-24 **D7. Spec wording** ([[GAP-P12D-53]]): correct §5.6's century-study figure. DONE under the owner's delegation, master v2.19. **D3** (the LLM-contamination law) is also now in §5.6 ([[GAP-P12D-66]], mitigated; its enforcement is owed).
 - [ ] **D8. The plateau law's reading of "dies"** ([[GAP-P12D-34]]), and the go-ahead to dual-audit and merge the BUILDER branch.
 - [ ] **D9. The venue** (from the SCOUT): the OANDA token test, then the FTMO Free Trial as demo venue (a §15 deviation); send the drafted firm emails; the equity floor for the demo account.
 - [x] 2026-09-24 **SCOUT** — prop-venue due diligence: the owner's outstanding PROP-FIRM RESEARCH (a)–(f) below, the filter for compatibility with automation on funded accounts, and the **demo-venue recommendation that feeds Track A step 1**. Report: archive/RESEARCH_PROP_VENUES_2026-09-24.md. **IN.**

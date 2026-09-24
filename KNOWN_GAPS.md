@@ -182,7 +182,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-66: an LLM-originated hypothesis cannot be certified on any history the model was trained on — for this session that is ALL of 2012–2025, the holdout included
 - Severity: high · Likelihood: high
-- Status: open (2026-09-24 — proposed by the VALIDATOR and the ARCHITECT in [[GAP-P12D-52]]. The lead verified the anchor source: Gençay, arXiv 2608.27734 (27 Aug 2026) "rejects every LLM-discovered strategy (across two frontier models, search budgets up to one hundred candidates, and five repeated runs)". The VALIDATOR quotes five more 2023–2026 papers on LLM memorisation and look-ahead)
+- Status: mitigated (2026-09-24: the rule is now LAW, master v2.19 §5.6 "LLM-contamination law", adopted under the owner's in-chat delegation. The enforcement is NOT built yet: an origin/cutoff field in the attempt registry, and a grader that refuses a pass on pre-cutoff data for LLM-origin hypotheses. It is owned by [[GAP-P12D-68]] item 7). Originally proposed by the VALIDATOR and the ARCHITECT in [[GAP-P12D-52]]. The lead verified the anchor source: Gençay, arXiv 2608.27734 (27 Aug 2026) "rejects every LLM-discovered strategy (across two frontier models, search budgets up to one hundred candidates, and five repeated runs)". The VALIDATOR quotes five more 2023–2026 papers on LLM memorisation and look-ahead)
 - Area: master §5.6/§5.7 (provenance, the hypothesis lifecycle), specs/ACIS-11 (the attempt registry), the research factory ([[GAP-P12D-68]] item 7), the §14 grading
 - Description: LLMs reproduce financial history from before their cutoff. So when an LLM helps generate or refine a strategy hypothesis — this session's agents included — a backtest over the model's training window tests the model's memory, not the market. This session's model cutoff is June 2026, which covers the entire Dukascopy set (2012–2025) AND the locked 2024–25 holdout. The ARCHITECT's slate was selected with LLM help. Proposed rule, for the owner to ratify:
   - record each hypothesis's origin and the generating model's cutoff;
@@ -393,7 +393,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-53: master §5.6 misstates the century trend-following evidence, and the figure it quotes is the per-market one
 - Severity: medium · Likelihood: high
-- Status: open (2026-09-24 — found by the ARCHITECT agent in [[GAP-P12D-52]]. VERIFIED by the lead from the paper's own Exhibit 1, with the text extracted from a fresh download of Hurst, Ooi & Pedersen, "A Century of Evidence on Trend-Following Investing")
+- Status: fixed (2026-09-24, master v2.19 §5.6, applied under the owner's in-chat delegation; see TODO.md's night-run block). Originally open: found by the ARCHITECT agent in [[GAP-P12D-52]]. VERIFIED by the lead from the paper's own Exhibit 1, with the text extracted from a fresh download of Hurst, Ooi & Pedersen, "A Century of Evidence on Trend-Following Investing")
 - Area: ACIS_SPEC.md §5.6, the verified-benchmark law; the expectations placed on the TSMOM module in specs/ACIS-04; and the FX-methods research report, which repeats "~0.4 in every decade"
 - Description: §5.6 says the century study (1880–2016) shows "Sharpe ≈ 0.4 *every decade*". The paper's Exhibit 1 says otherwise.
   - **The full sample:** "Full Sample Jan 1880-Dec 2016 18.0% 11.0% 7.3% 9.7% 0.76". The columns are the gross excess return, net of cost, net of cost and 2/20 fees, volatility, and the net Sharpe.
@@ -403,6 +403,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Justification: open and owner-owned, because §5.6 is master-spec text (v2.9, owner-directed).
   - **Proposed correction:** state the full-sample net Sharpe of 0.76 over 67 markets, the decade range of 0.13–1.70, and the per-market ~0.4 gross. Say plainly that the evidence is breadth at the portfolio level.
   - **Scope:** it changes no code and no threshold. It changes what a reader would expect of a 2-instrument TSMOM.
+- Proof: ACIS_SPEC.md §5.6 now states the full-sample 0.76 over 67 markets, the decade range 0.13–1.70, and the per-market ≈0.4 gross; the v2.19 changelog records it.
+- Residual: GAP-P12D-68 — what TSMOM should become in light of the corrected evidence (item 2: rebuild it as a faithful slow, broad sleeve). The archived 2026-09-16 FX-methods report still repeats the old figure; it is kept as history.
 - Linked: [[GAP-P12D-52]], [[GAP-P12D-49]], [[GAP-P12D-32]]
 
 ## GAP-P12D-52: five-agent edge pass (2026-09-24) — findings and triage (5 of 5 in, triage complete)
