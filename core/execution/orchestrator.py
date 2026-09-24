@@ -1,15 +1,13 @@
 """Execution Orchestrator (ACIS-06 v1.1, master §7). How and where — never
 how much.
 
-Hard walls: never changes `size_units` (C-EXE-6); never opens what the
-Governor sized to zero; the execution-freeze (Risk flatten path, phase 9)
-blocks opens while allowing closes; slippage is REPORTED, never acted on
-(F10 raised — there is deliberately no throttle knob here). Randomness and
-time are injected. The `dispatch_budget_ms` measurement is observability
-only (v2.10 item c): nothing gates on it. The venue's own limits DO gate
-(GAP-P12D-57, core/execution/venue_limits.py): quantities go out rounded DOWN
-to its lot step, below its minimum lot they are refused, and a spent request
-budget refuses opens but never a close — each outcome a FillReport.
+Hard walls: never sends more than `size_units` (C-EXE-6); never opens what the
+Governor sized to zero; the execution-freeze (Risk flatten path, phase 9) blocks
+opens while allowing closes; slippage is REPORTED, never acted on (F10: no throttle
+knob). Randomness and time are injected. `dispatch_budget_ms` is observability only
+(v2.10 item c). The venue's own limits DO gate (GAP-P12D-57, venue_limits.py): whole
+lot steps rounded DOWN, below the minimum lot refused, and a spent request budget
+refuses opens but never a close that truly shrinks the position — each a FillReport.
 """
 
 from __future__ import annotations
@@ -220,10 +218,12 @@ class ExecutionOrchestrator:
         reconcile against the broker (authoritative) BEFORE any resubmission;
         idempotent fragment_ids make the retry double-fill-safe. Two failures
         ⇒ give up (None)."""
-        face = self._faces[venue]
+        face, budget = self._faces[venue], self._requests[venue]
         for attempt in (1, 2):
-            if not self._requests[venue].admit(self._now(), closing=order.action == "close",
-                                               order_id=order.order_id, log=self._log):
+            now = self._now()
+            derisk = (order.action == "close" and budget.used(now) >= budget.limit
+                      and await self._shrinks(face, order, units))       # no read for opens
+            if not budget.admit(now, closing=derisk, order_id=order.order_id, log=self._log):
                 return self._synthetic_reject(order, "request_budget", units=units,
                                               fragment_id=f"{fragment_id}:budget")
             try:
@@ -241,6 +241,14 @@ class ExecutionOrchestrator:
                          "units": str(p.size_units)} for p in positions])
                 if attempt == 2:
                     return None
+
+    @staticmethod
+    async def _shrinks(face: ExecutionFace, order: SizedOrder, units: Decimal) -> bool:
+        """A spent budget exempts only a close that really shrinks the venue position:
+        the `close` label is no proof while the close-direction contract is open."""
+        held = [p for p in await face.open_positions() if p.instrument == order.instrument]
+        return (len(held) == 1 and held[0].direction == -order.direction
+                and units <= held[0].size_units)
 
     def _venue_quantity(self, order: SizedOrder, units: Decimal, venue: str,
                         tag: str) -> tuple[Decimal, list[FillReport]]:

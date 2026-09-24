@@ -283,6 +283,26 @@ async def test_spent_request_budget_refuses_opens_but_never_a_close(adapter, tmp
     assert log.events("EXEC_REQUEST_BUDGET_DERISK")
 
 
+async def test_spent_budget_refuses_a_close_that_would_add_to_the_position(adapter,
+                                                                         tmp_path) -> None:
+    # Only a close that truly shrinks the venue position is exempt. A `close` carrying
+    # the position's OWN direction (as the Governor's group exits do today) would add
+    # to it, so it is an open in all but name and is refused once the budget is spent.
+    face = adapter()
+    lot = _lot_units(face.descriptor.min_lot)
+    orch, log = _orchestrator(face, tmp_path, requests_per_day=1)
+    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)
+    adds = await orch.submit(_order(lot, action="close", direction=1, order_id="o-mislabel"),
+                             valid_for_seconds=300)
+    assert [r.status for r in adds] == [FillStatus.REJECTED]
+    (pos,) = await face.open_positions()
+    assert pos.size_units == lot                                  # not doubled
+    too_big = await orch.submit(_order(lot * 2, action="close", direction=-1,
+                                       order_id="o-flip"), valid_for_seconds=300)
+    assert [r.status for r in too_big] == [FillStatus.REJECTED]   # would flip, not close
+    assert log.events("EXEC_REQUEST_BUDGET_REFUSED")
+
+
 async def test_request_budget_survives_a_restart(adapter, tmp_path) -> None:
     from datetime import timedelta
 
