@@ -72,15 +72,140 @@ every run's time.
 
 ### 2.2 Replication of GAP-P12D-49: what is robust, and what was one seed's luck
 
-__REPL__
+**Question.** Is "TSMOM is the whole loss; TREND and BREAKOUT capture the edge" robust, or one seed's
+luck?
+
+**Answer: the "TREND and BREAKOUT capture the edge" half is robust. The "TSMOM is the sink" half is
+really a lockout, plus a tilted control, plus path luck. It is not a robust loss.**
+
+*Per-module net $ across seeds, 5 folds each, planted market, TSMOM absent. This is the arena as it ran
+in GAP-P12D-49's pre-TSMOM folds.* 95% CIs are t-based over n seeds (`probe_ci.py`).
+
+| module | seed 7 | seed 11 | seed 13 | mean | 95% CI | entries aligned with the planted sign |
+|---|---|---|---|---|---|---|
+| TREND | +7.60 | +14.72 | +15.83 | **+12.71** | **[+1.64, +23.79]** | 231/277, 282/354, 336/371 (**80–91%**) |
+| BREAKOUT | +0.52 | +0.97 | +0.66 | **+0.72** | **[+0.15, +1.29]** | 159/174, 150/175, 108/111 (86–97%) |
+| MEAN_REVERSION | −1.57 | −11.23 | −6.65 | **−6.49** | [−18.48, +5.51] | 6/76, 23/661, 17/428 (**3–8%**: it fades the trend) |
+| PAIR_DIVERGENCE | 0 trades | +0.07 (4) | −0.00 (6) | ≈ 0 | — | — |
+| **all** | +6.55 | +4.53 | +9.83 | **+6.97** | **[+0.32, +13.62]** | — |
+
+*Null controls (the same arena, no edge):* __NULLROW__
+
+So on this synthetic control:
+- TREND and BREAKOUT separate a planted 1–4 h edge from noise, net of 1× cost, across seeds.
+- MEAN_REVERSION gives back 20–75% of TREND's gain, and its trade count varies ninefold across seeds
+  (76 to 661). See §2.6.
+
+*TSMOM live (as in the ladder's folds 9–25):*
+- **Planted seed 7:** 126 trades, **all TSMOM**; 120 exits are `max_hold`. Net **−0.49**.
+- **Null seed 7:** 128 trades, all TSMOM, net **+6.27**.
+- **TSMOM holds each instrument's single position slot 97–99% of graded time** (planted: EUR 97%,
+  USD_JPY 98%; null: 98%, 99%).
+- Across both runs TREND, BREAKOUT, MEAN_REVERSION and PAIR_DIVERGENCE make **zero** trades, because:
+  - the event counter shows TSMOM emitting on every tradeable tick (360,225 `SIGNAL_EMITTED|TSMOM` on
+    null);
+  - every opposite fast signal dies with it: `DISCARD_OPPOSITE` pairs on null were TREND+TSMOM 492,
+    BREAKOUT+TSMOM 561 and MEAN_REVERSION+TSMOM 72;
+  - every same-side fast signal is a book-level no-op (`book.py:98`, same-side repeat ignored).
+
+**Reconciling this with GAP-P12D-49.**
+- The ladder's −152.49 for TSMOM is one path (seed 7, 2015–2016) under the bridge tilt (§2.5 item 5).
+  The sign of TSMOM's P&L is not robust here: −0.49 and +6.27 on two runs.
+- Its 455 trades × ~53 h ≈ 24,000 position-hours, about 12,000 per instrument ≈ 17 months each. That is
+  **the whole post-2015-02 graded span**, consistent with a full lockout there.
+- **Prediction, testable on the laptop's on-disk ladder** (`data/validation/cost_stress/20260917T083216Z`,
+  entry/exit timestamps if they can be recovered): essentially every TREND and BREAKOUT trade in that
+  run falls before TSMOM's 260th daily close (early 2015).
+- "TSMOM is the whole loss" is therefore better stated: **once TSMOM is live, it is the whole book, and
+  its P&L is a path-dependent draw with a negative tilt from the generator.**
+
+*Scale caveat:* every run has 5 folds and 150 graded days, not 25 and ~2 years. The directions are
+stable across 3 seeds; the magnitudes are not.
 
 ### 2.3 Ablation: TSMOM off, and TSMOM kept without its veto
 
-__ABL__
+**TSMOM disabled (config `modules_enabled.TSMOM: false`).** Across 3 planted seeds, the engine captures
+the planted edge net of costs: mean **+6.97** [+0.32, +13.62], with TREND +12.71 and BREAKOUT +0.72
+(§2.2 table). The same arena loses on null (__NULLSHORT__). **Net capture is positive but thin:**
+- friction is 4.9–9.2 per run against gross 11.4–18.7, so 34–49% of gross;
+- MEAN_REVERSION subtracts 1.6–11.2.
+
+**TSMOM kept, without its veto** (planted seed 7, `C3_TSMOM_NO_VETO`): 564 trades, net **−0.85**.
+- The fast signals now reach the Governor and open positions.
+- On the next tradeable tick, TSMOM's standing vote is the opposite order, and `PositionModel.apply_order`
+  closes the fast position as a `reverse` (`tests/backtest/book.py:98-101`).
+- TREND: 109 of 117 exits `reverse`, mean hold **0.02 h** (about 1 minute), net −0.68 on gross +0.79.
+  BREAKOUT: 84/110 `reverse`. TSMOM churns 317 trades, 244 of them ended by `reverse`.
+
+**Verdict on BUILDER's "the standing vote vetoes the arena".** Confirmed at scale, and it is worse than
+the veto.
+- The lockout has two locks: `DISCARD_OPPOSITE` (`core/signals/agon.py:313`), **and** the book's
+  one-net-position-per-instrument with reverse-on-opposite.
+- Removing the veto alone converts the lockout into one-minute churn. It does not free the arena.
+- Only removing TSMOM from the shared slot works. Examples: TSMOM off; per-strategy sub-books; or a
+  TSMOM that emits only on a vote change.
+
+**Options, with value and cost:**
+
+| option | value | complexity cost |
+|---|---|---|
+| (a) disable TSMOM in `modules_enabled` pending a TSMOM-appropriate control | restores the fast arena (+6.97 mean vs −0.49 on planted) | −0 lines; one config flag; **[spec — owner ratification]** (ACIS-04 §6.6 calls TSMOM "required canonical") |
+| (b) TSMOM emits only on a vote flip (event, not state) | fast modules can trade between flips; TSMOM holds to the flip, as MOP holds | about 10 lines in `_tsmom` plus per-instrument last-vote state; changes the GAP-0075 per-tick re-size assumption |
+| (c) per-strategy position slots (sub-books) | removes the class of defect | large: book, Governor portfolio view, exposure caps and rulebook all assume one net position per instrument; a live broker nets anyway (FIFO/netting accounts), so it is also a venue question |
+| (d) drop the veto only | **none**: measured −0.85, one-minute churn | do not do this |
 
 ### 2.4 The horizon test: a multi-day trend
 
-__HOR__
+**The market.** `MarketSpec(planted, episode_hours=(72, 480), drift_sigma=0.003)`: trend episodes of 3–20
+weekdays, each with a random sign.
+- The drift is 0.003 σ per 20 s step, which is 0.099% a day against σ 0.5% a day.
+- Calibration (`/tmp` scratch, restated in `probe_slow_trend.py`'s docstring): a perfect-sign oracle
+  earns an annual Sharpe of about 3.0, and a 10-day time-series trend rule earns about 0.6–1.1 gross.
+- So this is **the "annual Sharpe 0.5–1.0 for a realistic trend follower" market** the brief asks for.
+- Costs are the declared 1× C8: 0.44 pip spread plus 0.2 pip slippage per side on EUR_USD, about
+  0.6 bp a round trip.
+
+**Result: ACIS as built cannot capture it.**
+
+| arm (seed 7, 5 folds, 150 graded days) | trades | net $ | gross $ | friction $ | entries aligned with the episode sign | mean hold |
+|---|---|---|---|---|---|---|
+| **TSMOM off** (fast arena alone) | 405 | **−3.96** | +0.22 | 4.17 | TREND 194/384 = **50.5%** | 0.35 h |
+| **TSMOM on** (as built) | __H7ON_ROW__ |
+| named alternative: EWMA 8/32-day on daily closes, $150 fixed, same path, same C8 cost | 9 flips | **+10.79** (EUR +2.54, USD_JPY +8.25) | +10.89 | 0.11 | — | days–weeks |
+| the same alternative over 18 more seeds (36 instrument-paths) | — | **mean +2.92 per instrument-path, SE 1.29; 67% positive** | | | | |
+| the same alternative on the 1–4 h planted market (19 seeds, 38 instrument-paths) | — | mean −3.63, SE 4.10 (no edge, as expected) | | | | |
+
+Reproduce with `probe_slow_trend.py /tmp/c3/runs/h7_off` and `C3_SEED=<n>` for the other seeds. The
+outputs are `probe_slow_trend_multiday_seeds.txt` and `probe_slow_trend_planted_seeds.txt`.
+
+**What prevents capture. I name the components with evidence, in order of how binding each is.**
+1. **The decision clock and the gene ranges.** No fast module can express a multi-day view.
+   - TREND's EMAs top out at 200 **one-minute** bars (3.3 h; `GENE_SPECS`,
+     `core/optimizer/param_types.py:17-29`).
+   - Every stop and target is a multiple (1–5) of the **1-minute** true-range ATR.
+   - `max_holding_periods` ≤ 48 bars exists only in the fitness simulator.
+   - Measured: TREND entries on the multi-day market are **50.5% aligned** (a coin flip), against
+     **83% on the 1–4 h planted market**. TREND holds 0.35 h against episodes of 72–480 h, and gross
+     edge is ≈ 0 while friction is 4.1.
+2. **The regime gate cannot see the trend.** Its window is 201 ticks (≈ 67 min here). `REGIME_SHIFT`
+   fires on 43% of 2-minute cycles on this market, **identical to null** (§2.7), so the gate is noise
+   with respect to a multi-day trend.
+3. **QIEA's fitness window** reads only regime-labelled 1-minute bars under the same dual-EMA core, so
+   evolution optimises the same minute-scale rule. It can select nothing slower.
+4. **TSMOM is the only multi-day holder, and it is mis-tuned for this horizon**: 63/126/252-day lookbacks
+   against 3–20-day episodes, and the 48 h harness cap truncates it. With TSMOM on, the arena is locked
+   out as usual (__H7ON_OCC__).
+5. **The Governor and `DISCARD_OPPOSITE`** are not the binding constraints here. The fast modules fail
+   on direction before sizing matters.
+
+**Not binding:** the 48 h `max_hold_s`. No fast-module trade comes near it (mean 0.35 h).
+
+**Strategic reading.** The edge the field brief says survives retail and prop costs is slow trend
+(weeks). The one component that works at that speed is a 20-line rule on daily closes. On this market it
+beats the whole arena net of costs, with about 38× less friction (0.11 vs 4.17). ACIS's architecture — tick-window regimes,
+1-minute bars, minute-scale genes — is built for the horizon where the field brief and ARCHITECT say
+**no net edge exists at retail cost**. This is **LLM-originated reasoning** on a synthetic market. The
+honest test is the same comparison on 2012–2023 real data under the C1 protocol.
 
 ### 2.5 TSMOM faithfulness (extends BUILDER point 6)
 
