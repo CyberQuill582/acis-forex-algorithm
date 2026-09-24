@@ -167,15 +167,16 @@ def spx_correlation(marks: Sequence[tuple[date, Decimal]],
 
 
 def _avg_duration(trades: Sequence[ClosedTrade], *, only: str | None = None) -> float:
-    """Mean duration of `only`'s trades or, with no `only`, of the §14 band — every trade
-    except the TSMOM and MOMENTUM_SCALP carve-outs. (An unused all-trades branch was
-    removed: the mutation gate showed nothing could reach it, GAP-P12D-28.)"""
+    """Mean duration of `only`'s trades or, with no `only`, of the §14 band (all but the TSMOM and
+    MOMENTUM_SCALP carve-outs). An EMPTY population has no mean: NaN, never the 0.0 a zero-duration
+    population gives; reading an empty carve-out's 0.0 as zero-duration trades was GAP-P12D-38.
+    (An empty band fails §14 either way; an unreachable branch went in GAP-P12D-28.)"""
     if only is not None:
         sel = [t for t in trades if t.strategy_type == only]
     else:
         sel = [t for t in trades if t.strategy_type not in _DURATION_CARVE_OUT]
     if not sel:
-        return 0.0
+        return math.nan
     return sum(t.duration_s for t in sel) / len(sel)
 
 
