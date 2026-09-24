@@ -1,8 +1,10 @@
 """Calendar gates the Governor applies (ACIS-05 §7 step 1; GAP-0053, GAP-P12D-10).
 
 Moved unchanged out of capital_governor.py (module legibility, GAP-P12M-01). Invariants:
-  * The no-weekend-holding entry ban covers the buffer BEFORE the Friday close AND the
-    whole closed window through the Sunday open — there is no post-close bypass.
+  * The weekend entry ban covers the buffer BEFORE the Friday close AND the whole closed
+    window through the Sunday open — there is no post-close bypass. It binds EVERY
+    account, weekend holding allowed or not (GAP-P12D-58: FTMO forbids opening a trade
+    two hours or less before a market closes for two hours or more, on every account).
   * Every time is the declared centre's local wall clock, so it follows DST.
   * The next boundary is the earliest declared session boundary strictly after `now`.
 """

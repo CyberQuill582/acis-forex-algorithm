@@ -186,9 +186,10 @@ def test_weekend_entry_buffer_blocks_no_weekend_accounts() -> None:
     sig = mk_signal(generated_at=FRIDAY_2100)
     order = gov.allocate(sig, mk_portfolio(), mk_regime(), FRIDAY_2100)
     assert order.size_units == 0 and order.reason == "weekend_ban"
-    # weekend-allowed account, same instant: sized
+    # GAP-P12D-58: a weekend-allowed account, same instant, is banned too (this line
+    # asserted "formula" until the pre-close ban was decoupled from weekend holding)
     gov2, _ = mk_governor()
-    assert gov2.allocate(sig, mk_portfolio(), mk_regime(), FRIDAY_2100).reason == "formula"
+    assert gov2.allocate(sig, mk_portfolio(), mk_regime(), FRIDAY_2100).reason == "weekend_ban"
     # same account far from the close (Wednesday): sized
     wed = datetime(2026, 7, 8, 21, 0, tzinfo=timezone.utc)
     sig_wed = mk_signal(generated_at=wed)
@@ -475,6 +476,22 @@ def test_gap0052_registry_rebuilds_from_portfolio_positions() -> None:
     gov2, log2 = mk_governor()
     assert gov2.rebuild_groups(orphan) == 0
     assert len(log2.events("GROUP_REBUILD_ORPHAN")) == 1
+
+
+@pytest.mark.parametrize("month, close_utc", [(7, 21), (1, 22)])   # 17:00 New York, EDT / EST
+def test_swing_account_refuses_an_entry_an_hour_before_the_friday_close(month, close_utc) -> None:
+    """GAP-P12D-58: FTMO forbids opening a trade "two hours or less before a relevant
+    financial market is closed for at least two hours" on EVERY account type, so the
+    pre-close ban binds an account that may hold over the weekend (FTMO Swing) too."""
+    friday = datetime(2026, 7, 10) if month == 7 else datetime(2026, 1, 9)
+    close = friday.replace(hour=close_utc, tzinfo=timezone.utc)
+    swing = mk_rulebook(weekend_holding_allowed=True)
+    gov, _ = mk_governor(rulebook=swing)
+    for at, reason in ((close - timedelta(hours=1), "weekend_ban"),
+                       (close - timedelta(hours=2), "weekend_ban"),        # the fence post
+                       (close - timedelta(hours=2, minutes=1), "formula")):
+        sig = mk_signal(generated_at=at)
+        assert gov.allocate(sig, mk_portfolio(), mk_regime(), at).reason == reason, at
 
 
 def test_gap0053_weekend_ban_covers_the_whole_closed_window() -> None:

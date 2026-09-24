@@ -350,9 +350,8 @@ class CapitalGovernor:
                             instrument=signal.instrument,
                             account=self._rules.platform)
             return "blackout"
-        if (not self._rules.weekend_holding_allowed
-                and within_weekend_buffer(now, self._week_close, self._week_open,
-                                          self._cfg.weekend_entry_buffer_s)):
+        if within_weekend_buffer(now, self._week_close, self._week_open,   # EVERY account,
+                                 self._cfg.weekend_entry_buffer_s):         # GAP-P12D-58
             return "weekend_ban"
         if (self._cfg.scalp_min_hold_conflict
                 and signal.strategy_type is StrategyType.MOMENTUM_SCALP
