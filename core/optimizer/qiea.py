@@ -77,8 +77,19 @@ class _Individual:
     fitness: float
 
 
+@dataclass(frozen=True)
+class EvolutionResult:
+    """`champion` is what may be STAGED (every gate passed). `candidate` is the champion that
+    consulted and passed the §6.3 holdout, whether the §5.6 plateau law then staged it or refused
+    it: it was evaluated and selected, so it stays a Deflated Sharpe trial (GAP-P12D-25; the audit
+    of GAP-P12D-34, finding F3 — dropping refused candidates would shrink N and loosen the gate)."""
+    champion: ParamSet | None
+    candidate: ParamSet | None
+
+
 class QIEA:
-    """Per-regime evolution. `evolve()` returns a ParamSet or None (§6.3 gates)."""
+    """Per-regime evolution. `evolve()` returns the stageable ParamSet or None (§6.3 gates);
+    `evolve_outcome()` also returns the holdout-passed candidate."""
 
     def __init__(self, cfg: OptimizerConfig, costs: CostModel, logger, *,
                  signal_bar_seconds: int, atr_period: int) -> None:
@@ -121,14 +132,18 @@ class QIEA:
 
     # -- evolution --------------------------------------------------------- #
 
-    def evolve(
+    def evolve(self, regime: RegimeType, history: RegimeLabelledHistory, *, seed: int,
+               now: datetime | None = None) -> ParamSet | None:
+        return self.evolve_outcome(regime, history, seed=seed, now=now).champion
+
+    def evolve_outcome(
         self,
         regime: RegimeType,
         history: RegimeLabelledHistory,
         *,
         seed: int,
         now: datetime | None = None,
-    ) -> ParamSet | None:
+    ) -> EvolutionResult:
         cfg = self._cfg
         if history.bar_seconds != self._bar_seconds:
             raise DataQualityError(
@@ -146,7 +161,7 @@ class QIEA:
                 regime=regime.value, bars=len(bars), required=cfg.fitness_min_bars,
                 span_days=cfg.fitness_span_days,
             )
-            return None
+            return EvolutionResult(None, None)
 
         n_hold = max(1, round(len(bars) * cfg.holdout_fraction))
         train, holdout = bars[:-n_hold], bars[-n_hold:]
@@ -176,7 +191,7 @@ class QIEA:
                 regime=regime.value, generations=cfg.generations, seed=seed,
             )
             self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_TRAIN", evaluated)
-            return None
+            return EvolutionResult(None, None)
 
         champion = self._build_paramset(best.genes, regime, best.fitness, seed, evolved_at)
 
@@ -193,7 +208,7 @@ class QIEA:
                 holdout_e_r=None if hold_res.e_r != hold_res.e_r else round(hold_res.e_r, 4),
             )
             self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_OOS", evaluated, hold_res)
-            return None
+            return EvolutionResult(None, None)
 
         # §5.6 plateau law (GAP-P12D-34): a champion whose ±10% neighbourhood dies on the SAME
         # train window is a peak, not a strategy — refused, with every dead neighbour named.
@@ -206,7 +221,7 @@ class QIEA:
                       for n in plateau.dead],
             )
             self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_PLATEAU", evaluated, hold_res)
-            return None
+            return EvolutionResult(None, champion)   # refused, yet a DSR trial (F3)
 
         self._log.event(
             "EVOLUTION_RUN",
@@ -215,7 +230,7 @@ class QIEA:
             train_bars=len(train), holdout_bars=len(holdout),
         )
         self._log_evaluations(regime, seed, "EVOLUTION_RUN", evaluated, hold_res)
-        return champion
+        return EvolutionResult(champion, champion)
 
     def _log_evaluations(self, regime: RegimeType, seed: int, outcome: str,
                          evaluated: dict[tuple, list], hold_res=None) -> None:
