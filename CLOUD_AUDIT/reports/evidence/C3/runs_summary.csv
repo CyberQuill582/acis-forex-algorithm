@@ -1,0 +1,9 @@
+run,kind,seed,off,no_veto,episode_hours,drift_sigma,folds,offset,evo_salt,scramble,min_label,min_grade,strategy,n,net,gross,friction,sharpe,dur_h,hit,reasons
+p7_off,planted,7,TSMOM,False,,,5,385,,,5.7,15.1,ALL,527,6.55,11.45,4.9,6.6,,,
+p7_off,planted,7,TSMOM,False,,,5,385,,,5.7,15.1,BREAKOUT,174,0.52,1.18,0.66,,0.08,159/174,"{""target"": 87, ""stop"": 87}"
+p7_off,planted,7,TSMOM,False,,,5,385,,,5.7,15.1,MEAN_REVERSION,76,-1.57,-1.25,0.32,,0.18,6/76,"{""stop"": 66, ""target"": 10}"
+p7_off,planted,7,TSMOM,False,,,5,385,,,5.7,15.1,TREND,277,7.6,11.52,3.92,,0.32,231/277,"{""target"": 177, ""stop"": 98, ""reverse"": 2}"
+p7_on,planted,7,-,False,,,5,385,,,5.8,17.5,ALL,126,-0.49,1.16,1.65,-0.02,,,
+p7_on,planted,7,-,False,,,5,385,,,5.8,17.5,TSMOM,126,-0.49,1.16,1.65,,55.69,49/126,"{""max_hold"": 120, ""reverse"": 6}"
+timing1,planted,7,-,False,,,1,385,,,1.6,2.7,ALL,24,21.5,21.73,0.24,3.42,,,
+timing1,planted,7,-,False,,,1,385,,,1.6,2.7,TSMOM,24,21.5,21.73,0.24,,54.58,13/24,"{""max_hold"": 24}"

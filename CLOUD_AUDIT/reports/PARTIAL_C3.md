@@ -12,7 +12,7 @@
 - Timing run (planted, seed 7, 1 fold, 2 instruments) in flight. Labelling ~60 s per instrument per 63 days.
 - Next: project cost, then planted/null/permuted x seeds; ablation (TSMOM off; TSMOM no-veto); horizon test.
 
-## Findings so far (18:25 UTC) — provisional
+## Findings so far (18:37 UTC) — provisional
 1. **The planted/null/permuted generator is a Brownian bridge, and a bridge punishes TSMOM.**
    `synthetic_market._returns` demeans every path over its whole span. On a daily analogue of the
    ladder span (704 weekdays, σ 0.5%/day, 4,000 paths) the ACIS 63/126/252 vote held 2 days loses
@@ -25,3 +25,12 @@
 3. **One-position-per-instrument + an always-on TSMOM vote = a lockout.** Timing run (planted seed 7,
    1 fold, TSMOM live): 24 trades, **all TSMOM, all `max_hold`**; the fast modules traded 0 times.
    Multi-fold runs in flight to measure it at scale.
+
+4. **First scale pair (planted seed 7, 5 folds x 30 d, TSMOM live from fold 0; ~21 min per run):**
+   - TSMOM ON: 126 trades, **all TSMOM** (120 `max_hold`, 6 `reverse`), net −0.49; TSMOM occupies the
+     instrument's single position slot **97% (EUR_USD) and 98% (USD_JPY) of graded time**; fast modules: 0 trades.
+   - TSMOM OFF: 527 trades, net +6.55, gross +11.45; TREND +7.60 (231/277 entries aligned with the planted
+     episode sign), BREAKOUT +0.52 (159/174 aligned), MEAN_REVERSION −1.57 (70/76 against the sign).
+   - Scale: sizes are ~$40–$200 notional on a $10k NAV (base_unit_usd 1000 x conviction x liquidity x
+     regime≈0.35), so every $ figure is tiny; read the signs and ratios.
+   - More seeds, null, no-veto and the horizon test running (queue in the report).
