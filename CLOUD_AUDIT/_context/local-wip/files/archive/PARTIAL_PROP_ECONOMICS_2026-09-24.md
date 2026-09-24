@@ -1,5 +1,9 @@
 # PARTIAL — ECONOMIST: the prop-firm economics pass (checkpoint, 2026-09-24)
 
+> **SUPERSEDED (19:10 EAT):** the final report is `archive/RESEARCH_PROP_ECONOMICS_2026-09-24.md`,
+> which is complete, including §2.8, the cross-check against the ARCHITECT and the SCOUT. This file is
+> kept only as the durability trail (§0.4).
+
 **Who asked, and for what.** The lead (an Opus 5.5 session) launched this under the pinned brief
 `FIVE_AGENT_BRIEF_2026-09-24.md` §2, as part of GAP-P12D-52. The owner's directive: learn what the paid
 minority of prop-firm algo traders actually does, and build on it. Three parts:

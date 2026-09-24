@@ -58,6 +58,17 @@ best Sharpe 0.19 / 0.44 / 0.94:
 - RAS: 0% | 0 / 0 / 0%. Random entries: 86-89% (6-12% even on a fixed config). Plateau: 96-98%.
 - Cross-instrument holdout: 8-10% FPR (common factor). 2-yr time holdout: 3.7-4.3% | 6 / 18 / 32%.
 
+## Checkpoint 4 (after the session-limit reset)
+- Survived: all 12 multiday scenarios (res_multiday_*.jsonl) and the intraday calibration (true best
+  Sharpe 0.26/0.53/1.07 low cost, 0.28/0.55/1.09 high). The follow-on batch had not started;
+  it was relaunched, trimmed.
+- Leaky-oracle lead (ARCHITECT, citing arXiv 2608.27734 §6.1) VERIFIED at source and reproduced here:
+  a config that peeks one bar ahead on 5% of bars, added to a NULL family, passes WF+PSR 80%,
+  CPCV+PBO 100%, PBO<=0.10 87.5%, and the repaired DSR at N=20 27.5% (R=40). A structural
+  future-perturbation test at 30 random times caught it 40/40 with 0/40 false alarms. At a 1% leak
+  the statistics stop passing it, and the 30-point test catches 67.5%, so the structural test must
+  sweep every decision point. Leakage is excluded by structure; statistics cannot deflate it away.
+
 ## In progress
 - Full batch (4 null families x 3 cost levels, planted SR ~0.2/0.45/0.95 x 2 costs; intraday
   family next; Masters permutation runs; prop-objective bootstrap).

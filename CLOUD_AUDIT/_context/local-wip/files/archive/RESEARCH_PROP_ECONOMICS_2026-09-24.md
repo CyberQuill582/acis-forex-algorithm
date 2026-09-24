@@ -69,6 +69,12 @@ minority. we need to know what that minority does and build on them."*
      automation (the SCOUT's question).
    - Small in dollars. The economics come from scale: fees fall from 1.0% of balance at $6K to 0.55% at
      $100K. Closed form, S = 0.5: $251 at $6K against $4,639 at $100K.
+   - The SCOUT's pick is FTMO 2-Step Swing $10k at €89. It has the same geometry class and the same fee
+     ratio. Closed form: +$193 to +$591 per attempt in the band before the §2.5 corrections (§2.8).
+   - **An independent cross-check agrees with the ARCHITECT's FTMO numbers** (§2.8):
+     - zero-edge pass: 0.28 here, ~0.25 there;
+     - Sharpe 1.0 at 0.6%/day: pass 0.78 against 0.73, with a median of 271 against ~259 days;
+     - funded year: trader share 9.7% against ~9.6%.
 7. **[D] The EV-maximising risk scaling.**
    - Challenge: daily P&L volatility of ≈0.75–1.5% of the initial balance. The surface is flat: at
      S = 0.5, 1.25%/day passes in 88 days against 207 days at 0.75%, for ~5% of EV.
@@ -567,6 +573,59 @@ S ≤ 0 is capped at the fee anyway.
 - Licence is not an obstacle: MIT permits vendoring with attribution. But the brief bars adding it, and
   ACIS §16 would need a spec edit for a new dependency.
 
+### 2.8 Cross-check against the other agents (added 19:05 EAT after the lead relayed their results; nothing re-researched)
+
+**The ARCHITECT's synthetic FTMO 2-Step Monte Carlo, as relayed, re-run through this pass's validated
+simulator.** Same cells; FTMO 2-Step rules from the firm's page (10%/5% targets, 5% daily, 10% static,
+4 minimum days); 4,000 paths; `xcheck_ftmo.py`.
+
+| Quantity | ARCHITECT | This pass (fat) | This pass (Gaussian) | Closed form | Verdict |
+|---|---|---|---|---|---|
+| Zero edge, ~1%/day: P(pass both phases) | ~0.25 | 0.283 | 0.313 | 0.333 | **agree** in size and direction; mine 3–6 points higher |
+| Sharpe 1.0, 0.6%/day: P(pass both) | 0.73 | 0.783 | 0.822 | 0.817 | **agree**; mine 5 points higher |
+| Same cell: median trading days to pass | ~259 | 271 | 263 | mean ≈300 | **agree** |
+| Funded year at Sharpe 1.0, 0.6%/day | ~9.6% of initial | 12.2% gross, **9.7% trader share (80%)** | 12.4% gross, 9.9% trader share | — | **agree** if the ARCHITECT's figure is the trader's share; mine is ~27% higher if it is gross. **Unresolved:** the relayed number does not say which |
+
+Why the P(pass) figures differ slightly:
+- The residual 3–6 points is within the spread I would expect from tail and daily-limit modelling
+  choices. My fat case has kurtosis 16 but no stop truncation; the ARCHITECT's tail model and
+  daily-reference semantics were not relayed.
+- Both implementations sit below the idealised closed form, as they should: discrete monitoring, a
+  daily limit, and minimum days all cut the pass rate.
+
+**Two independent implementations agreeing is useful evidence on its own.** It supports the zero-edge
+anchor: the zero-edge pass rate ≈ L/(L+T) per phase, reduced by tails. It also supports the
+edge-to-time relation: a real edge buys pass probability only at the price of time, here ~1 year at
+Sharpe 1.0.
+
+**The SCOUT's venue finding changes which of my geometries is the live one; it leaves the conclusions
+standing.**
+- Per the SCOUT, only FTMO and E8 Markets let an unattended Linux engine trade a funded account (cTrader
+  Open API). Its top pick is **FTMO 2-Step Swing $10k at €89 (refundable)**.
+- That makes my FundedNext base case a *geometry proxy*, not a venue. FundedNext EAs are a paid MT
+  add-on, which is consistent with C11.
+- FTMO 2-Step's geometry is the FundedNext one with a 10% (not 8%) phase-1 target. So its zero-edge pass
+  is 0.333 against 0.370 in closed form, and the fee ratio is the same (€89 ≈ $100 ≈ 1.0% of $10k).
+- **Closed-form EV per FTMO 2-Step Swing $10k attempt** (Gaussian, best constant risk):
+
+  | S (OOS, net) | −0.5 | 0 | 0.3 | 0.5 | 0.7 | 1.0 |
+  |---|---|---|---|---|---|---|
+  | δ = 0.25 | +$32 | +$132 | +$242 | +$378 | +$591 | +$1,034 |
+  | δ = 0.5 | +$22 | +$107 | +$193 | +$269 | +$374 | +$599 |
+
+- Apply the §2.5 corrections to these numbers:
+  - fat tails, about −15 to −22%;
+  - the survival-first policy, about −10 to −15% in the band;
+  - the payout haircut.
+
+  **The working threshold is unchanged: S_net ≥ 0**, where S_net must include FTMO's 0.7% non-USD P&L
+  adjustment (venue pass 2026-09-17 §3.1 item 2).
+- Swing's 1:30 leverage does not bind at these risk levels. About 1%/day of P&L volatility on $10k needs
+  only a few times notional. Swing's removal of the news and weekend restrictions (venue pass §3.1
+  item 3) is what lets multi-day holds run at all (C5).
+- **E8 Markets was not modelled:** its rules were not fetched in this pass. Run it through PropEV once
+  the SCOUT's rulebook exists.
+
 ## Part 3 — translation into ACIS
 
 ### 3.1 A prop-route grading objective — **[spec — owner ratification]** (§14 is master-spec text)
@@ -974,3 +1033,5 @@ belongs in the VALIDATOR's accounting regime.
 - `analytic.py` — the closed-form EV;
 - `sweep.py` and `runall.py` — the Monte Carlo sweeps (`res_*.json`);
 - `analyse.py` and `summary.py` — EV and break-even.
+- `xcheck_ftmo.py` — the §2.8 cross-check of the ARCHITECT's FTMO 2-Step cells, with output in
+  `xcheck_ftmo.out`.

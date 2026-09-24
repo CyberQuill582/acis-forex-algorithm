@@ -30,10 +30,12 @@ Import the reports **by path, not by merge**. The cloud branch was cut from GitH
 be the branch you work on.
 
 ```bash
-git fetch origin
-git branch -r | grep -E 'claude/|cloud'                # find the cloud's branch; its final message names it
-git checkout origin/<cloud-branch> -- CLOUD_AUDIT/     # files only; your branch and history are untouched
-git add CLOUD_AUDIT && git commit -m "Import the cloud review reports (<date>)"
+git fetch origin '+refs/heads/claude/*:refs/remotes/origin/claude/*'   # the cloud's final message names its branch
+git checkout origin/<cloud-branch> -- CLOUD_AUDIT/reports CLOUD_AUDIT/MISSION.md CLOUD_AUDIT/FLEET_PLAN.md
+git commit -m "Import the cloud review reports (<date>)" -- CLOUD_AUDIT   # pathspec: commits nothing else
 ```
+
+Leave `_context/` out, on purpose. It cites IDs that would turn this project's ledger check red, and it lives on in
+the `cloud-handoff` branch anyway.
 
 The laptop's `cloud-handoff/RECONCILE.md` has the full procedure, including the non-git creative-pipeline folder.

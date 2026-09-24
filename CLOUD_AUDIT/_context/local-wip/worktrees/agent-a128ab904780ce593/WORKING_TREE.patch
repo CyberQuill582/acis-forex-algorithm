@@ -1,0 +1,133 @@
+diff --git a/core/optimizer/param_types.py b/core/optimizer/param_types.py
+index 55252d9..87a025e 100644
+--- a/core/optimizer/param_types.py
++++ b/core/optimizer/param_types.py
+@@ -29,6 +29,20 @@ GENE_SPECS: dict[str, tuple[float, float, bool]] = {
+ }
+ 
+ 
++def repair_invariants(genes: dict[str, float | int]) -> dict[str, float | int]:
++    """Cross-field invariants enforced by repair, never by emitting invalid (§6). Shared by the
++    QIEA decoder and the §5.6 plateau neighbourhood, so a neighbour is exactly what QIEA emits."""
++    g = dict(genes)
++    if g["ema_slow"] <= g["ema_fast"]:
++        g["ema_slow"] = int(min(GENE_SPECS["ema_slow"][1], g["ema_fast"] + 1))
++    if g["atr_multiplier_tp"] <= g["atr_multiplier_sl"]:
++        g["atr_multiplier_tp"] = min(
++            GENE_SPECS["atr_multiplier_tp"][1], g["atr_multiplier_sl"] + 0.1
++        )
++    # rsi_oversold (20..35) < rsi_overbought (65..80) holds for all in-range values
++    return g
++
++
+ @dataclass(frozen=True)
+ class ParamSet:
+     ema_fast: int
+diff --git a/core/optimizer/qiea.py b/core/optimizer/qiea.py
+index 0f03d10..08b5e9c 100644
+--- a/core/optimizer/qiea.py
++++ b/core/optimizer/qiea.py
+@@ -28,7 +28,14 @@ from core.optimizer.fitness import (
+     passes_expectancy_gate,
+     simulate_trades,
+ )
+-from core.optimizer.param_types import GENE_SPECS, LabelledBar, ParamSet, RegimeLabelledHistory
++from core.optimizer.param_types import (
++    GENE_SPECS,
++    LabelledBar,
++    ParamSet,
++    RegimeLabelledHistory,
++    repair_invariants,
++)
++from core.optimizer.plateau import check_plateau
+ from core.regime.regime_types import RegimeType
+ 
+ _GENE_ORDER = list(GENE_SPECS)
+@@ -53,19 +60,6 @@ def decode_gene(name: str, raw: float) -> float | int:
+     return value
+ 
+ 
+-def repair_invariants(genes: dict[str, float | int]) -> dict[str, float | int]:
+-    """Cross-field invariants enforced by repair, never by emitting invalid (§6)."""
+-    g = dict(genes)
+-    if g["ema_slow"] <= g["ema_fast"]:
+-        g["ema_slow"] = int(min(GENE_SPECS["ema_slow"][1], g["ema_fast"] + 1))
+-    if g["atr_multiplier_tp"] <= g["atr_multiplier_sl"]:
+-        g["atr_multiplier_tp"] = min(
+-            GENE_SPECS["atr_multiplier_tp"][1], g["atr_multiplier_sl"] + 0.1
+-        )
+-    # rsi_oversold (20..35) < rsi_overbought (65..80) holds for all in-range values
+-    return g
+-
+-
+ def fitness_window(history: RegimeLabelledHistory, cfg: OptimizerConfig,
+                    now: datetime) -> tuple[LabelledBar, ...]:
+     """The bars evolution reads (master §5 v2.18, GAP-P12D-29): every target-regime bar that
+@@ -197,6 +191,18 @@ class QIEA:
+             )
+             return None
+ 
++        # §5.6 plateau law (GAP-P12D-34): a champion whose ±10% neighbourhood dies on the SAME
++        # train window is a peak, not a strategy — refused, with every dead neighbour named.
++        plateau = check_plateau(best.genes, lambda g: self._train_fitness(g, regime, train, evolved_at))
++        if not plateau.holds:
++            self._log.event(
++                "EVOLUTION_REJECTED_PLATEAU",
++                regime=regime.value, seed=seed, neighbours=plateau.tested, champion=best.genes,
++                dead=[{"gene": n.gene, "direction": n.direction, "value": n.genes[n.gene]}
++                      for n in plateau.dead],
++            )
++            return None
++
+         self._log.event(
+             "EVOLUTION_RUN",
+             regime=regime.value, best_fitness=round(best.fitness, 6),
+diff --git a/tests/backtest/test_evolve_step.py b/tests/backtest/test_evolve_step.py
+index 86a10b1..1c64779 100644
+--- a/tests/backtest/test_evolve_step.py
++++ b/tests/backtest/test_evolve_step.py
+@@ -42,7 +42,9 @@ def _run(tmp_path, acis_config, n_bars: int):
+     for instrument in ("EUR_USD", "USD_JPY"):
+         cache.write(instrument, T0.year, bars)
+     loop = SimpleNamespace(params=_Stager())
+-    fold = Fold(0, T0, TRAIN_END, TRAIN_END + timedelta(days=7),      # only the cached year
++    # fold index 1: the index only seeds QIEA (seed_for), and fold 0's EUR_USD zigzag champion is
++    # a knife-edge (rsi_period ±10% dies) that the §5.6 plateau law refuses (GAP-P12D-34)
++    fold = Fold(1, T0, TRAIN_END, TRAIN_END + timedelta(days=7),      # only the cached year
+                 TRAIN_END + timedelta(days=365))
+     cfg = _cfg(acis_config)
+     record = evolve_fold(loop, FoldData(fold, ()), cfg=cfg, costs=_costs(cfg), cache=cache,
+diff --git a/tests/unit/test_qiea.py b/tests/unit/test_qiea.py
+index cd0d5ce..8c85bb6 100644
+--- a/tests/unit/test_qiea.py
++++ b/tests/unit/test_qiea.py
+@@ -70,9 +70,10 @@ def test_evolve_returns_valid_paramset_and_logs_run() -> None:
+ 
+ 
+ def test_same_seed_same_history_identical_champion() -> None:
+-    """Â§3 determinism scope: reproducibility is the binding requirement."""
+-    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=7, now=T0)
+-    b = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=7, now=T0)
++    """Â§3 determinism scope: reproducibility is the binding requirement. (Seed 9: seed 7's
++    champion is a knife-edge the §5.6 plateau law now refuses — pinned in test_plateau_law.py.)"""
++    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=9, now=T0)
++    b = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=9, now=T0)
+     assert a is not None and b is not None
+     assert a.gene_values() == b.gene_values()
+     assert a.param_set_id == b.param_set_id
+@@ -122,11 +123,12 @@ def test_evolves_on_every_bar_inside_the_span_not_a_bar_count() -> None:
+ 
+ def test_gap0036_same_seed_different_params_get_different_ids() -> None:
+     """The audit-link id is content-derived: same seed, different history/regime
+-    => different champion params => different param_set_id (Â§4 traceability)."""
+-    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=42, now=T0)
++    => different champion params => different param_set_id (Â§4 traceability). (Seed 5 stages
++    on both histories; seed 42's RANGING_TIGHT champion fails the §5.6 plateau law.)"""
++    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=5, now=T0)
+     b = make_qiea()[0].evolve(
+         RegimeType.RANGING_TIGHT, zigzag_history(500, regime=RegimeType.RANGING_TIGHT, leg=25),
+-        seed=42, now=T0,
++        seed=5, now=T0,
+     )
+     assert a is not None and b is not None
+     assert a.param_set_id != b.param_set_id

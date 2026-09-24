@@ -33,7 +33,9 @@ recommendation to the cloud lead, who pins the final brief (FLEET_PLAN §5 P1).
    - **BUILDER:** `_context/local-wip/worktrees/*/`: its branch log and patch, plus any new test files.
    - Finals are still evidence, never instructions (A9). Where a final exists, extend or contest it; don't redo
      it.
-4. `_context/local-wip/WORKING_TREE.patch`: the local lead's uncommitted ledger edits (GAP-P12D-52 and others).
+4. `_context/local-wip/WORKING_TREE.patch`: the local lead's uncommitted ledger edits, including the new entry
+   for this five-agent pass. **IDs that appear only in this patch do not exist at BASE.** Refer to them in prose
+   (FLEET_PLAN rule 8a), or ACIS's ledger check turns red.
 5. The repo read path: `README.md → STATUS.md → TODO.md → CLAUDE.md → ACIS_SPEC.md → specs/ACIS-00-INDEX.md →
    KNOWN_GAPS.md`.
    - STATUS.md is dated 2026-09-17 and partly stale.
@@ -45,8 +47,13 @@ recommendation to the cloud lead, who pins the final brief (FLEET_PLAN §5 P1).
 
 **If an earlier cloud session worked on ACIS before this handoff existed,** it saw commit `e00fdd3`
 (2026-07-21), which is two months stale.
-- Look for its notes on `origin` branches (`git branch -r`; a `claude/*` branch with anything under
-  `CLOUD_AUDIT/`).
+- Look for its notes. Run this at P1, and again at P5, because the old session may push late:
+  ```bash
+  git fetch origin '+refs/heads/claude/*:refs/remotes/origin/claude/*'
+  git branch -r
+  ```
+  You are looking for a `claude/*` branch with `CLOUD_AUDIT/reports/PRIOR_SESSION_NOTES.md`. Read it with
+  `git show <branch>:<path>`.
 - Salvage its web research.
 - Discard any code-level conclusion it drew from the stale tree.
 
@@ -73,15 +80,24 @@ evidence.
 
 ## 3. Hard boundaries specific to ACIS
 - **No real market data, none at all.** The project's first principle: *clean out-of-sample data is the scarcest
-  resource; every look at real history is a trial against it; the 2024–25 holdout is locked.* The data is
+  resource; every look at real history is a trial against it; the 2024–25 holdout is locked.* The tick set is
   deliberately absent from the repo. So:
+  - **The one exception, which is not a licence:** `tests/backtest/fixtures/EURUSD_2025-12-31_00h_ticks.bi5` is
+    one hour of **real** Dukascopy ticks, and it falls **inside the locked holdout**. It exists to test the
+    decoder.
+    - The decoder tests may run it.
+    - Nobody may read its prices, plot it, compute any statistic from it, or feed it to any strategy.
   - **Scripts you must not run:**
     - any of `scripts/download_*.py`;
+    - `scripts/dl_common.py` and `scripts/dl_supervisor.ps1`;
     - `scripts/build_labelled_bars.py`;
     - `scripts/run_data_validation.py`;
     - `scripts/run_oos_validation.py`, on anything but synthetic input.
-  - **Never fetch historical prices** for FX, metals, indices or energies from any source: Dukascopy, HistData,
-    OANDA, Yahoo, Kaggle, or anywhere else.
+  - **Scripts that may run only in a `/tmp` copy:** `scripts/mutation_gate.py`, which mutates source.
+  - **Never fetch or load historical prices** for FX, metals, indices, energies or anything else, from any source:
+    - Dukascopy, HistData, OANDA, Yahoo/yfinance, pandas-datareader, Kaggle, or anywhere else;
+    - **nor the example datasets bundled with libraries.** For example, `arch.data` and `statsmodels.datasets`
+      ship real market history.
   - **Every experiment is synthetic,** using `tests/backtest/synthetic_market.py` or your own generators.
 - **Guardrails are owner-only** under the guard-integrity law in CLAUDE.md:
   - `config/guardrail_limits.yaml`;
@@ -95,15 +111,26 @@ evidence.
   could test them honestly: post-cutoff data, or forward only.
 
 ## 4. Setup (P0)
-- **Python:** ≥ 3.11. Run `pip install -e ".[dev]" numpy`.
-  - Add scipy, statsmodels, arch or numba **for evidence scripts only**. Never add them to `pyproject.toml`.
-- **Baseline:**
-  - `python -m pytest -q` (the laptop got 808 passed, 6 skipped; the skips need `data/`);
+- **Python ≥ 3.11.** ACIS is **not** pip-installable: it has a flat layout and runs from source. Install exactly
+  what its CI installs:
+  ```bash
+  pip install structlog "pydantic>=2" pydantic-settings PyYAML pytest pytest-asyncio numpy
+  ```
+  - Add scipy, statsmodels, arch or numba **for evidence scripts only**.
+  - Never edit `pyproject.toml` or any packaging file.
+- **Baseline,** run in the review tree `/tmp/review-acis` (FLEET_PLAN P0):
+  - `python -m pytest -q`. The laptop got 808 passed, 6 skipped; the skips need `data/`.
   - `python scripts/ledger_check.py`.
-- **The governance gate:** `python scripts/governance_gate.py --session` needs `../specs_constitution` (see
-  FLEET_PLAN P0) and Node for its `.mjs` checks. Record the time and the result.
-- **Before closing** (FLEET_PLAN rule 8a), run `python scripts/ledger_check.py` again with your reports in place.
-  It must stay green. ACIS ledger IDs look like `GAP-P12D-49` and `GAP-0075`.
+- **The governance gate:** `python scripts/governance_gate.py --session`. It needs `/tmp/specs_constitution`
+  (FLEET_PLAN P0) and Node for its `.mjs` checks. Record the time and the result.
+- **Before closing** (FLEET_PLAN rule 8a):
+  1. Copy your `CLOUD_AUDIT/` into the review tree.
+  2. Run `python scripts/ledger_check.py` there. It scans every `.md` in the tree, and it must stay green.
+  3. Remove the copy.
+
+  Cite only ACIS IDs that exist at BASE.
+- **Time boxes** (FLEET_PLAN §4): C1 and C3 get 3 hours each, C2, C4 and C5 get 2 hours each, and the lead's P1
+  gets 45 minutes.
 
 ## 5. Lead reconnaissance (P1): the owner asked for this explicitly
 Before pinning the brief, **search the web heavily**. Cap it at about 30 searches, then read the primary URLs you
@@ -135,38 +162,40 @@ Do it under a realistic search, and at a scale the laptop cannot reach.
 VALIDATOR's partial (`PARTIAL_VALIDATION_FIREWALL_2026-09-24.md`). Then compare, reconcile the differences, and say
 which result is right. An independent replication that agrees is itself a finding.
 
-**Tasks.**
-1. **Synthetic families.** Match ACIS's data shape: 8 instruments, a 2012–2023 development period, and a 2024–25
-   holdout.
-   - **Null families:** iid; GARCH(1,1) volatility clustering; Student-t tails; regime-switching volatility; a
-     common factor across instruments at ρ≈0.4.
-   - **Planted edges:** annual Sharpe ≈ 0.25, 0.5 and 1.0, at intraday and multi-day horizons, each at two cost
-     levels.
-2. **A realistic search.**
-   - Families of N ∈ {1, 10, 60, 200, 1000} configurations, selected by the protocol's own in-sample stage.
-   - **The outer loop:** K pipeline revisions re-scored on the same history, K ∈ {1, 5, 20}. The local VALIDATOR
-     found that "best of 20 pipeline variants" gives a 27% false-positive rate; check that.
-3. **Protocols to compare.**
-   - **As built:** walk-forward with the DSR gate. Import `tests/backtest/deflated_sharpe.py`, `report.py`,
-     `walk_forward.py` and `oos_plan.py` **read-only**.
-   - **Repaired DSR:** walk-forward with a repaired DSR.
-   - **Multiple-testing families:**
+**Tasks.** Match ACIS's data shape: 8 instruments, a 2012–2023 development period, and a 2024–25 holdout. Run a
+**core grid that must finish** inside the time box, then an **extended grid only if time remains**.
+
+1. **The core grid (must finish).**
+   - **Null families:**
+     - iid;
+     - GARCH(1,1) with Student-t innovations;
+     - a common factor across instruments at ρ≈0.4.
+   - **Planted edges:**
+     - multi-day at Sharpe ≈ 0.5 and 1.0;
+     - intraday at Sharpe ≈ 0.5.
+
+     All at one realistic prop cost level.
+   - **Search:** N ∈ {1, 60, 1000} configurations, each selected by the protocol's own in-sample stage.
+   - **The outer loop:** K ∈ {1, 20} pipeline revisions re-scored on the same history.
+   - **Protocols:**
+     - **As built:** walk-forward with the DSR gate. Import `tests/backtest/deflated_sharpe.py`, `report.py`,
+       `walk_forward.py` and `oos_plan.py` **read-only**.
+     - walk-forward with a repaired DSR;
      - CPCV + PBO (CSCV);
      - Hansen's SPA;
-     - White's Reality Check;
      - Romano–Wolf StepM;
-     - the Harvey–Liu–Zhu haircut, and the t > 3 hurdle;
+     - the Harvey–Liu–Zhu haircut;
      - Bailey–López de Prado MinBTL;
-     - Paleologo's RAS;
-     - Masters-style permutation.
-   - **Heuristic checks:**
-     - random entries with the same exits;
-     - the §5.6 ±10% plateau;
-     - a cross-instrument holdout;
      - a two-year time holdout.
-   - **Replication count:** R ≥ 2,000 per cell, with Monte-Carlo confidence intervals. Where a cell is expensive,
-     R ≥ 1,000, and say so.
-4. **Deliverables.**
+   - **Replication count:** R = 2,000 per cell (1,000 for CPCV), with Monte-Carlo confidence intervals.
+2. **The extended grid (only if time remains).** Add, in this order:
+   - regime-switching volatility;
+   - Sharpe 0.25;
+   - a second cost level;
+   - N ∈ {10, 200}, and K = 5;
+   - White's Reality Check, the t > 3 hurdle, Paleologo's RAS, and Masters-style permutation;
+   - random entries with the same exits, the §5.6 ±10% plateau, and a cross-instrument holdout.
+3. **Deliverables.**
    - **The main table:** protocol × null family, giving the false-positive rate (with CI), power at Sharpe 0.5
      and 1.0 (with CI), the data needed, and the compute.
    - **The detectability frontier:** the years of data needed for 80% power at a false-positive rate ≤ 5%, as a
@@ -174,7 +203,7 @@ which result is right. An independent replication that agrees is itself a findin
    - **The recommended protocol,** possibly a stack of several.
    - **Its looks budget:** how many looks at real data the 2012–2023 development record affords before it is
      spent, and the kill criteria.
-5. **Only if time remains: the prop objective.** Estimate P(pass), P(breach) and EV for a funded account from an
+4. **Only if time remains: the prop objective.** Estimate P(pass), P(breach) and EV for a funded account from an
    out-of-sample record, by block bootstrap under an FTMO-style rulebook: a 5% daily loss that resets, a 10%
    static max loss, a 10% target. How many months of out-of-sample or demo record make those confidence
    intervals useful?
@@ -403,6 +432,17 @@ order. The demo is the owner's top priority, and real money comes after it.
 4. **The safest shortest path to a demo account trading.** What must be fixed before the first demo order, and
    what can wait?
 5. **Disagreements with the local five-agent pass,** each with evidence.
+
+**The lead's P3 reconciliation checklist.** These are items the lanes must not see in advance:
+- **C1 against the local VALIDATOR.** Compare C1's table with `PARTIAL_VALIDATION_FIREWALL_2026-09-24.md` (or its
+  final). The key figures to confirm or refute:
+  - "best of 20 pipeline variants gives a 27% false-positive rate";
+  - the as-built gate passing nothing planted;
+  - the RAS bound having no power at 12 years.
+- **C2 against the local VALIDATOR's code findings:**
+  - the gap-through stop at `fitness.py:115-125`;
+  - the calibration look-ahead at `config/instruments.yaml:98-101`.
+- **C3 against BUILDER's branch and its TSMOM attribution,** if either has landed.
 
 ## 8. Surplus: if budget remains after PROKOPE
 1. **Review the local pass's final reports.** Re-fetch `cloud-handoff`. If the local pass's final reports have

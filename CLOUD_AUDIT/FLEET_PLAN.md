@@ -36,18 +36,27 @@ The same day, the owner extended it to the whole family. In substance:
 1. **Write only under `CLOUD_AUDIT/reports/`.** Never modify, move or delete an existing file. Never edit code,
    specs, ledgers (`KNOWN_GAPS`, `TODO`), `CLAUDE.md`, configs or tests. A finding is a proposal: the local lead
    and the owner triage it. You are a finder, never a clearer (constitution A5/A6).
-2. **Commit by explicit path**, e.g. `git add CLOUD_AUDIT/reports`. Never `git add -A` or `git add .`. Several
-   projects' checks (falsification, mutation gates) mutate source files and then restore them. An interrupted
-   run would otherwise ship mutated code inside your report commit. Run anything that mutates files in a
-   throwaway copy outside the repo (`/tmp/...`), never in the checkout you commit from.
+2. **Commit by explicit pathspec, always:**
+
+   ```bash
+   git add CLOUD_AUDIT/reports && git commit -m "<what>" -- CLOUD_AUDIT
+   ```
+
+   The trailing `-- CLOUD_AUDIT` commits only that folder, even if something else is staged.
+   - Never `git add -A` or `git add .`, and never a bare `git commit`.
+   - Several projects' checks (falsification, mutation gates) mutate source files and then restore them. An
+     interrupted run would otherwise ship mutated code inside your report commit.
+   - Run anything that mutates files in a throwaway copy outside the repo (`/tmp/...`), never in the checkout you
+     commit from.
 3. **Push only the session's working branch.** Record it at the start (`git branch --show-current`).
    - Never push another branch, and never force-push.
    - Never open or merge a PR.
    - Never write to `cloud-handoff`: the laptop owns it.
 4. **Evidence code is a receipt, not an implementation.** It includes reproduction scripts and simulations.
    - It lives in `CLOUD_AUDIT/reports/evidence/<lane>/`.
-   - No file may be named `test_*`, `*_test.*`, `*.test.*` or `*.spec.*`, or a test runner will collect it
-     after the owner imports it.
+   - **No evidence file name or folder may contain the word `test` or `spec`, in any position.** Test runners
+     collect such files by pattern (`test_*`, `*.test.*`, `test-*.mjs`, anything under `test/`, and so on), and
+     they would pick them up after the owner imports the reports. Use names like `repro_*`, `sim_*` or `probe_*`.
    - In TypeScript projects, write evidence as `.mjs` or Python, because a `.ts` file can join the type-check.
    - No data dumps: no file over 2 MB, and no market data at all.
 5. **Spend nothing, sign up for nothing, contact no one.**
@@ -66,15 +75,22 @@ The same day, the owner extended it to the whole family. In substance:
    A claim about the code cites `file:line` at the reviewed commit, or a script that reproduces it.
 8. **Never copy code into a recommendation from any source.** Licences forbid it, and so do the projects'
    originality laws. Extract the lesson and cite the source.
-8a. **Ledger IDs: cite only IDs that already exist in *this* project's ledger.**
+8a. **Ledger IDs: cite only IDs that exist in *this* project's ledger at the reviewed commit (BASE).**
    - Never invent an ID, and never quote another project's IDs.
    - Name a proposed item in prose.
-   - Some projects scan the whole tree and fail on an unresolved ID (KALLOS does). Before closing, run the
-     project's ledger or closure check **with your reports in place**; the mission names the command. It must
-     stay green.
+   - An ID that appears only in the local work-in-progress (the WIP patch or copied files) does **not** exist
+     yet. Describe it in prose, e.g. "the local pass's new ledger entry for the five-agent pass."
+   - Some projects scan the whole tree and fail on an unresolved ID (ACIS and KALLOS do). Before closing, copy
+     your `CLOUD_AUDIT/` into the review tree (P0) and run the project's ledger or closure check there; the
+     mission names the command. It must stay green. Then delete that copy.
 9. **No leaked or proprietary code, anywhere.** PHRONESIS mines a proprietary reference tree that lives only on
-   the owner's laptop and is deliberately NOT in the cloud. Do not search for, download or read leaked source
-   code for any product. Public documentation and permissively licensed projects are the lawful referents.
+   the owner's laptop and is deliberately NOT in the cloud.
+   - Do not search for, download or read leaked source code for any product.
+   - Do not install, unpack, de-minify or read the internals of any **closed-source** agent harness. That
+     includes the Claude Code CLI bundle this very container runs on, its npm package, and any source maps.
+   - If a web page quotes a closed harness's source, stop reading it and do not cite it.
+   - The lawful referents are public documentation, public issue trackers and advisories, and permissively
+     licensed open-source projects.
 
 ## 2. Model, effort, and roles
 
@@ -85,6 +101,8 @@ The same day, the owner extended it to the whole family. In substance:
 - **The lead** is the session that reads this first, or the thread a Project assigns to one project.
   - It orients, pins the brief, launches the lanes, verifies their findings, and synthesises.
   - It does not do a lane's work itself.
+  - If a Project thread cannot be set to Opus 5.5 at xhigh, the lead runs that project's pass in its own session,
+    still as lead, with the lanes as its own Opus subagents. It never downgrades the model.
 - **Lanes:**
   - They run in fresh context, in parallel: launch them in one message.
   - They **launch no subagents of their own**, because grandchildren lose both their search budget and their
@@ -98,9 +116,11 @@ The same day, the owner extended it to the whole family. In substance:
 - **Gate G-ACIS (hard).** No other project starts until all of this holds for ACIS:
   - every lane report and `SYNTHESIS.md` is committed and pushed;
   - the push is verified: `git ls-remote origin <branch>` shows your commit.
-- **After G-ACIS**, projects run in priority order. The lead may run the next project alongside the current one
-  only if the remaining budget covers both projects' shares plus the reserve. Otherwise, strictly one at a time.
+- **After G-ACIS**, projects run strictly one at a time, in priority order. There is no concurrency across
+  projects; parallelism lives inside a project, in its lanes.
 - **Each project closes** with its own commit and verified push before its successor may spend.
+- **Nothing is opened early.** Before G-ACIS, nobody opens threads or sessions for the other repos: not the
+  lead, and not the owner (PASTE_INTO_CLOUD says so).
 
 **Multi-repo mechanics.** A cloud session can read and push only the repositories attached to it, and it pushes
 only its current branch.
@@ -127,9 +147,19 @@ first observed spend.
 | 6 | PROKOPE | 9% | 22 | 2–3 |
 | — | Reserve (fleet close-out, overruns) | 6% | 15 | — |
 
-- **Measure; don't guess.**
-  - If `/cost`, `/usage` or a usage panel shows spend, record it in `reports/SPEND.md` at every gate.
-  - If nothing shows spend, record the agent count and approximate tokens, and label the figure an estimate.
+- **You probably cannot see spend.** `/cost` and `/usage` are the owner's commands, and the owner watches the
+  usage panel. So the budget is enforced three ways:
+  1. **Time boxes.** Every lane has a wall-clock box: the mission states it, and the default is 90 minutes.
+     - A lane writes its final report before its box ends, even if the report is incomplete; it states what it
+       did not finish.
+     - The lead stops any lane that overruns by more than 15 minutes, and synthesises from its latest PARTIAL.
+  2. **A stop phrase.** If the owner sends `<PROJECT>: stop lanes, synthesise, push`:
+     - launch nothing new;
+     - give running lanes 10 minutes to write their final reports, then stop them;
+     - synthesise from what exists;
+     - commit and push.
+  3. **A record.** `reports/SPEND.md` holds agents launched, wall-clock time and approximate tokens, labelled as
+     estimates.
 - **Degrade, never abandon.**
   - If the remaining budget cannot fund a project's recommended pass, run a smaller one: fewer lanes, and the
     highest-value ones in its mission. Finish it cleanly.
@@ -140,20 +170,34 @@ first observed spend.
 
 ## 5. The standard pass (per project)
 
-**P0 Bootstrap (lead).**
+**P0 Bootstrap (lead).** Run this in the project's repo, which is your **session checkout**.
 ```bash
-git branch --show-current                          # record it: this is the branch you push
-git fetch origin cloud-handoff
-git checkout origin/cloud-handoff -- CLOUD_AUDIT   # files only; your branch stays yours
-cat CLOUD_AUDIT/SNAPSHOT.md                        # names the reviewed commit, BASE
+git branch --show-current            # record it: the ONLY branch you ever push
+git fetch origin +refs/heads/cloud-handoff:refs/remotes/origin/cloud-handoff   # explicit: works on single-branch clones
+git checkout origin/cloud-handoff -- CLOUD_AUDIT/README.md CLOUD_AUDIT/FLEET_PLAN.md \
+    CLOUD_AUDIT/MISSION.md CLOUD_AUDIT/SNAPSHOT.md      # the brief, and nothing else
+mkdir -p /tmp/handoff && git archive origin/cloud-handoff CLOUD_AUDIT/_context | tar -x -C /tmp/handoff
+cat CLOUD_AUDIT/SNAPSHOT.md          # names the reviewed commit, BASE
 ```
-- **Where to review.** If `HEAD` does not contain BASE, review from a worktree:
-  `git worktree add /tmp/review-<project> <BASE>`.
-- **The constitution snapshot.** Put it where the project's gate expects it, as a sibling of the checkout you run
-  the gate in: `cp -r CLOUD_AUDIT/_context/specs_constitution <that-checkout>/../specs_constitution`.
-- **Baseline.** Install what the mission says. Run the project's documented green gate **once, read-only**; a
-  mutating check runs in a throwaway copy.
-- **Shallow clones.** If the clone is shallow and a check needs history, run `git fetch --unshallow`.
+- **`_context/` is unpacked OUTSIDE the repo, never into your checkout.** It holds a constitution copy and the
+  local WIP, which cite ledger IDs that would turn a project's ledger check red, and which must not be committed.
+  In every mission, `_context/…` means `/tmp/handoff/CLOUD_AUDIT/_context/…`.
+- **Two trees, one rule each.**
+  - **The review tree** holds the code. Always create it:
+    `git worktree add --detach /tmp/review-<project> <BASE>`. BASE arrived with the handoff fetch.
+    - Install dependencies and run every check here.
+    - Put the constitution beside it: `cp -r /tmp/handoff/CLOUD_AUDIT/_context/specs_constitution
+      /tmp/specs_constitution`, which is `../specs_constitution` as seen from the review tree.
+    - Mutating checks (falsify, mutation gates) run in a further copy:
+      `cp -r /tmp/review-<project> /tmp/mut-<project>`.
+    - Never write reports here. Anything written in `/tmp` is lost with the container.
+  - **The session checkout** holds the reports. Everything you write goes to `CLOUD_AUDIT/reports/` in this
+    checkout, and you commit and push from here only.
+- **Why BASE and not your branch's code:** your session branch may have been cut from a stale default branch
+  (PHRONESIS's `main` is from July). The code under review is BASE, always.
+- **Baseline.** Run the project's documented green gate **once**, in the review tree.
+- **Shallow clones.** If a check needs history, run `git fetch --unshallow` in the session checkout; the worktree
+  shares it.
 - **A red or impossible baseline is a finding** (the practicality lens), not a reason to stop.
 
 **P1 Orient and pin (lead).**
@@ -171,11 +215,18 @@ cat CLOUD_AUDIT/SNAPSHOT.md                        # names the reviewed commit, 
   You may re-cut the mission's recommended lanes if your reconnaissance says so. If you do, write down why.
 - Commit and push the brief.
 
-**P2 Launch.** Launch all lanes in one message.
+**P2 Launch.** Launch all lanes in one message. The same moment, the lead writes a `reports/SYNTHESIS.md`
+skeleton with the P4 headings, and fills it as the lanes land.
 - Each lane writes `reports/PARTIAL_<LANE>.md` within about 30 minutes and keeps it current. Its final report
   is `reports/<LANE>.md`.
-- The lead commits and pushes each partial and report as it lands, and at least every 45 minutes of wall time.
-  A session can die, and chat is never a record.
+- **Each lane commits and pushes its own files, by path, every time it updates them.** The lead only gets a turn
+  when a lane returns, so it cannot keep a schedule. A session can die, and chat is never a record.
+  ```bash
+  git add <your files> && git commit -m "<LANE>: <what>" -- <your files> && git push origin HEAD
+  ```
+  - If you hit `index.lock`, or the push is rejected, another lane is committing: wait 5–10 seconds and retry.
+  - Never pull, rebase or force.
+- The lead commits and pushes too, with the same commit form, whenever a lane returns.
 
 **P3 Verify.** A finding binds only after it survives refutation (A6).
 - For each lane, the lead reproduces or refutes at least its three most consequential findings, by running the
@@ -198,8 +249,13 @@ cat CLOUD_AUDIT/SNAPSHOT.md                        # names the reviewed commit, 
 7. **What could not be verified,** and the residual risk.
 
 **P5 Close.**
-- Re-fetch `cloud-handoff`. If `SNAPSHOT.md` has moved, skim the new local WIP and add a short "delta since
-  the snapshot" note.
+- Re-fetch the handoff:
+  ```bash
+  git fetch origin +refs/heads/cloud-handoff:refs/remotes/origin/cloud-handoff
+  git show origin/cloud-handoff:CLOUD_AUDIT/SNAPSHOT.md | head -3
+  ```
+  If it moved, re-unpack `_context` into `/tmp/handoff` (the P0 `git archive` line), skim the new local WIP,
+  and add a short "delta since the snapshot" note.
 - Commit and push, then verify the push.
 - Append one line to `reports/FLEET_STATUS.md`: project, branch, commit, spend, and lanes run.
 - Then go to the next project.
