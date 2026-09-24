@@ -247,6 +247,18 @@ def walk_forward(R, pre, universe, cols):
     return np.concatenate(oos).astype(np.float64), trials
 
 
+def walk_forward_simple(R, pre, cols, expanding):
+    """Variant selection: ONE argmax of train-window Sharpe over all N configs (no per-universe
+    champions, no 80/20 holdout staging). Rolling = the ratified 2-year window; expanding = from
+    the dev start to the fold's train end."""
+    oos = []
+    for a, b, c in FOLD_IDX:
+        start = BURN if expanding else a
+        sr, _ = pre.sharpe(start, b, cols)
+        oos.append(R[b:c, cols[int(np.argmax(sr))]])
+    return np.concatenate(oos).astype(np.float64)
+
+
 def cpcv(pre, cols, a0, S=CPCV_S):
     """CSCV/PBO over S equal blocks of the dev span. Returns (pbo, avg OOS Sharpe of selected)."""
     L = T_DEV // S
@@ -374,6 +386,14 @@ def replicate(kind, seed, mu=0.0, dur=40.0, best_cfg=None):
             res["WF_PSR0_keepbest"] = any(naive)
             res["WF_DSR_repairedK"] = bool(rep_pass)
             res["WF_DSR_NxK_dev"] = any(dsr_nk)
+            for tag, exp in (("roll", False), ("expand", True)):
+                xs = [walk_forward_simple(R, pre, c, exp) for c in rv]
+                srs = [x.mean() / x.std() for x in xs]
+                kb2 = int(np.argmax(srs))
+                _, pv = psr_pass(xs[kb2], 0.0)
+                res[f"WFsimple_{tag}_PSR_bonfK"] = bool((1.0 - pv) * K < 0.05)
+                if K == 1:
+                    out.setdefault("stats", {})[f"N{N}_wfsimple_{tag}_oos_annual_sr"] = annual(srs[0])
             timing["WF"] = time.perf_counter() - t0
             # ---- CPCV / PBO
             t0 = time.perf_counter()

@@ -310,6 +310,26 @@ Selection diagnostics (mean over replications): N1_wf_oos_annual_sr 1.22; N1_asb
 Selection diagnostics (mean over replications): N1_wf_oos_annual_sr 0.49; N1_asbuilt_sr0_annual 2.53; N1_holdout_annual_sr 0.54; N1_dev_best_is_annual_sr 0.49; N60_wf_oos_annual_sr -0.01; N60_asbuilt_sr0_annual 4.02; N60_holdout_annual_sr 0.07; N60_dev_best_is_annual_sr 0.69; N1000_wf_oos_annual_sr -0.02; N1000_asbuilt_sr0_annual 4.03; N1000_holdout_annual_sr 0.17; N1000_dev_best_is_annual_sr 0.93
 
 
+**Extended cells** (R = 300 each; `sim_out_planted_md025.json`, `sim_out_regime.json`, `sim_out_iid-n.json`):
+
+- **Regime-switching volatility null** (N = 60): every honest row holds.
+
+  | row | K = 1 | K = 5 | K = 20 |
+  |---|---|---|---|
+  | SPA_union | 2.0 | 3.0 | 4.3 |
+  | Holdout_once | 4.7 | 4.3 | 6.0 |
+  | WF_PSR_bonfK | 3.7 | 4.3 | 3.7 |
+  | WF keep-best (inflated) | 3.7 | **15.3** | **51.0** |
+
+- **K = 5** (all worlds): WF keep-best passes noise **15–20%**. This matches VALIDATOR's independently measured 8.7–19.3% for the best of 5.
+- **N ∈ {10, 200}, iid null:** the union and Bonferroni rows are 1.0–4.7%. Keep-best at K = 20 is 24–54%, and PBO ≤ 0.2 alone at N = 10, K = 20 is **83.7%**. PBO on a small family under an outer loop is worthless as a gate.
+- **Planted, truth 0.34** (the "0.25" target landed at 0.34): at N ≥ 60 nothing honest separates it from noise.
+  - SPA_union 9–13% and holdout-once 8–9%, against a null rate of about 5%.
+  - The WF-selected record realises −0.02.
+  - With a single pre-registered config (N = 1, K = 1), WF + PSR has 32% power.
+  - This is the "Sharpe 0.25–0.35 is invisible on 12 years" row of the frontier, measured.
+- **SPA cross-check against `arch.bootstrap.SPA`** (`probe_spa_crosscheck_out.txt`): on 4 synthetic 60-config problems, this lane's SPA_c/RC p-values agree with `arch`'s consistent and upper p-values to within bootstrap noise, for example 0.043 vs 0.046 and 0.715 vs 0.685.
+
 ### 2.4 What the table says [sim]
 
 1. **The as-built gate is dead on arrival, not conservative.**
@@ -558,7 +578,7 @@ All commands run from `CLOUD_AUDIT/reports/evidence/C1/`, with `OMP_NUM_THREADS=
 - **R is 300, not 2,000.** CIs are given for every cell. The brief's R = 2,000 was infeasible on a shared 4-core machine within the box. No conclusion here rests on a difference smaller than the Wilson CI.
 - **Hourly-resolution intraday edges were not simulated.** The "fast" cell is a daily high-turnover proxy (§2.2). A genuine intraday edge, like Gao–Han–Li–Zhou's last-half-hour momentum, would need hourly bars and a different pool.
 - **My CPCV is not VALIDATOR's.** I used CSCV with S = 10 and a crude SE, without purging. I therefore do not rank CPCV against SPA on my numbers.
-- **The Masters permutation test and the RAS were not run** (they are VALIDATOR's). N ∈ {10, 200}, K = 5, the regime null and Sharpe 0.25 ran as extended cells (§2.3 addendum). The second cost level was not run.
+- **The Masters permutation test and the RAS were not run** (they are VALIDATOR's). N ∈ {10, 200}, K = 5, the regime null and a low Sharpe (0.34) ran as extended cells (§2.3). The second cost level was not run.
 - **The as-built emulation runs at daily, not per-trade, resolution,** and it has no QIEA, no regime labelling and no ≥5-trade survivor filter. Those features all push the real hurdle *higher* (VALIDATOR: 7.7; GAP-P12D-37: 19–76), so "dead" is a lower bound on how dead it is.
 - **FTMO's fee (€89) and the 80% split** are taken from SCOUT's quoted fetch, not re-fetched; the pricing table did not render in my fetch. The reward cycle (every 14 calendar days ≈ 10 trading days) is also SCOUT/ECONOMIST's.
 - **FTMO's "trading day" requires opening a position.** A weekly-hold strategy therefore needs ≥ 4 weeks for the minimum-days rule. My sim counts calendar trading days, which is slightly optimistic for swing.

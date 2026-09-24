@@ -1,0 +1,4 @@
+drift/day=0.0: this-lane SPA_c=0.715 RC=0.723 | arch consistent=0.685 upper(RC)=0.694
+drift/day=0.0: this-lane SPA_c=0.358 RC=0.361 | arch consistent=0.294 upper(RC)=0.299
+drift/day=0.03: this-lane SPA_c=0.274 RC=0.274 | arch consistent=0.308 upper(RC)=0.308
+drift/day=0.06: this-lane SPA_c=0.043 RC=0.043 | arch consistent=0.046 upper(RC)=0.046
