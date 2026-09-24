@@ -1,0 +1,7 @@
+P1_stop_not_threaded: DEFECT REPRODUCED: filled=1000.00 SizedOrder.stop_loss=1.0700 venue resting_stops={} position.stop_loss=None
+P2_ack_lost_orphan: DEFECT REPRODUCED: venue submissions reached=2 venue net position=[('EUR_USD', 1, '2000')] orchestrator result=[('REJECTED', '0')] risk monitor positions=0 heartbeat open_positions=0
+P3_freeze_race: DEFECT REPRODUCED: fragments=3 freeze active after fragment 1; OPEN fragments still filled after freeze=2 units=['107776.32', '105326.70']
+P4_reconcile_placeholder_price: DEFECT REPRODUCED: long 1000 USD_JPY adopted -> daily_pnl=993.33 USD (true unrealised unknown, ~0); short -> daily_pnl=-993.33, halts=[('all', 'restart_drift'), ('USD_JPY', 'per_instrument_drawdown')]
+P5_halts_not_persisted: DEFECT REPRODUCED: halts before restart={'all': 'var_cap'}; after restart={}; production callers of record_halt/save_/load_restrictive_state=[]
+P6_watchdog_unfenced: DEFECT REPRODUCED: polls=['ok', 'flatten', 'ok']; venue after the engine's stale 'close' = [('EUR_USD', -1, '1000.00', None)] (an unintended, unprotected SHORT)
+P7_slow_host_clock: DEFECT REPRODUCED: host 949 s slow -> 100/100 ticks raise DataQualityError (feed dead, fails safe); host 949 s fast -> stale=True events=['CLOCK_SKEW']. No start-up check compares host time to broker time.
