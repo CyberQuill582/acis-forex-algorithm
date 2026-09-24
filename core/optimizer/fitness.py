@@ -79,6 +79,19 @@ def atr_series(bars: Sequence[LabelledBar], period: int) -> list[float]:
 # F17 Decimal applies to live accounting, not statistical ranking — §3 note)
 # --------------------------------------------------------------------------- #
 
+@dataclass(frozen=True)
+class Trade:
+    """One mini-backtest trade in bar indices: WHEN each decision was taken, which a PnL list
+    cannot show (the GAP-P12D-65 leakage suite compares decisions, not PnLs)."""
+    signal_bar: int        # the bar whose close decided the entry
+    direction: int         # +1 long, -1 short
+    entry_price: float     # the fill: bars[signal_bar + 1].open
+    exit_bar: int          # the bar the exit was decided on (the last bar when `marked`)
+    exit_price: float
+    pnl: float             # net of both sides' C8 cost
+    marked: bool           # closed by the window-end mark (GAP-0039), not by a decision
+
+
 def simulate_trades(
     params: ParamSet,
     bars: Sequence[LabelledBar],
@@ -87,7 +100,19 @@ def simulate_trades(
     *,
     atr_period: int,
 ) -> list[float]:
-    """Closed-trade net PnLs. `entry_start` supports the §6.3 holdout: indicators
+    """Closed-trade net PnLs: the PnLs of `trade_path`, in exit order."""
+    return [t.pnl for t in trade_path(params, bars, costs, entry_start, atr_period=atr_period)]
+
+
+def trade_path(
+    params: ParamSet,
+    bars: Sequence[LabelledBar],
+    costs: CostModel,
+    entry_start: int = 0,
+    *,
+    atr_period: int,
+) -> list[Trade]:
+    """Every trade, in exit order. `entry_start` supports the §6.3 holdout: indicators
     warm up on the full window, but new entries are only permitted from that
     index on — no lookahead, and no artificial indicator starvation in the tail.
     `atr_period` is the declared signals.atr_period (GAP-0071)."""
@@ -101,11 +126,11 @@ def simulate_trades(
     rsi = rsi_series(closes, params.rsi_period)
     atr = atr_series(bars, atr_period)
 
-    pnls: list[float] = []
+    trades: list[Trade] = []
     direction = 0          # 0 flat, +1 long, -1 short
     entry_mid = sl = tp = 0.0
     entry_cost = 0.0
-    bars_held = 0
+    signal_bar = bars_held = 0
 
     for i in range(warmup, n):
         bar = bars[i]
@@ -127,7 +152,7 @@ def simulate_trades(
                 exit_mid = bar.close
             if exit_mid is not None:
                 pnl = direction * (exit_mid - entry_mid) - entry_cost - costs.per_side_cost(bar.spread)
-                pnls.append(pnl)
+                trades.append(Trade(signal_bar, direction, entry_mid, i, exit_mid, pnl, False))
                 direction = 0
             continue
         if i + 1 >= n:
@@ -148,16 +173,15 @@ def simulate_trades(
         entry_cost = costs.per_side_cost(entry_bar.spread)
         sl = entry_mid - direction * params.atr_multiplier_sl * a
         tp = entry_mid + direction * params.atr_multiplier_tp * a
-        bars_held = 0
+        signal_bar, bars_held = i, 0
     if direction != 0:
         # GAP-0039: mark-to-close — a position still open at the window end is
         # closed at the final bar's close, net of costs; every entered trade is
         # accounted, so end-of-window losers cannot silently vanish from E_R.
         last = bars[-1]
-        pnls.append(
-            direction * (last.close - entry_mid) - entry_cost - costs.per_side_cost(last.spread)
-        )
-    return pnls
+        pnl = direction * (last.close - entry_mid) - entry_cost - costs.per_side_cost(last.spread)
+        trades.append(Trade(signal_bar, direction, entry_mid, n - 1, last.close, pnl, True))
+    return trades
 
 
 # --------------------------------------------------------------------------- #

@@ -41,6 +41,7 @@ from core.governor.portfolio_types import SizedOrder
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.evolve_step import cost_model
 from tests.backtest.harness import Backtest, FoldData, per_trade_returns
+from tests.backtest.metrics import ClosedTrade
 from tests.backtest.report import _MIN_FOLDS, _MIN_TRADES, _MIN_YEARS, ValidationReport
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, synthetic_spx
 from tests.backtest.walk_forward import Fold
@@ -103,8 +104,15 @@ class OracleLoop:
     def observe_only(self, st: OracleTick) -> None:
         return None                                         # warm-up decides nothing
 
+    def sign(self, st: OracleTick) -> int:
+        """The direction to hold: the planted episode in force. 0 = decide nothing on this tick
+        (the leaky T7 control, leakage_markets.py, overrides this and nothing else)."""
+        return int(self._market.episode_sign(st.instrument, st.timestamp))
+
     def on_state(self, st: OracleTick) -> None:
-        sign = int(self._market.episode_sign(st.instrument, st.timestamp))
+        sign = self.sign(st)
+        if sign == 0:
+            return
         key = (sign, st.timestamp.date())
         if self._held.get(st.instrument) == key:
             return                                          # same episode, same day: hold
@@ -127,11 +135,15 @@ class OracleGrade:
     report: ValidationReport
     trade_returns: tuple[float, ...]        # pnl / USD notional, the Deflated Sharpe's series
     net_pnl: Decimal
+    trades: tuple[ClosedTrade, ...] = ()    # the book's closed trades (the leakage suite's fills)
 
 
 def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequence[Fold], logger,
-                 *, instruments: Sequence[str] | None = None) -> OracleGrade:
-    market = SyntheticMarket(spec)
+                 *, instruments: Sequence[str] | None = None, market: SyntheticMarket | None = None,
+                 loop: OracleLoop | None = None) -> OracleGrade:
+    """`market` defaults to `spec`'s market; the leakage suite passes a perturbed one, and a
+    `loop` whose orders it reads afterwards (GAP-P12D-65)."""
+    market = market if market is not None else SyntheticMarket(spec)
     insts = sorted(instruments if instruments is not None else cfg.instruments.enabled)
     specs = cfg.instruments.instruments
     bt = Backtest(account=account, cost_models={i: cost_model(cfg, i) for i in insts},
@@ -145,7 +157,7 @@ def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequenc
 
     limits = guardrail_hash(cfg.guardrails)
     report = bt.run(
-        loop=OracleLoop(market),
+        loop=loop if loop is not None else OracleLoop(market),
         folds=[FoldData(f, stream(f.test_start, f.test_end), warmup_states=stream(f.train_end, f.test_start))
                for f in folds],
         evolve_fn=lambda lp, fd: {"fold": fd.fold.index, "champions": 0, "trial_sharpes": [], "regimes": {}},
@@ -153,7 +165,7 @@ def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequenc
         expected_guardrail_hash=limits, extra_caveats=(CAVEAT,))
     trades = bt.graded_trades()
     return OracleGrade(kind=spec.kind, report=report, trade_returns=tuple(per_trade_returns(trades)),
-                       net_pnl=sum((t.pnl for t in trades), Decimal("0")))
+                       net_pnl=sum((t.pnl for t in trades), Decimal("0")), trades=trades)
 
 
 def non_dsr_failures(report: ValidationReport, expected_guardrail_hash: str) -> tuple[str, ...]:

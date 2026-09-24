@@ -33,6 +33,38 @@
       "mutation": "        self._instruments_halted.clear()\n        self._session_halted = False\n        self._equity_flattened = True",
       "test": "python -m pytest tests/unit/test_guardrails.py -q -x -p no:cacheprovider",
       "expect": "test_equity_breaker_re_fires_after_human_rearm"
+    },
+    {
+      "id": "GAP-P12D-65 a completed bar holds only its own ticks",
+      "file": "core/data/bars.py",
+      "anchor": "            open=self._o, high=self._h, low=self._l, close=self._c,",
+      "mutation": "            open=self._o, high=max(self._h, mid), low=min(self._l, mid), close=mid,",
+      "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k bar_builder",
+      "expect": "test_the_bar_builder_decides_nothing_from_later_ticks"
+    },
+    {
+      "id": "GAP-P12D-65 a bar is labelled with the regime before its completing tick",
+      "file": "tests/backtest/regime_labels.py",
+      "anchor": "        ctx = engine.regime_store.get(st.instrument)      # the regime BEFORE this tick",
+      "mutation": "        engine.observe(st); engine.classify(st); ctx = engine.regime_store.get(st.instrument)",
+      "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k regime_labeller",
+      "expect": "test_the_regime_labeller_decides_nothing_from_later_ticks"
+    },
+    {
+      "id": "GAP-P12D-65 the fitness entry is decided on the signal bar's close",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "        crossed_up = ema_f[i - 1] <= ema_s[i - 1] and ema_f[i] > ema_s[i]",
+      "mutation": "        crossed_up = ema_f[i] <= ema_s[i] and ema_f[i + 1] > ema_s[i + 1]",
+      "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k fitness_simulator",
+      "expect": "test_the_fitness_simulator_decides_nothing_from_later_bars"
+    },
+    {
+      "id": "GAP-P12D-65 evolution reads only bars that close by its train end",
+      "file": "tests/backtest/evolve_step.py",
+      "anchor": "            history = cache.history(instrument, regime, window_start, train_end, None)",
+      "mutation": "            history = cache.history(instrument, regime, window_start, train_end + timedelta(hours=2), None)",
+      "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k evolution_decides",
+      "expect": "test_evolution_decides_nothing_from_bars_after_its_train_end"
     }
   ]
 }

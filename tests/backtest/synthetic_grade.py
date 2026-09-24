@@ -42,19 +42,21 @@ FIRST_MID = {"EUR_USD": 1.10, "GBP_USD": 1.30, "USD_JPY": 110.0, "AUD_USD": 0.75
              "USD_CHF": 0.95, "USD_CAD": 1.30, "NZD_USD": 0.70, "XAU_USD": 1800.0}
 
 
-def plan(train_days: int, test_days: int, n_folds: int, start: datetime = START) -> list[Fold]:
+def plan(train_days: int, test_days: int, n_folds: int, start: datetime = START, *,
+         embargo: timedelta = EMBARGO) -> list[Fold]:
     """Non-overlapping folds (GAP-P12D-35). Each fold's warm-up window is [train_end,
     test_start) — the embargo — so successive test windows must be separated by the embargo
     too, or the warm-up replays days the previous fold already graded and the engine's clock
     jumps backwards. The ratified `oos_plan.plan_folds` has this shape; the pre-2026-09-17
     falsification plan did not, which silently suspended `max_hold` and pushed out-of-order
-    timestamps into the equity curve of every run before then."""
-    first_test = start + timedelta(days=train_days) + EMBARGO
-    step = timedelta(days=test_days) + EMBARGO
+    timestamps into the equity curve of every run before then. A shorter `embargo` (the
+    leakage suite's short tapes) must still cover the 48 h max hold: the harness checks it."""
+    first_test = start + timedelta(days=train_days) + embargo
+    step = timedelta(days=test_days) + embargo
     folds = []
     for k in range(n_folds):
         test_start = first_test + k * step
-        train_end = test_start - EMBARGO
+        train_end = test_start - embargo
         folds.append(Fold(k, train_end - timedelta(days=train_days), train_end, test_start,
                           test_start + timedelta(days=test_days)))
     return folds
