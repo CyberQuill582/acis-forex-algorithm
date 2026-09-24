@@ -34,3 +34,5 @@
 VALIDATOR read after the first table. Independent agreement on: as-built gate dead (0 FPR/0 power), keep-best-of-K
 inflation, and 2-year WF selection throwing the edge away (mine 0.02/0.65 and 0.15-0.19/1.22 realised vs theirs 0.04/0.44 ACIS-style).
 Nulls (garch, factor, iid rerun) and the fast-edge world still running.
+
+## 19:40 UTC — superseded by the final report `C1_CALIBRATOR.md` (this PARTIAL is kept in place per BRIEF §3).

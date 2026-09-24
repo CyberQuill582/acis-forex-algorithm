@@ -370,7 +370,7 @@ Selection diagnostics (mean over replications): N1_wf_oos_annual_sr 0.49; N1_asb
 
    - **Both** the 2-year window and the per-universe/holdout-staging design cost power.
    - Switching to an expanding window with a single selection roughly triples the realised edge and the power, at an unchanged honest FPR.
-   - This is a one-parameter change to a ratified plan **[spec — owner ratification]**. VALIDATOR measured the same direction (66% → 74% at 0.94) for the expanding window alone.
+   - This is a small change to a ratified plan (the window, plus the selection rule inside the fold) **[spec — owner ratification]**. VALIDATOR measured the same direction (66% → 74% at 0.94) for the expanding window alone.
 4. **The full-history multiple-testing gates (SPA, StepM, Holm) over a registered union are the only honest gates with useful power at 1.22.**
    - Power at N ≥ 60 is 77–97% (union, K = 20: 85–98%).
    - At 0.65 it is 31–42% for SPA/StepM (Holm 19–34%).
@@ -419,7 +419,7 @@ A 12-year history run through a 1,000-config search cannot tell a 1.0 edge from 
 |---|---|---|
 | 0. Register | An append-only attempt register written *before* a grade (exclusive create, as `HoldoutGuard` already does). A graded run with no register line is void. **[impl]** | ~40 lines; one concept, which `provenance.attempts` partly has |
 | A. Research screen on 2012–2023 | Hansen SPA_c (or StepM for per-config claims) over the **union of every registered config's daily net-return series**, at the C8 costs. Pass at p < 0.05. **[spec — owner ratification]** | One dependency already installed (`arch`, which supplies `SPA`/`StepM`), or ~60 lines vectorised as here. Needs a fast research simulator that emits each config's daily P&L. That is the real cost (VALIDATOR §8 R1–R6). |
-| B. Engine confirmation | The frozen candidate through the real engine's 2014–2023 WF **once**. Grade on **daily** OOS returns: PSR vs 0 with p × K_engine < 0.05, K_engine being the number of registered engine looks (≤ 3). Keep the non-statistical §14 rows the owner wants: drawdown, rules, guardrail hash, trade floor. **[spec — owner ratification]** | Deletes `sharpe_threshold`'s trial-dispersion input, the per-trade basis and `trial_count`. Net lines shrink. |
+| B. Engine confirmation | The frozen candidate through the real engine's 2014–2023 WF **once**, preferably with an **expanding** train window (§2.4.3). Grade on **daily** OOS returns: PSR vs 0 with p × K_engine < 0.05, K_engine being the number of registered engine looks (≤ 3). Keep the non-statistical §14 rows the owner wants: drawdown, rules, guardrail hash, trade floor. **[spec — owner ratification]** | Deletes `sharpe_threshold`'s trial-dispersion input, the per-trade basis and `trial_count`. Net lines shrink. |
 | C. Holdout 2024–25 | Once, **kill-only**: fail if its Sharpe < 0 or below the pre-registered lower bound. **[spec]** | None; the marker already exists |
 | D. Forward | Demo for plumbing and model reconciliation (VALIDATOR §5.4). The edge is tracked sequentially (CUSUM/SPRT), never certified. | — |
 
@@ -573,6 +573,7 @@ All commands run from `CLOUD_AUDIT/reports/evidence/C1/`, with `OMP_NUM_THREADS=
   - `python run_grid.py planted_md05 300 0.0833740234375 40 4164`
   - `python run_grid.py planted_md10 300 0.1131591796875 40 4164`
   - `python run_grid.py planted_id05 300 0.1761474609375 5 4033`
+- **WF window/staging follow-up:** `C1_NS=60,1000 C1_KS=1,20 python run_grid.py planted_md10-wfx 300 0.1131591796875 40 4164`, and the same for `planted_md05-wfx` (μ 0.0833740234375) and `iid-wfx`.
 - **Extended runs:** set `C1_NS=1,60,1000 C1_KS=1,5,20` and run `python run_grid.py planted_md025 300 0.0623 40 4164`, `python run_grid.py regime 300` (with `C1_NS=60`) and `python run_grid.py iid-n 300` (with `C1_NS=10,200`).
 - **Outputs and tables:** each run writes `sim_out_<world>.json` (aggregates with Wilson CIs, and selection diagnostics) and `sim_rows_<world>.json` (per-replication pass bits). `python make_tables.py` rebuilds §2.3, and `python show.py <world>` prints one world.
 - **Calibration:** `python run_calibrate.py [planted_id05]` gives μ and the best config. The measured truths come from the `N1_wf_oos_annual_sr` stat.
