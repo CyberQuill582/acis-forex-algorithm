@@ -67,11 +67,13 @@ def main() -> int:
     ap.add_argument("--production-optimizer", action="store_true",
                     help="evolve with the production population (a short tape then usually stages nothing: VACUOUS)")
     ap.add_argument("--workers", type=int, default=1)
+    ap.add_argument("--out", type=Path, default=None,
+                    help="run directory root (default data/validation/leakage); keep it short on Windows (MAX_PATH)")
     a = ap.parse_args()
     small = not a.production_optimizer
     cfg = leak_config(ROOT, small_optimizer=small)
     account = a.account or cfg.system.active_account
-    out = ROOT / "data" / "validation" / "leakage" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out = (a.out or ROOT / "data" / "validation" / "leakage") / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out.mkdir(parents=True, exist_ok=True)
     report: dict = {"stage1": controls(cfg, account)}
 
@@ -95,7 +97,7 @@ def main() -> int:
     cuts = decision_cuts(spec, timedelta(hours=a.step_hours))
     print(f"engine: {len(folds)} folds, {spec.days} days, {len(cuts)} cuts x 2 tests -> {out}", flush=True)
     t0 = time.perf_counter()
-    _, _, reference = variant_decisions(spec, account, folds, out / "reference", ROOT, small, None, "perturb")
+    _, _, reference = variant_decisions(spec, account, folds, out / "ref", ROOT, small, None, "perturb")
     kinds = {k: sum(d.kind == k for d in reference) for k in sorted({d.kind for d in reference})}
     report["stage2"] = {"cuts": [c.isoformat() for c in cuts], "reference_decisions": kinds,
                         "optimizer": "small" if small else "production"}
@@ -106,7 +108,7 @@ def main() -> int:
 
     variants: dict = {}
     with ProcessPoolExecutor(max_workers=a.workers) as ex:
-        futures = [ex.submit(variant_decisions, spec, account, folds, out / f"{mode}_{k:03d}", ROOT, small, c, mode)
+        futures = [ex.submit(variant_decisions, spec, account, folds, out / f"{mode[0]}{k:03d}", ROOT, small, c, mode)
                    for mode in ("perturb", "truncate") for k, c in enumerate(cuts)]
         for fut in as_completed(futures):
             cut, mode, decisions = fut.result()

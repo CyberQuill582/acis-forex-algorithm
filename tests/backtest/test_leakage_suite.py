@@ -109,6 +109,15 @@ def test_a_reference_that_decided_nothing_is_vacuous_not_clean(monkeypatch, tmp_
     assert "placed no order" in _report(tmp_path)["verdict"]
 
 
+def test_out_moves_the_run_directory_and_nothing_is_written_under_data(monkeypatch, tmp_path) -> None:
+    """Windows MAX_PATH: a variant's label path is ~110 characters below the run directory."""
+    mod = _script(monkeypatch, tmp_path, controls=_quiet_controls, variant=_fake_engine([]),
+                  argv=ARGS + ["--out", str(tmp_path / "o")])
+    assert mod.main() == 0
+    run, = (tmp_path / "o").iterdir()
+    assert (run / "report.json").exists() and not (tmp_path / "data").exists()
+
+
 def test_the_grid_is_every_weekday_the_market_holds(monkeypatch) -> None:
     from tests.backtest.synthetic_grade import START
     from tests.backtest.synthetic_market import MarketSpec
