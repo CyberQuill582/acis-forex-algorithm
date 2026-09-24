@@ -11,5 +11,5 @@
 5. **S3 verified at primary** (Carver's speed limit: "DO NOT SPEND MORE THAN ONE THIRD OF YOUR EXPECTED PRE-COST RETURNS ON COSTS"); the "3 weeks to 3 months" clause was NOT found verbatim. **S4 verified at primary** (Darwinex risk engine: 6.5% monthly VaR target, 3.25–6.5% band, last 45 exposed days; 95% confidence per help.darwinex.com/var).
 6. **Demo SDK facts (PyPI JSON):** `ctrader-open-api` 0.9.2 MIT, last release 2024-06-26, Twisted-based, exact-pins Twisted 24.3.0 / protobuf 3.20.1 / requests 2.32.3; `MetaTrader5` win_amd64 only; `nautilus_trader` LGPL-3.0, Python ≥3.12; `v20` last release 2018, `oandapyV20` 2021.
 
-## Next
-Per-component verdicts with line deltas; kill list; smallest demo runtime; final report.
+## Status
+FINAL landed: `reports/C4_PROVEN_PARTS.md` (supersedes this partial).
