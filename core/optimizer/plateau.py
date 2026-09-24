@@ -11,7 +11,9 @@ in BUILDER_REPORT_2026-09-24.md and drafted as an ACIS-03 amendment there):
     invariants (ema_slow > ema_fast, tp > sl) are repaired by `repair_invariants`. A neighbour is
     therefore never invalid, and a repair may move a second gene.
   * A move that lands back on the champion (the gene sits on its range bound, or the repair undoes
-    it) is not a neighbour: that side has nothing to test.
+    it) is not a neighbour: that side has nothing to test. A repair can also carry a move PAST the
+    champion (tp − step ≤ sl repairs to sl + 0.1 > tp): `direction` is the ACTUAL signed move of
+    the perturbed gene after repair, never the intended one (audit F5).
   * A neighbour DIES when it fails the C9 gate on the champion's own TRAIN window: the fitness
     function scores it WORST_FITNESS (fewer than `fitness_min_trades` closed trades, or E_R <=
     `expectancy_min_r`). ANY dead neighbour fails the champion ("on any parameter").
@@ -36,7 +38,7 @@ Genes = Mapping[str, "float | int"]
 @dataclass(frozen=True)
 class Neighbour:
     gene: str
-    direction: int                       # +1: the gene moved up, -1: down
+    direction: int                       # +1 / -1: the ACTUAL move of `gene` after repair (F5)
     genes: Mapping[str, "float | int"]   # the complete, valid neighbour
 
 
@@ -60,13 +62,13 @@ def _moved(name: str, value: float) -> float | int:
 
 def neighbours(genes: Genes) -> tuple[Neighbour, ...]:
     """Every distinct one-gene ±10%-of-range neighbour of `genes`, in GENE_SPECS order, the
-    down-move before the up-move."""
+    intended down-move before the up-move; `direction` is the actual move after repair."""
     out: list[Neighbour] = []
     for name, (lo, hi, _) in GENE_SPECS.items():
         for intended in (-1, 1):
             moved = repair_invariants({**genes, name: _moved(name, genes[name] + intended * PLATEAU_STEP * (hi - lo))})
             if moved != dict(genes) and all(moved != n.genes for n in out):
-                out.append(Neighbour(name, intended, moved))
+                out.append(Neighbour(name, 1 if moved[name] > genes[name] else -1, moved))
     return tuple(out)
 
 

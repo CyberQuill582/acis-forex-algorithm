@@ -85,6 +85,26 @@ def test_repeat_draws_are_counted_not_dropped() -> None:
     assert sum(row[-1] for row in reg["evaluated"]) == 600               # and every draw is counted
 
 
+def test_the_plateau_neighbours_are_recorded_too() -> None:
+    """Audit F9: a run that reaches the §5.6 plateau check evaluates each neighbour on train; those
+    evaluations are recorded under `neighbours` and re-simulate to their logged fitness. Seed 7's
+    two dead neighbours are exactly the WORST rows; a gate-ended run records none."""
+    history = zigzag_history(500)
+    qiea, champ, log = _evolve(history, 7)
+    reg, (refusal,) = _registry(log), log.events("EVOLUTION_REJECTED_PLATEAU")
+    assert champ is None and len(reg["neighbours"]) == refusal["data"]["neighbours"] == 22
+    assert sum(row[-1] == WORST_FITNESS for row in reg["neighbours"]) == len(refusal["data"]["dead"]) == 2
+    bars = fitness_window(history, CFG, T0)
+    train = bars[:-max(1, round(len(bars) * CFG.holdout_fraction))]
+    for row in reg["neighbours"][:4]:
+        assert qiea._train_fitness(dict(zip(reg["genes"], row[:-1])), REGIME, train, T0) == row[-1]
+    _, staged, log = _evolve(history, 5)
+    assert staged is not None and len(_registry(log)["neighbours"]) > 0
+    closes = [1.1] * 400 + zigzag_closes(100, base=1.1)                  # gated on train: no plateau
+    _, _, log = _evolve(RegimeLabelledHistory("EUR_USD", bars_from_closes(closes, REGIME), 60), 42)
+    assert _registry(log)["neighbours"] == []
+
+
 def test_nothing_evaluated_nothing_recorded() -> None:
     _, champ, log = _evolve(zigzag_history(80), 1)                       # under fitness_min_bars
     assert champ is None and log.events("EVOLUTION_EVALUATIONS") == []

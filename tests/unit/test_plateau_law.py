@@ -68,6 +68,14 @@ def test_bounds_and_invariants_are_respected() -> None:
     assert ("ema_slow", -1) not in moves and ("atr_multiplier_tp", -1) not in moves
 
 
+def test_a_repair_that_carries_the_move_past_the_champion_is_logged_as_it_happened() -> None:
+    """Audit F5: tp 2.05 over sl 2.0 — the down-move 2.05 - 0.35 = 1.70 <= sl repairs to
+    sl + 0.1 = 2.10, ABOVE the champion. It is a neighbour, and its direction is the actual +1."""
+    tight = dict(CHAMPION, atr_multiplier_sl=2.0, atr_multiplier_tp=2.05)
+    tp = [(n.direction, n.genes["atr_multiplier_tp"]) for n in neighbours(tight) if n.gene == "atr_multiplier_tp"]
+    assert tp == [(1, pytest.approx(2.10)), (1, pytest.approx(2.40))]
+
+
 def test_a_single_dead_neighbour_fails_the_champion_and_is_named() -> None:
     def cliff(genes) -> float:                  # fitness that dies the moment ema_fast passes 10
         return 0.5 if genes["ema_fast"] <= 10 else WORST_FITNESS

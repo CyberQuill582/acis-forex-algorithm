@@ -212,7 +212,14 @@ class QIEA:
 
         # §5.6 plateau law (GAP-P12D-34): a champion whose ±10% neighbourhood dies on the SAME
         # train window is a peak, not a strategy — refused, with every dead neighbour named.
-        plateau = check_plateau(best.genes, lambda g: self._train_fitness(g, regime, train, evolved_at))
+        probed: list[list] = []               # [*genome, train fitness] per neighbour (audit F9)
+
+        def probe(genes: dict[str, float | int]) -> float:
+            fit = self._train_fitness(genes, regime, train, evolved_at)
+            probed.append([*(genes[g] for g in _GENE_ORDER), fit])
+            return fit
+
+        plateau = check_plateau(best.genes, probe)
         if not plateau.holds:
             self._log.event(
                 "EVOLUTION_REJECTED_PLATEAU",
@@ -220,7 +227,7 @@ class QIEA:
                 dead=[{"gene": n.gene, "direction": n.direction, "value": n.genes[n.gene]}
                       for n in plateau.dead],
             )
-            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_PLATEAU", evaluated, hold_res)
+            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_PLATEAU", evaluated, hold_res, probed)
             return EvolutionResult(None, champion)   # refused, yet a DSR trial (F3)
 
         self._log.event(
@@ -229,17 +236,20 @@ class QIEA:
             generations=cfg.generations, seed=seed,
             train_bars=len(train), holdout_bars=len(holdout),
         )
-        self._log_evaluations(regime, seed, "EVOLUTION_RUN", evaluated, hold_res)
+        self._log_evaluations(regime, seed, "EVOLUTION_RUN", evaluated, hold_res, probed)
         return EvolutionResult(champion, champion)
 
     def _log_evaluations(self, regime: RegimeType, seed: int, outcome: str,
-                         evaluated: dict[tuple, list], hold_res=None) -> None:
-        """GAP-P12D-33 [impl], logging only: EVERY genome this run evaluated (its train fitness and
-        how often it was drawn), whichever gate ended the run, so PBO/CSCV and an honest attempt
-        count can be computed later by re-simulating the recorded genomes. No gate reads it."""
+                         evaluated: dict[tuple, list], hold_res=None, probed=()) -> None:
+        """GAP-P12D-33 [impl], logging only: every genome this run evaluated, whichever gate ended
+        it — `evaluated` holds the evolution draws (train fitness + draw count), `neighbours` the
+        §5.6 plateau neighbours (genome + train fitness; empty when no plateau check ran) — so
+        PBO/CSCV and an honest attempt count can be computed later by re-simulating them. No gate
+        reads it."""
         self._log.event(
             "EVOLUTION_EVALUATIONS", regime=regime.value, seed=seed, outcome=outcome,
             genes=_GENE_ORDER, evaluated=[[*k, fit, n] for k, (fit, n) in evaluated.items()],
+            neighbours=list(probed),
             holdout_trades=None if hold_res is None else hold_res.n_trades,
             holdout_e_r=None if hold_res is None or hold_res.e_r != hold_res.e_r else hold_res.e_r,
         )
