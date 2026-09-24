@@ -115,7 +115,8 @@ def test_store_keeps_anchors_apart_from_the_legacy_restrictive_keys(tmp_path) ->
 def test_restore_refuses_a_corrupt_anchor_and_skips_a_retired_rule() -> None:
     cfg = load_cfg()
     rb = cfg.platform_rules.accounts["ftmo"]
-    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "ftmo")
+    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "ftmo",
+                                   initial_capital=rb.initial_capital)
     with pytest.raises(DataQualityError):
         series.restore({FTMO_STATIC: {"anchor": float("nan"), "day": None, "last": None}})
     with pytest.raises(DataQualityError):
@@ -130,4 +131,5 @@ def test_two_rules_may_not_share_one_anchor() -> None:
     cfg = load_cfg()
     twin = DrawdownRule(type="static", anchor="eod", basis="balance", limit_pct=10.0)
     with pytest.raises(DataQualityError):
-        build_drawdown_series(cfg.guardrails, [twin, twin.model_copy()], "x")
+        build_drawdown_series(cfg.guardrails, [twin, twin.model_copy()], "x",
+                              initial_capital=None)

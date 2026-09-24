@@ -22,7 +22,7 @@ PRODUCTION = ["core", "monitoring", "config", "scripts", "tests/backtest"]
 
 # path -> line count on 2026-09-11 (the ceiling), all owned by GAP-P12M-01
 GRANDFATHERED = {
-    "config/schemas.py": 622,                   # 702 → 622: calendars → config/calendars.py (P12D-10)
+    "config/schemas.py": 581,                   # 702 → 622: calendars → config/calendars.py (P12D-10); → 581: rulebook → config/rulebook.py (P12D-54)
     "core/signals/agon.py": 506,
     "core/governor/capital_governor.py": 447,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22); 447 (P12D-58)
     "scripts/download_histdata.py": 400,        # 456 → 400 after scripts/dl_common.py extraction

@@ -8,9 +8,11 @@ constant is an hour wrong for half of every year.
 Dependency-free and exact for the ACIS data window (2012 on): the US rule since 2007
 (second Sunday of March → first Sunday of November, 02:00 local) for New York and
 Chicago; the UK/EU rule since 1996 (last Sunday of March → last Sunday of October,
-01:00 UTC) for London; no DST in Tokyo. Rules resolve by LOCAL DATE, which is exact
-for every declared market time (all fall outside the 01:00–02:00 switch hour on the
-switch Sunday). Earlier years raise rather than guess.
+01:00 UTC) for London and Central Europe (CE(S)T — FTMO's day, GAP-P12D-54); no DST in
+Tokyo. Rules resolve by LOCAL DATE, which is exact for every declared market time except
+00:00 CE(S)T on the two switch Sundays, which resolves an hour off; that instant lies
+inside the FX weekend, when no position can open or close, so no anchor can move across
+it (tested). Earlier years raise rather than guess.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ UTC = timezone.utc
 ROLLOVER = ("America/New_York", "17:00")               # the FX day boundary
 _ZONES = {                                             # zone -> (standard offset h, DST rule)
     "UTC": (0, None), "Asia/Tokyo": (9, None), "Europe/London": (0, "uk"),
-    "America/New_York": (-5, "us"), "America/Chicago": (-6, "us"),
+    "Europe/Prague": (1, "uk"), "America/New_York": (-5, "us"), "America/Chicago": (-6, "us"),
 }
 
 

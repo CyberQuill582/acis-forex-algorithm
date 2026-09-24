@@ -96,7 +96,8 @@ def build_monitor(cfg, sink, *, account: str = "dev_paper",
     rb = cfg.platform_rules.accounts[account]
     from config.account_doctrine import compose
     doctrine = compose(cfg.guardrails, rb)
-    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, account)
+    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, account,
+                                   initial_capital=rb.initial_capital)
     g = Guardrails(
         cfg.guardrails, cfg.system.risk, series, sink, log,
         taper_start=taper_start if taper_start is not None else doctrine.taper_start_fraction,
