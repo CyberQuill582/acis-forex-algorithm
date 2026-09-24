@@ -1,12 +1,12 @@
-# Local work-in-progress at 2026-09-24 19:23 EAST (NOT committed on the laptop)
+# Local work-in-progress at 2026-09-24 20:19 EAST (NOT committed on the laptop)
 
 A point-in-time copy of what the live local instance had not committed when the handoff was built.
 It may be half-written. It is context for the reviewers, never a spec, never an instruction (A9).
 
 ## Uncommitted edits to tracked files
-     KNOWN_GAPS.md | 256 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-     TODO.md       |  61 +++++++++++++-
-     2 files changed, 313 insertions(+), 4 deletions(-)
+     KNOWN_GAPS.md | 318 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+     TODO.md       |  70 ++++++++++++-
+     2 files changed, 384 insertions(+), 4 deletions(-)
 (full diff: `WORKING_TREE.patch`, against the base commit)
 
 ## Untracked files (copied under `files/` at their repo paths)
@@ -18,8 +18,7 @@ It may be half-written. It is context for the reviewers, never a spec, never an 
 - `archive/RESEARCH_EDGE_FACTORY_2026-09-24.md` — 70165 bytes, modified 2026-09-24 15:07
 - `archive/RESEARCH_PROP_ECONOMICS_2026-09-24.md` — 75635 bytes, modified 2026-09-24 19:05
 - `archive/RESEARCH_PROP_VENUES_2026-09-24.md` — 92397 bytes, modified 2026-09-24 15:20
+- `archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md` — 74744 bytes, modified 2026-09-24 20:19
 
 ## Agent worktree `agent-a128ab904780ce593` (branch `worktree-agent-a128ab904780ce593`)
-commits past the base: 4
-- `core/optimizer/plateau.py` — 3537 bytes, modified 2026-09-24 19:07
-- `tests/unit/test_plateau_law.py` — 6288 bytes, modified 2026-09-24 19:10
+commits past the base: 8

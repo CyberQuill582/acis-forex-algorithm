@@ -45,17 +45,8 @@ recommendation to the cloud lead, who pins the final brief (FLEET_PLAN §5 P1).
    - `RESEARCH_VENUE_CHOICE_2026-09-17.md`;
    - `RESEARCH_STATS_METHODOLOGY_2026-09-16.md`.
 
-**If an earlier cloud session worked on ACIS before this handoff existed,** it saw commit `e00fdd3`
-(2026-07-21), which is two months stale.
-- Look for its notes. Run this at P1, and again at P5, because the old session may push late:
-  ```bash
-  git fetch origin '+refs/heads/claude/*:refs/remotes/origin/claude/*'
-  git branch -r
-  ```
-  You are looking for a `claude/*` branch with `CLOUD_AUDIT/reports/PRIOR_SESSION_NOTES.md`. Read it with
-  `git show <branch>:<path>`.
-- Salvage its web research.
-- Discard any code-level conclusion it drew from the stale tree.
+**You are the first cloud session on ACIS.** The laptop keeps working in parallel. When its five-agent pass
+finishes, a conductor on the laptop refreshes `cloud-handoff`, which is why P5 re-fetches it.
 
 ## 2. The design principle: complement, never duplicate
 The laptop is already paying for five lanes. The cloud has three advantages the laptop lacks:

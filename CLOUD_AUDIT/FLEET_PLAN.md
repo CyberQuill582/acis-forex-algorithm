@@ -6,7 +6,8 @@ brief is `MISSION.md`, beside this file. Where the two disagree, `MISSION.md` wi
 
 ## 0. The owner's directive
 
-The owner (Vincent) first gave a cloud session this prompt, about ACIS. It is quoted verbatim:
+The owner (Vincent) first gave this prompt to his **local** ACIS session, which launched the local five-agent
+pass described in ACIS's mission. It is quoted verbatim:
 
 > previously I had asked my projects to lauch 5 agents to audit their work and give alternatives to the uniqu problems
 > each project faces as i tried to make the projects more aggressive at what they do and get innovative, this project
@@ -257,8 +258,14 @@ skeleton with the P4 headings, and fills it as the lanes land.
   If it moved, re-unpack `_context` into `/tmp/handoff` (the P0 `git archive` line), skim the new local WIP,
   and add a short "delta since the snapshot" note.
 - Commit and push, then verify the push.
-- Append one line to `reports/FLEET_STATUS.md`: project, branch, commit, spend, and lanes run.
-- Then go to the next project.
+- Append **exactly one line** to `reports/FLEET_STATUS.md`, in this form:
+  `<project-key> | CLOSED | <branch> | <commit of your final reports> | <spend estimate> | <lanes run>`.
+  The project key is `acis`, `phronesis`, `synedrion`, `kallos`, `creative-pipeline` or `prokope`.
+  - A conductor on the owner's laptop watches GitHub for this line, and it fires the next project's session when
+    the line appears.
+  - So write it **last**, only after every report and `SYNTHESIS.md` has been pushed and verified.
+- Commit the line with the pathspec form, push, and verify the push.
+- Then end with the final message (§8). In a multi-project session, go to the next project instead.
 
 ## 6. Report contract (every lane report)
 
