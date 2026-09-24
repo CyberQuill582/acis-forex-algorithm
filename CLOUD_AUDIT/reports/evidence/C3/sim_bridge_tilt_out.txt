@@ -1,0 +1,2 @@
+demeaned=True: mean path P&L (log units) -0.03937  se 0.00157  sd 0.09947  t=-25.0  frac<0 0.650
+demeaned=False: mean path P&L (log units) -0.00024  se 0.00169  sd 0.10694  t=-0.1  frac<0 0.496

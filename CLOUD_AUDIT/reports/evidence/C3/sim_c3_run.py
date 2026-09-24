@@ -59,6 +59,8 @@ def main() -> int:
     ap.add_argument("--daily-vol", type=float, default=None)
     ap.add_argument("--cost-stress", type=float, default=1.0)
     ap.add_argument("--max-hold-h", type=float, default=None)
+    ap.add_argument("--scramble-invisible", default="",
+                    help="re-draw ONLY the three genes fitness cannot see (GAP-0035), keyed by this salt")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     if a.no_veto:
@@ -118,6 +120,19 @@ def main() -> int:
         kw["daily_vol"] = a.daily_vol
     spec = MarketSpec(a.kind, START, days, tuple((i, FIRST_MID[i]) for i in instruments), **kw)
     market = SyntheticMarket(spec)
+
+    import collections
+    from tests.backtest.replay_logging import ReplayEventLogger as _REL
+    strat_counts = collections.Counter()
+    _orig_event = _REL.event
+
+    def _event(self, event_type, **data):
+        if event_type in ("SIGNAL_EMITTED", "DISCARD_OPPOSITE", "DISCARD_SUBTHRESHOLD",
+                          "PARAM_PROMOTION_STALLED", "PARAM_PROMOTED"):
+            key = data.get("strategy") or ",".join(data.get("strategies", ())) or ""
+            strat_counts[f"{event_type}|{key}"] += 1
+        return _orig_event(self, event_type, **data)
+    _REL.event = _event
 
     def logger(name, layer, keep):
         return ReplayEventLogger(JsonlEventLogger(out / "logs" / f"{name}.jsonl", layer=layer,
@@ -203,6 +218,25 @@ def main() -> int:
         def salted(fold_index, regime, instrument):
             return orig_seed_for(fold_index, regime, instrument + "|" + a.evo_salt)
         evolve_step.seed_for = salted
+
+    if a.scramble_invisible:
+        import dataclasses
+        from core.optimizer.qiea import QIEA
+        from core.optimizer.param_types import GENE_SPECS
+        orig_evolve = QIEA.evolve
+
+        def evolve(self, regime, history, *, seed, now=None):
+            ch = orig_evolve(self, regime, history, seed=seed, now=now)
+            if ch is None:
+                return ch
+            r = random.Random(f"{a.scramble_invisible}|{ch.param_set_id}")
+            new = {}
+            for g in ("momentum_lookback", "breakout_atr_threshold", "mean_rev_zscore_entry"):
+                lo, hi, is_int = GENE_SPECS[g]
+                new[g] = r.randint(int(lo), int(hi)) if is_int else r.uniform(lo, hi)
+            return dataclasses.replace(ch, param_set_id=ch.param_set_id + "-" + a.scramble_invisible,
+                                       **new)
+        QIEA.evolve = evolve
 
     if a.max_hold_h is not None:
         orig_init = harness.Backtest.__init__
@@ -299,6 +333,7 @@ def main() -> int:
         "champions": [r["champions"] for r in report.in_sample_evolution],
         "per_strategy": per,
         "report_per_strategy": {k: str(v.net_pnl) for k, v in report.per_strategy.items()},
+        "event_counts": dict(strat_counts),
         "open_at_end": len(getattr(report, "open_positions", []) or []),
     }
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
