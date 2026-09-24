@@ -21,3 +21,6 @@ html/
 
 # Local Claude Code conversation backups (private chat transcripts — never commit)
 conversation-archive/
+
+# Claude Code agent worktrees (isolated copies of this repo) — never commit
+.claude/worktrees/

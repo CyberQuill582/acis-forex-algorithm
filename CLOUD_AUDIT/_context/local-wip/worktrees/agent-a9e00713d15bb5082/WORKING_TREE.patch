@@ -1,0 +1,317 @@
+diff --git a/core/risk/guardrails.py b/core/risk/guardrails.py
+index ea18c5c..ef73a90 100644
+--- a/core/risk/guardrails.py
++++ b/core/risk/guardrails.py
+@@ -1,9 +1,12 @@
+ """Guardrail checks + the stop authority (ACIS-07 §6/§7).
+ 
+ The equity breaker, platform-measured drawdown series (§9.5, each rule under
+-its OWN semantics), the ratified pre-limit taper (min across limits), Tier-G
+-flatten (GAP-0011), racing-HALT coalescing (C-RSK-4), and human-only-resume
+-scope. Limits are read-only (guard-integrity law); nothing here writes config.
++its OWN semantics — core/risk/drawdown_series.py), the ratified pre-limit taper
++(min across limits), Tier-G flatten (GAP-0011), racing-HALT coalescing (C-RSK-4),
++and human-only-resume scope. Limits are read-only (guard-integrity law); nothing
++here writes config. A restart restores the series' anchors and the last taper
++before the first check (`restore_state`, GAP-P12D-55): a restart is never a
++relaxation (GAP-0050).
+ 
+ The upward edge is the injected `HaltSink` — issuance is idempotent and
+ serialized so two conditions firing "simultaneously" resolve to one halt state,
+@@ -12,117 +15,18 @@ most-severe scope winning (global flatten > session halt > instrument halt).
+ 
+ from __future__ import annotations
+ 
+-from dataclasses import dataclass, field
++from dataclasses import dataclass
+ from datetime import datetime
+ from decimal import Decimal
++from typing import Mapping
+ 
+-from config.schemas import DrawdownRule, GuardrailLimits, RiskConfig
+-from core.data.fx_clock import trading_day
++from config.schemas import GuardrailLimits, RiskConfig
++from core.risk.drawdown_series import (DrawdownSeries, _RuleAnchor,  # noqa: F401 (re-export)
++                                       build_drawdown_series, taper_factor)
+ from core.risk.risk_types import PlatformDrawdownState
+ from core.risk.sink import HaltSink
+ 
+ 
+-def taper_factor(distance: float, start: float, halt: float) -> float:
+-    """§9.5 piecewise taper on d = measured/limit: 1.0 at/below `start`, linear
+-    to 0.0 at `halt`, 0.0 beyond. Hand-vectors (start .60, halt .80):
+-    d=.60→1.0, d=.70→0.5, d=.80→0.0."""
+-    if distance <= start:
+-        return 1.0
+-    if distance >= halt:
+-        return 0.0
+-    return (halt - distance) / (halt - start)
+-
+-
+-@dataclass
+-class _RuleAnchor:
+-    """Running anchor for one drawdown rule under its declared semantics
+-    (GAP-P9E-01 corrected).
+-
+-    - **trailing** (the prop account-killer, §9.5): the high-water mark trails
+-      the peak basis since INCEPTION and NEVER resets on a calendar boundary —
+-      it only ever ratchets up. Resetting it daily (the original defect) forgot
+-      the multi-day peak and let a real breach read as 0%.
+-    - **static, non-daily**: a fixed reference at the first observed basis
+-      (account-start / overall max-drawdown reference), never reset.
+-    - **daily loss limit** (`resets_daily`, the engine's per-session limit,
+-      master §8): anchored at the day-open basis, reset each UTC day, measured
+-      from that open — it is a per-day limit by definition.
+-
+-    v1 samples the basis on EVERY observation (intraday) for all rules — the
+-    risk-conservative choice: it can HALT earlier than a platform that measures
+-    only end-of-day, never later, so it never MISSES a platform-enforced breach
+-    (stricter-of law, §9.5). True eod-only sampling (looser, platform-faithful)
+-    is a phase-11 adapter refinement — recorded as GAP-P9E-02. Halts are cheap
+-    (CLAUDE.md), so erring strict is safe."""
+-
+-    anchor: float | None = None
+-    day: object | None = None
+-
+-    def update(self, rule: DrawdownRule, basis: float, now: datetime, *,
+-               resets_daily: bool) -> float:
+-        # GAP-P9I-03: the daily loss limit's day starts at the FX rollover, NOT
+-        # calendar midnight (a drawdown straddling 00:00 UTC must not be forgotten);
+-        # the rollover is the real 17:00 New York instant (GAP-P12D-10, owner-approved).
+-        today = trading_day(now)
+-        if resets_daily:
+-            if self.day != today or self.anchor is None:
+-                self.day = today
+-                self.anchor = basis                   # day-open (per-day loss limit)
+-        else:
+-            if self.anchor is None:
+-                self.anchor = basis                   # inception reference
+-            if rule.type == "trailing":
+-                self.anchor = max(self.anchor, basis)  # high-water since inception
+-            # static non-daily: the inception anchor is fixed
+-        if self.anchor <= 0:
+-            return 0.0
+-        return max(0.0, (self.anchor - basis) / self.anchor * 100.0)
+-
+-
+-@dataclass
+-class DrawdownSeries:
+-    """Account-level drawdown rules measured from broker account state, each
+-    under its own semantics (§9.5). Never merged numerically with one another —
+-    each keeps its own key and taper."""
+-
+-    limits: GuardrailLimits
+-    rules: tuple[tuple[str, str, DrawdownRule, bool], ...]  # (key, origin, rule, resets_daily)
+-    _anchors: dict[str, _RuleAnchor] = field(default_factory=dict)
+-
+-    def measure(self, *, equity: float, balance: float, now: datetime,
+-                start: float, halt: float) -> list[PlatformDrawdownState]:
+-        out: list[PlatformDrawdownState] = []
+-        for key, _origin, rule, resets_daily in self.rules:
+-            basis = equity if rule.basis == "equity" else balance
+-            anchor = self._anchors.setdefault(key, _RuleAnchor())
+-            measured = anchor.update(rule, basis, now, resets_daily=resets_daily)
+-            distance = measured / rule.limit_pct if rule.limit_pct > 0 else 0.0
+-            out.append(PlatformDrawdownState(
+-                rule_key=key, measured_pct=measured, limit_pct=rule.limit_pct,
+-                distance_fraction=distance,
+-                taper_factor=taper_factor(distance, start, halt)))
+-        return out
+-
+-
+-def build_drawdown_series(limits: GuardrailLimits,
+-                          platform_rules: list[DrawdownRule],
+-                          account_name: str) -> DrawdownSeries:
+-    """The engine daily loss limit (resets at the FX trading-day rollover,
+-    master §8) + every platform rule under its own semantics (trailing
+-    ratchets, static is a fixed inception reference — neither resets daily).
+-    Per-instrument drawdown is handled separately (it needs per-instrument
+-    PnL, not account state)."""
+-    rules: list[tuple[str, str, DrawdownRule, bool]] = [
+-        ("engine:daily", "engine",
+-         DrawdownRule(type="static", anchor="intraday", basis="equity",
+-                      limit_pct=limits.daily_drawdown_pct), True),
+-    ]
+-    for r in platform_rules:
+-        key = f"{account_name}:{r.type}:{r.anchor}:{r.basis}"
+-        rules.append((key, "platform", r, False))     # platform rules never reset daily
+-    return DrawdownSeries(limits=limits, rules=tuple(rules))
+-
+-
+ @dataclass
+ class GuardrailContext:
+     now: datetime
+@@ -178,6 +82,25 @@ class Guardrails:
+         self._equity_flattened = False
+         self._log.event("GUARDRAILS_REARMED")
+ 
++    # -- restart: restore before the first check (GAP-P12D-55 / GAP-0050) --- #
++
++    @property
++    def series(self) -> DrawdownSeries:
++        return self._series
++
++    def restore_state(self, *, anchors: Mapping[str, Mapping],
++                      taper_factor: float | None) -> None:
++        """Put the persisted drawdown anchors back and RE-PUSH the last delivered
++        taper to the (fresh) Governor, before the first check. Restore-only: it can
++        put back a restriction the dead process had; it cannot loosen one."""
++        restored = self._series.restore(anchors)
++        self._log.event("ANCHORS_RESTORED", rule_keys=list(restored),
++                        ignored=sorted(set(anchors) - set(restored)))
++        if taper_factor is not None:
++            self._sink.apply_risk_state(taper_factor=taper_factor)
++            self._last_taper = taper_factor
++            self._log.event("TAPER_RESTORED", factor=taper_factor)
++
+     # -- racing-HALT coalescing (C-RSK-4) ------------------------------------ #
+     # Idempotent + serialized: a scope already covered by an equal-or-more-severe
+     # active halt is a no-op. Severity: instrument < session < all < flatten.
+diff --git a/core/risk/monitor.py b/core/risk/monitor.py
+index 3afdfce..8da8ebe 100644
+--- a/core/risk/monitor.py
++++ b/core/risk/monitor.py
+@@ -31,6 +31,7 @@ from core.risk.alpha_decay import AlphaDecayDetector
+ from core.risk.guardrails import GuardrailContext, Guardrails
+ from core.risk.risk_types import RiskPosition, RiskSnapshot, Trade
+ from core.risk.sink import HaltSink
++from core.risk.usd_conversion import usd_factor
+ 
+ _Z_99 = NormalDist().inv_cdf(0.99)      # ≈ 2.326 — 1% VaR z-score
+ 
+@@ -204,30 +205,17 @@ class RiskMonitor:
+             platform_drawdown=tuple(s for s in outcome.platform_drawdown
+                                     if s.rule_key != "engine:daily"),
+             taper_factor=outcome.taper_factor, session_id=self._session_id)
+-        if self._store is not None:
++        if self._store is not None:        # restrictive state persisted every evaluate
+             self._store.write_snapshot(snap)
++            self._store.save_restrictive_state(               # (GAP-0050 / GAP-P12D-55)
++                alpha_armed=self._alpha.armed, taper_factor=outcome.taper_factor,
++                anchors=self._guards.series.export())
+         return snap
+ 
+     # -- quote→USD conversion (GAP-P9E-04 / rescoped GAP-0092) ---------------- #
+ 
+-    def _usd_factor(self, instrument: str, price: float) -> float | None:
+-        """Convert a QUOTE-currency amount for `instrument` to USD at `price`.
+-        XXX_USD (quote is USD) → 1.0; USD_XXX (USD base) → 1/price (the quote
+-        YYY→USD rate is 1/(USD_YYY)). A true CROSS pair (neither side USD) has
+-        no derivable rate here → None; the caller falls back to quote-ccy and
+-        logs CONVERSION_UNAVAILABLE (a phase-11 FX-rate-table job). This covers
+-        the entire enabled universe (EUR_USD, USD_JPY) exactly, so the
+-        per-instrument DD HALT/taper, VaR, and cluster caps are no longer
+-        contaminated by a quote-vs-account currency mismatch."""
+-        base, _, quote = instrument.partition("_")
+-        if quote == "USD":
+-            return 1.0
+-        if base == "USD":
+-            return (1.0 / price) if price else 1.0
+-        return None
+-
+     def _to_usd(self, instrument: str, amount_quote: Decimal, price: float) -> Decimal:
+-        factor = self._usd_factor(instrument, price)
++        factor = usd_factor(instrument, price)
+         if factor is None:
+             self._log.event("CONVERSION_UNAVAILABLE", instrument=instrument,
+                             note="cross pair — quote-ccy used, phase-11 FX table owed")
+@@ -328,12 +316,14 @@ class RiskMonitor:
+                 stop_loss=pos.stop_loss, take_profit=pos.take_profit))
+         return tuple(out)
+ 
+-    def restore_restrictive_state(self, *, alpha_armed: bool) -> None:
++    def restore_restrictive_state(self, *, alpha_armed: bool,
++                                  taper_factor: float | None = None,
++                                  anchors: dict | None = None) -> None:
+         """Persisted risk-restrictive state is restored BEFORE the first
+         evaluate — a restart is never a relaxation (GAP-0050). GAP-P9I-05: the
+         restored throttle must be RE-PUSHED to the (fresh) Governor over the
+-        upward edge — restoring the detector's flag alone leaves a rebooted
+-        Governor un-throttled."""
++        upward edge. GAP-P12D-55: so are the drawdown anchors and the taper."""
++        self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor)
+         self._alpha.restore_armed(alpha_armed)
+         self._alpha_armed_prev = alpha_armed
+         if alpha_armed:
+diff --git a/core/risk/store.py b/core/risk/store.py
+index 01774ae..c2aa1b4 100644
+--- a/core/risk/store.py
++++ b/core/risk/store.py
+@@ -2,6 +2,12 @@
+ risk-restrictive state a restart must restore before the first evaluate
+ (GAP-0050 — a restart is never a relaxation).
+ 
++The restrictive state is the armed alpha-decay throttle, the last delivered taper
++and every drawdown anchor (GAP-P12D-55), each drawdown rule under the key
++`anchor:<rule_key>` in the existing `restrictive_state` table (no DDL change). All
++of it is written in ONE transaction, so a crash never leaves a taper from one
++evaluate beside anchors from another. `restore_on_boot` reads it back.
++
+ `halt_event.cleared_by` is 'human:<token>' for equity/global scope — a machine
+ can never populate it (enforced at the MCP layer, ACIS-08 phase 10). Snapshot
+ writes are idempotent on the timestamp PK.
+@@ -15,6 +21,17 @@ from pathlib import Path
+ 
+ from core.risk.risk_types import RiskSnapshot
+ 
++_ANCHOR = "anchor:"
++
++
++def restore_on_boot(store: "RiskStore", monitor) -> None:
++    """Boot, before the first evaluate: put back everything the dead process had
++    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55)."""
++    state = store.load_restrictive_state()
++    monitor.restore_restrictive_state(alpha_armed=bool(state.get("alpha_armed", False)),
++                                      taper_factor=state.get("taper_factor"),
++                                      anchors=store.load_anchors())
++
+ 
+ class RiskStore:
+     _DDL = """
+@@ -66,17 +83,25 @@ class RiskStore:
+             (cleared_at, cleared_by, halt_id))
+         self._conn.commit()
+ 
+-    def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float) -> None:
+-        for k, v in (("alpha_armed", json.dumps(alpha_armed)),
+-                     ("taper_factor", json.dumps(taper_factor))):
+-            self._conn.execute(
+-                "INSERT OR REPLACE INTO restrictive_state (k, v) VALUES (?,?)", (k, v))
++    def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float,
++                               anchors: dict[str, dict] | None = None) -> None:
++        rows = [("alpha_armed", json.dumps(alpha_armed)),
++                ("taper_factor", json.dumps(taper_factor))]
++        rows += [(_ANCHOR + k, json.dumps(v)) for k, v in (anchors or {}).items()]
++        self._conn.executemany(
++            "INSERT OR REPLACE INTO restrictive_state (k, v) VALUES (?,?)", rows)
+         self._conn.commit()
+ 
+     def load_restrictive_state(self) -> dict:
+-        rows = self._conn.execute("SELECT k, v FROM restrictive_state").fetchall()
++        rows = self._conn.execute("SELECT k, v FROM restrictive_state WHERE k NOT LIKE ?",
++                                  (_ANCHOR + "%",)).fetchall()
+         return {k: json.loads(v) for k, v in rows}
+ 
++    def load_anchors(self) -> dict[str, dict]:
++        rows = self._conn.execute("SELECT k, v FROM restrictive_state WHERE k LIKE ?",
++                                  (_ANCHOR + "%",)).fetchall()
++        return {k[len(_ANCHOR):]: json.loads(v) for k, v in rows}
++
+     def snapshot_count(self) -> int:
+         return self._conn.execute("SELECT COUNT(*) FROM risk_snapshot").fetchone()[0]
+ 
+diff --git a/tests/unit/test_module_budget.py b/tests/unit/test_module_budget.py
+index a4cb9e9..886ceff 100644
+--- a/tests/unit/test_module_budget.py
++++ b/tests/unit/test_module_budget.py
+@@ -28,9 +28,8 @@ GRANDFATHERED = {
+     "scripts/download_histdata.py": 400,        # 456 → 400 after scripts/dl_common.py extraction
+     "core/regime/nvma.py": 395,
+     "core/signals/provenance.py": 391,
+-    "core/risk/monitor.py": 378,
++    "core/risk/monitor.py": 368,                # 378 → 368: usd factor → usd_conversion.py (P12D-55)
+     "core/execution/venue.py": 378,
+-    "core/risk/guardrails.py": 313,
+ }
+ 
+ 
