@@ -31,6 +31,7 @@ from core.risk.alpha_decay import AlphaDecayDetector
 from core.risk.guardrails import GuardrailContext, Guardrails
 from core.risk.risk_types import RiskPosition, RiskSnapshot, Trade
 from core.risk.sink import HaltSink
+from core.risk.usd_conversion import usd_factor
 
 _Z_99 = NormalDist().inv_cdf(0.99)      # ≈ 2.326 — 1% VaR z-score
 
@@ -204,30 +205,17 @@ class RiskMonitor:
             platform_drawdown=tuple(s for s in outcome.platform_drawdown
                                     if s.rule_key != "engine:daily"),
             taper_factor=outcome.taper_factor, session_id=self._session_id)
-        if self._store is not None:
+        if self._store is not None:        # restrictive state persisted every evaluate
             self._store.write_snapshot(snap)
+            self._store.save_restrictive_state(               # (GAP-0050 / GAP-P12D-55)
+                alpha_armed=self._alpha.armed, taper_factor=outcome.taper_factor,
+                anchors=self._guards.series.export())
         return snap
 
     # -- quote→USD conversion (GAP-P9E-04 / rescoped GAP-0092) ---------------- #
 
-    def _usd_factor(self, instrument: str, price: float) -> float | None:
-        """Convert a QUOTE-currency amount for `instrument` to USD at `price`.
-        XXX_USD (quote is USD) → 1.0; USD_XXX (USD base) → 1/price (the quote
-        YYY→USD rate is 1/(USD_YYY)). A true CROSS pair (neither side USD) has
-        no derivable rate here → None; the caller falls back to quote-ccy and
-        logs CONVERSION_UNAVAILABLE (a phase-11 FX-rate-table job). This covers
-        the entire enabled universe (EUR_USD, USD_JPY) exactly, so the
-        per-instrument DD HALT/taper, VaR, and cluster caps are no longer
-        contaminated by a quote-vs-account currency mismatch."""
-        base, _, quote = instrument.partition("_")
-        if quote == "USD":
-            return 1.0
-        if base == "USD":
-            return (1.0 / price) if price else 1.0
-        return None
-
     def _to_usd(self, instrument: str, amount_quote: Decimal, price: float) -> Decimal:
-        factor = self._usd_factor(instrument, price)
+        factor = usd_factor(instrument, price)
         if factor is None:
             self._log.event("CONVERSION_UNAVAILABLE", instrument=instrument,
                             note="cross pair — quote-ccy used, phase-11 FX table owed")
@@ -328,12 +316,14 @@ class RiskMonitor:
                 stop_loss=pos.stop_loss, take_profit=pos.take_profit))
         return tuple(out)
 
-    def restore_restrictive_state(self, *, alpha_armed: bool) -> None:
+    def restore_restrictive_state(self, *, alpha_armed: bool,
+                                  taper_factor: float | None = None,
+                                  anchors: dict | None = None) -> None:
         """Persisted risk-restrictive state is restored BEFORE the first
         evaluate — a restart is never a relaxation (GAP-0050). GAP-P9I-05: the
         restored throttle must be RE-PUSHED to the (fresh) Governor over the
-        upward edge — restoring the detector's flag alone leaves a rebooted
-        Governor un-throttled."""
+        upward edge. GAP-P12D-55: so are the drawdown anchors and the taper."""
+        self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor)
         self._alpha.restore_armed(alpha_armed)
         self._alpha_armed_prev = alpha_armed
         if alpha_armed:

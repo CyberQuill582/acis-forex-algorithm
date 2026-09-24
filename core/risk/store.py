@@ -2,6 +2,12 @@
 risk-restrictive state a restart must restore before the first evaluate
 (GAP-0050 — a restart is never a relaxation).
 
+The restrictive state is the armed alpha-decay throttle, the last delivered taper
+and every drawdown anchor (GAP-P12D-55), each drawdown rule under the key
+`anchor:<rule_key>` in the existing `restrictive_state` table (no DDL change). All
+of it is written in ONE transaction, so a crash never leaves a taper from one
+evaluate beside anchors from another. `restore_on_boot` reads it back.
+
 `halt_event.cleared_by` is 'human:<token>' for equity/global scope — a machine
 can never populate it (enforced at the MCP layer, ACIS-08 phase 10). Snapshot
 writes are idempotent on the timestamp PK.
@@ -14,6 +20,17 @@ import sqlite3
 from pathlib import Path
 
 from core.risk.risk_types import RiskSnapshot
+
+_ANCHOR = "anchor:"
+
+
+def restore_on_boot(store: "RiskStore", monitor) -> None:
+    """Boot, before the first evaluate: put back everything the dead process had
+    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55)."""
+    state = store.load_restrictive_state()
+    monitor.restore_restrictive_state(alpha_armed=bool(state.get("alpha_armed", False)),
+                                      taper_factor=state.get("taper_factor"),
+                                      anchors=store.load_anchors())
 
 
 class RiskStore:
@@ -66,16 +83,24 @@ class RiskStore:
             (cleared_at, cleared_by, halt_id))
         self._conn.commit()
 
-    def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float) -> None:
-        for k, v in (("alpha_armed", json.dumps(alpha_armed)),
-                     ("taper_factor", json.dumps(taper_factor))):
-            self._conn.execute(
-                "INSERT OR REPLACE INTO restrictive_state (k, v) VALUES (?,?)", (k, v))
+    def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float,
+                               anchors: dict[str, dict] | None = None) -> None:
+        rows = [("alpha_armed", json.dumps(alpha_armed)),
+                ("taper_factor", json.dumps(taper_factor))]
+        rows += [(_ANCHOR + k, json.dumps(v)) for k, v in (anchors or {}).items()]
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO restrictive_state (k, v) VALUES (?,?)", rows)
         self._conn.commit()
 
     def load_restrictive_state(self) -> dict:
-        rows = self._conn.execute("SELECT k, v FROM restrictive_state").fetchall()
+        rows = self._conn.execute("SELECT k, v FROM restrictive_state WHERE k NOT LIKE ?",
+                                  (_ANCHOR + "%",)).fetchall()
         return {k: json.loads(v) for k, v in rows}
+
+    def load_anchors(self) -> dict[str, dict]:
+        rows = self._conn.execute("SELECT k, v FROM restrictive_state WHERE k LIKE ?",
+                                  (_ANCHOR + "%",)).fetchall()
+        return {k[len(_ANCHOR):]: json.loads(v) for k, v in rows}
 
     def snapshot_count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM risk_snapshot").fetchone()[0]
