@@ -1,0 +1,5 @@
+S-A floor: equity 6000 -> equity_floor_breached=True flattens=[('all', 'equity_floor')] halts=[('all', 'equity_floor')]
+S-B resets_daily per rule: engine:daily=True, ftmo:trailing:intraday:equity=False, ftmo:static:eod:balance=False; DrawdownRule fields=['anchor', 'basis', 'limit_pct', 'type']
+S-C min lot: descriptor min_lot=0.01 lots; 332.17 units (0.0033 lot) -> status=FILLED filled=332.17 (dispatched, no min-lot/lot-step check)
+S-D restart: before engine:daily=6.00%, ftmo:trailing:intraday:equity=9.62%, ftmo:static:eod:balance=6.00% | after restart engine:daily=0.00%, ftmo:trailing:intraday:equity=0.00%, ftmo:static:eod:balance=0.00%
+N-1 ftmo stand-in: equity 9850 vs FTMO daily floor 9900 -> FTMO BREACHED=True; ACIS (measured %, distance, taper) = {'engine:daily': (1.5, 0.75, 0.25), 'ftmo:trailing:intraday:equity': (1.5, 0.3, 1.0), 'ftmo:static:eod:balance': (0.0, 0.0, 1.0)}; any ACIS rule at distance>=1: False
