@@ -1,0 +1,297 @@
+diff --git a/KNOWN_GAPS.md b/KNOWN_GAPS.md
+index 88068d1..aa5fcbc 100644
+--- a/KNOWN_GAPS.md
++++ b/KNOWN_GAPS.md
+@@ -144,6 +144,198 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
+ - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
+ - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
+ 
++## GAP-P12D-60: the non-FTMO prop rulebooks are wrong about their firms, and two rulebook fields are enforced nowhere
++- Severity: high · Likelihood: high
++- Status: open (2026-09-24 — found by the SCOUT agent in [[GAP-P12D-52]], quoting each firm's own pages, grade (a). The lead checked the FundedNext quote against the firm's help centre; the rest rest on the SCOUT's quotes in archive/RESEARCH_PROP_VENUES_2026-09-24.md §8.2. The rulebook is human-committed, so this is RAISED, not changed)
++- Area: config/platform_rules.yaml (`fundednext`, `the5ers`, `atlas_funded`); config/account_doctrine.py; master §9.5 / C-BT-7
++- Description: three entries contradict their firms. Each is a separate policy value with its own disposition; they share one entry only because retiring unused firms is one owner decision.
++  1. **`fundednext`** names `platform: ctrader` with "EAs on all programs". FundedNext "does not allow the use of EAs or automated trading on the cTrader and Match-Trader platforms regardless of account size". Automation there is MT4/MT5 only, as paid add-ons, which means a Windows terminal.
++  2. **`the5ers`** names `platform: ctrader`; per the SCOUT, The5ers is MT5-only. It also bans "Bulk trading, is when multiple trades are open simultaneously", and says "no Automated Trading Software may be used unless the Company has given prior written approval". The entry models neither.
++  3. **`atlas_funded`** sets `min_hold_seconds: 0`, but Atlas bans trades held under 3 minutes (expressible as `min_hold_seconds: 180`).
++
++  Separately, two rulebook fields have no consumer in `core/`, `tests/backtest/` or `scripts/`: `consistency_max_day_profit_pct` and `min_trading_days`. Only config/account_doctrine.py carries them. `min_hold_seconds` is graded after the fact in the backtest and gates scalp eligibility, but nothing enforces it at run time.
++- Justification: open and RAISED.
++  - **Owner decision:** correct each entry, or retire firms ACIS will not use. The SCOUT ranks FundedNext third (Windows MT5 only), The5ers fourth (written approval needed) and Atlas fifth (Kenya eligibility unconfirmed).
++  - **The unenforced fields** are a C-BT-7 honesty gap for whichever firm is chosen, and belong with [[GAP-P11I-02]]'s residual.
++- Linked: [[GAP-P12D-52]], [[GAP-P12D-54]], [[GAP-P11I-02]], [[GAP-P12D-43]]
++
++## GAP-P12D-59: the engine's daily limit is a session halt that clears at the next session open, its day is not the firm's day, and no platform breach flattens
++- Severity: high · Likelihood: medium
++- Status: open (2026-09-24 — found by the SCOUT agent in [[GAP-P12D-52]]. The lead verified the code paths: core/risk/guardrails.py routes an `engine:daily` breach to `_issue_session_halt` and every platform breach to `_issue_halt("all", …)` with no flatten; core/governor/capital_governor.py `apply_session_halt` clears at `next_boundary(now, self._boundaries)`. Guardrail semantics, so RAISED)
++- Area: core/risk/guardrails.py; core/governor/capital_governor.py; master §8 (daily loss) and §9.5 ("Open positions and their stops are untouched"); config/platform_rules.yaml
++- Description: three things combine into a breach path at firms with tight daily limits.
++  1. **The engine's 2% daily breach is a SESSION halt.** It auto-clears at the next session boundary, which can be the Tokyo, London or New York open, not the next trading day.
++  2. **The engine's day is not the firm's day.** The engine day starts at 17:00 New York. FTMO's starts at 00:00 CE(S)T, one hour later for most of the year and two hours later in the weeks when US and EU daylight saving are out of step. So one firm-day can hold the tail of one engine day and the head of the next: up to two 2% engine budgets, plus whatever open positions lose after the halt.
++  3. **A platform-limit breach HALTs entries but never flattens.** This is per master §9.5, so open positions keep losing past the firm's line.
++
++  Against FTMO 2-Step's 5% daily limit this is tight but inside. Against FTMO 1-Step's 3%, E8 One's 3%, E8 Pro's 2.5% and The5ers Hyper Growth's 3%, a breach path exists. [[GAP-P12D-54]] point 4 adds a second route: carried floating losses, when the firm anchors on balance and the engine on equity.
++- Justification: open and RAISED; owner-owned.
++  - **What the fix needs:** a per-account daily boundary in the firm's zone; a pre-breach FLATTEN on platform limits, which changes the §9.5 sentence above; and deciding whether the engine's daily halt should last until the next trading day rather than the next session.
++  - **Why it is raised, not fixed:** all of these are HALT/veto semantics, which are human-only.
++- Linked: [[GAP-P12D-52]], [[GAP-P12D-54]], [[GAP-P12D-55]], [[GAP-0010]]
++
++## GAP-P12D-58: FTMO forbids "gap trading" on every account, and ACIS's pre-close entry ban switches off whenever weekend holding is allowed
++- Severity: high · Likelihood: high
++- Status: open (2026-09-24 — found by the SCOUT agent in [[GAP-P12D-52]]. The lead VERIFIED FTMO's wording on its Forbidden Trading Practices page (modified 2026-02-02) and the code at core/governor/capital_governor.py, where the `weekend_ban` gate runs only when `not self._rules.weekend_holding_allowed`)
++- Area: core/governor/capital_governor.py (entry gates); config/platform_rules.yaml; master §9.5; [[GAP-P12D-03]] (the event calendar)
++- Description: FTMO's forbidden practices include "gap trading", defined as opening trades "two hours or less before a relevant financial market is closed for at least two hours" and "when major global news, macroeconomic events, or corporate reports or earnings are scheduled". The page limits this to no account type, so it covers Swing accounts too.
++  - **ACIS's gate is tied to the wrong flag.** Its 2-hour pre-close entry ban (`weekend_entry_buffer_s`) runs only when `weekend_holding_allowed` is false. On an FTMO Swing account (weekend holding allowed), ACIS would open trades in the last two hours before the Friday close, which is a forbidden practice.
++  - **The event calendar is needed after all.** The news half of the clause refutes the prior venue pass's claim that a Swing account removes the need for the event calendar ([[GAP-P12D-03]]).
++  - **Spec and code disagree.** Master §9.5 says weekend bans mean "positions flattened before the ban window by policy", but nothing in `core/` flattens before a weekend; only entries are banned.
++- Justification: open.
++  - **[impl]:** decouple the pre-close entry ban from the weekend-holding flag.
++  - **[spec]:** a rulebook field for "pre-close entry ban" and a scheduled-news entry blackout, independent of the news-restricted flag; plus the missing weekend flatten, or amending §9.5's sentence.
++  - **Precondition for Track A:** this is a hard precondition before pointing ACIS at any FTMO account, the free trial included, because the trial runs the same rules.
++- Linked: [[GAP-P12D-52]], [[GAP-P12D-03]], [[GAP-P12D-54]]
++
++## GAP-P12D-57: the execution path ignores the venue's quantity and request limits — sub-minimum orders, no lot-step rounding, no daily request budget
++- Severity: high · Likelihood: high
++- Status: open (2026-09-24 — found by the SCOUT agent in [[GAP-P12D-52]]. The lead VERIFIED that core/execution/venue.py declares `min_lot` and `lot_step` on `CapabilityDescriptor` while core/execution/orchestrator.py `_capable_venues` checks only `max_order_lots`, and that FTMO's page forbids "more than 2,000 server requests per day")
++- Area: core/execution/orchestrator.py, core/execution/venue.py, core/governor/capital_governor.py (sizing quantised to 0.01 units), config/system_config.yaml (`base_unit_usd: 1000.0`, `fragment_threshold_lots: 1.0`); [[GAP-0075]]
++- Description:
++  1. **Orders are below the venue minimum, and nothing rounds them.** The Governor sizes `base_unit × conviction × liquidity × correlation × regime × marginal_alpha × vol_norm × taper` and quantises to 0.01 units, not to the venue's lot step. The SCOUT's arithmetic gives a typical EUR/USD order of about 332 units (≈0.0033 lot) and a neutral one of 926 units, against a common 0.01-lot minimum of 1,000 units (FTMO's and E8's own values are unverified). Most orders are un-placeable. The honest fix rounds DOWN, which makes most orders zero, because rounding up would break the Governor's clamp-only-downward law. Sizing therefore has to become NAV-relative for a prop account, and that is a spec decision.
++  2. **Nothing enforces a request budget.** FTMO and E8 cap an account at 2,000 server requests a day, plus 200/100 open orders. The composed loop sized about 2,700 decisions per trading day on the planted falsification run, so without a position-aware gate ([[GAP-0075]]) the cap breaks on day one. Fragmentation above `fragment_threshold_lots` adds a request per fragment.
++- Justification: open.
++  - **[impl]:** lot-step and minimum-lot enforcement in the adapter/orchestrator (a missing capability is a refusal, never silent rounding up), and a hard adapter-level daily request counter. The SCOUT suggests holding it at ≤1,000 a day, half the cap.
++  - **[spec — owner ratification]:** NAV-relative prop sizing.
++  - **Precondition for Track A:** both are preconditions before ACIS is pointed at any venue.
++- Linked: [[GAP-P12D-52]], [[GAP-0075]], [[GAP-P12D-56]], [[GAP-P12D-27]]
++
++## GAP-P12D-56: the equity floor is an absolute $9,000 sized for a $10k paper account — it halts any smaller account at start-up and gives no warning on a $10k prop account
++- Severity: high · Likelihood: high
++- Status: open (2026-09-24 — found by the SCOUT agent in [[GAP-P12D-52]]. The lead VERIFIED config/guardrail_limits.yaml (`equity_floor_usd: 9000.0  # dev/paper account assumed 10k start — human-owned`) and core/risk/guardrails.py `check`, which flattens everything and issues a global HALT, human-only resume, the moment equity < floor. The equity floor is on CLAUDE.md's never-touch-without-a-human list, so this is RAISED only)
++- Area: config/guardrail_limits.yaml `equity_floor_usd`; core/risk/guardrails.py (the equity breaker); master §8; the scenario-replay ceilings calibrated at $10k (ACIS-12)
++- Description: the floor is an absolute dollar figure, not a fraction of the account.
++  - **Any account under $9,000** (FundedNext $6K, E8 or The5ers $5k, the owner's ~$6k target) flattens and HALTs at its first evaluation, so the engine cannot trade at all.
++  - **On FTMO 2-Step $10k,** the floor sits exactly on FTMO's max-loss line ($9,000). By the time ACIS flattens, FTMO has already failed the account.
++  - **On E8 Pro $10k** (8% static, a line at $9,200), E8 fails the account first.
++  - **On a large demo account** (free trials are often $100k or more), the floor never fires.
++- Justification: open, owner-owned. Before any demo or prop account is attached, the owner must set the floor for that account (the ratified guardrail law allows only a human commit). A value below the firm's max-loss line is useless; above it but below the start is the only range that protects. The scenario-replay ceilings and Governor caps calibrated at $10k need the same re-check (the TODO "What the decision re-aims" item 3). A floor defined relative to declared initial capital would stop this recurring per account, but that is a guardrail-shape change for the owner.
++- Linked: [[GAP-P12D-52]], [[GAP-P12D-55]], [[GAP-P12D-57]], [[GAP-0108]]
++
++## GAP-P12D-55: a process restart relaxes every drawdown limit — the anchors live only in memory and re-base at the first equity seen after boot
++- Severity: critical · Likelihood: high
++- Status: open (2026-09-24 — found by the SCOUT agent in [[GAP-P12D-52]]. The lead REPRODUCED it with the real config and the real `build_drawdown_series` for the `ftmo` account. At equity 9,400 after a 10,000 start, the three measures read `engine:daily` 6.0%, trailing 6.0% and static 6.0%. A freshly built series at the same 9,400, which is what a restart does, reads 0.0% on all three with the taper back at 1.0. Guardrail semantics, so RAISED, not self-fixed)
++- Area: core/risk/guardrails.py (`DrawdownSeries._anchors`, `_RuleAnchor`); core/risk/store.py (`save_restrictive_state`); core/risk/monitor.py (`restore_restrictive_state`); deploy/systemd (`Restart=` supervision); master §8/§9.5; ACIS-07
++- Description:
++  - **Nothing on disk remembers where the account started.** `DrawdownSeries._anchors` is an in-memory dict. The static inception anchor, the trailing high-water mark and the engine's daily day-open anchor are never persisted. The static anchor is also "the first observed basis", not a declared initial capital. So after any restart, every drawdown measure re-bases to the current equity or balance and reads 0%.
++  - **Example:** on an FTMO $10k account at −6%, a restart hands ACIS a fresh 10% budget while FTMO has 4% left.
++  - **The persisted taper is never used.** `save_restrictive_state` persists `taper_factor`, but `restore_restrictive_state` restores only `alpha_armed`. Nothing in `core/` reads the saved taper back.
++  - **It breaks a principle the risk layer already declared.** Its own principle is "a restart is never a relaxation" ([[GAP-0050]]). [[GAP-P9E-01]] fixed only the calendar reset of the trailing anchor.
++  - **Supervision makes it worse.** Under systemd, whose job is to restart a crashed engine, a crash loop resets the budget on every restart.
++- Justification: open and RAISED; blocks Track A before any account is attached. The fix restores strictness rather than weakening anything, but it touches HALT/guardrail state, so it goes to the owner.
++  - **Candidate fix:**
++    - declare each account's initial capital in the rulebook, and anchor static rules on it;
++    - persist the trailing high-water mark and the day-open anchors, or reconstruct them from the broker's balance history at boot;
++    - restore the saved taper;
++    - regression tests for restart at a drawdown, falsified per A16.
++  - **Interlock:** it interlocks with [[GAP-P12D-54]]'s schema change (daily limits anchored on the balance at a named reset instant).
++- Linked: [[GAP-P12D-52]], [[GAP-P12D-54]], [[GAP-P12D-56]], [[GAP-0050]], [[GAP-P9E-01]], [[GAP-0102]]
++
++## GAP-P12D-54: the `ftmo` rulebook contradicts FTMO's published rules in both directions, and the §9.5 schema cannot express FTMO's daily loss
++- Severity: high · Likelihood: high
++- Status: open (2026-09-24 — found by the ARCHITECT agent in [[GAP-P12D-52]]. VERIFIED by the lead against FTMO's Trading Objectives page (ftmo.com/en/trading-objectives, modified 2026-05-13) and against core/risk/guardrails.py. Guardrail-adjacent, and the rulebook is human-committed, so it is RAISED, not changed)
++- Area: config/platform_rules.yaml `ftmo`, and every rulebook drafted on the same `prop_demo` pattern; core/risk/guardrails.py `_RuleAnchor` / `build_drawdown_series`; config/schemas.py `DrawdownRule`; master §9.5
++- Description: FTMO's 2-Step rules, quoted from its page:
++  - **Maximum Daily Loss:** a limit "below which your account equity … cannot drop". It equals "the account balance recorded at 00:00 CE(S)T of the current day" minus "5% of the Initial Simulated Capital". Equity is "Balance + Open Positions P/L ± Swaps – Commissions".
++  - **Maximum Loss:** "a static limit … below which your account equity … cannot drop", set at initial capital minus 10%.
++
++  The rulebook models neither correctly:
++  1. **Max loss is modelled on BALANCE** (`type: static`, `basis: balance`). `guardrails.py:96` measures such a rule on the closed balance only, so floating losses on open positions are invisible to it. That is LOOSER than FTMO, which measures equity.
++  2. **The "daily" rule is not daily in code.**
++     - `type: trailing, basis: equity` becomes a high-water mark since INCEPTION that "NEVER resets" (the `_RuleAnchor` docstring). `build_drawdown_series` also marks every platform rule as never resetting daily.
++     - So ACIS actually enforces a LIFETIME 5% trailing drawdown from peak equity.
++     - Under the ratified taper, it starts cutting size 3% below the peak and stops new entries at 4%. For a strategy running at 0.5–0.7%/day, those are ordinary swings. That is far STRICTER than FTMO, and on its own it makes a +10% target hard to reach.
++     - It is occasionally LOOSER as well. FTMO anchors on the midnight BALANCE, so when realised gains sit beside floating losses (balance above the equity high-water mark), FTMO's floor is the higher of the two.
++  3. **The schema cannot say what FTMO says.**
++     - `DrawdownRule` has only type / anchor / basis / limit_pct. It cannot express a limit anchored on the balance at a named reset instant in a named timezone, sized as a percentage of INITIAL capital.
++     - The rulebook carries no reset instant at all.
++     - FTMO's 1-Step product (3% daily; an end-of-day trailing max loss that resets on withdrawal) and its Best Day rule are also unmodelled.
++  4. **The config header's claim is false when positions carry floating losses across the day boundary.** The header says "ACIS's own 2% daily guardrail is far inside every prop 5% daily, so ACIS essentially cannot breach a prop daily limit". But the engine's daily limit (`daily_drawdown_pct: 2.0`) anchors on EQUITY at the 17:00 New York rollover, while FTMO anchors on BALANCE at 00:00 CE(S)T. Worked example on a $6,000 account:
++     - At the rollover the balance is 6,000, with a −240 floating loss, so the engine's anchor is 5,760 and its daily halt comes at 5,644.80.
++     - FTMO's floor is 6,000 − 300 = 5,700.
++     - FTMO is breached 55.20 before the engine's daily guard fires.
++- Justification: open and RAISED.
++  - **Why it matters.** Two things read the account doctrine: §14 grading (C-BT-7, rules active during the run) and live halts. A rulebook that is wrong about the firm therefore corrupts the backtest and the account at once, in both directions.
++  - **What fixing it needs:**
++    - (a) a human config commit;
++    - (b) probably an extension to the schema and to `_RuleAnchor`, adding balance-at-reset anchors in a named timezone with limits as a percentage of initial capital. That is a §9.5 / ACIS-07 change for owner ratification.
++  - **Coming next.** The SCOUT agent is verifying every firm's rules, and its corrections list lands here.
++  - **Until then**, no backtest or demo on an FTMO account may be read as faithful to FTMO's rules.
++- Linked: [[GAP-P12D-52]], [[GAP-P11I-02]], [[GAP-0102]], [[GAP-P12D-44]]
++
++## GAP-P12D-53: master §5.6 misstates the century trend-following evidence, and the figure it quotes is the per-market one
++- Severity: medium · Likelihood: high
++- Status: open (2026-09-24 — found by the ARCHITECT agent in [[GAP-P12D-52]]. VERIFIED by the lead from the paper's own Exhibit 1, with the text extracted from a fresh download of Hurst, Ooi & Pedersen, "A Century of Evidence on Trend-Following Investing")
++- Area: ACIS_SPEC.md §5.6, the verified-benchmark law; the expectations placed on the TSMOM module in specs/ACIS-04; and the FX-methods research report, which repeats "~0.4 in every decade"
++- Description: §5.6 says the century study (1880–2016) shows "Sharpe ≈ 0.4 *every decade*". The paper's Exhibit 1 says otherwise.
++  - **The full sample:** "Full Sample Jan 1880-Dec 2016 18.0% 11.0% 7.3% 9.7% 0.76". The columns are the gross excess return, net of cost, net of cost and 2/20 fees, volatility, and the net Sharpe.
++  - **By decade**, the net Sharpe ratios are: 0.27, 0.73, 0.34, 0.13, 1.09, 0.74, 0.99, 1.45, 0.56, 1.70, 0.96, 0.98, 0.61 and 0.41 (2010–2016).
++  - **Where "≈0.4" really comes from.** It is a different statistic: the paper reports "an average Sharpe ratio of approximately 0.4" for each INDIVIDUAL market, gross of fees and costs, across its 67 markets.
++  - **The correction cuts against ACIS twice.** The canon's strong number (0.76) is a 67-market portfolio result that a 2-instrument TSMOM cannot borrow. And the number that does transfer, ~0.4 for a single market, is measured before costs.
++- Justification: open and owner-owned, because §5.6 is master-spec text (v2.9, owner-directed).
++  - **Proposed correction:** state the full-sample net Sharpe of 0.76 over 67 markets, the decade range of 0.13–1.70, and the per-market ~0.4 gross. Say plainly that the evidence is breadth at the portfolio level.
++  - **Scope:** it changes no code and no threshold. It changes what a reader would expect of a 2-instrument TSMOM.
++- Linked: [[GAP-P12D-52]], [[GAP-P12D-49]], [[GAP-P12D-32]]
++
++## GAP-P12D-52: five-agent edge pass (2026-09-24) — findings and triage (2 of 5 in)
++- Severity: high · Likelihood: high
++- Status: open (2026-09-24 — owner directive: five agents are to find out what the paid minority of prop-firm algo traders actually does, fix what is derailing ACIS, and find bleeding-edge ways to iterate to an edge without overfitting or poor backtesting producing "false encouragement". The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`. All five run on Opus, and each is a finder, not a clearer)
++- Area: the venue (does it fit a fully automated prop engine, and which demo venue); the objective function for a prop account; the validation protocol ([[GAP-P12D-33]]/[[GAP-P12D-37]]); the strategy slate and research factory; the fixes that need no ratification ([[GAP-P12D-37]] oracle, [[GAP-P12D-38]], [[GAP-P12D-34]], TSMOM attribution)
++- Description: the five agents and their deliverables:
++  - SCOUT: prop-venue due diligence and the demo-venue recommendation. Report `RESEARCH_PROP_VENUES_2026-09-24.md`.
++  - ECONOMIST: the paid-minority playbook and the expected-value mathematics of a prop account. Report `RESEARCH_PROP_ECONOMICS_2026-09-24.md`.
++  - VALIDATOR: the measured false-positive rate and power of candidate validation protocols, a data budget, and a rule against LLM contamination. Report `RESEARCH_VALIDATION_FIREWALL_2026-09-24.md`.
++  - ARCHITECT: a research factory, a pre-registered candidate slate, and how well ACIS's architecture fits it. It works blind first. Report `RESEARCH_EDGE_FACTORY_2026-09-24.md`.
++  - BUILDER: works on a worktree branch and reports in `BUILDER_REPORT_2026-09-24.md`. Its work is BUILT — PENDING AUDIT.
++  The four reports land in `archive/`, with interim checkpoints named `PARTIAL_<TOPIC>_2026-09-24.md`. One rule binds the whole pass: no agent backtests a strategy on real Dukascopy data, and nobody touches the 2024–25 holdout. Every look at real history is a trial against the scarcest resource.
++- Leads from the lead's own reconnaissance. They are UNCONFIRMED (search snippets only, no primary quote yet); the SCOUT verifies them:
++  1. Apex reportedly prohibits fully automated trading on funded PA accounts.
++  2. Topstep reportedly permits its API but prohibits VPS or remote hosting and unattended automation. That would be incompatible with the server-hosted engine the deployment gate built.
++  3. FundedNext reportedly prohibits automation on cTrader and Match-Trader: EAs are MT4/MT5 only, as a paid add-on. If confirmed, the `fundednext` entry in `config/platform_rules.yaml` ("cTrader + Match-Trader; EAs on all programs") is wrong about the world.
++  4. The5ers lists bulk trading (trades open simultaneously) as prohibited, and requires prior written approval for automated software.
++  5. FTMO prohibits more than 2,000 server requests per day. That is a hard budget the three-loop runtime must respect, and the per-tick behaviour in [[GAP-0075]] would breach it within minutes.
++- Reports received so far:
++  - **ARCHITECT** (2026-09-24): archive/RESEARCH_EDGE_FACTORY_2026-09-24.md, with its Stage 1 record in archive/PARTIAL_EDGE_FACTORY_2026-09-24.md, stamped before it opened any ACIS document.
++    - **Headline, synthetic and derived by the agent — not yet cross-checked:**
++      - The prop contract pays for variance. A zero-edge algorithm at ~1%/day passes both FTMO phases ~25% of the time, so passing is weak evidence of skill, and survival is what separates edge from luck.
++      - Even a true net Sharpe of 1.0 at 0.6%/day needs a median of ~259 trading days to pass, then pays ~9.6% of initial capital a year while funded (~$575 on $6k).
++      - The documented edges that suit a prop account are intraday flow and microstructure effects in index CFDs, gold and oil, and the FX fixings. Technical rules on FX majors are not among them.
++    - It proposes 15 ledger items (its §9) and a 13-hypothesis pre-registered slate. Those are triaged after cross-checking against VALIDATOR, ECONOMIST and SCOUT.
++    - Two findings were verified by the lead and filed now: [[GAP-P12D-53]] (spec misquote) and [[GAP-P12D-54]] (FTMO rulebook).
++    - It disclosed three things:
++      - Its Stage 1 was not fully blind, because the harness loaded CLAUDE.md and the memory index into its context.
++      - One tiny run started with 835 MB free, below the brief's 1 GB rule.
++      - It used 27 of its 40 WebSearch calls.
++  - **SCOUT** (2026-09-24): archive/RESEARCH_PROP_VENUES_2026-09-24.md.
++    - **Only two firms pass the hard filter** — a self-built, unattended engine on a funded account through an API that runs natively on Linux: **FTMO** and **E8 Markets**, both on cTrader via the Open API.
++    - **Ranking:**
++      1. FTMO 2-Step Swing $10k (€89, refundable).
++      2. E8 Pro / E8 One.
++      3. FundedNext, Windows MT5 only.
++      4. The5ers, only with written approval.
++      5. Atlas, blocked on Kenya eligibility.
++
++      Apex, Topstep and Alpha Capital are out. Apex also geo-blocks Kenya. **Owner decision 2026-09-24: Apex was replaced by E8 Markets, so the shortlist is now FTMO, E8, FundedNext, The5ers.**
++    - **All five of the lead's leads are CONFIRMED**, grade (a).
++    - **Demo of record:** the FTMO Free Trial on cTrader. That is a §15 deviation; see [[GAP-P12D-43]].
++    - **Verified and filed by the lead:**
++      - [[GAP-P12D-55]]: a restart relaxes every drawdown limit. Reproduced; critical.
++      - [[GAP-P12D-56]]: the $9,000 absolute equity floor.
++      - [[GAP-P12D-57]]: sub-minimum orders, no lot-step rounding, no request budget.
++      - [[GAP-P12D-58]]: FTMO gap trading vs a pre-close ban tied to the weekend flag.
++      - [[GAP-P12D-59]]: the daily limit is a session halt; engine day ≠ firm day; no platform breach flattens.
++      - [[GAP-P12D-60]]: the non-FTMO rulebooks are wrong, and two rulebook fields are enforced nowhere.
++      - It also confirmed the `ftmo` basis finding in [[GAP-P12D-54]].
++    - **Still pending cross-check:**
++      - FTMO's 0.7% non-USD P&L adjustment: 4 of 8 declared instruments, 1 of the 2 enabled. It belongs in the C8 cost model once FTMO is chosen; [[GAP-P12D-46]] owns cost-model changes.
++      - The report's draft rulebook entries for FTMO and E8.
++      - Its draft emails to five firms (the owner sends them).
++      - Its 16 proposed ledger items.
++    - It used 21 of its 45 WebSearch calls.
++- Justification: open until all five reports are in and every finding is triaged (A6). A finder's report is evidence, never an instruction (A9), and any recommendation that touches the spec needs owner ratification.
++- Linked: [[GAP-P12D-32]], [[GAP-P12D-49]], [[GAP-P12D-33]], [[GAP-P12D-37]], [[GAP-P12D-38]], [[GAP-P12D-34]], [[GAP-0075]], [[GAP-P12D-43]], [[GAP-P12D-44]]
++
+ ## GAP-P12D-50: the AWS second copy of the tick set is GONE — the 2.79 B-tick archive now exists on ONE laptop disk
+ - Severity: critical · Likelihood: high
+ - Status: open (verified 2026-09-23 by direct API inventory after the account was reinstated; account 565257597310, IAM user `acis-data`)
+@@ -238,6 +430,11 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
+ - Description: OANDA's v20 REST/streaming API is documented as available to all divisions **except OANDA Global Markets Ltd (BVI)** — which is the division a Kenyan resident onboards to. If that holds, the execution adapter the spec names first cannot be built for this owner at all: his OANDA route is MT5, whose `MetaTrader5` PyPI package ships **Windows-only wheels** against our `python:3.11-slim` container, so it also breaks the phase-12 deployment gate's platform assumption. Two further regressions reported against the same division: the minimum ticket is **0.01 lots (1,000 units)**, not the 1-unit granularity the Governor's risk-based sizing assumes, and the terms state "all negative balances are payable" — i.e. **no negative-balance protection**, which contradicts the assumption behind the GAP-0108 CHF-gap work that losses stop at the equity floor. The agent also reports OGM's terms name "automated or mass data entry system" and "Scalping" as Events of Default actionable without notice — an `OPERATIONS_LEDGER.md` item before any first live fill.
+ - Consequence for [[GAP-P12D-41]]: its 1.5578 pip / 1.44 bps figure came from OANDA's **US** division series; the BVI division publishes 1.0 pip and its own spread endpoint returns HTTP 500, so no measured series exists for the division we would actually trade. The optimism ratio is reported as ~2.5x, not 3.9x. Do not calibrate to the earlier number.
+ - Justification: open, spec-level, and it lands AFTER the owner chose the prop-firm route (2026-09-17), so OANDA may be moot for execution anyway. It is filed because master §3 still names OANDA as the execution feed and §13 leans on it for cost calibration — whichever venue wins, the spec text must stop asserting an adapter the owner cannot use.
++- **Re-verified 2026-09-24** (SCOUT agent, [[GAP-P12D-52]]; grade (a) quotes in archive/RESEARCH_PROP_VENUES_2026-09-24.md §4 and §7). v20 is "available to all divisions except OANDA Global Markets". A Kenyan visitor is routed to OANDA Global Markets, whose demo is an MT5 demo. The legacy v20 demo sign-up gate returned HTTP 523. So a NEW OANDA practice account with v20 access is very likely unobtainable for the owner. Two things stay open:
++  - Whether an EXISTING legacy practice token still answers. That is TODO Track A step 1, one call, and only the owner can run it.
++  - The SCOUT's recommended demo of record: the FTMO Free Trial on cTrader via the Open API. That is a SPEC §15 deviation, and the draft amendment text is in the report's §7.
++
++  Side note, grade (a): FTMO has owned OANDA Global Corporation since 1 Dec 2025.
+ - Linked: [[GAP-P12D-41]], [[GAP-0108]], [[GAP-0001]], [[GAP-0109]]
+ 
+ ## GAP-P12D-44: a prop account is a SIMULATED environment — guard 2 and the operational-referent audit lose their external referent there
+diff --git a/TODO.md b/TODO.md
+index 24d4b70..ca39e9f 100644
+--- a/TODO.md
++++ b/TODO.md
+@@ -12,6 +12,55 @@
+ 
+ **⚠ Read this before starting, and say it to the owner again if he has not acknowledged it:** a demo run proves the **plumbing**, not the **edge**. [[GAP-P12D-49]] measured the engine LOSING on its own positive control (the planted market: −147.84 at 1x, Sharpe −1.12, ~89% of the loss on direction, not cost). **So the demo is expected to lose money.** That is an acceptable and useful outcome — it proves feed → regime → signal → sizing → order → fill → risk works end to end against a real venue — but "it trades" must never be reported or read as "it works". The edge question is Track B. Live money stays gated on §14 minimums out-of-sample + explicit human sign-off regardless (CLAUDE.md; never enable live yourself).
+ 
++### 🔵 FIVE-AGENT EDGE PASS — LAUNCHED 2026-09-24 ([[GAP-P12D-52]]) — check its reports before starting either track
++**Owner directive (2026-09-24).** Launch five agents to:
++- find out what the paid minority of prop-firm algo traders actually does, and build on it;
++- fix what is derailing ACIS;
++- find bleeding-edge ways to iterate to an edge without overfitting, and without poor backtesting producing false encouragement.
++
++The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, then one section per agent. All five run on Opus, and all are finders, not clearers (A5). **Pass rule:** no agent backtests a strategy on real data, and the 2024–25 holdout stays untouched.
++- [x] 2026-09-24 **SCOUT** — prop-venue due diligence: the owner's outstanding PROP-FIRM RESEARCH (a)–(f) below, the filter for compatibility with automation on funded accounts, and the **demo-venue recommendation that feeds Track A step 1**. Report: archive/RESEARCH_PROP_VENUES_2026-09-24.md. **IN.**
++  - **Only FTMO and E8 Markets pass the hard filter:** both let an unattended engine on Linux trade a funded account via the cTrader Open API.
++  - **The report ranks FTMO 2-Step Swing $10k first.**
++  - **Apex, Topstep and Alpha Capital are out.**
++  - **A new OANDA practice/v20 account is very likely unobtainable for a Kenyan** ([[GAP-P12D-43]] re-verified).
++  - **ACIS as built cannot run on any prop account.** The lead verified these and filed them:
++    - [[GAP-P12D-55]] (critical): a restart resets every drawdown budget.
++    - [[GAP-P12D-56]]: the $9k absolute equity floor.
++    - [[GAP-P12D-57]]: sub-minimum orders, and no request budget against FTMO's 2,000/day cap.
++    - [[GAP-P12D-58]]: FTMO "gap trading" vs our pre-close ban.
++    - [[GAP-P12D-59]]: the daily-limit semantics.
++    - [[GAP-P12D-60]]: the other firms' rulebooks are wrong.
++  - **OWNER DECISIONS OWED from this report:**
++    1. **Demo of record.** Run the one-call legacy OANDA token test first (Track A step 1). If it fails, ratify the FTMO Free Trial on cTrader as the demo venue. That is a SPEC §15 deviation; the draft wording is in the report's §7.
++    2. ✅ **Shortlist — DECIDED 2026-09-24 (owner: "replace Apex with E8 on the shortlist").** The shortlist is now **FTMO, E8 Markets, FundedNext, The5ers**. Still NOT ruled: the SCOUT's further suggestion to demote The5ers and FundedNext to "conditional".
++    3. **Emails.** Send the drafted emails in the report's §9, FTMO first: Open API permission for unattended funded use, what counts toward the 2,000/day cap, min lot and lot step, spreads.
++    4. **The equity floor** for whatever account the demo uses ([[GAP-P12D-56]]; human-only).
++  - **Preconditions before ACIS touches ANY FTMO account, the free trial included:**
++    - [[GAP-0075]] fixed;
++    - a request counter holding ≤1,000 a day;
++    - lot-step and minimum-lot enforcement;
++    - always-on pre-close and scheduled-news entry bans;
++    - drawdown anchors that survive a restart;
++    - a correct `ftmo` rulebook ([[GAP-P12D-54]]).
++- [ ] **ECONOMIST** — the paid-minority playbook, plus the expected-value mathematics of a ~$6k funded account (P(pass), P(breach), EV of payouts net of fees, and the minimum out-of-sample edge that is +EV). Report: RESEARCH_PROP_ECONOMICS_2026-09-24.md.
++- [ ] **VALIDATOR** — the measured false-positive rate and power of candidate validation protocols; options for [[GAP-P12D-33]]/[[GAP-P12D-37]]; the data budget; forward incubation on the demo; a rule against LLM contamination. Report: RESEARCH_VALIDATION_FIREWALL_2026-09-24.md.
++- [x] 2026-09-24 **ARCHITECT** — the research factory, a pre-registered candidate slate, and the architecture fit, working blind first. Report: RESEARCH_EDGE_FACTORY_2026-09-24.md. **IN.** The lead verified two findings from primary sources and filed them:
++  - [[GAP-P12D-53]]: §5.6 misquotes the century trend study. Its net Sharpe is 0.76 over 67 markets; the "≈0.4" is the per-market gross figure. This needs an owner ruling.
++  - [[GAP-P12D-54]]: the `ftmo` rulebook is wrong about FTMO in both directions, the schema cannot express FTMO's daily-loss rule, and the engine's 2% daily guardrail does NOT keep ACIS inside FTMO's daily limit when floating losses cross midnight. RAISED; this needs a human config commit.
++
++  Its 15 proposed ledger items are triaged once the other reports are in.
++- [ ] **BUILDER** (worktree branch) — the oracle positive control ([[GAP-P12D-37]]), the zero-duration artifacts ([[GAP-P12D-38]]), TSMOM attribution, and the §5.6 plateau law ([[GAP-P12D-34]]). Report: BUILDER_REPORT_2026-09-24.md on its branch. Status: BUILT — PENDING AUDIT; merge only after review and the owner's go.
++- **Resume handles** (launched 2026-09-24; resume one with `ListAgents`, then `SendMessage`): SCOUT `a0a597186258d7486` · ECONOMIST `a37a331d96a383232` · VALIDATOR `a6a2d191066bfb8a6` · ARCHITECT `acc770fb0b4e54e86` · BUILDER `a128ab904780ce593` (the builder's worktree path and branch name come in its final report). Checkpoint files are archive/PARTIAL_<TOPIC>_2026-09-24.md; read them first if a session died mid-pass. The brief, this block and the GAP-P12D-52 entry are **not committed yet**. Commit them on the owner's go.
++- **The lead's duty on return:**
++  - verify each finding (script or quote), then triage it into KNOWN_GAPS; [[GAP-P12D-52]] owns the triage;
++  - put owner decisions into this block;
++  - `git mv` the brief to archive/ once the pass closes.
++- **How it touches Track A:**
++  - The SCOUT's demo-venue recommendation informs step 1.
++  - FTMO reportedly caps activity at 2,000 server requests per day. If that is confirmed, step 4's runtime needs a request budget ([[GAP-0075]]).
++  - An OANDA practice account is still the spec's ordained first venue (SPEC §15). A switch to the prop firm's own demo platform would be an owner-ratified deviation.
++
+ ### TRACK A — get a demo account trading (the owner's priority)
+ Critical path, in order. Steps 1 and 2 are the real blockers; do not start 3 before 2 is LOCKED.
+ 
+@@ -145,17 +194,17 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
+       **2026-09-15 result — quick run DONE (exit 3), and it found GAP-P12D-29:** 0 trades on all three markets, because no fold staged a champion. The 500-bar evolution window's 100-bar holdout almost never holds the 5 trades the gate needs (0.0–0.3% of random ParamSets clear both gates, on every market). The synthetic test itself is sound: the fitness harness finds the planted edge on contiguous bars (80–90/100 ParamSets positive vs 0–1/100 on null/permuted). **The owner ratified (a) the same day ("I ratify a") and it is BUILT:** master v2.18, ACIS-03 v1.4, `fitness_span_days: 730`, 796 green. NEXT: the quick run re-run on the fix (expect champions and trades), then the full run. **Memory limit (2026-09-15):** the first re-run at `--workers 3` was killed for low memory during grading. The laptop has 7.9 GB, and with Chrome/Edge/Docker open its committed memory was already 14.5 of 17.8 GB. Relaunched with `--workers 1` at 16:31 UTC; it was killed about a minute later, while labelling and before any evolution code ran. So the cause is the machine's free memory (1.0 GB free, 14.3 of 17.8 GB committed, with no ACIS process running), not the run itself. **Owner chose (2026-09-15):** close Chrome/Edge/Docker and relaunch the quick run here in the session (not a detached task, not the server). The option (a) change was committed first, on the owner's go (f1d0669). Relaunched at 20:52 UTC after Chrome's windows were closed (committed memory 14.2 → 11.1 GB, 1.4–1.5 GB free), but it was killed again about 40 s in, while labelling. Chrome was still running in the background (11 processes, 1.47 GB), plus Edge webviews (845 MB). The session's memory kill fires on whole-machine free memory, so an in-session run needs Chrome quit from the tray (and ideally `wsl --shutdown`), or a detached run outside the session. **Owner chose (2026-09-16): the detached run.** `python scripts/falsify_engine.py --quick --workers 1` runs via Start-Process outside the session (PID 9624, launched 22:28 UTC 2026-09-15), logging to `data/validation/falsification/detached_quick.log` (+ `.err`). Read that log to pick this up in ANY session; the run writes its per-market reports under `data/validation/falsification/<run id>-quick/`. **QUICK RUN DONE 2026-09-15 23:10 UTC (run `20260915T222826Z-quick`): the fix works mechanically** — champions per fold null [2,3,2] / planted [2,6,1] / permuted [1,1,0], trades 122 / 250 / 14, Sharpe -4.42 / +0.92 / +1.93, exit 3 (no verdict by design, under two graded years). **FULL RUN LAUNCHED 2026-09-15 23:11 UTC** detached, PID 13656, `python scripts/falsify_engine.py --workers 2`, log `data/validation/falsification/detached_full.log` (+ `.err`); expect ~6-12 h. **FULL RUN RESULT 2026-09-16 (run `20260915T231127Z`): FALSIFICATION FAILED — planted FAILED when it had to pass (Sharpe -0.65, PF 0.84, 2,018 trades); null failed as expected (-0.90, 1,864 trades) and permuted too (-0.49, 2,111 trades). Script verdict: `FALSIFICATION FAILED — wrong answer on: planted` (exit 1). All three markets lose inside a 0.4-Sharpe band. **ATTRIBUTION DIAGNOSTIC LAUNCHED 2026-09-16 18:52 UTC** (owner: "lets make the AWS worth the cash"): detached PID 15260, `python scripts/falsify_engine.py --kinds planted null --train-days 60 --test-days 30 --graded-days 180 --workers 2`, log `data/validation/falsification/detached_diag.log`; ~2 h. Purpose is ATTRIBUTION, not a verdict — it grades under two years, so planted cannot pass and the run WILL print `FALSIFICATION FAILED`; do not read that exit code as a second verdict. What to read instead: `per_regime` and `per_strategy` in `planted.json` vs `null.json` — which regime and which AGON module bleeds, and whether anything behaves differently on the market that HAS the edge. That names one cause among the three GAP-P12D-31 suspects (GAP-0035 proxy-vs-AGON, GAP-0075 no holding policy, ATR exits truncating a 1-4 h drift at ~8 min).
+     - [ ] **External research pass LAUNCHED 2026-09-16 (owner: "run an external research agent … use web search extensively").** One agent, given the full build context and the measured failure, researching: optimiser/execution consistency, signal-to-position and holding policy, exit design and horizon matching, whether this approach works at retail FX scale net of ~1 bp round-trip costs, whether regime switching survives the evidence, parameter-optimisation methodology and overfitting controls, what to build instead, and anti-patterns. It writes `archive/RESEARCH_FX_METHODS_2026-09-16.md` with sourced claims graded academic / practitioner / unverifiable. **It is a FINDER, not a decider** (CLAUDE.md audit law): every recommendation it makes that touches the spec needs owner ratification, and its claims about our own code must be verified against the code before they bind. It also carries the external-referent question we cannot ask ourselves — whether the §14 targets (Sharpe > 1.5, PF > 1.4, 70% positive months) are realistic at this scale at all. **REPORT 1 OF 5 IS IN (GAP-P12D-32, `archive/RESEARCH_FX_METHODS_2026-09-16.md`).** Author-verified already: the optimiser scores every candidate under a ≤48-MINUTE hold (`fitness.py:126` counts `max_holding_periods` in 1-min bars) while the engine runs to 48 h — a ~60× selection-vs-execution horizon mismatch; and §14 is internally inconsistent ("positive months > 70%" implies Sharpe 1.82, stricter than the stated 1.5). Author-REFUTED: the claim that the synthetic markets are ~9× too volatile (measured 1.13×). Its sourced verdict that a net OOS Sharpe > 1.5 is unachievable at retail FX scale (realistic 0.3–0.7) is an OWNER decision on §14 and must not be adopted single-source — check the citations, and wait for the other four agents, one of which was given no framing so it can attack premises this one accepted. Triage all five together (GAP-P12D-32). **REPORT 2 OF 5 (statistics/methodology) IS IN** — `archive/RESEARCH_STATS_METHODOLOGY_2026-09-16.md`. It found, and the author VERIFIED numerically, that the Deflated Sharpe gate is INVERTED: 2 near-identical trials pass at DSR 0.9979 while 180 honestly recorded trials fail at 0.0000 on the same record (**GAP-P12D-33, critical, RAISED — the gate is owner-ratified, so nothing was changed**). It also found the §5.6 parameter-plateau law is entirely unimplemented (**GAP-P12D-34** — already law, so it needs building, not ratifying). Do not present any DSR-based pass as evidence until P12D-33 is resolved. **REPORT 3 OF 5 (code-grounded) IS IN** — `archive/RESEARCH_CODE_GROUNDED_2026-09-16.md`. Two harness BUGS author-verified: **GAP-P12D-35** the falsification fold plan rewinds the clock 7 days at every fold boundary (the ratified `plan_folds` is clean — verified — so no §14 number is implicated, but every falsification run so far is contaminated) and **GAP-P12D-36** the graded book never charges the spread, a direct C8 violation. Fix BOTH before re-running falsification. Its dominant claim — that the NVMA regime label recovers only ~3.7% of the planted drift and that STRONG_TREND_DOWN carries the WRONG SIGN, making the label a near-noise gate — is NOT yet author-verified and is the single most consequential claim in any report so far; verify it before acting on it. **REPORT 4 OF 5 (BLIND adversarial) IS IN and it is the most consequential** - `archive/AUDIT_BLIND_FALSIFICATION_2026-09-16.md`. Author-VERIFIED: **GAP-P12D-37, the falsification verdict is VOID** (the DSR gate demanded an annual Sharpe of 76.2 on planted, 18.6 null, 20.8 permuted, against a section-14 target of 1.5 - unsatisfiable before the first tick, and the hurdle RISES with real edge because trial dispersion widens); **GAP-P12D-38**, only 407 of planted's 2,018 trades are in the duration band and about 1,598 are zero-duration scalp artifacts inside `win_rate` and `profit_factor`; **GAP-P12D-39**, `trend_direction` is computed every cycle and read by nothing. **Order of work is now: (1) build a POSITIVE CONTROL - an oracle must pass the harness - and make it the first gate; (2) fix GAP-P12D-35 fold plan and GAP-P12D-36 spread; (3) resolve the DSR gate GAP-P12D-33/37 (OWNER decision, it is ratified); (4) only then re-run falsification.** No paid compute until an oracle can pass. **ATTRIBUTION DIAGNOSTIC LANDED 2026-09-17 (run `20260916T185248Z`) and it names the mechanism - GAP-P12D-40:** planted Sharpe **+1.11** vs null **-2.77** (a 3.9-Sharpe separation, so the engine is NOT edge-blind); TREND +6.64 PF 2.21 and BREAKOUT +1.72 PF 2.48 both capture the planted edge, while MEAN_REVERSION gives back -6.63 at a **6.3% win rate** over 430 trades, concentrated in RANGING_TIGHT/RANGING_WIDE. Both the code-grounded and the blind agents predicted this in advance, independently. Sequence stands: fix the harness (P12D-35/36), re-run with attribution, confirm the ranking, THEN propose the ACIS-04 module change to the owner. **P12D-35/36 are now FIXED (2026-09-17).**
+     - [ ] **ALL FIVE RESEARCH AGENTS ARE IN (2026-09-17)**, plus three companion agents they spawned. Reports in `archive/`, all committed: FX methods, statistics, code-grounded, blind audit, execution costs, signal-to-position, fill fidelity, event calendar. **Author-verified code audit (owner asked): NO agent modified engine code, config, specs or ledgers** — `git status`/`git diff` showed the only touched code files were the author's own GAP-P12D-35/36 fixes, and one agent proactively flagged those as not its own. Two new critical findings: **GAP-P12D-41**, the backtest is priced on Dukascopy ECN spreads while the intended venue quotes ~4x wider (spec-level, and a bigger error than the C8 fix just made), and **GAP-P12D-42**, an OANDA `priceBound` can void a protective stop on a gap (guardrail-adjacent, raised only). Design evidence to weigh when the module question is settled: the signal-to-position literature is unanimous that position formation should be a continuous TARGET position with a no-trade band, that netting across signals is the single largest free saving (-72% turnover measured), and that minimum-hold throttles have NEGATIVE measured evidence — all three bear directly on [[GAP-0075]] and on any fix for GAP-P12D-40.
+-    - [ ] **VENUE DECISION RESEARCH LAUNCHED 2026-09-17 (owner: "before i ratify anything, which is better, oanda or just dukascopy, maybe a hybrid?").** Two agents: one on the EXECUTION VENUE for this profile (OANDA vs Dukascopy vs IBKR/LMAX/others vs the prop-firm route, including which legal entity a Kenyan resident can actually onboard, server-side stop semantics under gaps, API fitness, and the all-in cost arithmetic) -> `archive/RESEARCH_VENUE_CHOICE_2026-09-17.md`; one on the DATA/VENUE ARCHITECTURE (do venue mid-price PATHS diverge or only spreads; how to model destination cost over a source price path; whether multi-year destination spread history exists at all; whether Dukascopy is the right backtest base) -> `archive/RESEARCH_DATA_VENUE_ARCHITECTURE_2026-09-17.md`. **This BLOCKS ratifying GAP-P12D-41's calibration**, because calibrating to OANDA is wrong if the real path is prop-firm funding on cTrader/DXtrade/Match-Trader (the ratified adapter order) or a different broker entirely. **OWNER DECIDED 2026-09-17: the PROP-FIRM route, a ~$6,000 funded account.** Shortlist: **The5ers, FundedNext, Apex Trader Funding, FTMO**. This settles the venue question's frame and RE-AIMS several open items. No research was run when he said it (weekly limit nearly exhausted) - it is queued below for the next session with budget.
+-      - [ ] **PROP-FIRM RESEARCH (owner asked for it explicitly: "thorough web research on their reputation and whether I should choose them for automated trading"). Do this FIRST when limits allow.** For each of The5ers, FundedNext, Apex Trader Funding and FTMO, from PRIMARY sources (the firm's own current rules pages and terms, plus regulator/press/payout-dispute evidence), graded academic / credible-practitioner / unverifiable:
++    - [ ] **VENUE DECISION RESEARCH LAUNCHED 2026-09-17 (owner: "before i ratify anything, which is better, oanda or just dukascopy, maybe a hybrid?").** Two agents: one on the EXECUTION VENUE for this profile (OANDA vs Dukascopy vs IBKR/LMAX/others vs the prop-firm route, including which legal entity a Kenyan resident can actually onboard, server-side stop semantics under gaps, API fitness, and the all-in cost arithmetic) -> `archive/RESEARCH_VENUE_CHOICE_2026-09-17.md`; one on the DATA/VENUE ARCHITECTURE (do venue mid-price PATHS diverge or only spreads; how to model destination cost over a source price path; whether multi-year destination spread history exists at all; whether Dukascopy is the right backtest base) -> `archive/RESEARCH_DATA_VENUE_ARCHITECTURE_2026-09-17.md`. **This BLOCKS ratifying GAP-P12D-41's calibration**, because calibrating to OANDA is wrong if the real path is prop-firm funding on cTrader/DXtrade/Match-Trader (the ratified adapter order) or a different broker entirely. **OWNER DECIDED 2026-09-17: the PROP-FIRM route, a ~$6,000 funded account.** Shortlist: **The5ers, FundedNext, Apex Trader Funding, FTMO**. **OWNER DECIDED 2026-09-24: Apex was replaced by E8 Markets, so the shortlist is now FTMO, E8 Markets, FundedNext, The5ers.** Apex bans automation on funded accounts, geo-blocks Kenya and is futures-only; E8 is one of only two firms that pass the automation filter. Source: the SCOUT agent in [[GAP-P12D-52]]. This settles the venue question's frame and RE-AIMS several open items. No research was run when he said it (weekly limit nearly exhausted) - it is queued below for the next session with budget.
++      - [x] 2026-09-24 — **DONE by the SCOUT agent in the five-agent pass: archive/RESEARCH_PROP_VENUES_2026-09-24.md.** It supersedes the `RESEARCH_PROP_FIRMS_2026-09-17.md` deliverable named in (f), which was never written. It covers (a)–(f) for ten firms, and ranks FTMO then E8. One gap: the payout-dispute evidence for (d) is forum-grade only, (c). The original ask, kept for the record: **PROP-FIRM RESEARCH (owner asked for it explicitly: "thorough web research on their reputation and whether I should choose them for automated trading"). Do this FIRST when limits allow.** For each of The5ers, FundedNext, Apex Trader Funding and FTMO, from PRIMARY sources (the firm's own current rules pages and terms, plus regulator/press/payout-dispute evidence), graded academic / credible-practitioner / unverifiable:
+         (a) **Is a fully automated system allowed at all** - EA/algo/copy-trading policy, any ban on "HFT-like" behaviour, latency arbitrage, tick scalping, or holding through news; several firms void accounts retroactively on these, which would make the whole build unusable there.
+         (b) **The rule set as machine-checkable numbers** - profit target, daily loss limit and how it is measured (equity vs balance, intraday vs EOD - our §9.5 `platform_rules.yaml` models this distinction and needs the real values), max drawdown (static vs trailing), minimum trading days, consistency rules, news-blackout windows and lists, weekend/overnight holding, scaling plan, and what a breach actually costs.
+         (c) **Platform and feed** - cTrader / DXtrade / Match-Trader / TradeLocker / Rithmic / Tradovate: which one, what API an always-on algo can use, whether protective stops rest SERVER-SIDE (master §279 - a firm whose platform cannot do this is disqualified), and whether historical bid/ask data is obtainable for cost calibration ([[GAP-P12D-41]]).
+         (d) **Reputation and payout reliability** - documented payout records and disputes, regulatory actions, broker backing, how long each has operated, and the 2024-25 industry history of firms restricting or refusing payouts.
+-        (e) **VERIFY, do not assume: Apex Trader Funding appears to be FUTURES-focused, not FX.** If so it belongs to a different asset class entirely (master §3.7 futures, [[GAP-0109]] roll-or-flatten, futures gateway adapters) and should be assessed on that basis or dropped from an FX shortlist.
++        (e) **VERIFY, do not assume: Apex Trader Funding appears to be FUTURES-focused, not FX.** If so it belongs to a different asset class entirely (master §3.7 futures, [[GAP-0109]] roll-or-flatten, futures gateway adapters) and should be assessed on that basis or dropped from an FX shortlist. **→ ANSWERED 2026-09-24:** Apex is futures-only, states "No Automation or Algorithm Usage allowed", and geo-blocks Kenya. It is dropped from the shortlist (owner decision, same day).
+         (f) Deliverable: `archive/RESEARCH_PROP_FIRMS_2026-09-17.md`, ending with a RANKED recommendation for a ~$6k account running this specific engine.
+       - [ ] **What the decision re-aims (do after the research, not before):**
+         (1) **[[GAP-P12D-41]] must calibrate to the CHOSEN PROP PLATFORM's feed, not OANDA.** Do not ratify an OANDA calibration. Multi-year historical spreads for these platforms probably do not exist, so calibration will likely have to be forward-sampled from a demo/challenge account - design for that.
+-        (2) **`config/platform_rules.yaml` carries ftmo / the5ers / atlas_funded.** FundedNext (and Apex if futures) must be added, `atlas_funded` re-examined, and every existing number re-verified against the firms' CURRENT published rules - they change often, and our §9.5 enforcement is only as honest as those values.
++        (2) **`config/platform_rules.yaml` carries ftmo / the5ers / atlas_funded.** FundedNext (and Apex if futures) must be added, `atlas_funded` re-examined, *(2026-09-24: Apex is dropped and E8 Markets takes its place. E8's draft rulebook entry exists only as text in the SCOUT report §8.1, not applied, because the rulebook is human-committed. The existing `fundednext` entry is wrong about the world: [[GAP-P12D-60]].)* and every existing number re-verified against the firms' CURRENT published rules - they change often, and our §9.5 enforcement is only as honest as those values.
+         (3) **A ~$6k account changes sizing arithmetic.** Re-check the Governor's caps, the equity floor and the scenario-replay ceilings at that NAV rather than the modelled $10k; a daily-loss limit on $6k binds far harder than anything §14 asks about.
+         (4) The ratified adapter order (cTrader -> DXtrade -> TradeLocker -> Match-Trader -> IBKR) now has a concrete first target: whichever platform the chosen firm runs. **ACIS-13 must be authored before that adapter is built.**
+       - [ ] **Venue research agents launched 2026-09-17 and told mid-flight about the prop decision** - both were asked to checkpoint before the limit. Resume handles: execution-venue agent `a5f74fe6388a5cf01`, data/venue-architecture agent `a074d494b82e6c796`. Look for `archive/PARTIAL_VENUE_CHOICE_2026-09-17.md` and `archive/PARTIAL_DATA_VENUE_ARCHITECTURE_2026-09-17.md` (or the finished `RESEARCH_*` versions) before resuming either, and read them before relaunching anything - their OANDA-vs-Dukascopy framing is now secondary to the prop-platform question.
