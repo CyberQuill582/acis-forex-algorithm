@@ -15,3 +15,17 @@
   on the same history), which is the selection it did undergo. Prediction: over-conservative at K=1,
   under-protective at K=20. Existing ledger context: GAP-P12D-33, GAP-P12D-37.
 - Next: numpy simulator in `evidence/C1/sim_protocols.py`; first table; then prop-EV Monte Carlo.
+
+## Status 18:27 UTC
+- Protocol simulator built (`evidence/C1/sim_protocols.py`, `run_grid.py`); ~2.1 s/replication, 2 workers.
+  iid null (R=400) done in a first version; nulls + planted worlds re-running with two added columns.
+  Early iid-null signal (R=400, first version): as-built WF+DSR gate FPR 0.000 in every cell;
+  "keep the best of K=20 revisions" inflates any 5% test to 43–57% FPR; SPA/StepM over the union of
+  all revisions hold ~5%; a 2-year holdout graded once holds ~5%, but 29–57% if looked at K=20 times.
+- Prop first-passage MC (`sim_prop.py`, validated vs closed form: S=0 P_pass 0.336 vs 0.333; S=0.5 0.503 vs 0.499)
+  under FTMO 2-Step $10k rules as fetched from ftmo.com (daily loss on equity vs the 00:00 CE(S)T BALANCE).
+  Early: zero-edge EV is within ~±$70 of zero and its sign flips with discount/haircut; a zero-GROSS-edge
+  strategy is -EV above ~160 round trips/yr (1.5 bp all-in) even on optimistic economics.
+- S1 (Topstep 2025 figures) VERIFIED at topstep.com, grade (a). S7 (Hall arXiv 2609.14859) EXISTS and the
+  34.8%/3.9% figures are in its Table 11 — but they are the paper's own SIMULATION of an EOD-trailing
+  futures account, not measured data. S6 VERIFIED at ftmo.com/en/trading-objectives (a).
