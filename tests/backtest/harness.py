@@ -74,6 +74,11 @@ class FoldData:
 EvolveFn = Callable[[object, FoldData], "Mapping | None"]
 
 
+def per_trade_returns(trades: Iterable[ClosedTrade]) -> list[float]:
+    """The graded per-trade return, pnl / USD notional: the series the Deflated Sharpe reads."""
+    return [float(t.pnl / t.notional_usd) for t in trades if t.notional_usd]
+
+
 def refuse_lookahead(record: Mapping, fold: Fold) -> None:
     """GAP-P12D-28: an evolution record may not cite a bar that opens at or after its fold's
     train end — that bar's price belongs to the embargo or the test window. It checks the
@@ -113,6 +118,11 @@ class Backtest:
     def open_position_count(self) -> int:
         """The ParamLibrary `PositionGate` in a backtest: this book is the position layer."""
         return len(self._active.open_by_inst) if self._active is not None else 0
+
+    def graded_trades(self) -> tuple[ClosedTrade, ...]:
+        """The last run's out-of-sample closed trades, read-only (the oracle positive control
+        re-deflates them against another run's trial set, GAP-P12D-37)."""
+        return tuple(self._active.trades) if self._active is not None else ()
 
     def portfolio_state(self) -> PortfolioState:
         """The Governor's `portfolio_fn` in a replay (GAP-P12D-21): the real snapshot."""
@@ -217,7 +227,7 @@ class Backtest:
         # GAP-P12D-25: every candidate champion's holdout per-trade Sharpe is a trial
         trials = [s for r in evolution for s in r.get("trial_sharpes", ()) if s is not None]
         n_trials = len(trials) + min_trials if len(trials) >= 2 else len(trials)
-        trade_returns = [float(t.pnl / t.notional_usd) for t in oos.trades if t.notional_usd]
+        trade_returns = per_trade_returns(oos.trades)
         oos_returns = _returns_from_equity(oos.equity)
         caveats = (
             "tick backtest cannot fully reproduce live microstructure (GAP-0001)",

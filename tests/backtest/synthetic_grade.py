@@ -2,7 +2,8 @@
 
 Shared by the two entry points that grade synthetic markets:
   * `scripts/falsify_engine.py`   — does the pipeline give the RIGHT answer (null/permuted
-    must fail, planted must pass)?
+    must fail, planted must pass)? Its first stage, `oracle_row`, grades the oracle positive
+    control on the same folds (GAP-P12D-37).
   * `scripts/cost_stress_ladder.py` — how much of a graded edge is friction?
 One path, so a ladder rung and a falsification run differ in exactly ONE input — the run's
 cost map — and in nothing else.
@@ -24,11 +25,13 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from config.account_doctrine import guardrail_hash
 from config.schemas import AcisConfig, load_config
 from core.data.jsonl_logging import JsonlEventLogger
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.oos_plan import EMBARGO
 from tests.backtest.oos_runner import RunInputs, report_json, run_walk_forward
+from tests.backtest.oracle import grade_oracle, non_dsr_failures
 from tests.backtest.regime_labels import LabelledBarCache, LabelSpec, label_instrument_year
 from tests.backtest.replay_logging import ReplayEventLogger
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, synthetic_spx
@@ -81,6 +84,22 @@ def label_year(spec: MarketSpec, instrument: str, year: int, out: Path,
     return spec.kind, instrument, year, n, time.perf_counter() - t0
 
 
+def oracle_row(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Path) -> dict:
+    """Stage 1 of a falsification verdict (GAP-P12D-37): the oracle positive control on this
+    market, with the SAME folds, account and declared costs the engine is graded on. Runs in a
+    worker process, so it reloads the config."""
+    t0, cfg = time.perf_counter(), load_config(root / "config")
+    log = run_logger(out, f"oracle_{spec.kind}", "backtest", 200)
+    g = grade_oracle(spec, cfg, account, folds, log)
+    log.close()
+    (out / f"oracle_{spec.kind}.json").write_text(report_json(g.report), encoding="utf-8")
+    oos = g.report.out_of_sample
+    return {"kind": spec.kind, "trades": oos.n_trades, "net_pnl": str(g.net_pnl),
+            "sharpe": oos.annual_sharpe, "psr": g.report.deflated_sharpe,
+            "non_dsr_failures": list(non_dsr_failures(g.report, guardrail_hash(cfg.guardrails))),
+            "trade_returns": list(g.trade_returns), "seconds": time.perf_counter() - t0}
+
+
 def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Path, *,
           tag: str | None = None, cost_stress: float = 1.0, spread_floor: float = 0.0) -> dict:
     """Grade one synthetic market with the production config, account, gates and cost map.
@@ -106,6 +125,9 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
             # their net PnLs sum to the run's net PnL exactly (Decimal, no re-derivation)
             "net_pnl": str(sum((v.net_pnl for v in report.per_strategy.values()), Decimal("0"))),
             "dsr": report.deflated_sharpe, "trials": report.trial_count,
+            # the selection set the DSR deflated by: stage 1 re-deflates the oracle against it
+            "trial_sharpes": [s for r in report.in_sample_evolution
+                              for s in r.get("trial_sharpes", ()) if s is not None],
             "champions": [r["champions"] for r in report.in_sample_evolution],
             "per_strategy": {k: {"n_trades": v.n_trades, "net_pnl": str(v.net_pnl),
                                  "win_rate": v.win_rate, "profit_factor": v.profit_factor}
