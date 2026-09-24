@@ -34,9 +34,9 @@ def _registry(log) -> dict:
 
 def test_a_staged_run_records_every_draw_and_the_rows_re_simulate() -> None:
     history = zigzag_history(500)
-    qiea, champ, log = _evolve(history, 42)
+    qiea, champ, log = _evolve(history, 5)
     reg = _registry(log)
-    assert champ is not None and reg["outcome"] == "EVOLUTION_RUN" and reg["seed"] == 42
+    assert champ is not None and reg["outcome"] == "EVOLUTION_RUN" and reg["seed"] == 5
     assert reg["genes"] == list(GENE_SPECS)
     assert sum(row[-1] for row in reg["evaluated"]) == DRAWS                 # every draw counted
     assert len({tuple(row[:-2]) for row in reg["evaluated"]}) == len(reg["evaluated"])   # distinct
