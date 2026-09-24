@@ -5,6 +5,9 @@ Two facts, each pinned here, produced the finding:
      window always holds exactly one tick: velocity == its own session median, the surge ratio
      is exactly 1.0, and MOMENTUM_SCALP (ratio >= momentum_scalp_surge_ratio, schema-floored
      above 1) can NEVER fire on any synthetic market. Its population is empty in every run.
+     (A second, independent barrier: at ratio 1.0 its conviction clamp01(ratio / 3) = 0.333 is
+     under conviction_discard, whose stageable floor is 0.45. Loosening the gate alone is an
+     equivalent mutant; only removing both lets it fire, which this test catches.)
   2. `metrics._avg_duration` reported an EMPTY population's mean as 0.0 — the same number a
      population of genuinely zero-duration trades would give. A finder read the empty scalp
      carve-out as ~1,598 zero-duration trades. The mean of nothing is now NaN (null in JSON).
