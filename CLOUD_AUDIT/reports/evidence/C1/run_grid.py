@@ -37,7 +37,7 @@ if __name__ == "__main__":
     mu = float(sys.argv[3]) if len(sys.argv) > 3 else 0.0
     dur = float(sys.argv[4]) if len(sys.argv) > 4 else 40.0
     best = int(sys.argv[5]) if len(sys.argv) > 5 else None
-    kind = "planted" if world.startswith("planted") else world
+    kind = "planted" if world.startswith("planted") else world.split("-")[0]
     base = int.from_bytes(world.encode()[:6].ljust(6, b"_"), "big") % 9973 * 100_000
     t0 = time.time()
     with Pool(2) as pool:

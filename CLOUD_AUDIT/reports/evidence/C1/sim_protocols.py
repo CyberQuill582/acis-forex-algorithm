@@ -44,8 +44,8 @@ TS_L = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233]
 MAC = [(2, 8), (2, 20), (5, 20), (5, 50), (10, 40), (10, 100), (20, 80), (20, 200), (50, 200)]
 BANDS = [0.0, 0.5, 1.0]
 REBAL = [1, 3, 5, 10]
-NS = [1, 60, 1000]
-KS = [1, 20]
+NS = [int(x) for x in os.environ.get("C1_NS", "1,60,1000").split(",")]
+KS = [int(x) for x in os.environ.get("C1_KS", "1,20").split(",")]
 B_BOOT, BLOCK = 299, 10
 CPCV_S = 10
 HOLDOUT_FRAC = 0.20            # config/system_config.yaml:75
@@ -109,6 +109,15 @@ def gen_world(kind, rng, n=T, mu=0.0, dur=40.0):
         f = rng.standard_normal((n, 1))
         e = rng.standard_normal((n, M))
         return SIG * (math.sqrt(0.4) * f + math.sqrt(0.6) * e)
+    if kind == "regime":   # global 2-state Markov volatility: low 0.7 sigma / high 1.6 sigma, spells 150 / 50 d
+        st = np.empty(n)
+        hi = False
+        u = rng.random(n)
+        for t in range(n):
+            if (hi and u[t] < 1 / 50) or ((not hi) and u[t] < 1 / 150):
+                hi = not hi
+            st[t] = 1.6 if hi else 0.7
+        return rng.standard_normal((n, M)) * SIG * st[:, None]
     if kind == "planted":
         return garch_t(rng, n, M) + mu * SIG * markov_state(rng, n, M, dur)
     raise ValueError(kind)
