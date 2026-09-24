@@ -1,0 +1,3 @@
+agent (no human token) stage_config governor.marginal_alpha_window=10 -> {'status': 'ok', 'result': 'ok:staged:staged-1', 'request_id': 'r1'}
+min_trades=20; losing book: window 50 -> factor 0.25 (baseline_nonpositive); window 10 -> factor 1.0 (cold_start:10<20)
+DEFECT REPRODUCED
