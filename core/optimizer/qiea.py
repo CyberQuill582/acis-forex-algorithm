@@ -155,12 +155,14 @@ class QIEA:
         n_bits = len(_GENE_ORDER) * cfg.qbit_resolution
         thetas = [math.pi / 4] * n_bits  # sin^2(pi/4) = 0.5: unbiased superposition
         best: _Individual | None = None
+        evaluated: dict[tuple, list] = {}    # genome -> [train fitness, times drawn] (GAP-P12D-33)
 
         for _generation in range(cfg.generations):
             for _ in range(cfg.population_size):
                 bits = self._observe(thetas, rng)
                 genes = self._decode_bits(bits)
                 fit = self._train_fitness(genes, regime, train, evolved_at)
+                evaluated.setdefault(tuple(genes[g] for g in _GENE_ORDER), [fit, 0])[1] += 1
                 if best is None or fit > best.fitness:
                     best = _Individual(bits, genes, fit)
             thetas = self.rotate_toward(thetas, best.bits, cfg.rotation_angle_rad)
@@ -173,6 +175,7 @@ class QIEA:
                 "EVOLUTION_REJECTED_TRAIN",
                 regime=regime.value, generations=cfg.generations, seed=seed,
             )
+            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_TRAIN", evaluated)
             return None
 
         champion = self._build_paramset(best.genes, regime, best.fitness, seed, evolved_at)
@@ -189,6 +192,7 @@ class QIEA:
                 regime=regime.value, holdout_trades=hold_res.n_trades,
                 holdout_e_r=None if hold_res.e_r != hold_res.e_r else round(hold_res.e_r, 4),
             )
+            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_OOS", evaluated, hold_res)
             return None
 
         # §5.6 plateau law (GAP-P12D-34): a champion whose ±10% neighbourhood dies on the SAME
@@ -201,6 +205,7 @@ class QIEA:
                 dead=[{"gene": n.gene, "direction": n.direction, "value": n.genes[n.gene]}
                       for n in plateau.dead],
             )
+            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_PLATEAU", evaluated, hold_res)
             return None
 
         self._log.event(
@@ -209,7 +214,20 @@ class QIEA:
             generations=cfg.generations, seed=seed,
             train_bars=len(train), holdout_bars=len(holdout),
         )
+        self._log_evaluations(regime, seed, "EVOLUTION_RUN", evaluated, hold_res)
         return champion
+
+    def _log_evaluations(self, regime: RegimeType, seed: int, outcome: str,
+                         evaluated: dict[tuple, list], hold_res=None) -> None:
+        """GAP-P12D-33 [impl], logging only: EVERY genome this run evaluated (its train fitness and
+        how often it was drawn), whichever gate ended the run, so PBO/CSCV and an honest attempt
+        count can be computed later by re-simulating the recorded genomes. No gate reads it."""
+        self._log.event(
+            "EVOLUTION_EVALUATIONS", regime=regime.value, seed=seed, outcome=outcome,
+            genes=_GENE_ORDER, evaluated=[[*k, fit, n] for k, (fit, n) in evaluated.items()],
+            holdout_trades=None if hold_res is None else hold_res.n_trades,
+            holdout_e_r=None if hold_res is None or hold_res.e_r != hold_res.e_r else hold_res.e_r,
+        )
 
     def _train_fitness(
         self,
