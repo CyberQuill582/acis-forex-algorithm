@@ -1,5 +1,4 @@
 {
-  "core/data/feeds.py|HISTORY": 1,
   "core/execution/fragmenter.py|BLOCK": 1,
   "core/execution/venue.py|BLOCK": 2,
   "core/optimizer/param_library.py|BLOCK": 1,
