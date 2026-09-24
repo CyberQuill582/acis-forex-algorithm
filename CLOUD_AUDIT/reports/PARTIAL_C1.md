@@ -29,3 +29,8 @@
 - S1 (Topstep 2025 figures) VERIFIED at topstep.com, grade (a). S7 (Hall arXiv 2609.14859) EXISTS and the
   34.8%/3.9% figures are in its Table 11 — but they are the paper's own SIMULATION of an EOD-trailing
   futures account, not measured data. S6 VERIFIED at ftmo.com/en/trading-objectives (a).
+
+## 18:47 UTC — planted 1.0 world done (measured truth of the fixed best config: 1.22 annual; the "0.5" world's is 0.65)
+VALIDATOR read after the first table. Independent agreement on: as-built gate dead (0 FPR/0 power), keep-best-of-K
+inflation, and 2-year WF selection throwing the edge away (mine 0.02/0.65 and 0.15-0.19/1.22 realised vs theirs 0.04/0.44 ACIS-style).
+Nulls (garch, factor, iid rerun) and the fast-edge world still running.
