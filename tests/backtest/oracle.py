@@ -2,8 +2,8 @@
 harness, book, C8 cost map, metrics and §14 report as the engine.
 
 The oracle knows the planted episode state perfectly (`SyntheticMarket.episode_sign`): on every
-graded tick it holds `ORACLE_UNITS` in the direction of the episode in force and reverses the
-moment the state changes. It never sees the noise and never sees the NEXT episode, so its edge
+graded tick it holds one NAV of USD notional (`NOTIONAL_FRACTION`) per instrument in the direction
+of the episode in force and reverses the moment the state changes. It never sees the noise and never sees the NEXT episode, so its edge
 is exactly the planted edge. On null and permuted it holds the SAME signs, which move no price
 there: knowing the sign of a zero drift is worthless.
 
@@ -41,11 +41,12 @@ from core.governor.portfolio_types import SizedOrder
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.evolve_step import cost_model
 from tests.backtest.harness import Backtest, FoldData, per_trade_returns
+from tests.backtest.money import quote_to_account
 from tests.backtest.report import _MIN_FOLDS, _MIN_TRADES, _MIN_YEARS, ValidationReport
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, synthetic_spx
 from tests.backtest.walk_forward import Fold
 
-ORACLE_UNITS = Decimal("10000")        # 0.1 standard lot per instrument
+NOTIONAL_FRACTION = Decimal("1")       # USD notional per instrument, as a fraction of NAV (E9)
 STRATEGY = "ORACLE"                    # graded inside the §14 duration band (no carve-out)
 CAVEAT = ("ORACLE positive control: the decision layers are replaced by perfect knowledge of "
           "the planted episode state; it selects nothing, so its trial record is empty and the "
@@ -93,17 +94,26 @@ class _Orders:
 class OracleLoop:
     """The loop surface `Backtest` drives: `on_state`, `observe_only`, `book`, `params`."""
 
-    def __init__(self, market: SyntheticMarket, units: Decimal = ORACLE_UNITS) -> None:
+    def __init__(self, market: SyntheticMarket, nav: Decimal) -> None:
         self.book = _Orders()
         self.params = _NoParams()
         self._market = market
-        self._units = units
+        self._notional = nav * NOTIONAL_FRACTION
+        self._last: dict[str, float] = {}                   # every instrument's last mid (crosses)
         self._held: dict[str, tuple[int, object]] = {}      # instrument -> (sign, UTC day)
 
+    def units(self, instrument: str, mid: float) -> Decimal:
+        """Whole units whose USD notional is `NOTIONAL_FRACTION` of NAV (audit E9: a fixed unit
+        count made gold 10,000 oz = $18M on a $10k account), converted exactly as the book books
+        PnL (`money.quote_to_account`)."""
+        usd_per_unit = Decimal(str(mid)) * quote_to_account(instrument, mid, self._last)
+        return Decimal(int(self._notional / usd_per_unit))
+
     def observe_only(self, st: OracleTick) -> None:
-        return None                                         # warm-up decides nothing
+        self._last[st.instrument] = st.mid                  # warm-up decides nothing
 
     def on_state(self, st: OracleTick) -> None:
+        self._last[st.instrument] = st.mid
         sign = int(self._market.episode_sign(st.instrument, st.timestamp))
         key = (sign, st.timestamp.date())
         if self._held.get(st.instrument) == key:
@@ -112,7 +122,7 @@ class OracleLoop:
         oid = f"oracle-{len(self.book.orders)}"
         self.book.orders.append(SizedOrder(
             order_id=oid, signal_id=oid, instrument=st.instrument, direction=sign,
-            size_units=self._units, entry_price=st.mid,
+            size_units=self.units(st.instrument, st.mid), entry_price=st.mid,
             # a stop no planted episode reaches: the oracle exits by reversing, never by stop
             stop_loss=st.mid * (0.5 if sign > 0 else 2.0), take_profit=None,
             reason="oracle: the planted episode in force",
@@ -145,7 +155,7 @@ def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequenc
 
     limits = guardrail_hash(cfg.guardrails)
     report = bt.run(
-        loop=OracleLoop(market),
+        loop=OracleLoop(market, nav=bt.portfolio_state().nav),
         folds=[FoldData(f, stream(f.test_start, f.test_end), warmup_states=stream(f.train_end, f.test_start))
                for f in folds],
         evolve_fn=lambda lp, fd: {"fold": fd.fold.index, "champions": 0, "trial_sharpes": [], "regimes": {}},

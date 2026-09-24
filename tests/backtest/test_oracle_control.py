@@ -16,6 +16,7 @@ import math
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,9 @@ import pytest
 from config.account_doctrine import guardrail_hash
 from config.schemas import load_config
 from tests.backtest.data_loader import BacktestDataLoader
-from tests.backtest.oracle import STRATEGY, grade_oracle, non_dsr_failures, oracle_ticks, void_reasons
+from tests.backtest.money import quote_to_account
+from tests.backtest.oracle import (NOTIONAL_FRACTION, STRATEGY, OracleLoop, OracleTick, grade_oracle,
+                                   non_dsr_failures, oracle_ticks, void_reasons)
 from tests.backtest.synthetic_grade import FIRST_MID, START, plan
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, episodes
 from tests.backtest.test_metrics_and_grader import GH, _block, _report
@@ -84,6 +87,20 @@ def test_oracle_ticks_equal_the_factory_path(cfg) -> None:
         instruments=insts, start=start, end=end)]
     assert ours == theirs and len(ours) > 500                            # and the weekend cut applied
     assert max(t[0] for t in ours) < START + timedelta(days=4, hours=22)
+
+
+def test_the_oracle_sizes_one_nav_of_notional_on_every_instrument() -> None:
+    """Audit E9: a fixed 10,000 units was $11k of EUR/USD but $18M of gold on a $10k account.
+    Each order's USD notional is NAV x NOTIONAL_FRACTION, to within one unit's value."""
+    prices = (("EUR_USD", 1.10), ("USD_JPY", 110.0), ("XAU_USD", 1800.0))
+    loop = OracleLoop(SyntheticMarket(MarketSpec("planted", START, 7, prices)), nav=Decimal("10000"))
+    for inst, px in prices:
+        loop.on_state(OracleTick(START, inst, px - 1e-4, px + 1e-4, 2e-4, px))
+    target = Decimal("10000") * NOTIONAL_FRACTION
+    for order, (inst, px) in zip(loop.book.orders, prices):
+        usd_per_unit = Decimal(str(px)) * quote_to_account(inst, px, {})
+        assert target - usd_per_unit < order.size_units * usd_per_unit <= target, (inst, order.size_units)
+    assert [o.size_units for o in loop.book.orders] == [Decimal(9090), Decimal(10000), Decimal(5)]
 
 
 def test_non_dsr_failures_is_every_clause_of_passed_but_the_trials() -> None:
