@@ -144,6 +144,41 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-70: fills the venue makes on its own — a server-side stop firing, a broker close — have no path into ACIS; the position view goes stale until a restart calls it drift and halts
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — raised as OQ-03a by the SPEC-AUTHOR drafting ACIS-13. The lead VERIFIED it by absence: no unsolicited, venue-initiated or stop-trigger handling exists in specs/ACIS-06, specs/ACIS-07, core/execution or core/risk/monitor.py, and `reconcile_on_restart` is called only by tests)
+- Area: specs/ACIS-06 (the FillReport contract; `ExecutionFace`), core/risk/monitor.py (position accounting from FillReports), the three-loop runtime ([[GAP-0091b]]/[[GAP-0075]]), specs/ACIS-13 (draft)
+- Description: the Risk Monitor builds its view of open positions only from FillReports for orders ACIS itself sent. Several things close a position without that:
+  - a protective stop resting on the venue's server (master §279), which cTrader keeps "active after your session ends" (ACIS-13 draft F-16);
+  - a firm's liquidation;
+  - a manual close.
+
+  None of these produces a FillReport through the orchestrator. The internal view therefore keeps the position open, and VaR, exposure, drawdown and re-entry gating all read a phantom. The only reconciliation in the code runs at restart, and it treats any difference as drift and halts. So the first stop that ever fires correctly would, on the next restart, look like a fault.
+- Justification: open.
+  - **[spec]:** an ACIS-06 amendment, a locked-spec version bump, for venue-initiated FillReports (execution events the venue pushes, mapped to the position they closed), plus periodic RUNTIME reconciliation against the venue, not just at restart.
+  - **[impl]:** that path, in the adapter and the monitor.
+  - **Where it gets decided:** in the ACIS-13 review pass together with the other ACIS-06 amendments (a)–(d) the draft lists.
+  - **It blocks** any live or demo attach that relies on server-side stops, which is all of them.
+- Linked: [[GAP-P12D-69]], [[GAP-0075]], [[GAP-0091b]], [[GAP-P12D-55]], [[GAP-0018]]
+
+## GAP-P12D-69: the spec has no lawful mode for a demo account — paper mode may never send an order, and live mode needs §14 plus human sign-off
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — raised as OQ-01 by the SPEC-AUTHOR drafting ACIS-13. The lead VERIFIED it in the master spec: `acis_set_mode(backtest|paper|live)` offers only three modes, and the GAP-0018 attach law reads "paper mode never gains a real-order path", while §15 orders "OANDA practice account first" before live)
+- Area: ACIS_SPEC.md §7.5 (the attach law, GAP-0018), §12 (modes, `acis_set_mode`, the human token), §15 (phase 12), monitoring/mode.py, specs/ACIS-08, specs/ACIS-13 (draft)
+- Description: the owner's top priority is to see ACIS trade a demo account, and a demo trade is an order sent to a venue.
+  - **In paper mode** it is forbidden by construction.
+  - **In live mode** it would need the §14 minimums out-of-sample, plus human sign-off and the dual-hash acknowledgement. A demo is exactly what must come BEFORE those can be met.
+  - **So a demo run has no lawful mode as written.** This is a real contradiction inside the spec, and it has to be ruled before any adapter attaches.
+- Justification: open.
+  - **The lead's recommendation, adopted in direction under the owner's delegation:** add a fourth mode, `practice`, with these properties:
+    - Orders go ONLY to a venue the attach protocol has verified to be a simulated or practice environment. The adapter proves it structurally: the demo host, and the platform's own is-live flag set to false. If the venue cannot prove it, attach is refused.
+    - Every guardrail, HALT and §9.5 rulebook stays active and unchanged.
+    - Entering practice mode needs the human token, as `live` does, but NOT §14. The venue holds no real money, so §14 has nothing to certify.
+    - Paper mode keeps its "never an order path" law untouched.
+  - **Why it is safe:** it adds an order path only where no real money exists. It must land in master §7.5/§12 and ACIS-08 as spec text, with tests proving that a live-flagged venue is refused in practice mode.
+  - **When the text lands:** in the ACIS-13 review pass. The SPEC-AUTHOR drafted wording for this in the draft's Appendix B.
+- Linked: [[GAP-P12D-70]], [[GAP-P12D-43]], [[GAP-0018]], [[GAP-P12D-52]]
+
 ## GAP-P12D-68: the strategy-layer redesign — the coupled owner decisions the five-agent pass produced
 - Severity: high · Likelihood: high
 - Status: open (2026-09-24 — the triage home for the design proposals from [[GAP-P12D-52]] that are not defects of the existing code. Each item gets its own ID when the owner rules on it and work starts. They share this entry because they are one coupled redesign that the evidence argues for together, and because each depends on the validation protocol ([[GAP-P12D-33]]) and on the objective ([[GAP-P12D-62]]))

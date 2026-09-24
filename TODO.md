@@ -48,11 +48,27 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
     - daily-reset rules and a declared initial capital, [[GAP-P12D-54]]/[[GAP-P12D-59]].
   - SPEC-AUTHOR `ac17d6698ee060d8e`: drafts `specs/ACIS-13-VENUE_ADAPTERS.md` v0.1 (cTrader Open API), DRAFT and NOT LOCKED.
 - **Every code change is BUILT, PENDING AUDIT, on a branch.** Nothing merges to main without the dual audit and the owner seeing it.
+- **Worktrees:**
+  - BUILDER-2: `.claude/worktrees/agent-a8937e82f9a7a5391`, branch `worktree-agent-a8937e82f9a7a5391`.
+  - BUILDER-3: `.claude/worktrees/agent-a9e00713d15bb5082`, branch `worktree-agent-a9e00713d15bb5082`.
+- **2026-09-25, just after midnight:** all five were cut off by the session limit, and all five were RESUMED with `SendMessage` after the reset, per the owner's directive. None was relaunched.
 
 **OWNER DIRECTIVES (2026-09-24, before sleeping):**
 - (1) "let them continue". The night run goes on.
 - (2) **Audits are ONLY the constitution's two per phase.** No extra audit agents unless the owner asks. It is recorded in CLAUDE.md's audit section and in memory.
 - (3) **After a session-limit reset, RESUME the running agents with `SendMessage`; NEVER relaunch them.** Their handles are listed above.
+
+**ACIS-13 DRAFTED (2026-09-25, SPEC-AUTHOR): `specs/ACIS-13-VENUE_ADAPTERS.md` v0.1, a DRAFT, NOT LOCKED.**
+- **What it covers.** The cTrader Open API adapter comes first. It has an 11-step attach protocol with re-attach when an account churns, and 16 invariants (C-VEN-1..16). There are 42 quoted facts in Appendix A and 18 open questions in Appendix B.
+- **The lead verified the most load-bearing fact:** in the official proto, `stopLoss` reads "Not supported for MARKET orders". So stops go in as a distance, and the existing server-side-stop conformance test must change for this venue.
+- **Blocking questions, ruled in the review pass:**
+  - OQ-01: there is no lawful demo mode, [[GAP-P12D-69]]. The recommendation is a `practice` mode, adopted in direction.
+  - OQ-02: the transport. The recommendation is **JSON over WebSocket via aiohttp**, which is already in the §16 stack, so no new dependency. DELEGATED.
+  - OQ-03a: fills the venue makes on its own, [[GAP-P12D-70]].
+- **Before it is LOCKED:**
+  - [ ] **The ACIS-13 review pass.** Rule OQ-01/02/03a into the text; agree the ACIS-06 amendments (a)–(d) as a versioned change; recompute the request-budget defaults from the position policy's real order rate; decide where the single account binding lives, engine or watchdog; re-fetch every source.
+  - [ ] **The master §7.5/§12 + ACIS-08 `practice` mode text** ([[GAP-P12D-69]]), and the ACIS-06 amendment for venue-initiated fills plus runtime reconciliation ([[GAP-P12D-70]]).
+- **A practical point for the owner (fact F-09):** cTrader access granted to the app covers only the accounts that existed at the time. Every 14-day FTMO free trial is a NEW account, so the owner must **re-grant access for each trial renewal**. The agent cannot do this; it is a human step.
 
 **DECISIONS TAKEN UNDER THE OWNER'S DELEGATION (2026-09-24 night). Each is the lead's stated recommendation; the owner should review them on waking.**
 - **D1 = option C + D (DELEGATED).**
