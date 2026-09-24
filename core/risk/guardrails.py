@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from config.schemas import GuardrailLimits, RiskConfig
 from core.risk.drawdown_series import (DrawdownSeries, _RuleAnchor,  # noqa: F401 (re-export)
@@ -88,14 +88,31 @@ class Guardrails:
     def series(self) -> DrawdownSeries:
         return self._series
 
-    def restore_state(self, *, anchors: Mapping[str, Mapping],
-                      taper_factor: float | None) -> None:
-        """Put the persisted drawdown anchors back and RE-PUSH the last delivered
-        taper to the (fresh) Governor, before the first check. Restore-only: it can
-        put back a restriction the dead process had; it cannot loosen one."""
+    def restore_state(self, *, anchors: Mapping[str, Mapping], taper_factor: float | None,
+                      halts: Sequence[tuple[str, str, str, datetime]] = ()) -> None:
+        """Put the persisted drawdown anchors back, RE-APPLY every uncleared halt through
+        the same edge with the same scope and reason (ACIS-07 §7), and RE-PUSH the last
+        taper to the (fresh) Governor, before the first check. Restore-only: it puts
+        back restrictions the dead process had; it cannot loosen one."""
         restored = self._series.restore(anchors)
         self._log.event("ANCHORS_RESTORED", rule_keys=list(restored),
                         ignored=sorted(set(anchors) - set(restored)))
+        for kind, scope, reason, at in halts:    # latches set: the first check coalesces
+            if kind == "session":
+                self._session_halted = True
+                self._sink.apply_session_halt(at, reason)     # lifts at ITS boundary
+            elif kind == "flatten":
+                self._flattened_scopes.add(scope)
+                self._sink.flatten(scope, reason)
+            else:
+                self._halted_scopes.add(scope)
+                self._sink.apply_halt(scope, reason)
+            if scope not in ("all", "session"):
+                self._instruments_halted.add(scope)
+            self._equity_flattened |= reason == "equity_floor"
+        if halts:
+            self._log.event("HALTS_RESTORED", halts=[[k, s, r, a.isoformat()]
+                                                     for k, s, r, a in halts])
         if taper_factor is not None:
             self._sink.apply_risk_state(taper_factor=taper_factor)
             self._last_taper = taper_factor

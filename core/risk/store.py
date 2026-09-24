@@ -8,17 +8,22 @@ and every drawdown anchor (GAP-P12D-55), each drawdown rule under the key
 of it is written in ONE transaction, so a crash never leaves a taper from one
 evaluate beside anchors from another. `restore_on_boot` reads it back.
 
-`halt_event.cleared_by` is 'human:<token>' for equity/global scope — a machine
-can never populate it (enforced at the MCP layer, ACIS-08 phase 10). Snapshot
-writes are idempotent on the timestamp PK.
+Every halt, session halt and flatten that crosses the upward edge is a `halt_event`
+row (core/risk/halt_ledger.py, ACIS-07 §7); its kind rides in the opaque `halt_id`
+as `<kind>|…` (the §10 DDL has no column for it). An uncleared row is re-applied at
+boot. Only a human resume clears rows, and `cleared_by` is `human:<sha256 prefix of
+the token>` — never the token itself. Snapshot writes are idempotent on the ts PK.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
+from core.data.errors import DataQualityError
 from core.risk.risk_types import RiskSnapshot
 
 _ANCHOR = "anchor:"
@@ -26,11 +31,12 @@ _ANCHOR = "anchor:"
 
 def restore_on_boot(store: "RiskStore", monitor) -> None:
     """Boot, before the first evaluate: put back everything the dead process had
-    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55)."""
+    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55),
+    and every halt no human has cleared (ACIS-07 §7, GAP-0050)."""
     state = store.load_restrictive_state()
     monitor.restore_restrictive_state(alpha_armed=bool(state.get("alpha_armed", False)),
                                       taper_factor=state.get("taper_factor"),
-                                      anchors=store.load_anchors())
+                                      anchors=store.load_anchors(), halts=store.open_halts())
 
 
 class RiskStore:
@@ -77,11 +83,24 @@ class RiskStore:
             "VALUES (?,?,?,?)", (halt_id, ts, scope, reason))
         self._conn.commit()
 
-    def clear_halt(self, halt_id: str, cleared_at: str, cleared_by: str) -> None:
-        self._conn.execute(
-            "UPDATE halt_event SET cleared_at=?, cleared_by=? WHERE halt_id=?",
-            (cleared_at, cleared_by, halt_id))
+    def open_halts(self) -> list[tuple[str, str, str, datetime]]:
+        """(kind, scope, reason, ts) of every uncleared halt, oldest first."""
+        rows = self._conn.execute(
+            "SELECT halt_id, ts, scope, reason FROM halt_event WHERE cleared_at IS NULL "
+            "ORDER BY ts, halt_id").fetchall()
+        return [(hid.split("|", 1)[0] if "|" in hid else "halt", scope, reason,
+                 datetime.fromisoformat(ts)) for hid, ts, scope, reason in rows]
+
+    def clear_halts(self, cleared_at: datetime, human_token: str) -> int:
+        """A HUMAN resume clears every open halt, as the Governor's resume clears every
+        scope. A blank token is refused: no machine path can unhalt a restart."""
+        if not isinstance(human_token, str) or not human_token.strip():
+            raise DataQualityError("human_token", human_token, "only a human resume clears")
+        by = "human:" + hashlib.sha256(human_token.encode("utf-8")).hexdigest()[:12]
+        cur = self._conn.execute("UPDATE halt_event SET cleared_at=?, cleared_by=? "
+                                 "WHERE cleared_at IS NULL", (cleared_at.isoformat(), by))
         self._conn.commit()
+        return cur.rowcount
 
     def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float,
                                anchors: dict[str, dict] | None = None) -> None:

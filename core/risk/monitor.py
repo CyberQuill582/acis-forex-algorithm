@@ -26,6 +26,7 @@ from pathlib import Path
 from statistics import NormalDist, stdev
 
 from config.schemas import RiskConfig, GuardrailLimits
+from core.data.errors import DataQualityError
 from core.execution.venue import BrokerAccount, BrokerPosition, FillReport, FillStatus
 from core.risk.alpha_decay import AlphaDecayDetector
 from core.risk.guardrails import GuardrailContext, Guardrails
@@ -257,15 +258,10 @@ class RiskMonitor:
         return float(self._to_usd(inst, quote_notional, mark))
 
     def _var_pct(self, marks, nav) -> float:
-        """Delta-normal, UNDIVERSIFIED (no correlation credit — conservative
-        sum of per-position VaR), scaled to a DECLARED holding-period horizon
-        (GAP-P9E-03: a VaR without a stated horizon is meaningless — the raw
-        per-mark σ is a ~`eval_cadence_s`-horizon VaR, ~93× smaller than the
-        1-day VaR the 3% cap presumes). σ from the rolling log-return of marks,
-        scaled by √(var_horizon_seconds / eval_cadence_s) to the declared
-        horizon. (The 3% cap's re-confirmation against this horizon is RAISED
-        to the owner — GAP-P9E-03 — as the horizon was previously undeclared;
-        VaR is not yet wired in-loop, GAP-0091b, so nothing live changes.)"""
+        """Delta-normal, UNDIVERSIFIED (no correlation credit: a conservative sum of
+        per-position VaR). σ is the rolling log-return of marks scaled by
+        √(var_horizon_seconds / eval_cadence_s) to the DECLARED horizon (GAP-P9E-03);
+        the 3% cap is ratified against the 1-day horizon (GAP-0103); in-loop: GAP-0091b."""
         horizon_scale = math.sqrt(self._cfg.var_horizon_seconds
                                   / self._cfg.eval_cadence_s)
         total = 0.0
@@ -316,25 +312,29 @@ class RiskMonitor:
                 stop_loss=pos.stop_loss, take_profit=pos.take_profit))
         return tuple(out)
 
-    def restore_restrictive_state(self, *, alpha_armed: bool,
-                                  taper_factor: float | None = None,
-                                  anchors: dict | None = None) -> None:
+    def restore_restrictive_state(self, *, alpha_armed: bool, taper_factor: float | None = None,
+                                  anchors: dict | None = None, halts: list | None = None) -> None:
         """Persisted risk-restrictive state is restored BEFORE the first
         evaluate — a restart is never a relaxation (GAP-0050). GAP-P9I-05: the
-        restored throttle must be RE-PUSHED to the (fresh) Governor over the
-        upward edge. GAP-P12D-55: so are the drawdown anchors and the taper."""
-        self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor)
+        restored throttle must be RE-PUSHED to the (fresh) Governor over the upward
+        edge; so are the anchors, the taper (GAP-P12D-55) and open halts (ACIS-07 §7)."""
+        self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor,
+                                   halts=halts or ())
         self._alpha.restore_armed(alpha_armed)
         self._alpha_armed_prev = alpha_armed
         if alpha_armed:
             self._sink.apply_risk_state(alpha_decay=True)
             self._log.event("ALPHA_DECAY_RESTORED", armed=True)
 
-    def on_human_resume(self) -> None:
-        """A human resume (via the MCP/Governor layer, phase 10) re-arms the
-        guardrail latches so a later re-breach fires again — the equity breaker
-        is a one-shot per armed cycle, never a process-lifetime suppressor
-        (GAP-P9I-06). Human-only by construction (no agent path calls this)."""
+    def on_human_resume(self, human_token: str, now: datetime) -> None:
+        """A human resume (MCP/Governor, phase 10) re-arms the latches — the equity breaker
+        is one-shot per ARMED CYCLE, never per process (GAP-P9I-06) — and clears the
+        persisted halts so a restart does not re-apply them (ACIS-07 §7). Human-only by
+        construction; a blank token is refused before anything is cleared."""
+        if not isinstance(human_token, str) or not human_token.strip():
+            raise DataQualityError("human_token", human_token, "only a human resumes")
+        if self._store is not None:
+            self._store.clear_halts(now, human_token)
         self._guards.rearm()
 
     def reconcile_on_restart(self, broker_positions: tuple[BrokerPosition, ...],
