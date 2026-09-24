@@ -43,10 +43,14 @@ if __name__ == "__main__":
     with Pool(2) as pool:
         rows = pool.map(_one, [(kind, base + i, mu, dur, best) for i in range(R)], chunksize=4)
     agg = {}
+    with open(os.path.join(HERE, f"sim_rows_{world}.json"), "w") as f:
+        json.dump(rows, f, separators=(",", ":"))
     if "stats" in rows[0]:
-        import statistics as _st
-        agg["stats"] = {k: {"mean": _st.fmean(r["stats"][k] for r in rows),
-                            "sd": _st.pstdev([r["stats"][k] for r in rows])} for k in rows[0]["stats"]}
+        import numpy as _np
+        agg["stats"] = {k: {"mean": float(_np.nanmean([r["stats"][k] for r in rows])),
+                            "sd": float(_np.nanstd([r["stats"][k] for r in rows])),
+                            "n_nan": int(sum(1 for r in rows if r["stats"][k] != r["stats"][k]))}
+                        for k in rows[0]["stats"]}
     for cell in rows[0]:
         if cell == "stats":
             continue
