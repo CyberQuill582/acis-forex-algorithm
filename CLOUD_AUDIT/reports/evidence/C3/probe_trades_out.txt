@@ -1,0 +1,75 @@
+== p7_on: graded hours per instrument ~3600 (incl. weekends)
+   occupancy TSMOM            EUR_USD:   3486.4 h = 97%
+   occupancy TSMOM            USD_JPY:   3530.9 h = 98%
+   TSMOM            aligned n=49 net=34.35 | against n=77 net=-34.84
+== p7_off: graded hours per instrument ~3600 (incl. weekends)
+   occupancy BREAKOUT         EUR_USD:      6.6 h = 0%
+   occupancy BREAKOUT         USD_JPY:      6.9 h = 0%
+   occupancy MEAN_REVERSION   EUR_USD:      6.8 h = 0%
+   occupancy MEAN_REVERSION   USD_JPY:      6.6 h = 0%
+   occupancy TREND            EUR_USD:     68.9 h = 2%
+   occupancy TREND            USD_JPY:     19.8 h = 1%
+   BREAKOUT         aligned n=159 net=0.66 | against n=15 net=-0.14
+   MEAN_REVERSION   aligned n=6 net=-0.04 | against n=70 net=-1.53
+   TREND            aligned n=231 net=8.66 | against n=46 net=-1.06
+== p7_noveto: graded hours per instrument ~3600 (incl. weekends)
+   occupancy BREAKOUT         EUR_USD:      1.0 h = 0%
+   occupancy BREAKOUT         USD_JPY:      1.3 h = 0%
+   occupancy MEAN_REVERSION   EUR_USD:      0.2 h = 0%
+   occupancy MEAN_REVERSION   USD_JPY:      0.4 h = 0%
+   occupancy TREND            EUR_USD:      1.1 h = 0%
+   occupancy TREND            USD_JPY:      1.5 h = 0%
+   occupancy TSMOM            EUR_USD:   3501.4 h = 97%
+   occupancy TSMOM            USD_JPY:   3503.2 h = 97%
+   BREAKOUT         aligned n=103 net=-0.19 | against n=7 net=-0.03
+   MEAN_REVERSION   aligned n=1 net=-0.01 | against n=19 net=-0.08
+   TREND            aligned n=95 net=-0.54 | against n=22 net=-0.14
+   TSMOM            aligned n=77 net=42.52 | against n=240 net=-42.38
+   event DISCARD_SUBTHRESHOLD|BREAKOUT: 204
+   event DISCARD_SUBTHRESHOLD|PAIR_DIVERGENCE: 24
+   event DISCARD_SUBTHRESHOLD|TREND: 603
+   event PARAM_PROMOTED|: 20
+   event PARAM_PROMOTION_STALLED|: 147
+   event SIGNAL_EMITTED|BREAKOUT: 366
+   event SIGNAL_EMITTED|MEAN_REVERSION: 255
+   event SIGNAL_EMITTED|TREND: 594
+   event SIGNAL_EMITTED|TSMOM: 393873
+== h7_off: graded hours per instrument ~3600 (incl. weekends)
+   occupancy MEAN_REVERSION   EUR_USD:      1.0 h = 0%
+   occupancy MEAN_REVERSION   USD_JPY:      1.4 h = 0%
+   occupancy TREND            EUR_USD:     41.3 h = 1%
+   occupancy TREND            USD_JPY:     91.8 h = 3%
+   MEAN_REVERSION   aligned n=7 net=-0.01 | against n=14 net=-0.05
+   TREND            aligned n=194 net=-2.05 | against n=190 net=-1.85
+   event DISCARD_SUBTHRESHOLD|PAIR_DIVERGENCE: 4
+   event DISCARD_SUBTHRESHOLD|TREND: 1578
+   event PARAM_PROMOTED|: 13
+   event SIGNAL_EMITTED|MEAN_REVERSION: 75
+   event SIGNAL_EMITTED|TREND: 1260
+== n7_on: graded hours per instrument ~3600 (incl. weekends)
+   occupancy TSMOM            EUR_USD:   3544.7 h = 98%
+   occupancy TSMOM            USD_JPY:   3574.0 h = 99%
+   event DISCARD_OPPOSITE|BREAKOUT,TSMOM: 561
+   event DISCARD_OPPOSITE|MEAN_REVERSION,TSMOM: 72
+   event DISCARD_OPPOSITE|TREND,TSMOM: 492
+   event DISCARD_SUBTHRESHOLD|PAIR_DIVERGENCE: 4
+   event DISCARD_SUBTHRESHOLD|TREND: 1392
+   event PARAM_PROMOTED|: 10
+   event PARAM_PROMOTION_STALLED|: 67
+   event SIGNAL_EMITTED|BREAKOUT: 180
+   event SIGNAL_EMITTED|MEAN_REVERSION: 51
+   event SIGNAL_EMITTED|TREND: 147
+   event SIGNAL_EMITTED|TSMOM: 360225
+== n7_off: graded hours per instrument ~3600 (incl. weekends)
+   occupancy BREAKOUT         EUR_USD:     88.7 h = 2%
+   occupancy BREAKOUT         USD_JPY:     24.5 h = 1%
+   occupancy MEAN_REVERSION   EUR_USD:      4.2 h = 0%
+   occupancy MEAN_REVERSION   USD_JPY:      4.6 h = 0%
+   occupancy TREND            EUR_USD:     75.3 h = 2%
+   occupancy TREND            USD_JPY:     23.6 h = 1%
+   event DISCARD_SUBTHRESHOLD|PAIR_DIVERGENCE: 4
+   event DISCARD_SUBTHRESHOLD|TREND: 1392
+   event PARAM_PROMOTED|: 10
+   event SIGNAL_EMITTED|BREAKOUT: 1095
+   event SIGNAL_EMITTED|MEAN_REVERSION: 126
+   event SIGNAL_EMITTED|TREND: 993
