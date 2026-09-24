@@ -34,3 +34,8 @@
    - Scale: sizes are ~$40–$200 notional on a $10k NAV (base_unit_usd 1000 x conviction x liquidity x
      regime≈0.35), so every $ figure is tiny; read the signs and ratios.
    - More seeds, null, no-veto and the horizon test running (queue in the report).
+5. **No-veto ablation (planted seed 7; env-gated AGON patch drops only TSMOM in a conflict):** 564 trades,
+   net −0.85. The fast modules now fire, but TSMOM re-asserts on the next tick and the book's
+   reverse-on-opposite rule closes them: TREND 109/117 exits are `reverse`, mean hold 0.02 h (~1 min);
+   BREAKOUT 84/110 `reverse`. So removing `DISCARD_OPPOSITE` for TSMOM does **not** free the arena; the
+   binding mechanism is **one net position per instrument + a vote that emits on every tradeable tick**.
