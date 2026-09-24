@@ -1,0 +1,20 @@
+tape: weekend gap sd 30 pips + rollover spike
+5988 random-entry trades, 10-pip stop / 15-pip target / 48 h max hold, one synthetic year
+  mean exit pips, harness rules = -0.362; broker rules = -0.726
+  harness minus broker = +0.365 pips/trade (95% CI +/- 0.095); trades where the rules disagree: 5988/5988
+  the five largest single-trade flatterings (pips): [26.1, 27.6, 44.9, 54.2, 61.8]
+tape: {'gap_pips': 0.0}
+5988 random-entry trades, 10-pip stop / 15-pip target / 48 h max hold, one synthetic year
+  mean exit pips, harness rules = -0.203; broker rules = -0.630
+  harness minus broker = +0.427 pips/trade (95% CI +/- 0.099); trades where the rules disagree: 5988/5988
+  the five largest single-trade flatterings (pips): [27.0, 27.0, 27.1, 27.2, 29.8]
+tape: {'spike': False}
+6000 random-entry trades, 10-pip stop / 15-pip target / 48 h max hold, one synthetic year
+  mean exit pips, harness rules = -0.333; broker rules = -0.803
+  harness minus broker = +0.469 pips/trade (95% CI +/- 0.108); trades where the rules disagree: 6000/6000
+  the five largest single-trade flatterings (pips): [43.1, 43.9, 51.1, 81.2, 84.6]
+tape: {'gap_pips': 0.0, 'spike': False}
+6000 random-entry trades, 10-pip stop / 15-pip target / 48 h max hold, one synthetic year
+  mean exit pips, harness rules = -0.192; broker rules = -0.499
+  harness minus broker = +0.307 pips/trade (95% CI +/- 0.090); trades where the rules disagree: 6000/6000
+  the five largest single-trade flatterings (pips): [25.6, 25.6, 25.7, 25.9, 26.5]
