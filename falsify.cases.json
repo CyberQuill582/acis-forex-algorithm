@@ -65,6 +65,38 @@
       "mutation": "            history = cache.history(instrument, regime, window_start, train_end + timedelta(hours=2), None)",
       "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k evolution_decides",
       "expect": "test_evolution_decides_nothing_from_bars_after_its_train_end"
+    },
+    {
+      "id": "GAP-P12D-65 T2 compares the perturbed run, not the reference with itself",
+      "file": "tests/backtest/leakage.py",
+      "anchor": "        k, v = _compare(T2, t, reference, perturbed(t), lambda d, t=t: d.horizon < t)",
+      "mutation": "        k, v = _compare(T2, t, reference, reference, lambda d, t=t: d.horizon < t)",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k next_close",
+      "expect": "test_an_ema_that_reads_the_next_close_is_caught_by_t1_and_t2"
+    },
+    {
+      "id": "GAP-P12D-65 T1 compares the truncated run, not the reference with itself",
+      "file": "tests/backtest/leakage.py",
+      "anchor": "        k, v = _compare(T1, t, reference, truncated(t), lambda d, t=t: d.emitted < t)",
+      "mutation": "        k, v = _compare(T1, t, reference, reference, lambda d, t=t: d.emitted < t)",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k next_close",
+      "expect": "test_an_ema_that_reads_the_next_close_is_caught_by_t1_and_t2"
+    },
+    {
+      "id": "GAP-P12D-65 the perturbation changes the future",
+      "file": "tests/backtest/leakage.py",
+      "anchor": "    return list(returns[:cut]) + [-2.0 * r for r in reversed(returns[cut:])]",
+      "mutation": "    return list(returns)",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k moves_every_later_price",
+      "expect": "test_the_perturbation_moves_every_later_price_and_its_scale_and_nothing_earlier"
+    },
+    {
+      "id": "GAP-P12D-65 the perturbed market changes the future at its source",
+      "file": "tests/backtest/leakage_markets.py",
+      "anchor": "            self._variant[instrument] = (array(\"d\", perturb_returns(base, self._k))",
+      "mutation": "            self._variant[instrument] = (array(\"d\", base)",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k harness_level",
+      "expect": "test_the_harness_level_controls_honest_oracle_clean_and_next_tick_peek_caught"
     }
   ]
 }
