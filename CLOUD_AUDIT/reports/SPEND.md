@@ -12,5 +12,5 @@
 | 17:40–17:58 | Lead P1 reconnaissance + brief | 1 | ~11 WebSearch; WebFetch egress blocked for most primaries |
 | 17:38 | P2 launch: C1 (3h), C2 (2h), C3 (3h), C4 (2h), C5 (2h) | 5 opus lanes | general-purpose type, model opus |
 | (run 1 total, est.) | Run 1 stopped by owner (WebFetch blocked) | 1 lead + 5 lanes | ~7 min lead; 5 lanes stopped at ~3 min each. Rough estimate $3–6. |
-| 18:3x | **Run 2** lead: tripwire OK (arxiv, qoppac fetched), P0 re-bootstrap, baseline | 1 | 808 passed / 6 skipped; ledger 187/0; governance --session RED (unchanged) |
-| 18:4x | Run 2 P2 launch: C1 (3h), C2 (2h), C3 (3h), C4 (2h), C5 (2h) | 5 opus lanes | general-purpose type, model opus; fresh time boxes |
+| 17:58–18:03 | **Run 2** lead: tripwire OK (arxiv, qoppac fetched), P0 re-bootstrap, baseline | 1 | 808 passed / 6 skipped; ledger 187/0; governance --session RED (unchanged) |
+| 18:04 | Run 2 P2 launch: C1 (3h), C2 (2h), C3 (3h), C4 (2h), C5 (2h) | 5 opus lanes | general-purpose type, model opus; fresh time boxes |
