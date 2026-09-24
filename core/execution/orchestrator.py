@@ -6,7 +6,10 @@ Governor sized to zero; the execution-freeze (Risk flatten path, phase 9)
 blocks opens while allowing closes; slippage is REPORTED, never acted on
 (F10 raised — there is deliberately no throttle knob here). Randomness and
 time are injected. The `dispatch_budget_ms` measurement is observability
-only (v2.10 item c): nothing gates on it.
+only (v2.10 item c): nothing gates on it. The venue's own limits DO gate
+(GAP-P12D-57, core/execution/venue_limits.py): quantities go out rounded DOWN
+to its lot step, below its minimum lot they are refused, and a spent request
+budget refuses opens but never a close — each outcome a FillReport.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from core.execution.venue import (
     UNITS_PER_LOT,
     VenueQuality,
 )
+from core.execution.venue_limits import WINDOW, RequestBudget, lot_units, venue_quantity
 from core.governor.portfolio_types import SizedOrder
 
 # §7 steps 5–6: "bounded" remainder/reroute policy — the bounds, as constants.
@@ -64,6 +68,10 @@ class ExecutionOrchestrator:
         self._sleep = sleep_fn
         self._frozen: str | None = None
         self.budget_exceeded_count = 0      # §10 loop-health surface
+        since = self._now() - WINDOW        # a restart re-seeds, never resets (GAP-P12D-57)
+        self._requests = {name: RequestBudget(name, cfg.max_venue_requests_per_day,
+                                              store.request_times(name, since))
+                          for name in faces}
 
     # -- freeze (Risk flatten path lands here at phase 9) ---------------------- #
 
@@ -106,9 +114,13 @@ class ExecutionOrchestrator:
             self._record(report)
             return (report,)
 
-        fragment_plan = plan(order.order_id, order.size_units,
-                             fast_decay=fast_decay, cfg=self._cfg,
-                             venues=venues, now=self._now(), rng=self._rng)
+        units, reports = self._venue_quantity(order, order.size_units, venues[0],
+                                              order.order_id)
+        if units == 0:
+            return tuple(reports)
+        fragment_plan = plan(order.order_id, units, fast_decay=fast_decay, cfg=self._cfg,
+                             venues=venues, now=self._now(), rng=self._rng,
+                             quantum=lot_units(self._faces[venues[0]].descriptor.lot_step))
         self._log.event(          # logged BEFORE dispatch: crash-reconcilable (§9)
             "FRAGMENT_PLAN", order_id=order.order_id, path=fragment_plan.path,
             weighting=fragment_plan.weighting, n=len(fragment_plan.fragments),
@@ -122,7 +134,6 @@ class ExecutionOrchestrator:
                             elapsed_ms=round(elapsed_ms, 3),
                             budget_ms=self._cfg.dispatch_budget_ms)
 
-        reports: list[FillReport] = []
         for fragment in fragment_plan.fragments:
             reports.extend(await self._dispatch(order, fragment, fragment_plan))
         filled = sum((r.filled_units for r in reports), Decimal("0"))
@@ -163,6 +174,10 @@ class ExecutionOrchestrator:
         reroutes = 0
         retries = 0
         while True:
+            units, boundary = self._venue_quantity(order, units, venue, fragment_id)
+            reports.extend(boundary)
+            if units == 0:
+                return reports
             report = await self._submit_once(order, fragment_id, venue, units,
                                              fragment_plan.path == "ioc")
             if report is None:                        # gave up mid-reconcile
@@ -207,6 +222,10 @@ class ExecutionOrchestrator:
         ⇒ give up (None)."""
         face = self._faces[venue]
         for attempt in (1, 2):
+            if not self._requests[venue].admit(self._now(), closing=order.action == "close",
+                                               order_id=order.order_id, log=self._log):
+                return self._synthetic_reject(order, "request_budget", units=units,
+                                              fragment_id=f"{fragment_id}:budget")
             try:
                 return await face.submit_order(
                     fragment_id=fragment_id, order_id=order.order_id,
@@ -222,6 +241,21 @@ class ExecutionOrchestrator:
                          "units": str(p.size_units)} for p in positions])
                 if attempt == 2:
                     return None
+
+    def _venue_quantity(self, order: SizedOrder, units: Decimal, venue: str,
+                        tag: str) -> tuple[Decimal, list[FillReport]]:
+        """GAP-P12D-57: `units` rounded DOWN to `venue`'s lot step, or 0 if that falls
+        below its minimum lot. What is not sent is recorded as a REJECTED report."""
+        sendable, rest = venue_quantity(units, self._faces[venue].descriptor)
+        if rest == 0:
+            return sendable, []
+        kind = "EXEC_MIN_LOT_REFUSED" if sendable == 0 else "EXEC_LOT_STEP_ROUNDED"
+        self._log.event(kind, order_id=order.order_id, venue=venue, action=order.action,
+                        units=str(units), sent=str(sendable), unsent=str(rest))
+        report = self._synthetic_reject(order, kind, units=rest,
+                                        fragment_id=f"{tag}:{'minlot' if sendable == 0 else 'step'}")
+        self._record(report)
+        return sendable, [report]
 
     def _record(self, report: FillReport) -> None:
         self._quality.update(report)
@@ -242,9 +276,10 @@ class ExecutionOrchestrator:
                             slippage_bps=round(report.slippage_bps, 4),
                             alert_bps=self._alert_bps)
 
-    def _synthetic_reject(self, order: SizedOrder, reason: str, *,
-                          fragment_id: str = "", venue: str = "none") -> FillReport:
-        """A boundary rejection is still a FillReport — never a silent drop (§4)."""
+    def _synthetic_reject(self, order: SizedOrder, reason: str, *, fragment_id: str = "",
+                          venue: str = "none", units: Decimal | None = None) -> FillReport:
+        """A boundary rejection is still a FillReport — never a silent drop (§4);
+        `units` is what went unsent (default: the whole order)."""
         return FillReport(
             fill_id=f"{order.order_id}:{fragment_id or 'cap'}:rej",
             order_id=order.order_id, fragment_id=fragment_id or "none",
@@ -252,4 +287,5 @@ class ExecutionOrchestrator:
             requested_price=order.entry_price, fill_price=0.0,
             filled_units=Decimal("0"), slippage_bps=0.0, fill_time=self._now(),
             venue=venue, status=FillStatus.REJECTED,
-            remaining_units=order.size_units, session_id=self._session)
+            remaining_units=order.size_units if units is None else units,
+            session_id=self._session)

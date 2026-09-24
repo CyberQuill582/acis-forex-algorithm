@@ -38,7 +38,8 @@ def exec_cfg(**overrides) -> ExecutionConfig:
     base = dict(fragment_threshold_lots=1.0, fragment_size_jitter=(0.85, 1.15),
                 fragment_time_jitter_s=(0.5, 3.0), min_fragment_lots=0.10,
                 vwap_threshold_lots=5.0, vwap_window_s=300, fast_decay_seconds=30,
-                signature_lot_variance=0.15, dispatch_budget_ms=100)
+                signature_lot_variance=0.15, dispatch_budget_ms=100,
+                max_venue_requests_per_day=1000)
     base.update(overrides)
     return ExecutionConfig(**base)
 

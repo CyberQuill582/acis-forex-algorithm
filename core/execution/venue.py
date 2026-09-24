@@ -11,16 +11,15 @@ state flows exclusively through this face DOWNWARD to the Risk Monitor
 from __future__ import annotations
 
 import math
-import sqlite3
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from pathlib import Path
 from typing import Mapping
 
 from core.data.errors import DataQualityError
+from core.execution.fill_store import FillReportStore  # noqa: F401 (re-export)
 
 UNITS_PER_LOT = Decimal("100000")
 
@@ -133,6 +132,9 @@ class CapabilityDescriptor:
         if self.account_model not in ("netting", "hedging"):
             raise DataQualityError("account_model", self.account_model,
                                    "must be netting or hedging")
+        if not (0 < self.lot_step <= self.min_lot):       # GAP-P12D-57: the step rounds
+            raise DataQualityError("lot_step", (self.lot_step, self.min_lot),
+                                   "0 < lot_step <= min_lot required")
         if not (0 < self.min_lot <= self.max_order_lots):
             raise DataQualityError("min_lot/max_order_lots",
                                    (self.min_lot, self.max_order_lots),
@@ -338,41 +340,3 @@ class VenueQuality:
         fills = [s for ok, s in rows if ok]
         avg_adverse = max(0.0, sum(fills) / len(fills)) if fills else 0.0
         return fill_rate / (1.0 + avg_adverse / 10.0)
-
-
-class FillReportStore:
-    """SQLite fill log (ACIS-06 §10): fill_id PK makes ingestion idempotent —
-    reconnect/restart can never double-count a fill."""
-
-    _DDL = """
-    CREATE TABLE IF NOT EXISTS fill_report (
-        fill_id TEXT PRIMARY KEY, order_id TEXT NOT NULL,
-        fragment_id TEXT NOT NULL, ts TEXT NOT NULL,
-        instrument TEXT NOT NULL, direction INTEGER NOT NULL,
-        requested_px REAL NOT NULL, fill_px REAL NOT NULL,
-        filled_units TEXT NOT NULL, slippage_bps REAL NOT NULL,
-        venue TEXT NOT NULL, status TEXT NOT NULL,
-        remaining_units TEXT NOT NULL, session_id TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS ix_fill_order ON fill_report (order_id);
-    """
-
-    def __init__(self, db_path: str | Path) -> None:
-        self._conn = sqlite3.connect(str(db_path))
-        self._conn.executescript(self._DDL)
-        self._conn.commit()
-
-    def write(self, r: FillReport) -> None:
-        self._conn.execute(
-            "INSERT OR IGNORE INTO fill_report VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (r.fill_id, r.order_id, r.fragment_id, r.fill_time.isoformat(),
-             r.instrument, r.direction, r.requested_price, r.fill_price,
-             str(r.filled_units), r.slippage_bps, r.venue, r.status.value,
-             str(r.remaining_units), r.session_id))
-        self._conn.commit()
-
-    def row_count(self) -> int:
-        return self._conn.execute("SELECT COUNT(*) FROM fill_report").fetchone()[0]
-
-    def close(self) -> None:
-        self._conn.close()

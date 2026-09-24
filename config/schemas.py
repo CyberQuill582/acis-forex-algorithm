@@ -194,6 +194,7 @@ class ExecutionConfig(_Strict):
     fast_decay_seconds: int = Field(gt=0)
     signature_lot_variance: float = Field(gt=0, lt=1)
     dispatch_budget_ms: int = Field(gt=0)
+    max_venue_requests_per_day: int = Field(gt=0)   # GAP-P12D-57: per venue, rolling 24 h
 
     @model_validator(mode="after")
     def _bounds(self) -> "ExecutionConfig":

@@ -1,10 +1,16 @@
 """Phase-8 integration: AGON Signal -> Governor SizedOrder -> Execution
 FillReports (ACIS-06 §14 integration, the ACIS-05 seam; the ACIS-07 seams —
-position reconstruction, weekend-gap stops — land at phase 9)."""
+position reconstruction, weekend-gap stops — land at phase 9).
+
+GAP-P12D-57: execution sends only whole lot steps of the venue, rounded DOWN, and
+reports the rest. These chains run on a venue that trades whole units (OANDA v20's
+granularity), so the Governor's cent-quantised sizes arrive as whole units plus a
+reported remainder of under one unit."""
 
 from __future__ import annotations
 
-from decimal import Decimal
+from dataclasses import replace
+from decimal import ROUND_FLOOR, Decimal
 from random import Random
 
 from core.execution.fragmenter import plan  # noqa: F401  (import contract smoke)
@@ -31,6 +37,20 @@ from tests.signals_fixtures import (
 from tests.unit.test_governor import mk_governor, mk_portfolio
 
 
+def unit_venue() -> MockExecutionFace:
+    face = MockExecutionFace()
+    face.descriptor = replace(face.descriptor, min_lot=0.00001, lot_step=0.00001)  # 1 unit
+    return face
+
+
+def _sent_and_unsent(order, reports) -> tuple[Decimal, Decimal, Decimal]:
+    whole = order.size_units.to_integral_value(rounding=ROUND_FLOOR)
+    filled = sum((r.filled_units for r in reports), Decimal("0"))
+    unsent = sum((r.remaining_units for r in reports if r.status is FillStatus.REJECTED),
+                 Decimal("0"))
+    return whole, filled, unsent
+
+
 def mk_exec(tmp_path, face=None):
     from config.schemas import ExecutionConfig
 
@@ -46,7 +66,7 @@ def mk_exec(tmp_path, face=None):
                         fragment_time_jitter_s=(0.5, 3.0), min_fragment_lots=0.10,
                         vwap_threshold_lots=5.0, vwap_window_s=300,
                         fast_decay_seconds=30, signature_lot_variance=0.15,
-                        dispatch_budget_ms=100),
+                        dispatch_budget_ms=100, max_venue_requests_per_day=1000),
         {"mock": face}, VenueQuality(), FillReportStore(tmp_path / "fills.db"),
         slippage_alert_bps=8.0, rng=Random(7), logger=log, session_id="xint",
         now_fn=lambda: T0, sleep_fn=instant)
@@ -63,17 +83,18 @@ async def test_signal_to_fill_full_audit_chain(tmp_path) -> None:
     order = gov.allocate(signals[0], mk_portfolio(), mk_regime(), T0)
     assert order.size_units > 0
 
-    orch, face, _ = mk_exec(tmp_path)
+    orch, face, _ = mk_exec(tmp_path, unit_venue())
     reports = await orch.submit(
         order, valid_for_seconds=signals[0].valid_for_seconds)
-    assert reports and all(r.status is FillStatus.FILLED for r in reports)
+    assert any(r.status is FillStatus.FILLED for r in reports)
     # the audit chain survives every hop: signal -> order -> fills
     assert order.signal_id == signals[0].signal_id
     assert all(r.order_id == order.order_id for r in reports)
-    filled = sum((r.filled_units for r in reports), Decimal("0"))
-    assert filled == order.size_units            # C-EXE-6 at the seam
+    whole, filled, unsent = _sent_and_unsent(order, reports)
+    assert filled == whole                        # C-EXE-6: never more than sized
+    assert filled + unsent == order.size_units    # the remainder is reported, not dropped
     positions = await face.open_positions()
-    assert positions and positions[0].size_units == order.size_units
+    assert positions and positions[0].size_units == whole
 
 
 async def test_pair_group_executes_both_legs(tmp_path) -> None:
@@ -91,11 +112,12 @@ async def test_pair_group_executes_both_legs(tmp_path) -> None:
     usd = [o.size_units * usd_per_base_unit(o.instrument, o.entry_price, {}) for o in (oa, ob)]
     assert min(usd) > 0 and abs(usd[0] - usd[1]) <= Decimal("0.05")   # equal USD legs (GAP-P12D-26)
 
-    orch, face, _ = mk_exec(tmp_path)
+    orch, face, _ = mk_exec(tmp_path, unit_venue())
     ra = await orch.submit(oa, valid_for_seconds=pair[0].valid_for_seconds)
     rb = await orch.submit(ob, valid_for_seconds=pair[1].valid_for_seconds)
-    assert sum((r.filled_units for r in ra), Decimal("0")) == oa.size_units   # each leg fills its own
-    assert sum((r.filled_units for r in rb), Decimal("0")) == ob.size_units   # size: the pair is intact
+    for order, reports in ((oa, ra), (ob, rb)):   # each leg fills its own size in whole units
+        whole, filled, unsent = _sent_and_unsent(order, reports)
+        assert filled == whole and filled + unsent == order.size_units
     assert {p.instrument for p in await face.open_positions()} == {
         "EUR_USD", "USD_JPY"}
 
