@@ -28,7 +28,14 @@ from core.optimizer.fitness import (
     passes_expectancy_gate,
     simulate_trades,
 )
-from core.optimizer.param_types import GENE_SPECS, LabelledBar, ParamSet, RegimeLabelledHistory
+from core.optimizer.param_types import (
+    GENE_SPECS,
+    LabelledBar,
+    ParamSet,
+    RegimeLabelledHistory,
+    repair_invariants,
+)
+from core.optimizer.plateau import check_plateau
 from core.regime.regime_types import RegimeType
 
 _GENE_ORDER = list(GENE_SPECS)
@@ -51,19 +58,6 @@ def decode_gene(name: str, raw: float) -> float | int:
         v = int(round(value))
         return int(lo) if v < lo else int(hi) if v > hi else v
     return value
-
-
-def repair_invariants(genes: dict[str, float | int]) -> dict[str, float | int]:
-    """Cross-field invariants enforced by repair, never by emitting invalid (§6)."""
-    g = dict(genes)
-    if g["ema_slow"] <= g["ema_fast"]:
-        g["ema_slow"] = int(min(GENE_SPECS["ema_slow"][1], g["ema_fast"] + 1))
-    if g["atr_multiplier_tp"] <= g["atr_multiplier_sl"]:
-        g["atr_multiplier_tp"] = min(
-            GENE_SPECS["atr_multiplier_tp"][1], g["atr_multiplier_sl"] + 0.1
-        )
-    # rsi_oversold (20..35) < rsi_overbought (65..80) holds for all in-range values
-    return g
 
 
 def fitness_window(history: RegimeLabelledHistory, cfg: OptimizerConfig,
@@ -161,12 +155,14 @@ class QIEA:
         n_bits = len(_GENE_ORDER) * cfg.qbit_resolution
         thetas = [math.pi / 4] * n_bits  # sin^2(pi/4) = 0.5: unbiased superposition
         best: _Individual | None = None
+        evaluated: dict[tuple, list] = {}    # genome -> [train fitness, times drawn] (GAP-P12D-33)
 
         for _generation in range(cfg.generations):
             for _ in range(cfg.population_size):
                 bits = self._observe(thetas, rng)
                 genes = self._decode_bits(bits)
                 fit = self._train_fitness(genes, regime, train, evolved_at)
+                evaluated.setdefault(tuple(genes[g] for g in _GENE_ORDER), [fit, 0])[1] += 1
                 if best is None or fit > best.fitness:
                     best = _Individual(bits, genes, fit)
             thetas = self.rotate_toward(thetas, best.bits, cfg.rotation_angle_rad)
@@ -179,6 +175,7 @@ class QIEA:
                 "EVOLUTION_REJECTED_TRAIN",
                 regime=regime.value, generations=cfg.generations, seed=seed,
             )
+            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_TRAIN", evaluated)
             return None
 
         champion = self._build_paramset(best.genes, regime, best.fitness, seed, evolved_at)
@@ -195,6 +192,20 @@ class QIEA:
                 regime=regime.value, holdout_trades=hold_res.n_trades,
                 holdout_e_r=None if hold_res.e_r != hold_res.e_r else round(hold_res.e_r, 4),
             )
+            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_OOS", evaluated, hold_res)
+            return None
+
+        # §5.6 plateau law (GAP-P12D-34): a champion whose ±10% neighbourhood dies on the SAME
+        # train window is a peak, not a strategy — refused, with every dead neighbour named.
+        plateau = check_plateau(best.genes, lambda g: self._train_fitness(g, regime, train, evolved_at))
+        if not plateau.holds:
+            self._log.event(
+                "EVOLUTION_REJECTED_PLATEAU",
+                regime=regime.value, seed=seed, neighbours=plateau.tested, champion=best.genes,
+                dead=[{"gene": n.gene, "direction": n.direction, "value": n.genes[n.gene]}
+                      for n in plateau.dead],
+            )
+            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_PLATEAU", evaluated, hold_res)
             return None
 
         self._log.event(
@@ -203,7 +214,20 @@ class QIEA:
             generations=cfg.generations, seed=seed,
             train_bars=len(train), holdout_bars=len(holdout),
         )
+        self._log_evaluations(regime, seed, "EVOLUTION_RUN", evaluated, hold_res)
         return champion
+
+    def _log_evaluations(self, regime: RegimeType, seed: int, outcome: str,
+                         evaluated: dict[tuple, list], hold_res=None) -> None:
+        """GAP-P12D-33 [impl], logging only: EVERY genome this run evaluated (its train fitness and
+        how often it was drawn), whichever gate ended the run, so PBO/CSCV and an honest attempt
+        count can be computed later by re-simulating the recorded genomes. No gate reads it."""
+        self._log.event(
+            "EVOLUTION_EVALUATIONS", regime=regime.value, seed=seed, outcome=outcome,
+            genes=_GENE_ORDER, evaluated=[[*k, fit, n] for k, (fit, n) in evaluated.items()],
+            holdout_trades=None if hold_res is None else hold_res.n_trades,
+            holdout_e_r=None if hold_res is None or hold_res.e_r != hold_res.e_r else hold_res.e_r,
+        )
 
     def _train_fitness(
         self,

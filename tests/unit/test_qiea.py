@@ -70,9 +70,10 @@ def test_evolve_returns_valid_paramset_and_logs_run() -> None:
 
 
 def test_same_seed_same_history_identical_champion() -> None:
-    """Â§3 determinism scope: reproducibility is the binding requirement."""
-    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=7, now=T0)
-    b = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=7, now=T0)
+    """Â§3 determinism scope: reproducibility is the binding requirement. (Seed 9: seed 7's
+    champion is a knife-edge the §5.6 plateau law now refuses — pinned in test_plateau_law.py.)"""
+    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=9, now=T0)
+    b = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=9, now=T0)
     assert a is not None and b is not None
     assert a.gene_values() == b.gene_values()
     assert a.param_set_id == b.param_set_id
@@ -122,11 +123,12 @@ def test_evolves_on_every_bar_inside_the_span_not_a_bar_count() -> None:
 
 def test_gap0036_same_seed_different_params_get_different_ids() -> None:
     """The audit-link id is content-derived: same seed, different history/regime
-    => different champion params => different param_set_id (Â§4 traceability)."""
-    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=42, now=T0)
+    => different champion params => different param_set_id (Â§4 traceability). (Seed 5 stages
+    on both histories; seed 42's RANGING_TIGHT champion fails the §5.6 plateau law.)"""
+    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=5, now=T0)
     b = make_qiea()[0].evolve(
         RegimeType.RANGING_TIGHT, zigzag_history(500, regime=RegimeType.RANGING_TIGHT, leg=25),
-        seed=42, now=T0,
+        seed=5, now=T0,
     )
     assert a is not None and b is not None
     assert a.param_set_id != b.param_set_id
