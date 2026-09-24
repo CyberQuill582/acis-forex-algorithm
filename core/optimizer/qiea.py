@@ -28,7 +28,14 @@ from core.optimizer.fitness import (
     passes_expectancy_gate,
     simulate_trades,
 )
-from core.optimizer.param_types import GENE_SPECS, LabelledBar, ParamSet, RegimeLabelledHistory
+from core.optimizer.param_types import (
+    GENE_SPECS,
+    LabelledBar,
+    ParamSet,
+    RegimeLabelledHistory,
+    repair_invariants,
+)
+from core.optimizer.plateau import check_plateau
 from core.regime.regime_types import RegimeType
 
 _GENE_ORDER = list(GENE_SPECS)
@@ -51,19 +58,6 @@ def decode_gene(name: str, raw: float) -> float | int:
         v = int(round(value))
         return int(lo) if v < lo else int(hi) if v > hi else v
     return value
-
-
-def repair_invariants(genes: dict[str, float | int]) -> dict[str, float | int]:
-    """Cross-field invariants enforced by repair, never by emitting invalid (§6)."""
-    g = dict(genes)
-    if g["ema_slow"] <= g["ema_fast"]:
-        g["ema_slow"] = int(min(GENE_SPECS["ema_slow"][1], g["ema_fast"] + 1))
-    if g["atr_multiplier_tp"] <= g["atr_multiplier_sl"]:
-        g["atr_multiplier_tp"] = min(
-            GENE_SPECS["atr_multiplier_tp"][1], g["atr_multiplier_sl"] + 0.1
-        )
-    # rsi_oversold (20..35) < rsi_overbought (65..80) holds for all in-range values
-    return g
 
 
 def fitness_window(history: RegimeLabelledHistory, cfg: OptimizerConfig,
@@ -194,6 +188,18 @@ class QIEA:
                 "EVOLUTION_REJECTED_OOS",
                 regime=regime.value, holdout_trades=hold_res.n_trades,
                 holdout_e_r=None if hold_res.e_r != hold_res.e_r else round(hold_res.e_r, 4),
+            )
+            return None
+
+        # §5.6 plateau law (GAP-P12D-34): a champion whose ±10% neighbourhood dies on the SAME
+        # train window is a peak, not a strategy — refused, with every dead neighbour named.
+        plateau = check_plateau(best.genes, lambda g: self._train_fitness(g, regime, train, evolved_at))
+        if not plateau.holds:
+            self._log.event(
+                "EVOLUTION_REJECTED_PLATEAU",
+                regime=regime.value, seed=seed, neighbours=plateau.tested, champion=best.genes,
+                dead=[{"gene": n.gene, "direction": n.direction, "value": n.genes[n.gene]}
+                      for n in plateau.dead],
             )
             return None
 

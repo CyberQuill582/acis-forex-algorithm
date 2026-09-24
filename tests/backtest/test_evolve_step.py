@@ -42,7 +42,9 @@ def _run(tmp_path, acis_config, n_bars: int):
     for instrument in ("EUR_USD", "USD_JPY"):
         cache.write(instrument, T0.year, bars)
     loop = SimpleNamespace(params=_Stager())
-    fold = Fold(0, T0, TRAIN_END, TRAIN_END + timedelta(days=7),      # only the cached year
+    # fold index 1: the index only seeds QIEA (seed_for), and fold 0's EUR_USD zigzag champion is
+    # a knife-edge (rsi_period ±10% dies) that the §5.6 plateau law refuses (GAP-P12D-34)
+    fold = Fold(1, T0, TRAIN_END, TRAIN_END + timedelta(days=7),      # only the cached year
                 TRAIN_END + timedelta(days=365))
     cfg = _cfg(acis_config)
     record = evolve_fold(loop, FoldData(fold, ()), cfg=cfg, costs=_costs(cfg), cache=cache,
