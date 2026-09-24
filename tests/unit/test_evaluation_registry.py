@@ -73,6 +73,18 @@ def test_holdout_and_plateau_refusals_record_their_evaluations_too() -> None:
     assert reg["holdout_trades"] >= CFG.holdout_min_trades and sum(row[-1] for row in reg["evaluated"]) == DRAWS
 
 
+def test_repeat_draws_are_counted_not_dropped() -> None:
+    """At the production population (20 x 30) QIEA converges and draws genomes repeatedly: each
+    distinct genome is one row, and its draw count keeps the attempt tally honest. (The 8 x 8
+    fixtures above never repeat a genome, so only this test sees the counting.)"""
+    log = CapturingLogger()
+    QIEA(opt_cfg(population_size=20, generations=30), TEST_COSTS, log, signal_bar_seconds=60,
+         atr_period=14).evolve(REGIME, zigzag_history(500), seed=1, now=T0)
+    reg = _registry(log)
+    assert len(reg["evaluated"]) < 600                                   # repeats exist
+    assert sum(row[-1] for row in reg["evaluated"]) == 600               # and every draw is counted
+
+
 def test_nothing_evaluated_nothing_recorded() -> None:
     _, champ, log = _evolve(zigzag_history(80), 1)                       # under fitness_min_bars
     assert champ is None and log.events("EVOLUTION_EVALUATIONS") == []
