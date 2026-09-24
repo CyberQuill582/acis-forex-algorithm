@@ -127,7 +127,7 @@ stable across 3 seeds; the magnitudes are not.
 **TSMOM disabled (config `modules_enabled.TSMOM: false`).** Across 3 planted seeds, the engine captures
 the planted edge net of costs: mean **+6.97** [+0.32, +13.62], with TREND +12.71 and BREAKOUT +0.72
 (§2.2 table). The same arena loses on null (__NULLSHORT__). **Net capture is positive but thin:**
-- friction is 4.9–9.2 per run against gross 11.4–18.7, so 34–49% of gross;
+- friction is 4.9–8.8 per run against gross 11.4–18.7, so 43–66% of gross;
 - MEAN_REVERSION subtracts 1.6–11.2.
 
 **TSMOM kept, without its veto** (planted seed 7, `C3_TSMOM_NO_VETO`): 564 trades, net **−0.85**.
@@ -321,15 +321,84 @@ __RUNS__
 
 ## 3. What I could not verify
 
-__NOTVER__
+- **The full-scale ladder at 25 folds** (about 8 engine-hours per rung) was not re-run. Every number here
+  is at 5 folds and 150 graded days, TSMOM-live-from-start or TSMOM-absent. The mixed regime of the real
+  ladder (about 8 folds without TSMOM, then about 16 with it) is inferred from these two halves, not run.
+- **Per-trade timestamps of the laptop ladder run** (`20260917T083216Z`), which would test the
+  prediction in §2.2 directly. They are not in the cloud.
+- **Seeds.** The TSMOM-live arm has 1 planted and 1 null seed (the mechanism is deterministic and
+  identical in both, 97–99% occupancy, so I judged more seeds lower value than the ablation). The
+  horizon test has 1 engine seed plus 18 seeds of the cheap alternative. There is no permuted-market
+  engine run (it was cut for time).
+- **The planted-market cost stress (2×–5×)** was not re-run. Everything here is at 1×.
+- **MOP details** beyond the quoted lines (for example exactly how excess FX returns are built from
+  forwards) were not checked.
+- **The bridge tilt** is measured on a daily analogue, not on the 20 s engine path. The engine runs agree
+  in sign on planted only (−0.49), and null came out +6.27, so the engine-level size of the tilt is
+  unresolved.
+- **BUILDER's branch** (oracle, plateau law) was not applied or run. My conclusions do not depend on it.
+  Its plateau law would change selection in every run above, and it should be measured with the same
+  driver.
 
 ## 4. Residual risk
 
-__RESID__
+- **Synthetic, uniform-20 s tape.** MOMENTUM_SCALP cannot fire (BUILDER) and PAIR_DIVERGENCE barely
+  fires (0–6 trades). Neither is tested here.
+- **The labelling shortcut** (train-window labels only) changes NVMA warm-up at each window start by the
+  labeller's own 3-day warm-up rule. I judge it immaterial, but it is not bit-identical to the ladder.
+- **The forensic patches are in `/tmp` only.** If someone re-applies the no-veto patch, it must stay
+  env-gated.
+- **Small absolute P&L.** All figures are dollars on $40–$570 positions. Sharpe and CI statements hold
+  in ratio, but a prop-rule conclusion (daily loss, target) cannot be read off these numbers.
+- **Friction and fill model.** Everything inherits the harness's fill model, including the gap-through
+  stop question C2 owns.
 
 ## 5. Proposed ledger items (no IDs)
 
-__LEDGER__
+1. **With TSMOM live, it holds each instrument's single position slot 97–99% of the time, and the fast
+   arena makes zero trades.**
+   - The lockout has two locks: `DISCARD_OPPOSITE`, and the book's one net position per instrument
+     with reverse-on-opposite.
+   - Dropping the veto alone gives one-minute churn (net −0.85).
+   - Severity critical · Likelihood high · proposed Status open · **[spec — owner ratification]** (ACIS-04
+     §6.6 / the conflict table; options (a)–(c) in §2.3).
+2. **The synthetic generator's whole-path demeaning makes every market a Brownian bridge, which
+   penalises any long-lookback trend vote** (−0.037 log units per path, t ≈ −24). GAP-P12D-49's TSMOM
+   attribution is partly this.
+   - Severity high · Likelihood high · proposed Status open · **[impl]**: demean the planted drift only,
+     or generate undemeaned noise and subtract only the planted drift's mean. **Check first that no
+     other control depends on the bridge**, and then re-fingerprint as BUILDER did.
+3. **The 48 h `max_hold_s` is a harness default with no counterpart in `core/`**, so the graded TSMOM
+   (94–95% `max_hold` exits) is not the live TSMOM (hold to the flip).
+   - Severity high · Likelihood high · proposed Status open · **[spec — owner ratification]**: either
+     declare the cap as an engine rule or remove it from the harness, with GAP-SP12E-03's embargo
+     consequence.
+4. **TSMOM's spot-for-excess-return substitution (carry omitted) is not in its declared deviations.**
+   MOP builds FX returns from "spot and forward interest rates".
+   - Severity medium · Likelihood high · proposed Status open · **[spec — owner ratification]**.
+5. **TSMOM's size is driven by minute-scale state** (1-minute ATR `vol_norm`, the NVMA regime
+   stability × confidence), and its tradeability depends on QIEA having a champion for the current
+   minute-scale regime.
+   - Severity medium · Likelihood high · proposed Status open · **[spec — owner ratification]**.
+6. **ACIS as built cannot capture a multi-day trend** (3–20-day episodes, an oracle Sharpe of about 3).
+   - The fast arena is 50.5% aligned, net −3.96. A daily EWMA 8/32 rule on the same path earns +10.79,
+     and +2.92 ± 1.29 per instrument-path over 18 more seeds.
+   - Binding components: 1-minute gene ranges, the tick-window regime gate, and the minute-scale QIEA
+     fitness.
+   - Severity critical (strategic) · Likelihood high · proposed Status open · **[owner decision]**
+     (ARCHITECT's slate and C4's kill list own the remedy).
+7. **NVMA's regime flickers on 30–43% of 2-minute cycles, and its window is 201 ticks** (≈ 67 min
+   synthetic; seconds on a busy real tape). It shows the same flicker on a multi-day trend as on null.
+   - Severity high · Likelihood high · proposed Status open · **[spec — owner ratification]** (the
+     time base of the regime layer; compare GAP-0062's naming note).
+8. **MEAN_REVERSION fades the planted trend on 92–97% of entries** and costs a mean of −6.49 across 3
+   seeds (CI [−18.48, +5.51]). GAP-P12D-40's point stands at scale.
+   - Severity medium · Likelihood high · proposed Status open · **[spec — owner ratification]**.
+9. **The invisible genes (GAP-0035)** — see §2.6 for the measured share.
+   - Proposed: extend GAP-0035's status with the measurement · **[impl]**.
+10. **Sizing makes every result economically negligible** ($40–$570 notional on $10k).
+    - Severity medium · Likelihood high · proposed Status open · **[owner decision]** (sizing doctrine
+      vs the prop targets; C1/C5).
 
 ## 6. Sources
 
