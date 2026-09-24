@@ -1,0 +1,3 @@
+57fc40f 2026-09-25 00:18:00 +0300 Governor: the pre-close entry ban binds every account (GAP-P12D-58, stage 3)
+3c2aee9 2026-09-25 00:14:02 +0300 Execution: the venue's lot step, minimum lot and request cap now bind (GAP-P12D-57, stage 2)
+c54c0d1 2026-09-25 00:03:12 +0300 Risk: a restart no longer relaxes a drawdown limit (GAP-P12D-55, stage 1)

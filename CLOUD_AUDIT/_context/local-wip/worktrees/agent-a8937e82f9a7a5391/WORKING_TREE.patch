@@ -1,0 +1,185 @@
+diff --git a/core/optimizer/fitness.py b/core/optimizer/fitness.py
+index 45089de..beead95 100644
+--- a/core/optimizer/fitness.py
++++ b/core/optimizer/fitness.py
+@@ -79,6 +79,19 @@ def atr_series(bars: Sequence[LabelledBar], period: int) -> list[float]:
+ # F17 Decimal applies to live accounting, not statistical ranking — §3 note)
+ # --------------------------------------------------------------------------- #
+ 
++@dataclass(frozen=True)
++class Trade:
++    """One mini-backtest trade in bar indices: WHEN each decision was taken, which a PnL list
++    cannot show (the GAP-P12D-65 leakage suite compares decisions, not PnLs)."""
++    signal_bar: int        # the bar whose close decided the entry
++    direction: int         # +1 long, -1 short
++    entry_price: float     # the fill: bars[signal_bar + 1].open
++    exit_bar: int          # the bar the exit was decided on (the last bar when `marked`)
++    exit_price: float
++    pnl: float             # net of both sides' C8 cost
++    marked: bool           # closed by the window-end mark (GAP-0039), not by a decision
++
++
+ def simulate_trades(
+     params: ParamSet,
+     bars: Sequence[LabelledBar],
+@@ -87,7 +100,19 @@ def simulate_trades(
+     *,
+     atr_period: int,
+ ) -> list[float]:
+-    """Closed-trade net PnLs. `entry_start` supports the §6.3 holdout: indicators
++    """Closed-trade net PnLs: the PnLs of `trade_path`, in exit order."""
++    return [t.pnl for t in trade_path(params, bars, costs, entry_start, atr_period=atr_period)]
++
++
++def trade_path(
++    params: ParamSet,
++    bars: Sequence[LabelledBar],
++    costs: CostModel,
++    entry_start: int = 0,
++    *,
++    atr_period: int,
++) -> list[Trade]:
++    """Every trade, in exit order. `entry_start` supports the §6.3 holdout: indicators
+     warm up on the full window, but new entries are only permitted from that
+     index on — no lookahead, and no artificial indicator starvation in the tail.
+     `atr_period` is the declared signals.atr_period (GAP-0071)."""
+@@ -101,11 +126,11 @@ def simulate_trades(
+     rsi = rsi_series(closes, params.rsi_period)
+     atr = atr_series(bars, atr_period)
+ 
+-    pnls: list[float] = []
++    trades: list[Trade] = []
+     direction = 0          # 0 flat, +1 long, -1 short
+     entry_mid = sl = tp = 0.0
+     entry_cost = 0.0
+-    bars_held = 0
++    signal_bar = bars_held = 0
+ 
+     for i in range(warmup, n):
+         bar = bars[i]
+@@ -127,7 +152,7 @@ def simulate_trades(
+                 exit_mid = bar.close
+             if exit_mid is not None:
+                 pnl = direction * (exit_mid - entry_mid) - entry_cost - costs.per_side_cost(bar.spread)
+-                pnls.append(pnl)
++                trades.append(Trade(signal_bar, direction, entry_mid, i, exit_mid, pnl, False))
+                 direction = 0
+             continue
+         if i + 1 >= n:
+@@ -148,16 +173,15 @@ def simulate_trades(
+         entry_cost = costs.per_side_cost(entry_bar.spread)
+         sl = entry_mid - direction * params.atr_multiplier_sl * a
+         tp = entry_mid + direction * params.atr_multiplier_tp * a
+-        bars_held = 0
++        signal_bar, bars_held = i, 0
+     if direction != 0:
+         # GAP-0039: mark-to-close — a position still open at the window end is
+         # closed at the final bar's close, net of costs; every entered trade is
+         # accounted, so end-of-window losers cannot silently vanish from E_R.
+         last = bars[-1]
+-        pnls.append(
+-            direction * (last.close - entry_mid) - entry_cost - costs.per_side_cost(last.spread)
+-        )
+-    return pnls
++        pnl = direction * (last.close - entry_mid) - entry_cost - costs.per_side_cost(last.spread)
++        trades.append(Trade(signal_bar, direction, entry_mid, n - 1, last.close, pnl, True))
++    return trades
+ 
+ 
+ # --------------------------------------------------------------------------- #
+diff --git a/tests/backtest/oracle.py b/tests/backtest/oracle.py
+index 65fd1d3..0f579e6 100644
+--- a/tests/backtest/oracle.py
++++ b/tests/backtest/oracle.py
+@@ -41,6 +41,7 @@ from core.governor.portfolio_types import SizedOrder
+ from tests.backtest.data_loader import BacktestDataLoader
+ from tests.backtest.evolve_step import cost_model
+ from tests.backtest.harness import Backtest, FoldData, per_trade_returns
++from tests.backtest.metrics import ClosedTrade
+ from tests.backtest.report import _MIN_FOLDS, _MIN_TRADES, _MIN_YEARS, ValidationReport
+ from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, synthetic_spx
+ from tests.backtest.walk_forward import Fold
+@@ -103,8 +104,15 @@ class OracleLoop:
+     def observe_only(self, st: OracleTick) -> None:
+         return None                                         # warm-up decides nothing
+ 
++    def sign(self, st: OracleTick) -> int:
++        """The direction to hold: the planted episode in force. 0 = decide nothing on this tick
++        (the leaky T7 control, leakage_markets.py, overrides this and nothing else)."""
++        return int(self._market.episode_sign(st.instrument, st.timestamp))
++
+     def on_state(self, st: OracleTick) -> None:
+-        sign = int(self._market.episode_sign(st.instrument, st.timestamp))
++        sign = self.sign(st)
++        if sign == 0:
++            return
+         key = (sign, st.timestamp.date())
+         if self._held.get(st.instrument) == key:
+             return                                          # same episode, same day: hold
+@@ -127,11 +135,15 @@ class OracleGrade:
+     report: ValidationReport
+     trade_returns: tuple[float, ...]        # pnl / USD notional, the Deflated Sharpe's series
+     net_pnl: Decimal
++    trades: tuple[ClosedTrade, ...] = ()    # the book's closed trades (the leakage suite's fills)
+ 
+ 
+ def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequence[Fold], logger,
+-                 *, instruments: Sequence[str] | None = None) -> OracleGrade:
+-    market = SyntheticMarket(spec)
++                 *, instruments: Sequence[str] | None = None, market: SyntheticMarket | None = None,
++                 loop: OracleLoop | None = None) -> OracleGrade:
++    """`market` defaults to `spec`'s market; the leakage suite passes a perturbed one, and a
++    `loop` whose orders it reads afterwards (GAP-P12D-65)."""
++    market = market if market is not None else SyntheticMarket(spec)
+     insts = sorted(instruments if instruments is not None else cfg.instruments.enabled)
+     specs = cfg.instruments.instruments
+     bt = Backtest(account=account, cost_models={i: cost_model(cfg, i) for i in insts},
+@@ -145,7 +157,7 @@ def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequenc
+ 
+     limits = guardrail_hash(cfg.guardrails)
+     report = bt.run(
+-        loop=OracleLoop(market),
++        loop=loop if loop is not None else OracleLoop(market),
+         folds=[FoldData(f, stream(f.test_start, f.test_end), warmup_states=stream(f.train_end, f.test_start))
+                for f in folds],
+         evolve_fn=lambda lp, fd: {"fold": fd.fold.index, "champions": 0, "trial_sharpes": [], "regimes": {}},
+@@ -153,7 +165,7 @@ def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequenc
+         expected_guardrail_hash=limits, extra_caveats=(CAVEAT,))
+     trades = bt.graded_trades()
+     return OracleGrade(kind=spec.kind, report=report, trade_returns=tuple(per_trade_returns(trades)),
+-                       net_pnl=sum((t.pnl for t in trades), Decimal("0")))
++                       net_pnl=sum((t.pnl for t in trades), Decimal("0")), trades=trades)
+ 
+ 
+ def non_dsr_failures(report: ValidationReport, expected_guardrail_hash: str) -> tuple[str, ...]:
+diff --git a/tests/backtest/synthetic_grade.py b/tests/backtest/synthetic_grade.py
+index 5a93d27..ab5b263 100644
+--- a/tests/backtest/synthetic_grade.py
++++ b/tests/backtest/synthetic_grade.py
+@@ -42,19 +42,21 @@ FIRST_MID = {"EUR_USD": 1.10, "GBP_USD": 1.30, "USD_JPY": 110.0, "AUD_USD": 0.75
+              "USD_CHF": 0.95, "USD_CAD": 1.30, "NZD_USD": 0.70, "XAU_USD": 1800.0}
+ 
+ 
+-def plan(train_days: int, test_days: int, n_folds: int, start: datetime = START) -> list[Fold]:
++def plan(train_days: int, test_days: int, n_folds: int, start: datetime = START, *,
++         embargo: timedelta = EMBARGO) -> list[Fold]:
+     """Non-overlapping folds (GAP-P12D-35). Each fold's warm-up window is [train_end,
+     test_start) — the embargo — so successive test windows must be separated by the embargo
+     too, or the warm-up replays days the previous fold already graded and the engine's clock
+     jumps backwards. The ratified `oos_plan.plan_folds` has this shape; the pre-2026-09-17
+     falsification plan did not, which silently suspended `max_hold` and pushed out-of-order
+-    timestamps into the equity curve of every run before then."""
+-    first_test = start + timedelta(days=train_days) + EMBARGO
+-    step = timedelta(days=test_days) + EMBARGO
++    timestamps into the equity curve of every run before then. A shorter `embargo` (the
++    leakage suite's short tapes) must still cover the 48 h max hold: the harness checks it."""
++    first_test = start + timedelta(days=train_days) + embargo
++    step = timedelta(days=test_days) + embargo
+     folds = []
+     for k in range(n_folds):
+         test_start = first_test + k * step
+-        train_end = test_start - EMBARGO
++        train_end = test_start - embargo
+         folds.append(Fold(k, train_end - timedelta(days=train_days), train_end, test_start,
+                           test_start + timedelta(days=test_days)))
+     return folds

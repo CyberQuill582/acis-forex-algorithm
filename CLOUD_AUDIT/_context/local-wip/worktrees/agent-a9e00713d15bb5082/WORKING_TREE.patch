@@ -1,124 +1,261 @@
-diff --git a/core/risk/guardrails.py b/core/risk/guardrails.py
-index ea18c5c..ef73a90 100644
---- a/core/risk/guardrails.py
-+++ b/core/risk/guardrails.py
-@@ -1,9 +1,12 @@
- """Guardrail checks + the stop authority (ACIS-07 §6/§7).
+diff --git a/config/calendars.py b/config/calendars.py
+index 02f5c17..a6851ec 100644
+--- a/config/calendars.py
++++ b/config/calendars.py
+@@ -16,7 +16,8 @@ from typing import Literal
+ from pydantic import BaseModel, ConfigDict, Field, model_validator
  
- The equity breaker, platform-measured drawdown series (§9.5, each rule under
--its OWN semantics), the ratified pre-limit taper (min across limits), Tier-G
--flatten (GAP-0011), racing-HALT coalescing (C-RSK-4), and human-only-resume
--scope. Limits are read-only (guard-integrity law); nothing here writes config.
-+its OWN semantics — core/risk/drawdown_series.py), the ratified pre-limit taper
-+(min across limits), Tier-G flatten (GAP-0011), racing-HALT coalescing (C-RSK-4),
-+and human-only-resume scope. Limits are read-only (guard-integrity law); nothing
-+here writes config. A restart restores the series' anchors and the last taper
-+before the first check (`restore_state`, GAP-P12D-55): a restart is never a
-+relaxation (GAP-0050).
+ # The zones fx_clock models (parity-tested against its rule table).
+-Zone = Literal["UTC", "Asia/Tokyo", "Europe/London", "America/New_York", "America/Chicago"]
++Zone = Literal["UTC", "Asia/Tokyo", "Europe/London", "Europe/Prague", "America/New_York",
++               "America/Chicago"]
  
- The upward edge is the injected `HaltSink` — issuance is idempotent and
- serialized so two conditions firing "simultaneously" resolve to one halt state,
-@@ -12,117 +15,18 @@ most-severe scope winning (global flatten > session halt > instrument halt).
+ _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+ 
+diff --git a/config/schemas.py b/config/schemas.py
+index 1225262..1cf7899 100644
+--- a/config/schemas.py
++++ b/config/schemas.py
+@@ -19,6 +19,8 @@ from pydantic import Field, model_validator
+ 
+ from config.calendars import (ExchangeCalendar, FxCalendar, Session, ZonedTime,  # noqa: F401
+                               _Strict, check_boundaries)
++from config.rulebook import (AccountRulebook, DrawdownRule, NewsRules,  # noqa: F401
++                             PlatformRules)
+ 
+ 
+ class ConfigError(Exception):
+@@ -432,47 +434,9 @@ class GuardrailLimits(_Strict):
+ 
+ 
+ # --------------------------------------------------------------------------- #
+-# platform_rules.yaml — account doctrine (SPEC §9.5): one rulebook per account,
+-# drawdown limits with their EXACT measurement semantics.
++# platform_rules.yaml — the account doctrine (SPEC §9.5): config/rulebook.py
+ # --------------------------------------------------------------------------- #
+ 
+-class NewsRules(_Strict):
+-    restricted: bool
+-    window_before_s: int | None = Field(default=None, ge=0)
+-    window_after_s: int | None = Field(default=None, ge=0)
+-
+-    @model_validator(mode="after")
+-    def _windows_if_restricted(self) -> "NewsRules":
+-        if self.restricted and (self.window_before_s is None or self.window_after_s is None):
+-            raise ValueError("restricted account requires explicit blackout windows (SPEC §3.5)")
+-        return self
+-
+-
+-class DrawdownRule(_Strict):
+-    type: Literal["static", "trailing"]
+-    anchor: Literal["eod", "intraday"]
+-    basis: Literal["balance", "equity"]
+-    limit_pct: float = Field(gt=0)
+-
+-
+-class AccountRulebook(_Strict):
+-    platform: str
+-    news: NewsRules
+-    min_hold_seconds: int = Field(ge=0)
+-    max_lots: float | None = Field(default=None, gt=0)
+-    weekend_holding_allowed: bool
+-    drawdown_rules: list[DrawdownRule]  # may be empty (personal account), but must be declared
+-    consistency_max_day_profit_pct: float | None = Field(default=None, gt=0)
+-    min_trading_days: int | None = Field(default=None, gt=0)
+-    # Per-account override of the §9.5 taper — stricter-only (ratified floor).
+-    taper_start_fraction: float | None = Field(default=None, gt=0, le=0.60)
+-    entry_halt_fraction: float | None = Field(default=None, gt=0, le=0.80)
+-
+-
+-class PlatformRules(_Strict):
+-    accounts: dict[str, AccountRulebook] = Field(min_length=1)
+-
+-
+ # --------------------------------------------------------------------------- #
+ # event_sources.yaml — trusted channels + Tier-1/Tier-G taxonomy (SPEC §3.5–3.6)
+ # --------------------------------------------------------------------------- #
+diff --git a/core/data/fx_clock.py b/core/data/fx_clock.py
+index 6c7bb23..bdf74db 100644
+--- a/core/data/fx_clock.py
++++ b/core/data/fx_clock.py
+@@ -8,9 +8,11 @@ constant is an hour wrong for half of every year.
+ Dependency-free and exact for the ACIS data window (2012 on): the US rule since 2007
+ (second Sunday of March → first Sunday of November, 02:00 local) for New York and
+ Chicago; the UK/EU rule since 1996 (last Sunday of March → last Sunday of October,
+-01:00 UTC) for London; no DST in Tokyo. Rules resolve by LOCAL DATE, which is exact
+-for every declared market time (all fall outside the 01:00–02:00 switch hour on the
+-switch Sunday). Earlier years raise rather than guess.
++01:00 UTC) for London and Central Europe (CE(S)T — FTMO's day, GAP-P12D-54); no DST in
++Tokyo. Rules resolve by LOCAL DATE, which is exact for every declared market time except
++00:00 CE(S)T on the two switch Sundays, which resolves an hour off; that instant lies
++inside the FX weekend, when no position can open or close, so no anchor can move across
++it (tested). Earlier years raise rather than guess.
+ """
  
  from __future__ import annotations
+@@ -21,7 +23,7 @@ UTC = timezone.utc
+ ROLLOVER = ("America/New_York", "17:00")               # the FX day boundary
+ _ZONES = {                                             # zone -> (standard offset h, DST rule)
+     "UTC": (0, None), "Asia/Tokyo": (9, None), "Europe/London": (0, "uk"),
+-    "America/New_York": (-5, "us"), "America/Chicago": (-6, "us"),
++    "Europe/Prague": (1, "uk"), "America/New_York": (-5, "us"), "America/Chicago": (-6, "us"),
+ }
  
--from dataclasses import dataclass, field
-+from dataclasses import dataclass
- from datetime import datetime
- from decimal import Decimal
-+from typing import Mapping
  
--from config.schemas import DrawdownRule, GuardrailLimits, RiskConfig
+diff --git a/core/risk/drawdown_series.py b/core/risk/drawdown_series.py
+index 700610f..ff99d90 100644
+--- a/core/risk/drawdown_series.py
++++ b/core/risk/drawdown_series.py
+@@ -1,21 +1,22 @@
+ """The §9.5 drawdown series: every drawdown limit measured under its OWN semantics.
+ Split out of core/risk/guardrails.py (GAP-P12M-01), which re-exports these names.
+-
+   * One `_RuleAnchor` per rule key. Rules are never merged numerically, and two rules may
+     never share a key (they would share one anchor, and one persisted record).
+-  * measured % = (anchor − basis) / anchor × 100, floored at 0.
+-  * static: the anchor is the first observed basis, and it never moves. trailing: the
+-    high-water mark since inception; it only ratchets up and never resets on a calendar
+-    boundary (GAP-P9E-01).
+-  * daily-reset (the engine's own limit, master §8): the day rolls at the real 17:00
+-    New York rollover and the new day anchors on its first observation (ratified).
+-  * A restart is never a relaxation (GAP-0050, GAP-P12D-55). `export()` is persisted after
+-    every evaluate and `restore()` puts it back before the first one, so a restarted engine
+-    measures from the same anchors as the one that died. A restored daily anchor is kept
+-    for the same day. If a day boundary passed while the engine was down, the new day
+-    anchors on the LARGER of the last persisted observation and the first new one: the
+-    engine did not watch the rollover, so it keeps the stricter of the two samples that
+-    bracket it, and a loss taken while it was down is never forgotten by the restart.
++  * measured % = (anchor − basis) / denominator × 100, floored at 0. The denominator is
++    the anchor, or the declared initial capital for a `limit_of: initial` rule.
++  * static: the anchor is the declared initial capital, else the first observed basis,
++    and never moves. trailing: the high-water mark since inception (seeded at the
++    declared initial capital); it only ratchets up, never resets on a calendar boundary.
++  * daily-reset: the engine's own limit (master §8; the day rolls at 17:00 New York) and
++    a platform `daily` rule (GAP-P12D-54; at its own local `reset`). The engine's day
++    anchors on its first observation (ratified). A platform day anchors its `reset_basis`
++    on the LARGER of the last observation before the reset and the first after it: the
++    firm reads its value AT the reset, and the engine keeps the stricter bracketing sample.
++  * A restart is never a relaxation (GAP-0050, GAP-P12D-55): `export()` is persisted after
++    every evaluate and `restore()` puts it back before the first one. A restored static or
++    trailing anchor never sits below the declared capital; a restored daily anchor is kept
++    for the same day, and a rollover missed while down brackets the downtime the same way
++    (the larger of the last persisted and the first new observation).
+ """
+ 
+ from __future__ import annotations
+@@ -27,7 +28,7 @@ from typing import Mapping
+ 
+ from config.schemas import DrawdownRule, GuardrailLimits
+ from core.data.errors import DataQualityError
 -from core.data.fx_clock import trading_day
-+from config.schemas import GuardrailLimits, RiskConfig
-+from core.risk.drawdown_series import (DrawdownSeries, _RuleAnchor,  # noqa: F401 (re-export)
-+                                       build_drawdown_series, taper_factor)
++from core.data.fx_clock import last_local, trading_day
  from core.risk.risk_types import PlatformDrawdownState
- from core.risk.sink import HaltSink
  
  
--def taper_factor(distance: float, start: float, halt: float) -> float:
--    """§9.5 piecewise taper on d = measured/limit: 1.0 at/below `start`, linear
--    to 0.0 at `halt`, 0.0 beyond. Hand-vectors (start .60, halt .80):
--    d=.60→1.0, d=.70→0.5, d=.80→0.0."""
--    if distance <= start:
--        return 1.0
--    if distance >= halt:
--        return 0.0
--    return (halt - distance) / (halt - start)
--
--
--@dataclass
--class _RuleAnchor:
--    """Running anchor for one drawdown rule under its declared semantics
--    (GAP-P9E-01 corrected).
--
--    - **trailing** (the prop account-killer, §9.5): the high-water mark trails
--      the peak basis since INCEPTION and NEVER resets on a calendar boundary —
--      it only ever ratchets up. Resetting it daily (the original defect) forgot
--      the multi-day peak and let a real breach read as 0%.
--    - **static, non-daily**: a fixed reference at the first observed basis
--      (account-start / overall max-drawdown reference), never reset.
--    - **daily loss limit** (`resets_daily`, the engine's per-session limit,
--      master §8): anchored at the day-open basis, reset each UTC day, measured
--      from that open — it is a per-day limit by definition.
--
--    v1 samples the basis on EVERY observation (intraday) for all rules — the
--    risk-conservative choice: it can HALT earlier than a platform that measures
--    only end-of-day, never later, so it never MISSES a platform-enforced breach
--    (stricter-of law, §9.5). True eod-only sampling (looser, platform-faithful)
--    is a phase-11 adapter refinement — recorded as GAP-P9E-02. Halts are cheap
--    (CLAUDE.md), so erring strict is safe."""
--
--    anchor: float | None = None
--    day: object | None = None
--
--    def update(self, rule: DrawdownRule, basis: float, now: datetime, *,
+@@ -42,6 +43,12 @@ def taper_factor(distance: float, start: float, halt: float) -> float:
+     return (halt - distance) / (halt - start)
+ 
+ 
++def _value(kind: str, equity: float, balance: float) -> float:
++    if kind == "equity":
++        return equity
++    return balance if kind == "balance" else max(equity, balance)    # "max"
++
++
+ @dataclass
+ class _RuleAnchor:
+     """Running anchor for one drawdown rule (semantics in the module docstring).
+@@ -50,30 +57,34 @@ class _RuleAnchor:
+     eod sampling is GAP-P9E-02). Halts are cheap, so erring strict is safe."""
+ 
+     anchor: float | None = None
+-    day: str | None = None           # the trading day (ISO) the daily anchor belongs to
+-    last: float | None = None        # the basis at the previous observation
+-    restored: bool = False           # put back from disk: a missed rollover brackets the downtime
++    day: str | None = None           # the reset instant / trading day (ISO) of the anchor
++    last: float | None = None        # the captured value at the previous observation
++    restored: bool = False           # put back from disk: a missed reset brackets the downtime
+ 
+     def update(self, rule: DrawdownRule, basis: float, now: datetime, *,
 -               resets_daily: bool) -> float:
--        # GAP-P9I-03: the daily loss limit's day starts at the FX rollover, NOT
--        # calendar midnight (a drawdown straddling 00:00 UTC must not be forgotten);
--        # the rollover is the real 17:00 New York instant (GAP-P12D-10, owner-approved).
--        today = trading_day(now)
--        if resets_daily:
--            if self.day != today or self.anchor is None:
--                self.day = today
--                self.anchor = basis                   # day-open (per-day loss limit)
--        else:
--            if self.anchor is None:
++               resets_daily: bool, capture: float | None = None,
++               initial: float | None = None) -> float:
++        value = basis if capture is None else capture
+         if resets_daily:
+-            # GAP-P9I-03: the daily limit's day starts at the FX rollover, NOT calendar
+-            # midnight; the rollover is the real 17:00 New York instant (GAP-P12D-10).
+-            today = trading_day(now).isoformat()
++            # the engine's day starts at the real 17:00 New York rollover (GAP-P9I-03,
++            # GAP-P12D-10); a platform daily rule's at its own local reset (GAP-P12D-54)
++            today = (last_local(now, rule.reset.zone, rule.reset.at) if rule.type == "daily"
++                     else trading_day(now)).isoformat()
+             if self.anchor is None or self.day != today:
+-                bracket = self.restored and self.last is not None
+-                self.anchor = max(basis, self.last) if bracket else basis   # day-open
++                bracket = (rule.type == "daily" or self.restored) and self.last is not None
++                self.anchor = max(value, self.last) if bracket else value
+                 self.day = today
+-            self.last = basis
++            self.last = value
+         else:
+             if self.anchor is None:
 -                self.anchor = basis                   # inception reference
--            if rule.type == "trailing":
++                self.anchor = value if initial is None else initial   # inception reference
+             if rule.type == "trailing":
 -                self.anchor = max(self.anchor, basis)  # high-water since inception
--            # static non-daily: the inception anchor is fixed
++                self.anchor = max(self.anchor, value)  # high-water since inception
+         self.restored = False
 -        if self.anchor <= 0:
--            return 0.0
++        denominator = initial if rule.limit_of == "initial" else self.anchor
++        if denominator is None or denominator <= 0:
+             return 0.0
 -        return max(0.0, (self.anchor - basis) / self.anchor * 100.0)
--
--
--@dataclass
--class DrawdownSeries:
--    """Account-level drawdown rules measured from broker account state, each
--    under its own semantics (§9.5). Never merged numerically with one another —
--    each keeps its own key and taper."""
--
--    limits: GuardrailLimits
--    rules: tuple[tuple[str, str, DrawdownRule, bool], ...]  # (key, origin, rule, resets_daily)
--    _anchors: dict[str, _RuleAnchor] = field(default_factory=dict)
--
--    def measure(self, *, equity: float, balance: float, now: datetime,
--                start: float, halt: float) -> list[PlatformDrawdownState]:
--        out: list[PlatformDrawdownState] = []
++        return max(0.0, (self.anchor - basis) / denominator * 100.0)
+ 
+ 
+ def _positive(key: str, name: str, raw) -> float | None:
+@@ -93,15 +104,18 @@ class DrawdownSeries:
+ 
+     limits: GuardrailLimits
+     rules: tuple[tuple[str, str, DrawdownRule, bool], ...]  # (key, origin, rule, resets_daily)
++    initial: float | None = None                             # the rulebook's declared capital
+     _anchors: dict[str, _RuleAnchor] = field(default_factory=dict)
+ 
+     def measure(self, *, equity: float, balance: float, now: datetime,
+                 start: float, halt: float) -> list[PlatformDrawdownState]:
+         out: list[PlatformDrawdownState] = []
 -        for key, _origin, rule, resets_daily in self.rules:
 -            basis = equity if rule.basis == "equity" else balance
 -            anchor = self._anchors.setdefault(key, _RuleAnchor())
 -            measured = anchor.update(rule, basis, now, resets_daily=resets_daily)
--            distance = measured / rule.limit_pct if rule.limit_pct > 0 else 0.0
--            out.append(PlatformDrawdownState(
--                rule_key=key, measured_pct=measured, limit_pct=rule.limit_pct,
--                distance_fraction=distance,
--                taper_factor=taper_factor(distance, start, halt)))
--        return out
--
--
++        for key, origin, rule, resets_daily in self.rules:
++            capture = (_value(rule.reset_basis, equity, balance)
++                       if rule.reset_basis is not None else None)
++            measured = self._anchors.setdefault(key, _RuleAnchor()).update(
++                rule, _value(rule.basis, equity, balance), now, resets_daily=resets_daily,
++                capture=capture, initial=self.initial if origin == "platform" else None)
+             distance = measured / rule.limit_pct if rule.limit_pct > 0 else 0.0
+             out.append(PlatformDrawdownState(
+                 rule_key=key, measured_pct=measured, limit_pct=rule.limit_pct,
+@@ -118,11 +132,13 @@ class DrawdownSeries:
+         """Put persisted anchors back BEFORE the first measure (GAP-P12D-55). A key the
+         rulebook no longer declares is not restored. Returns the restored keys."""
+         restored = []
+-        for key, _origin, _rule, _resets_daily in self.rules:
++        for key, origin, _rule, resets_daily in self.rules:
+             st = saved.get(key)
+             anchor = None if st is None else _positive(key, "anchor", st.get("anchor"))
+             if anchor is None:
+                 continue
++            if not resets_daily and origin == "platform" and self.initial is not None:
++                anchor = max(anchor, self.initial)     # never below the declared capital
+             self._anchors[key] = _RuleAnchor(anchor=anchor, day=st.get("day"),
+                                              last=_positive(key, "last", st.get("last")),
+                                              restored=True)
+@@ -130,14 +146,12 @@ class DrawdownSeries:
+         return tuple(restored)
+ 
+ 
 -def build_drawdown_series(limits: GuardrailLimits,
 -                          platform_rules: list[DrawdownRule],
 -                          account_name: str) -> DrawdownSeries:
@@ -127,191 +264,113 @@ index ea18c5c..ef73a90 100644
 -    ratchets, static is a fixed inception reference — neither resets daily).
 -    Per-instrument drawdown is handled separately (it needs per-instrument
 -    PnL, not account state)."""
--    rules: list[tuple[str, str, DrawdownRule, bool]] = [
--        ("engine:daily", "engine",
--         DrawdownRule(type="static", anchor="intraday", basis="equity",
--                      limit_pct=limits.daily_drawdown_pct), True),
--    ]
--    for r in platform_rules:
--        key = f"{account_name}:{r.type}:{r.anchor}:{r.basis}"
++def build_drawdown_series(limits: GuardrailLimits, platform_rules: list[DrawdownRule],
++                          account_name: str, *, initial_capital: float | None) -> DrawdownSeries:
++    """The engine daily loss limit (resets at the FX rollover, master §8) + every
++    platform rule under its own semantics: trailing ratchets, static is fixed, daily
++    resets at its declared local instant. `initial_capital` is the rulebook's declared
++    capital (None if undeclared). Per-instrument drawdown is handled separately."""
+     rules: list[tuple[str, str, DrawdownRule, bool]] = [
+         ("engine:daily", "engine",
+          DrawdownRule(type="static", anchor="intraday", basis="equity",
+@@ -145,8 +159,11 @@ def build_drawdown_series(limits: GuardrailLimits,
+     ]
+     for r in platform_rules:
+         key = f"{account_name}:{r.type}:{r.anchor}:{r.basis}"
 -        rules.append((key, "platform", r, False))     # platform rules never reset daily
++        if r.limit_of == "initial" and initial_capital is None:
++            raise DataQualityError("initial_capital", None,
++                                   f"{key} is sized on initial capital, which is undeclared")
++        rules.append((key, "platform", r, r.type == "daily"))
+     keys = [k for k, *_ in rules]
+     if len(set(keys)) != len(keys):
+         raise DataQualityError("drawdown_rules", keys, "two rules share a key (and an anchor)")
 -    return DrawdownSeries(limits=limits, rules=tuple(rules))
--
--
- @dataclass
- class GuardrailContext:
-     now: datetime
-@@ -178,6 +82,25 @@ class Guardrails:
-         self._equity_flattened = False
-         self._log.event("GUARDRAILS_REARMED")
++    return DrawdownSeries(limits=limits, rules=tuple(rules), initial=initial_capital)
+diff --git a/tests/risk_fixtures.py b/tests/risk_fixtures.py
+index ee298a2..cea2146 100644
+--- a/tests/risk_fixtures.py
++++ b/tests/risk_fixtures.py
+@@ -96,7 +96,8 @@ def build_monitor(cfg, sink, *, account: str = "dev_paper",
+     rb = cfg.platform_rules.accounts[account]
+     from config.account_doctrine import compose
+     doctrine = compose(cfg.guardrails, rb)
+-    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, account)
++    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, account,
++                                   initial_capital=rb.initial_capital)
+     g = Guardrails(
+         cfg.guardrails, cfg.system.risk, series, sink, log,
+         taper_start=taper_start if taper_start is not None else doctrine.taper_start_fraction,
+diff --git a/tests/unit/test_fx_clock.py b/tests/unit/test_fx_clock.py
+index 2282b12..be181e3 100644
+--- a/tests/unit/test_fx_clock.py
++++ b/tests/unit/test_fx_clock.py
+@@ -104,6 +104,20 @@ def test_trading_day_starts_at_the_real_rollover() -> None:
+     assert trading_day(datetime(2026, 1, 13, 22, 0, tzinfo=UTC)) == date(2026, 1, 13)
  
-+    # -- restart: restore before the first check (GAP-P12D-55 / GAP-0050) --- #
-+
-+    @property
-+    def series(self) -> DrawdownSeries:
-+        return self._series
-+
-+    def restore_state(self, *, anchors: Mapping[str, Mapping],
-+                      taper_factor: float | None) -> None:
-+        """Put the persisted drawdown anchors back and RE-PUSH the last delivered
-+        taper to the (fresh) Governor, before the first check. Restore-only: it can
-+        put back a restriction the dead process had; it cannot loosen one."""
-+        restored = self._series.restore(anchors)
-+        self._log.event("ANCHORS_RESTORED", rule_keys=list(restored),
-+                        ignored=sorted(set(anchors) - set(restored)))
-+        if taper_factor is not None:
-+            self._sink.apply_risk_state(taper_factor=taper_factor)
-+            self._last_taper = taper_factor
-+            self._log.event("TAPER_RESTORED", factor=taper_factor)
-+
-     # -- racing-HALT coalescing (C-RSK-4) ------------------------------------ #
-     # Idempotent + serialized: a scope already covered by an equal-or-more-severe
-     # active halt is a no-op. Severity: instrument < session < all < flatten.
-diff --git a/core/risk/monitor.py b/core/risk/monitor.py
-index 3afdfce..8da8ebe 100644
---- a/core/risk/monitor.py
-+++ b/core/risk/monitor.py
-@@ -31,6 +31,7 @@ from core.risk.alpha_decay import AlphaDecayDetector
- from core.risk.guardrails import GuardrailContext, Guardrails
- from core.risk.risk_types import RiskPosition, RiskSnapshot, Trade
- from core.risk.sink import HaltSink
-+from core.risk.usd_conversion import usd_factor
  
- _Z_99 = NormalDist().inv_cdf(0.99)      # ≈ 2.326 — 1% VaR z-score
- 
-@@ -204,30 +205,17 @@ class RiskMonitor:
-             platform_drawdown=tuple(s for s in outcome.platform_drawdown
-                                     if s.rule_key != "engine:daily"),
-             taper_factor=outcome.taper_factor, session_id=self._session_id)
--        if self._store is not None:
-+        if self._store is not None:        # restrictive state persisted every evaluate
-             self._store.write_snapshot(snap)
-+            self._store.save_restrictive_state(               # (GAP-0050 / GAP-P12D-55)
-+                alpha_armed=self._alpha.armed, taper_factor=outcome.taper_factor,
-+                anchors=self._guards.series.export())
-         return snap
- 
-     # -- quote→USD conversion (GAP-P9E-04 / rescoped GAP-0092) ---------------- #
- 
--    def _usd_factor(self, instrument: str, price: float) -> float | None:
--        """Convert a QUOTE-currency amount for `instrument` to USD at `price`.
--        XXX_USD (quote is USD) → 1.0; USD_XXX (USD base) → 1/price (the quote
--        YYY→USD rate is 1/(USD_YYY)). A true CROSS pair (neither side USD) has
--        no derivable rate here → None; the caller falls back to quote-ccy and
--        logs CONVERSION_UNAVAILABLE (a phase-11 FX-rate-table job). This covers
--        the entire enabled universe (EUR_USD, USD_JPY) exactly, so the
--        per-instrument DD HALT/taper, VaR, and cluster caps are no longer
--        contaminated by a quote-vs-account currency mismatch."""
--        base, _, quote = instrument.partition("_")
--        if quote == "USD":
--            return 1.0
--        if base == "USD":
--            return (1.0 / price) if price else 1.0
--        return None
--
-     def _to_usd(self, instrument: str, amount_quote: Decimal, price: float) -> Decimal:
--        factor = self._usd_factor(instrument, price)
-+        factor = usd_factor(instrument, price)
-         if factor is None:
-             self._log.event("CONVERSION_UNAVAILABLE", instrument=instrument,
-                             note="cross pair — quote-ccy used, phase-11 FX table owed")
-@@ -328,12 +316,14 @@ class RiskMonitor:
-                 stop_loss=pos.stop_loss, take_profit=pos.take_profit))
-         return tuple(out)
- 
--    def restore_restrictive_state(self, *, alpha_armed: bool) -> None:
-+    def restore_restrictive_state(self, *, alpha_armed: bool,
-+                                  taper_factor: float | None = None,
-+                                  anchors: dict | None = None) -> None:
-         """Persisted risk-restrictive state is restored BEFORE the first
-         evaluate — a restart is never a relaxation (GAP-0050). GAP-P9I-05: the
-         restored throttle must be RE-PUSHED to the (fresh) Governor over the
--        upward edge — restoring the detector's flag alone leaves a rebooted
--        Governor un-throttled."""
-+        upward edge. GAP-P12D-55: so are the drawdown anchors and the taper."""
-+        self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor)
-         self._alpha.restore_armed(alpha_armed)
-         self._alpha_armed_prev = alpha_armed
-         if alpha_armed:
-diff --git a/core/risk/store.py b/core/risk/store.py
-index 01774ae..c2aa1b4 100644
---- a/core/risk/store.py
-+++ b/core/risk/store.py
-@@ -2,6 +2,12 @@
- risk-restrictive state a restart must restore before the first evaluate
- (GAP-0050 — a restart is never a relaxation).
- 
-+The restrictive state is the armed alpha-decay throttle, the last delivered taper
-+and every drawdown anchor (GAP-P12D-55), each drawdown rule under the key
-+`anchor:<rule_key>` in the existing `restrictive_state` table (no DDL change). All
-+of it is written in ONE transaction, so a crash never leaves a taper from one
-+evaluate beside anchors from another. `restore_on_boot` reads it back.
-+
- `halt_event.cleared_by` is 'human:<token>' for equity/global scope — a machine
- can never populate it (enforced at the MCP layer, ACIS-08 phase 10). Snapshot
- writes are idempotent on the timestamp PK.
-@@ -15,6 +21,17 @@ from pathlib import Path
- 
- from core.risk.risk_types import RiskSnapshot
- 
-+_ANCHOR = "anchor:"
++def test_central_european_midnight_follows_eu_summer_time() -> None:
++    # FTMO's day starts at 00:00 CE(S)T (GAP-P12D-54): 23:00 UTC in winter, 22:00 in summer
++    assert local_to_utc(date(2026, 1, 15), "00:00", "Europe/Prague") == \
++        datetime(2026, 1, 14, 23, tzinfo=UTC)
++    assert local_to_utc(date(2026, 7, 15), "00:00", "Europe/Prague") == \
++        datetime(2026, 7, 14, 22, tzinfo=UTC)
++    # the local-date rule is an hour off at 00:00 on the two switch Sundays — both the
++    # resolved and the true instant sit inside the FX weekend, so no anchor can move
++    for switch, true_utc in ((date(2026, 3, 29), datetime(2026, 3, 28, 23, tzinfo=UTC)),
++                             (date(2026, 10, 25), datetime(2026, 10, 24, 22, tzinfo=UTC))):
++        assert in_weekend(local_to_utc(switch, "00:00", "Europe/Prague"))
++        assert in_weekend(true_utc)
 +
 +
-+def restore_on_boot(store: "RiskStore", monitor) -> None:
-+    """Boot, before the first evaluate: put back everything the dead process had
-+    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55)."""
-+    state = store.load_restrictive_state()
-+    monitor.restore_restrictive_state(alpha_armed=bool(state.get("alpha_armed", False)),
-+                                      taper_factor=state.get("taper_factor"),
-+                                      anchors=store.load_anchors())
-+
- 
- class RiskStore:
-     _DDL = """
-@@ -66,17 +83,25 @@ class RiskStore:
-             (cleared_at, cleared_by, halt_id))
-         self._conn.commit()
- 
--    def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float) -> None:
--        for k, v in (("alpha_armed", json.dumps(alpha_armed)),
--                     ("taper_factor", json.dumps(taper_factor))):
--            self._conn.execute(
--                "INSERT OR REPLACE INTO restrictive_state (k, v) VALUES (?,?)", (k, v))
-+    def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float,
-+                               anchors: dict[str, dict] | None = None) -> None:
-+        rows = [("alpha_armed", json.dumps(alpha_armed)),
-+                ("taper_factor", json.dumps(taper_factor))]
-+        rows += [(_ANCHOR + k, json.dumps(v)) for k, v in (anchors or {}).items()]
-+        self._conn.executemany(
-+            "INSERT OR REPLACE INTO restrictive_state (k, v) VALUES (?,?)", rows)
-         self._conn.commit()
- 
-     def load_restrictive_state(self) -> dict:
--        rows = self._conn.execute("SELECT k, v FROM restrictive_state").fetchall()
-+        rows = self._conn.execute("SELECT k, v FROM restrictive_state WHERE k NOT LIKE ?",
-+                                  (_ANCHOR + "%",)).fetchall()
-         return {k: json.loads(v) for k, v in rows}
- 
-+    def load_anchors(self) -> dict[str, dict]:
-+        rows = self._conn.execute("SELECT k, v FROM restrictive_state WHERE k LIKE ?",
-+                                  (_ANCHOR + "%",)).fetchall()
-+        return {k[len(_ANCHOR):]: json.loads(v) for k, v in rows}
-+
-     def snapshot_count(self) -> int:
-         return self._conn.execute("SELECT COUNT(*) FROM risk_snapshot").fetchone()[0]
- 
+ def test_config_zones_are_exactly_the_modelled_zones() -> None:
+     # config/calendars.py's Zone literal must never name a zone fx_clock cannot resolve
+     from typing import get_args
 diff --git a/tests/unit/test_module_budget.py b/tests/unit/test_module_budget.py
-index a4cb9e9..886ceff 100644
+index 86f1e60..372ec18 100644
 --- a/tests/unit/test_module_budget.py
 +++ b/tests/unit/test_module_budget.py
-@@ -28,9 +28,8 @@ GRANDFATHERED = {
+@@ -22,7 +22,7 @@ PRODUCTION = ["core", "monitoring", "config", "scripts", "tests/backtest"]
+ 
+ # path -> line count on 2026-09-11 (the ceiling), all owned by GAP-P12M-01
+ GRANDFATHERED = {
+-    "config/schemas.py": 622,                   # 702 → 622: calendars → config/calendars.py (P12D-10)
++    "config/schemas.py": 581,                   # 702 → 622: calendars → config/calendars.py (P12D-10); → 581: rulebook → config/rulebook.py (P12D-54)
+     "core/signals/agon.py": 506,
+     "core/governor/capital_governor.py": 447,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22); 447 (P12D-58)
      "scripts/download_histdata.py": 400,        # 456 → 400 after scripts/dl_common.py extraction
-     "core/regime/nvma.py": 395,
-     "core/signals/provenance.py": 391,
--    "core/risk/monitor.py": 378,
-+    "core/risk/monitor.py": 368,                # 378 → 368: usd factor → usd_conversion.py (P12D-55)
-     "core/execution/venue.py": 378,
--    "core/risk/guardrails.py": 313,
- }
- 
- 
+diff --git a/tests/unit/test_restart_anchors.py b/tests/unit/test_restart_anchors.py
+index 28842a5..eea2c77 100644
+--- a/tests/unit/test_restart_anchors.py
++++ b/tests/unit/test_restart_anchors.py
+@@ -115,7 +115,8 @@ def test_store_keeps_anchors_apart_from_the_legacy_restrictive_keys(tmp_path) ->
+ def test_restore_refuses_a_corrupt_anchor_and_skips_a_retired_rule() -> None:
+     cfg = load_cfg()
+     rb = cfg.platform_rules.accounts["ftmo"]
+-    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "ftmo")
++    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "ftmo",
++                                   initial_capital=rb.initial_capital)
+     with pytest.raises(DataQualityError):
+         series.restore({FTMO_STATIC: {"anchor": float("nan"), "day": None, "last": None}})
+     with pytest.raises(DataQualityError):
+@@ -130,4 +131,5 @@ def test_two_rules_may_not_share_one_anchor() -> None:
+     cfg = load_cfg()
+     twin = DrawdownRule(type="static", anchor="eod", basis="balance", limit_pct=10.0)
+     with pytest.raises(DataQualityError):
+-        build_drawdown_series(cfg.guardrails, [twin, twin.model_copy()], "x")
++        build_drawdown_series(cfg.guardrails, [twin, twin.model_copy()], "x",
++                              initial_capital=None)
+diff --git a/tests/unit/test_watchdog.py b/tests/unit/test_watchdog.py
+index c1af526..1ef1382 100644
+--- a/tests/unit/test_watchdog.py
++++ b/tests/unit/test_watchdog.py
+@@ -184,7 +184,8 @@ def test_heartbeat_writer_atomic_and_readable(tmp_path) -> None:
+     from core.risk.alpha_decay import AlphaDecayDetector
+     log = CapturingLogger()
+     rb = cfg.platform_rules.accounts["dev_paper"]
+-    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "dev_paper")
++    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "dev_paper",
++                                   initial_capital=rb.initial_capital)
+     g = Guardrails(cfg.guardrails, risk_cfg, series, _NullSink(), log,
+                    taper_start=0.60, entry_halt=0.80)
+     alpha = AlphaDecayDetector(recent_window=50, min_trades=30,
