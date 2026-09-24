@@ -22,7 +22,37 @@
 
 The container has 4 cores and 15 GB of RAM, with Python 3.11 and Node 22. `pip install` works.
 
-## 0.1 Environment constraint every lane must know: the web egress is narrow
+## 0.0 RUN 2 AMENDMENT (2026-09-24, lead) — supersedes §0.1 where they conflict
+
+- **Run 1** (from 17:33 UTC) was stopped by the owner after about 7 minutes, because its environment blocked
+  WebFetch. Its lanes were stopped after about 3 minutes. Only C4's partial inventory survived; C4 may start
+  from `PARTIAL_C4.md` and `evidence/C4/`.
+- **Run 2 has Full network.** The lead's tripwire WebFetched arxiv.org/abs/1706.03762 and
+  qoppac.blogspot.com, and both succeeded.
+- **§0.1's snippet rule is therefore retired.** WebFetch primary sources directly, and grade them normally.
+- **Baseline re-run in run 2** (`/tmp/review-acis`, BASE): 808 passed and 6 skipped; the ledger has 187
+  entries and 0 violations; governance `--session` is still RED on the comment-shape check (A12). This is
+  identical to run 1.
+- **The machine is shared:** 4 cores and 15 GB of RAM across all five lanes.
+  - C1 and C3 are the compute lanes; each may use **at most 2 worker processes** at a time.
+  - C2, C4 and C5 run single-process, short jobs only.
+- **Field-brief claims (§1) that rested on search snippets.** Each lane verifies the ones it relies on, at the
+  primary source, as part of its work (not before starting). Upgrade or downgrade the grade, and say so in
+  its report.
+  - S1. Topstep 2025 cohort figures: 16.8% / 33.3% / 0.71% (via quantvps.com). Owner: C1.
+  - S2. ESMA broker disclosures: 74–89% of retail CFD accounts lose money. Owner: C5.
+  - S3. Carver's cost "speed limit" (costs ≤ ~1/3 of expected Sharpe) and trend at 3 weeks to 3 months,
+    from qoppac.blogspot.com. Owner: C4.
+  - S4. Darwinex's 3.25–6.5% monthly VaR band over 45 exposed days (help.darwinex.com). Owner: C4.
+  - S5. Gao–Han–Li–Zhou, JFE 2018: intraday momentum, R² 1.6%. Owner: C3, only if relevant; else unverified.
+  - S6. FTMO's daily loss is on equity and resets at 00:00 CE(S)T from that instant's balance (ftmo.com).
+    Owners: C5, and C1 for its rulebook.
+  - S7. Hall, arXiv 2609.14859: payout rate 34.8% at 1 trade a day vs 3.9% at 20 a day. Owner: C1.
+    Check that the paper exists and says this.
+- **The local pass's finals have all landed** (SCOUT, ECONOMIST, VALIDATOR, ARCHITECT, plus BUILDER's
+  branch). §2 already treats them as finals.
+
+## 0.1 [RUN 1 ONLY — superseded by §0.0] Environment constraint every lane must know: the web egress is narrow
 
 - **WebSearch works.** It returns titles and URLs, plus a summary written by the search tool.
 - **WebFetch is blocked for most primary domains.** Probed and blocked: arxiv.org, ssrn, ftmo.com,
