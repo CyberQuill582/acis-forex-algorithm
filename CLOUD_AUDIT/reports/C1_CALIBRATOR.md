@@ -36,9 +36,10 @@
    - With a fixed-config truth of **0.65**, the WF-selected record realises **0.02** at N = 60 and N = 1000.
    - With a truth of **1.22**, it realises **0.15–0.19**.
    - So `TRAIN_YEARS = 2` (`oos_plan.py:27`) caps every WF-based gate at ≈ 18–30% power at 1.22, whatever deflation is used.
+   - Measured fix: an **expanding** window with one argmax realises 0.52–0.72 and has 48–61% power at one look, at 1–4% FPR.
 4. **The most powerful honest gate measured is Hansen SPA or Romano–Wolf StepM over a registered union, on the full 12-year history. [sim]**
    - Power is **77–98% at 1.22** and **31–42% at 0.65**.
-   - FPR is ≤ 7% (Holm variant ≤ 4.7%).
+   - FPR is ≤ 7% (Holm variant ≤ 5.0%).
    - It is only as honest as the register it is given.
 5. **Detectability frontier. [derived, sim-checked]** 80% power at FWER 5% needs **9.3 / 15 / 20 years** at a realised Sharpe of 1.0, for K = 1 / 5 / 20, and **28 / 45 / 60 years** at 0.5.
    - The 2012–2023 history affords **about one honest engine look at a Sharpe near 1** (≤ 2–3 registered).
@@ -359,6 +360,17 @@ Selection diagnostics (mean over replications): N1_wf_oos_annual_sr 0.49; N1_asb
 
    The same world selected on the full 12 years puts a champion in the holdout at 0.84–1.15 (for 1.22). Every WF-based gate, repaired or not, therefore stays at ≈18–30% power at 1.22 and 6–12% at 0.65 for N ≥ 60, whatever deflation it uses.
    - *This is a statement about the ratified plan shape (2-year rolling train), not about walk-forward in general.* An expanding window or pooled parameters would realise more. VALIDATOR measured the expanding window at 66% → 74% power at 0.94.
+   - **Follow-up measurement: what costs the power, the window or the staging?** (`sim_out_*-wfx.json`, R = 300, N ∈ {60, 1000}, K ∈ {1, 20}; each variant graded by PSR with Bonferroni over K.)
+
+     | WF selection variant | realised OOS Sharpe, truth 1.22 | power K = 1 / K = 20, truth 1.22 | realised, truth 0.65 | power K = 1, truth 0.65 | FPR iid (K = 1 / 20) |
+     |---|---|---|---|---|---|
+     | as-built emulation: 2-y rolling, per-universe champions, staged by the 20% holdout | 0.18–0.19 | 16–18% / 24–37% | 0.03–0.04 | 7% | 4.3–5.3% / 3.3–4.3% |
+     | 2-y rolling, one argmax of the train Sharpe | 0.31–0.32 | 28–31% / 38–54% | 0.03–0.07 | 7–8% | 3.3–4.3% / 3.3–3.7% |
+     | **expanding window** (dev start → train end), one argmax | **0.52–0.72** | **48–61% / 71–82%** | 0.16–0.19 | 14–19% | 2.7–4.0% / 1.0–1.3% |
+
+   - **Both** the 2-year window and the per-universe/holdout-staging design cost power.
+   - Switching to an expanding window with a single selection roughly triples the realised edge and the power, at an unchanged honest FPR.
+   - This is a one-parameter change to a ratified plan **[spec — owner ratification]**. VALIDATOR measured the same direction (66% → 74% at 0.94) for the expanding window alone.
 4. **The full-history multiple-testing gates (SPA, StepM, Holm) over a registered union are the only honest gates with useful power at 1.22.**
    - Power at N ≥ 60 is 77–97% (union, K = 20: 85–98%).
    - At 0.65 it is 31–42% for SPA/StepM (Holm 19–34%).
@@ -604,10 +616,10 @@ All commands run from `CLOUD_AUDIT/reports/evidence/C1/`, with `OMP_NUM_THREADS=
    - Severity: critical. Likelihood: high. Proposed status: open. **[impl]** for the register; **[spec — owner ratification]** for the counting rule.
    - Keep-best-of-20 passes noise 44–53% (WF), 27–51% (holdout re-looks) and 12–42% (SPA per revision).
    - Value: FPR returns to ~5%. Cost: ~40 lines, one concept; `provenance.attempts` is a partial start.
-3. **`TRAIN_YEARS = 2` rolling selection realises ≈0–15% of a real edge; evaluate an expanding or full-history selection.**
+3. **`TRAIN_YEARS = 2` rolling selection realises ≈0–15% of a real edge; switch to an expanding-window, single-selection walk-forward.**
    - Severity: high. Likelihood: high. Proposed status: open. **[spec — owner ratification]** (`oos_plan.py` is the ratified plan).
-   - Measured: 0.02 realised at a truth of 0.65, and 0.15–0.19 at 1.22.
-   - Value: 3–5× more realised edge per look. Cost: none in lines (a parameter), but it changes a ratified plan.
+   - Measured: 0.02 realised at a truth of 0.65, and 0.15–0.19 at 1.22. With an expanding window and one argmax: 0.52–0.72 realised, 48–61% power at one look, FPR 1–4%.
+   - Value: about 3× more realised edge and power per look. Cost: none in lines (a parameter), but it changes a ratified plan.
 4. **Adopt stage A = SPA/StepM over the registered config union on the research simulator's config × day P&L matrix.**
    - Severity: high. Likelihood: n/a. Proposed status: proposed. **[spec — owner ratification]**
    - Power 77–98% at 1.22 and 31–42% at 0.65, with FPR ≤ 7% (CI up to 10.5%; Holm variant ≤ 4.7%).
