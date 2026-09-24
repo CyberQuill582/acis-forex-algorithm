@@ -1,0 +1,17 @@
+Part 1 (hand case, attempt 4 ):
+   episode 1 alone, last trade marked to its own close: -0.29 pips
+   stitched, the same trade carried across a -150 pip jump: -3.95 pips  <- booked AT THE STOP; a fill at the first bar's open would be about -150.3 pips
+
+Part 2 (regime blocks 30-400 bars; null random walk, 60000 one-minute bars, 50 target-regime episodes, 14091 target bars, 100 ParamSets with >=20 trades each way):
+   mean net pips/trade  stitched (as QIEA scores) = -1.448
+   mean net pips/trade  episode-by-episode        = -1.666
+   stitch bias = +0.219 pips/trade (95% CI +/- 0.070); ParamSets where stitched > episodic: 72/100
+   PURE gap-cap bias (same stitched bars, same trades, stop filled at the gapped open instead): +0.588 pips/trade (max +2.546)
+   share of ParamSets with positive stitched E: 0/100; episodic: 0/100
+
+Part 2 (regime blocks 10-120 bars; null random walk, 60000 one-minute bars, 168 target-regime episodes, 14155 target bars, 100 ParamSets with >=20 trades each way):
+   mean net pips/trade  stitched (as QIEA scores) = -1.222
+   mean net pips/trade  episode-by-episode        = -1.601
+   stitch bias = +0.379 pips/trade (95% CI +/- 0.137); ParamSets where stitched > episodic: 66/100
+   PURE gap-cap bias (same stitched bars, same trades, stop filled at the gapped open instead): +0.898 pips/trade (max +3.437)
+   share of ParamSets with positive stitched E: 0/100; episodic: 0/100

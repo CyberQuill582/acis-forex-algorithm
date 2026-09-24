@@ -1,0 +1,19 @@
+EUR_USD max_plausible_spread = 0.0005 | C8 slippage/side = 2e-05
+
+[A weekend gap through the stop]
+  ticks supplied=4  ticks that reached the engine=4
+  harness booked net PnL = -74.00 USD over 1 trade(s)  win_rate=0.00
+  broker sell-stop (fills at the bid) = -524.00 USD
+  harness flatters this trade by +450.00 USD
+
+[B rollover spike: the tick is dropped, the stop never fires]
+  ticks supplied=4  ticks that reached the engine=3
+  harness booked net PnL = +281.00 USD over 1 trade(s)  win_rate=1.00
+  broker sell-stop (fills at the bid) = -164.00 USD
+  harness flatters this trade by +445.00 USD
+
+[C mid-triggered stop: bid through the stop, mid not]
+  ticks supplied=4  ticks that reached the engine=4
+  harness booked net PnL = +281.00 USD over 1 trade(s)  win_rate=1.00
+  broker sell-stop (fills at the bid) = -84.00 USD
+  harness flatters this trade by +365.00 USD

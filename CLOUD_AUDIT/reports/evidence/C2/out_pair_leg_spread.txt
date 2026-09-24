@@ -1,0 +1,2 @@
+USD_JPY leg booked on a EUR_USD tick: entry_spread stored = 0.00010 (EUR_USD's), USD_JPY's own spread = 0.012
+entry friction charged = 0.00205 JPY/unit ($1.37 on 100k); due = 0.00800 JPY/unit ($5.33); under-charged by $3.97 per leg entry

@@ -1,0 +1,4 @@
+refuse_lookahead on the leaky record: NO RAISE (last bar 2020-02-02T17:09:00+00:00 < train end 2020-02-02T17:39:00+00:00)
+leaky  labels: 60 ParamSets with >=10 trades; median E_R -0.077; share with E_R > 0: 21/60
+honest labels: 60 ParamSets with >=10 trades; median E_R -0.144; share with E_R > 0: 2/60
+Same driftless prices, same timestamps, same fitness code: only the labels differ.

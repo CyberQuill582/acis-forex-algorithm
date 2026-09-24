@@ -1,0 +1,3 @@
+1. var_breach_frequency=0.20 (20x the 1% level) + 'NO overnight financing' caveat -> passed=True
+2. DSR on 300 independent trade returns = 0.838; the same decisions booked twice = 0.919; four times = 0.976  (the Sharpe itself is unchanged)
+3. a flat 1-lot EUR_USD long, marked: unrealised = +0.00 USD; what closing it at that same mid actually books = -14.00 USD (entry + exit friction). The mark omits all of it, entry friction included.
