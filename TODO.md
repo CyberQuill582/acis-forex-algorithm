@@ -157,7 +157,11 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 
   Its 15 proposed ledger items are triaged once the other reports are in.
 - [x] 2026-09-24 **BUILDER** (worktree branch) — the oracle positive control ([[GAP-P12D-37]]), the zero-duration artifacts ([[GAP-P12D-38]]), TSMOM attribution, and the §5.6 plateau law ([[GAP-P12D-34]]). Report: BUILDER_REPORT_2026-09-24.md on its branch. Status: BUILT — PENDING AUDIT; merge only after review and the owner's go. **IN** (branch `worktree-agent-a128ab904780ce593`, 8 commits, NOT merged):
-  - **The oracle** passes every non-DSR §14 clause on planted and fails on null. The ratified DSR gate refuses it (0.000).
+  - **The oracle** passes every non-DSR §14 clause on planted and fails on null. ~~The ratified DSR gate refuses it (0.000)~~ That was corrected 2026-09-25 as not a faithful DSR comparison (E4, [[GAP-P12D-72]]).
+  - **The DUAL AUDIT is DONE** (2026-09-25; the two lenses only):
+    - the fixes are sent back to the BUILDER: [[GAP-P12D-72]], and gate-loosening F3 as [[GAP-P12D-73]], reproduced by the lead;
+    - a pre-existing TSMOM finding is filed as [[GAP-P12D-71]];
+    - the merge waits for the fixes, the lead's check of them, and the owner's go.
   - **[[GAP-P12D-38]] is REFUTED**, and the lead verified it: there were no zero-duration trades, only an empty population printed as 0.0. That exposed [[GAP-P12D-63]]: MOMENTUM_SCALP can never fire on synthetic markets.
   - **TSMOM** holds 53 h through 1–4 h episodes, blocks other modules' opposite signals, and is not faithful to Moskowitz–Ooi–Pedersen.
   - **The plateau law** is built.

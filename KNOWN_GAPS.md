@@ -144,6 +144,63 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-73: the plateau law shrinks the Deflated-Sharpe trial set — a champion refused after the holdout gate drops out of the trials, which loosens a ratified gate
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — found by AUDIT-INTERNAL, F3, in the constitutional dual audit of the BUILDER branch. The lead REPRODUCED it with the auditor's `trial_set.py` on 24 identical evolution runs: base 7695ed0 gives 24 champions and 23 trial Sharpes; branch head 9b9ec80 gives 18 champions and 18 trial Sharpes. The fix is sent back to the BUILDER on its branch)
+- Area: the BUILDER branch — core/optimizer/qiea.py (the order of the plateau and holdout gates), tests/backtest/evolve_step.py (trial assembly), tests/backtest/report.py (the owner-ratified DSR gate, C-BT-11)
+- Description:
+  - **How it happens.** The plateau check runs AFTER the holdout gate. A champion that clears the holdout and is then refused for plateau reasons is silently removed from the trial set that the DSR deflates by.
+  - **Why it matters.** Fewer, more alike trials mean a lower SR0 and an easier gate: the same inversion class as [[GAP-P12D-33]]. A spec-mandated anti-overfitting law must never loosen the multiple-testing correction.
+- Justification: open and blocking for the merge.
+  - **Required fix:** a refused champion is still a trial (it was evaluated and selected), so it stays counted.
+  - **Regression test:** base and head count the same trials.
+  - **Proof it can fail (A16):** the test must be falsified.
+- Linked: [[GAP-P12D-34]], [[GAP-P12D-33]], [[GAP-P12D-72]]
+
+## GAP-P12D-72: the dual audit of the BUILDER branch — findings and triage
+- Severity: medium · Likelihood: high
+- Status: open (2026-09-25 — the constitution's two lenses, and only those two, per the owner directive. Reports: archive/AUDIT_BUILDER_BRANCH_INTERNAL_2026-09-24.md (3 Medium, 6 Low) and archive/AUDIT_BUILDER_BRANCH_EXTERNAL_2026-09-24.md (4 Medium, 5 Low/Low–Medium). Every finding is reproduced by a script or quoted. The lead re-ran F3 itself. The fixes are sent back to the BUILDER on its branch)
+- Area: the BUILDER branch `worktree-agent-a128ab904780ce593`, as for [[GAP-P12D-37]] / [[GAP-P12D-34]] / [[GAP-P12D-38]] / [[GAP-P12D-33]]
+- Description: triage, one line each. The gate-affecting F3 has its own entry, [[GAP-P12D-73]].
+  - **FIX on the branch:**
+    - F1/E1: the oracle control is saturated. It passes at 1/15 of the drift and with 35% of signs wrong, and no test catches a 4-hour duration mutant. Add graded-strength rungs, and a fast full-scale test.
+    - F2: stage 1 always voids on weekend-flat accounts. The oracle must obey the account's rules.
+    - E3/F4: `--kinds` without planted still reports a verdict. It must refuse.
+    - E2: a planted failure caused only by the gate must be reported as GATE-LIMITED, not blamed on the engine.
+    - E4: "oracle DSR 0.000" is not a faithful Deflated Sharpe, because the oracle is not one of the trials. Remove it and report the SR0 hurdle instead. The lead also corrects its own notes, below.
+    - E6: a plateau step of ±10% of value is inconsistent across genes; `rsi_overbought` moves 44.5% of its range. **DELEGATED DECISION: the step becomes ±10% of the gene's declared range.**
+    - F5: log each neighbour's direction after repair.
+    - F9: the registry must include the plateau neighbours.
+    - F6/E7: no bare NaN in any JSON output; write null, per RFC 8259.
+    - E9: size the oracle so its notional is a fraction of NAV.
+  - **AT MERGE (lead):**
+    - F7: apply the ACIS-03 v1.5 amendment;
+    - F8: relocate the root report and its PARTIAL references.
+  - **ACCEPTED as a design note:** E8. The registry cannot feed PBO, which needs synchronous per-period P&L; that belongs in the research simulator's design ([[GAP-P12D-68]] item 6).
+  - **SEPARATE:** E5, a pre-existing TSMOM finding outside the diff: [[GAP-P12D-71]].
+  - **Honest negatives, reproduced by both lenses:**
+    - the synthetic tapes are byte-identical before and after;
+    - the oracle has no foresight;
+    - `non_dsr_failures` mirrors `passed` exactly;
+    - the plateau check is deterministic and costs ~3–4%;
+    - `repair_invariants` was moved verbatim;
+    - the registry is logging only;
+    - the suite gives 828 passed, 6 skipped;
+    - the BUILDER's oracle figures reproduce exactly;
+    - its account of MOP's method matches the paper.
+- Justification: open until the BUILDER's fixes land and the lead verifies them. Then the branch merges with the owner's go, after the merge-time items.
+- Linked: [[GAP-P12D-73]], [[GAP-P12D-37]], [[GAP-P12D-34]], [[GAP-P12D-38]], [[GAP-P12D-33]], [[GAP-P12D-71]]
+
+## GAP-P12D-71: TSMOM's declared "raw returns, not excess returns" deviation rests on a false premise — for FX it drops carry, and the vote flips on 2–10% of days
+- Severity: medium · Likelihood: high
+- Status: open (2026-09-25 — found by AUDIT-EXTERNAL, E5, while auditing the BUILDER branch; it is pre-existing and outside the diff. The lead VERIFIED the declaration exists at core/signals/canonical.py: "signs RAW price returns, not excess-over-risk-free returns as in MOP 2012 (immaterial at 3-12m FX horizons) — GAP-0073". The auditor's measurement is not re-run by the lead)
+- Area: core/signals/canonical.py (TSMOM's `declared_deviations`), core/signals/agon.py `_tsmom`, the closed [[GAP-0073]]
+- Description: the deviation is declared, so the BUILDER's "undeclared" claim was wrong. But the declaration's justification is wrong about the world. For currencies, Moskowitz–Ooi–Pedersen build returns from "spot and forward interest rates" (Appendix A.3), which includes carry. On the repo's own dated overnight-rates data, the 3/6/12-month vote computed on excess returns differs in direction from the raw-return vote on 2.1–10.4% of days in 2013–2025, and on 42% of days for USD/CHF in 2019. So "immaterial" is false.
+- Justification: open.
+  - **Where it gets fixed:** in the TSMOM rebuild ([[GAP-P12D-68]] item 2: a faithful slow sleeve), which should use excess, carry-inclusive returns.
+  - **Until then:** correct the declaration's wording, because a false justification is dishonest provenance under §5.6.
+- Linked: [[GAP-P12D-49]], [[GAP-P12D-68]], [[GAP-0073]], [[GAP-P12D-53]]
+
 ## GAP-P12D-70: fills the venue makes on its own — a server-side stop firing, a broker close — have no path into ACIS; the position view goes stale until a restart calls it drift and halts
 - Severity: high · Likelihood: high
 - Status: open (2026-09-25 — raised as OQ-03a by the SPEC-AUTHOR drafting ACIS-13. The lead VERIFIED it by absence: no unsolicited, venue-initiated or stop-trigger handling exists in specs/ACIS-06, specs/ACIS-07, core/execution or core/risk/monitor.py, and `reconcile_on_restart` is called only by tests)
@@ -713,7 +770,10 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **Its grade on planted** (EUR_USD, the ladder's 25-fold plan, 2.53 graded years):
     - all seven §14 rows pass: Sharpe 10.2, drawdown 0.94%, PF 555, 100% positive months, average hold 7.1 h;
     - on null the same logic fails five rows.
-  - **The ratified DSR gate refuses even perfect knowledge.** Deflated by the engine's own planted trial sets, the oracle scores **DSR 0.000** (ladder 1x: 106 trials, SR0 5.654; the 2026-09-15 run: 121 trials, SR0 2.430), against its per-trade Sharpe of 1.273. That is the strongest evidence yet for [[GAP-P12D-33]]. The gate itself was not touched.
+  - ~~The ratified DSR gate refuses even perfect knowledge (oracle DSR 0.000)~~ **CORRECTED 2026-09-25 (AUDIT-EXTERNAL E4, [[GAP-P12D-72]]).** That was not a faithful Deflated Sharpe: the oracle is not in the trial set, and the trial Sharpes come from roughly 5-trade holdouts (sd 2.216, max 19.4). Against a like-for-like hurdle the oracle's DSR is 1.0. The valid facts are these:
+    - the gate as fed demands a per-trade SR0 of 5.654 or 2.430, a hurdle no real record meets, because it mixes sample lengths ([[GAP-P12D-33]]);
+    - the VALIDATOR's calibration shows it passes 0 of 1,200 planted edges.
+    The gate itself was not touched.
   - **Lead review:** diff read; the lead re-ran the full suite on the branch (828 passed, 6 skipped). Close this entry when the branch merges, after audit and the owner's go.
 - Linked: [[GAP-P12D-33]], [[GAP-P12D-31]], [[GAP-P12D-35]], [[GAP-P12D-36]], [[GAP-P12D-28]], [[GAP-P12D-16]]
 
@@ -772,7 +832,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Secondary: the recorded trial count understates the true search by ~600x — `population_size 20 x generations 30` = 600 configurations are evaluated and maximised over per QIEA run, and only champions are recorded (gated-out runs record nothing at all, adding survivorship truncation). The multiple-testing exposure that actually threatens the final grade — the OUTER design loop, every pipeline/gene-range/fitness revision re-evaluated against the same history — is counted nowhere.
 - Justification: open and RAISED, not fixed. The gate is owner-ratified (GAP-P12D-16), and a live §14 pass would currently rest on it. It is guardrail-adjacent in spirit: it is the gate that decides whether a result may be believed. Two candidate remedies, both needing owner ratification because they change a ratified gate: (a) make the trial basis commensurate (trials and graded record measured over comparable samples, e.g. `holdout_min_trades >= 30`, and a floor under the trial variance) and re-ratify the 0.95 threshold against it; (b) replace the DSR as primary gate with PBO via CSCV, which reuses evaluations already performed and tests the question actually posed by a search. Until then, treat any DSR-based pass as unproven and do not present one as evidence.
 - **2026-09-24, two developments from the BUILDER agent in [[GAP-P12D-52]]. Both are BUILT, PENDING AUDIT, on branch `worktree-agent-a128ab904780ce593`, not merged:**
-  1. **The gate refuses perfect knowledge.** Deflated by the engine's own planted trial sets, the oracle positive control scores DSR 0.000: the ratified gate refuses a strategy KNOWN to be good ([[GAP-P12D-37]]).
+  1. ~~The gate refuses perfect knowledge (oracle DSR 0.000)~~ **CORRECTED 2026-09-25** by AUDIT-EXTERNAL E4 ([[GAP-P12D-72]]). The oracle is not one of the trials, so that comparison was not a DSR. The valid evidence that the gate is broken is the mixing of sample lengths, where 5-trade holdout Sharpes set the hurdle for a thousands-of-trades record, and the VALIDATOR's measured 0-of-1,200 pass rate on planted edges.
   2. **Every QIEA evaluation is now logged** (genes, fitness, holdout; gated-out runs included; ~45 KB per evolve call). That makes the true trial count, and PBO/CSCV, computable. It is logging only: no gate reads it.
 
   The gate decision is still the owner's.
