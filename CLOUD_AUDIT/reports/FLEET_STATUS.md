@@ -1,0 +1,1 @@
+acis | CLOSED | claude/acis-cloud-review-2026-09-24 | 860a0bd45a47af5c72b3615cf8cb6fcb215062e4 | ~$70-115 est. (run 1 $3-6; run 2 lead + 5 lanes ~$55-90; finishing lead + 1 helper ~$12-20; unobservable in-session) | C1 C2 C3 C4 C5 (5)
