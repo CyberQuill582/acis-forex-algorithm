@@ -2,18 +2,54 @@
 risk-restrictive state a restart must restore before the first evaluate
 (GAP-0050 — a restart is never a relaxation).
 
-`halt_event.cleared_by` is 'human:<token>' for equity/global scope — a machine
-can never populate it (enforced at the MCP layer, ACIS-08 phase 10). Snapshot
-writes are idempotent on the timestamp PK.
+The restrictive state is the armed alpha-decay throttle, the last delivered taper
+and every drawdown anchor (GAP-P12D-55), each drawdown rule under the key
+`anchor:<rule_key>` in the existing `restrictive_state` table (no DDL change). All
+of it is written in ONE transaction, so a crash never leaves a taper from one
+evaluate beside anchors from another. `restore_on_boot` reads it back.
+
+Every halt, session halt and flatten that crosses the upward edge is a `halt_event`
+row (core/risk/halt_ledger.py, ACIS-07 §7); its kind rides in the opaque `halt_id`
+as `<kind>|…` (the §10 DDL has no column for it). An uncleared row is re-applied at
+boot — except a session halt whose own boundary has passed, which is closed as
+`auto:session_boundary` instead (master §8: it lapses there). Otherwise only the human
+resume clears rows, and `cleared_by` is `human:<random resume id>` — no bit of it is
+derived from the token (audits X9/F10). Snapshot writes are idempotent on the ts PK.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
+from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
+from core.data.errors import DataQualityError
+from core.data.sqlite_wal import open_store
 from core.risk.risk_types import RiskSnapshot
+
+_ANCHOR = "anchor:"
+
+
+class HaltRow(NamedTuple):
+    kind: str            # "halt" | "session" | "flatten"
+    scope: str
+    reason: str
+    at: datetime
+    halt_id: str
+
+
+def restore_on_boot(store: "RiskStore", monitor, now: datetime) -> None:
+    """Boot at `now`, before the first evaluate: put back everything the dead process
+    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55), and
+    every halt no human has cleared that is still in force (ACIS-07 §7, GAP-0050)."""
+    state = store.load_restrictive_state()
+    monitor.restore_restrictive_state(alpha_armed=bool(state.get("alpha_armed", False)),
+                                      taper_factor=state.get("taper_factor"),
+                                      anchors=store.load_anchors(), halts=store.open_halts(),
+                                      now=now)
 
 
 class RiskStore:
@@ -38,7 +74,7 @@ class RiskStore:
     """
 
     def __init__(self, db_path: str | Path) -> None:
-        self._conn = sqlite3.connect(str(db_path))
+        self._conn = open_store(db_path)     # WAL + synchronous=FULL: power-loss durable (X4)
         self._conn.executescript(self._DDL)
         self._conn.commit()
 
@@ -60,22 +96,63 @@ class RiskStore:
             "VALUES (?,?,?,?)", (halt_id, ts, scope, reason))
         self._conn.commit()
 
-    def clear_halt(self, halt_id: str, cleared_at: str, cleared_by: str) -> None:
-        self._conn.execute(
-            "UPDATE halt_event SET cleared_at=?, cleared_by=? WHERE halt_id=?",
-            (cleared_at, cleared_by, halt_id))
+    def open_halts(self) -> list[HaltRow]:
+        """Every uncleared halt, oldest first."""
+        rows = self._conn.execute(
+            "SELECT halt_id, ts, scope, reason FROM halt_event WHERE cleared_at IS NULL "
+            "ORDER BY ts, halt_id").fetchall()
+        return [HaltRow(hid.split("|", 1)[0] if "|" in hid else "halt", scope, reason,
+                        datetime.fromisoformat(ts), hid) for hid, ts, scope, reason in rows]
+
+    def expire_halts(self, halt_ids: list[str], at: datetime) -> None:
+        """Close session-halt rows whose own boundary has passed (they lapsed there)."""
+        self._conn.executemany("UPDATE halt_event SET cleared_at=?, cleared_by=? "
+                               "WHERE halt_id=? AND cleared_at IS NULL",
+                               [(at.isoformat(), "auto:session_boundary", h) for h in halt_ids])
         self._conn.commit()
 
-    def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float) -> None:
-        for k, v in (("alpha_armed", json.dumps(alpha_armed)),
-                     ("taper_factor", json.dumps(taper_factor))):
-            self._conn.execute(
-                "INSERT OR REPLACE INTO restrictive_state (k, v) VALUES (?,?)", (k, v))
+    def clear_halts(self, cleared_at: datetime, human_token: str) -> str:
+        """A HUMAN resume clears every open halt, as the Governor's resume clears every
+        scope. A blank token is refused: no machine path can unhalt a restart. Returns the
+        resume id the rows are signed with — random, never derived from the token."""
+        if not isinstance(human_token, str) or not human_token.strip():
+            raise DataQualityError("human_token", human_token, "only a human resume clears")
+        resume_id = uuid.uuid4().hex[:12]
+        self._conn.execute("UPDATE halt_event SET cleared_at=?, cleared_by=? WHERE "
+                           "cleared_at IS NULL", (cleared_at.isoformat(), f"human:{resume_id}"))
+        self._conn.commit()
+        return resume_id
+
+    def persist_evaluate(self, snap: RiskSnapshot, *, alpha_armed: bool, taper_factor: float,
+                         anchors: dict[str, dict], log) -> None:
+        """Bookkeeping AFTER the guard has acted (audit F0/X2): a failure is raised as a
+        RISK_STORE_WRITE_FAILED alarm, never into the guard's path, and the next evaluate
+        writes the whole state again."""
+        try:
+            self.write_snapshot(snap)
+            self.save_restrictive_state(alpha_armed=alpha_armed, taper_factor=taper_factor,
+                                        anchors=anchors)
+        except (sqlite3.Error, OSError) as exc:
+            log.event("RISK_STORE_WRITE_FAILED", error=str(exc))
+
+    def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float,
+                               anchors: dict[str, dict] | None = None) -> None:
+        rows = [("alpha_armed", json.dumps(alpha_armed)),
+                ("taper_factor", json.dumps(taper_factor))]
+        rows += [(_ANCHOR + k, json.dumps(v)) for k, v in (anchors or {}).items()]
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO restrictive_state (k, v) VALUES (?,?)", rows)
         self._conn.commit()
 
     def load_restrictive_state(self) -> dict:
-        rows = self._conn.execute("SELECT k, v FROM restrictive_state").fetchall()
+        rows = self._conn.execute("SELECT k, v FROM restrictive_state WHERE k NOT LIKE ?",
+                                  (_ANCHOR + "%",)).fetchall()
         return {k: json.loads(v) for k, v in rows}
+
+    def load_anchors(self) -> dict[str, dict]:
+        rows = self._conn.execute("SELECT k, v FROM restrictive_state WHERE k LIKE ?",
+                                  (_ANCHOR + "%",)).fetchall()
+        return {k[len(_ANCHOR):]: json.loads(v) for k, v in rows}
 
     def snapshot_count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM risk_snapshot").fetchone()[0]

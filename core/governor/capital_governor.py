@@ -1,9 +1,10 @@
 """Capital Governor — sovereign allocation (ACIS-05, master §6).
 
-The only layer that sees total portfolio state. Signal -> SizedOrder through
-independent factors, then hard limits that clamp only downward. The Risk
-Monitor's upward edge lands here and is risk-restrictive only: halt, cut,
-taper — never a size increase (GAP-0014). Guardrail limits are read-only.
+The only layer that sees total portfolio state: Signal -> SizedOrder through independent
+factors, then hard limits that clamp only downward. The Risk Monitor's upward edge lands
+here and is risk-restrictive only (halt, cut, taper — never a size increase, GAP-0014);
+guardrail limits are read-only. `resume` is the ONE human-resume path: the injected
+`resume_gate` (the risk ledger's clear) runs first, or no halt lifts (audit F8).
 """
 
 from __future__ import annotations
@@ -12,14 +13,16 @@ import json
 import math
 import uuid
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from types import MappingProxyType
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Sequence
 
 from config.schemas import AccountRulebook, GovernorConfig, GuardrailLimits, ZonedTime
 from core.data.errors import DataQualityError
-from core.governor.calendar_gates import next_boundary, within_weekend_buffer
+from core.governor.calendar_gates import (next_boundary, weekend_flatten_orders,
+                                          within_closure_buffer)
+from core.governor.exposure import delta_contributions, exposure_breach
 from core.governor.factors import correlation_factor, liquidity_factor, vol_norm
 from core.governor.units import usd_per_base_unit
 from core.governor.marginal_alpha import MarginalAlphaEstimator
@@ -46,10 +49,12 @@ class CapitalGovernor:
         session_boundaries: list[ZonedTime],
         week_close: ZonedTime,
         week_open: ZonedTime,
+        holidays: Sequence[date],        # declared whole-day FX closures (audit X5)
         scalp_horizon_s: int,
         atr_period: int,
         blackout: Callable[[str, datetime], bool],
         logger,
+        resume_gate: Callable[[str], None],   # clears the halt ledger; raises to refuse
     ) -> None:
         self._cfg = cfg
         self._limits = guardrails
@@ -59,16 +64,12 @@ class CapitalGovernor:
         self._vol_targets = vol_targets
         self._confidence_veto = confidence_veto
         self._boundaries = session_boundaries
-        self._week_close = week_close
-        self._week_open = week_open
+        self._closure = (week_close, week_open, tuple(holidays))   # every >= 2 h closure
         self._scalp_horizon_s = scalp_horizon_s
         self._atr = AtrMemo(atr_period)   # GAP-P12D-15: recomputed only when a window changes
-        self._blackout = blackout
-        self._log = logger
+        self._blackout, self._log, self._resume_gate = blackout, logger, resume_gate
         self.marginal_alpha = MarginalAlphaEstimator(
-            cfg.marginal_alpha_window, cfg.marginal_alpha_min_trades,
-            cfg.marginal_alpha_min_bucket,
-        )
+            cfg.marginal_alpha_window, cfg.marginal_alpha_min_trades, cfg.marginal_alpha_min_bucket)
         self._bars: dict[str, deque[Bar]] = {}
         self._halts: dict[str, str] = {}          # scope ("all" | instrument) -> reason
         self._session_halt_until: datetime | None = None
@@ -82,8 +83,7 @@ class CapitalGovernor:
         self.orders_zeroed = 0
 
     def take_rate(self) -> dict:
-        return {"orders_placed": self.orders_placed,
-                "orders_zeroed": self.orders_zeroed,
+        return {"orders_placed": self.orders_placed, "orders_zeroed": self.orders_zeroed,
                 "skips": dict(self.skips)}
 
     # -- market context (vol-norm input; GAP-0059: BARS, the v2.11 time base) ---- #
@@ -134,6 +134,7 @@ class CapitalGovernor:
     def resume(self, human_token: str) -> None:
         if not isinstance(human_token, str) or not human_token.strip():
             raise ResumeForbiddenError("resume requires a human token (master §12)")
+        self._resume_gate(human_token)       # the ledger clears first, or nothing lifts (F8)
         self._halts.clear()
         self._session_halt_until = None
         self._log.event("HALT_RESUMED", by="human_token")
@@ -176,11 +177,11 @@ class CapitalGovernor:
                               if a.instrument in members or b.instrument in members}
             net_deltas: dict[str, Decimal] = {}
             for sig, notional in ((a, notional_a), (b, notional_b)):
-                for ccy, contrib in self._delta_contributions(sig, notional).items():
+                for ccy, contrib in delta_contributions(sig, notional).items():
                     net_deltas[ccy] = net_deltas.get(ccy, Decimal("0")) + contrib
-            breach = self._exposure_breach(
-                portfolio, {c: group_notional for c in union_clusters},
-                net_deltas, f"group:{a.group_id}")
+            breach = exposure_breach(
+                self._limits, portfolio, {c: group_notional for c in union_clusters},
+                net_deltas, f"group:{a.group_id}", self._log)
             if breach is not None:
                 reason = f"group_blocked:{breach}"
                 self._log.event("GROUP_BLOCKED", group_id=a.group_id,
@@ -218,6 +219,25 @@ class CapitalGovernor:
                 ))
             self._log.event("GROUP_EXIT", group_id=group_id, reason=reason)
         return tuple(closes)
+
+    def weekend_flatten(self, portfolio: PortfolioState,
+                        now: datetime) -> tuple[SizedOrder, ...]:
+        """§9.5: a no-weekend-holding account is flattened from the pre-close entry ban
+        on, by reduce-only closes naming each open position (both legs of a pair); called
+        every tick, so a close that fails is re-emitted. A position still open once the
+        market has closed is surfaced (WEEKEND_FLATTEN_INCOMPLETE), never ignored."""
+        if self._rules.weekend_holding_allowed:
+            return ()
+        closes = weekend_flatten_orders(portfolio, now, *self._closure,
+                                        self._cfg.weekend_entry_buffer_s)
+        for close in closes:
+            self._open_groups.pop(close.group_id, None)
+            self._log_order(close)
+        if closes:
+            closed = within_closure_buffer(now, *self._closure, 0)
+            self._log.event("WEEKEND_FLATTEN_INCOMPLETE" if closed else "WEEKEND_FLATTEN",
+                            instruments=sorted({c.instrument for c in closes}))
+        return closes
 
     def open_groups(self) -> tuple[str, ...]:
         return tuple(self._open_groups)
@@ -304,9 +324,9 @@ class CapitalGovernor:
             # runs them on the AGGREGATE (cluster counted once, deltas netted) —
             # per-leg checks here would understate the group's true exposure.
             notional = size_units * per_unit          # USD notional
-            breach = self._exposure_breach(
-                portfolio, {c: notional for c in clusters},
-                self._delta_contributions(signal, notional), signal.instrument)
+            breach = exposure_breach(
+                self._limits, portfolio, {c: notional for c in clusters},
+                delta_contributions(signal, notional), signal.instrument, self._log)
             if breach is not None:
                 return self._zero(signal, breach, snapshot, now)
 
@@ -350,9 +370,8 @@ class CapitalGovernor:
                             instrument=signal.instrument,
                             account=self._rules.platform)
             return "blackout"
-        if (not self._rules.weekend_holding_allowed
-                and within_weekend_buffer(now, self._week_close, self._week_open,
-                                          self._cfg.weekend_entry_buffer_s)):
+        if within_closure_buffer(now, *self._closure,             # EVERY account and every
+                                 self._cfg.weekend_entry_buffer_s):  # closure (P12D-58, X5)
             return "weekend_ban"
         if (self._cfg.scalp_min_hold_conflict
                 and signal.strategy_type is StrategyType.MOMENTUM_SCALP
@@ -375,37 +394,6 @@ class CapitalGovernor:
             snapshot["vol_norm_pinned"] = True
             return 1.0
         return vol_norm(a / seq[-1].close, self._vol_targets[instrument])
-
-    def _delta_contributions(self, signal: Signal,
-                             notional: Decimal) -> dict[str, Decimal]:
-        base, _, quote = signal.instrument.partition("_")
-        d = Decimal(signal.direction)
-        return {base: d * notional, quote: -d * notional}
-
-    def _exposure_breach(self, portfolio: PortfolioState,
-                         cluster_notional: dict[str, Decimal],
-                         delta_contributions: dict[str, Decimal],
-                         instrument: str) -> str | None:
-        """Cluster + net-currency-delta hard caps over the given contributions.
-        GAP-0051: an order that REDUCES an existing |delta| breach is never
-        blocked by that breach — the layer may only ever reduce risk."""
-        cap = Decimal(str(self._limits.cluster_cap_pct / 100.0)) * portfolio.nav
-        for cluster, notional in cluster_notional.items():
-            exposure = portfolio.per_cluster_exposure.get(cluster, Decimal("0"))
-            if exposure + notional > cap:
-                self._log.event("CLUSTER_CAP_ZERO", instrument=instrument,
-                                cluster=cluster)
-                return "cluster_cap"
-        delta_cap = (Decimal(str(self._limits.single_currency_delta_cap_pct / 100.0))
-                     * portfolio.nav)
-        for ccy, contribution in delta_contributions.items():
-            old = portfolio.per_currency_delta.get(ccy, Decimal("0"))
-            new = old + contribution
-            if abs(new) > delta_cap and abs(new) > abs(old):
-                self._log.event("CURRENCY_DELTA_ZERO", instrument=instrument,
-                                currency=ccy)
-                return "currency_delta_cap"
-        return None
 
     def _zero(self, signal: Signal, reason: str, snapshot: dict,
               now: datetime) -> SizedOrder:

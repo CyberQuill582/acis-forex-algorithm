@@ -168,7 +168,7 @@ def test_halt_sink_has_no_resume_or_size_raising_surface() -> None:
 def test_store_persists_snapshot_and_restrictive_state(tmp_path) -> None:
     cfg, sink = load_cfg(), RecordingSink()
     store = RiskStore(tmp_path / "risk.db")
-    mon, _, _, _ = build_monitor(cfg, sink, store=store)
+    mon, _, _, _ = build_monitor(cfg, sink, store=store, boot=T0)
     mon.evaluate(acct(10000.0), T0)
     assert store.snapshot_count() == 1
     store.save_restrictive_state(alpha_armed=True, taper_factor=0.5)

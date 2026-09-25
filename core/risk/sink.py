@@ -35,3 +35,7 @@ class HaltSink(ABC):
     @abstractmethod
     def flatten(self, scope: str, reason: str) -> None:
         """Close positions on a scope ("all" | instrument) and halt it."""
+
+    def flush(self) -> None:
+        """Record any halt the edge could not persist yet (audit F0/X2). A no-op for an
+        edge without a ledger; never a way to lift, shorten or skip a halt."""

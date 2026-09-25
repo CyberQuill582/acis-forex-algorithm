@@ -79,7 +79,8 @@ def test_symbol_suffix_incomplete_map_rejected_at_attach() -> None:
     import asyncio
 
     from core.data.errors import DataQualityError
-    from core.execution.venue import MockExecutionFace, verify_attach
+    from core.execution.attach import verify_attach
+    from core.execution.venue import MockExecutionFace
     from tests.optimizer_fixtures import CapturingLogger
 
     face = MockExecutionFace()

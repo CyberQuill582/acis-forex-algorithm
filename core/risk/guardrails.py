@@ -1,126 +1,35 @@
 """Guardrail checks + the stop authority (ACIS-07 §6/§7).
 
 The equity breaker, platform-measured drawdown series (§9.5, each rule under
-its OWN semantics), the ratified pre-limit taper (min across limits), Tier-G
-flatten (GAP-0011), racing-HALT coalescing (C-RSK-4), and human-only-resume
-scope. Limits are read-only (guard-integrity law); nothing here writes config.
+its OWN semantics — core/risk/drawdown_series.py), the ratified pre-limit taper
+(min across limits), Tier-G flatten (GAP-0011), racing-HALT coalescing (C-RSK-4),
+and human-only-resume scope. Limits are read-only (guard-integrity law); nothing
+here writes config. A restart restores the series' anchors and the last taper
+before the first check (`restore_state`, GAP-P12D-55): a restart is never a
+relaxation (GAP-0050).
 
 The upward edge is the injected `HaltSink` — issuance is idempotent and
 serialized so two conditions firing "simultaneously" resolve to one halt state,
 most-severe scope winning (global flatten > session halt > instrument halt).
+The session-halt latch lives exactly as long as the Governor's session halt: it
+lapses at the next session boundary (master §8), so the next day's breach halts
+again (audit F2/X1) — in one process and across a restart, where a session row
+whose boundary has passed is closed as expired instead of re-latched (F1).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Mapping, Sequence
 
-from config.schemas import DrawdownRule, GuardrailLimits, RiskConfig
-from core.data.fx_clock import trading_day
+from config.schemas import GuardrailLimits, RiskConfig, ZonedTime
+from core.data.fx_clock import next_local
+from core.risk.drawdown_series import (DrawdownSeries, _RuleAnchor,  # noqa: F401 (re-export)
+                                       build_drawdown_series, taper_factor)
 from core.risk.risk_types import PlatformDrawdownState
 from core.risk.sink import HaltSink
-
-
-def taper_factor(distance: float, start: float, halt: float) -> float:
-    """§9.5 piecewise taper on d = measured/limit: 1.0 at/below `start`, linear
-    to 0.0 at `halt`, 0.0 beyond. Hand-vectors (start .60, halt .80):
-    d=.60→1.0, d=.70→0.5, d=.80→0.0."""
-    if distance <= start:
-        return 1.0
-    if distance >= halt:
-        return 0.0
-    return (halt - distance) / (halt - start)
-
-
-@dataclass
-class _RuleAnchor:
-    """Running anchor for one drawdown rule under its declared semantics
-    (GAP-P9E-01 corrected).
-
-    - **trailing** (the prop account-killer, §9.5): the high-water mark trails
-      the peak basis since INCEPTION and NEVER resets on a calendar boundary —
-      it only ever ratchets up. Resetting it daily (the original defect) forgot
-      the multi-day peak and let a real breach read as 0%.
-    - **static, non-daily**: a fixed reference at the first observed basis
-      (account-start / overall max-drawdown reference), never reset.
-    - **daily loss limit** (`resets_daily`, the engine's per-session limit,
-      master §8): anchored at the day-open basis, reset each UTC day, measured
-      from that open — it is a per-day limit by definition.
-
-    v1 samples the basis on EVERY observation (intraday) for all rules — the
-    risk-conservative choice: it can HALT earlier than a platform that measures
-    only end-of-day, never later, so it never MISSES a platform-enforced breach
-    (stricter-of law, §9.5). True eod-only sampling (looser, platform-faithful)
-    is a phase-11 adapter refinement — recorded as GAP-P9E-02. Halts are cheap
-    (CLAUDE.md), so erring strict is safe."""
-
-    anchor: float | None = None
-    day: object | None = None
-
-    def update(self, rule: DrawdownRule, basis: float, now: datetime, *,
-               resets_daily: bool) -> float:
-        # GAP-P9I-03: the daily loss limit's day starts at the FX rollover, NOT
-        # calendar midnight (a drawdown straddling 00:00 UTC must not be forgotten);
-        # the rollover is the real 17:00 New York instant (GAP-P12D-10, owner-approved).
-        today = trading_day(now)
-        if resets_daily:
-            if self.day != today or self.anchor is None:
-                self.day = today
-                self.anchor = basis                   # day-open (per-day loss limit)
-        else:
-            if self.anchor is None:
-                self.anchor = basis                   # inception reference
-            if rule.type == "trailing":
-                self.anchor = max(self.anchor, basis)  # high-water since inception
-            # static non-daily: the inception anchor is fixed
-        if self.anchor <= 0:
-            return 0.0
-        return max(0.0, (self.anchor - basis) / self.anchor * 100.0)
-
-
-@dataclass
-class DrawdownSeries:
-    """Account-level drawdown rules measured from broker account state, each
-    under its own semantics (§9.5). Never merged numerically with one another —
-    each keeps its own key and taper."""
-
-    limits: GuardrailLimits
-    rules: tuple[tuple[str, str, DrawdownRule, bool], ...]  # (key, origin, rule, resets_daily)
-    _anchors: dict[str, _RuleAnchor] = field(default_factory=dict)
-
-    def measure(self, *, equity: float, balance: float, now: datetime,
-                start: float, halt: float) -> list[PlatformDrawdownState]:
-        out: list[PlatformDrawdownState] = []
-        for key, _origin, rule, resets_daily in self.rules:
-            basis = equity if rule.basis == "equity" else balance
-            anchor = self._anchors.setdefault(key, _RuleAnchor())
-            measured = anchor.update(rule, basis, now, resets_daily=resets_daily)
-            distance = measured / rule.limit_pct if rule.limit_pct > 0 else 0.0
-            out.append(PlatformDrawdownState(
-                rule_key=key, measured_pct=measured, limit_pct=rule.limit_pct,
-                distance_fraction=distance,
-                taper_factor=taper_factor(distance, start, halt)))
-        return out
-
-
-def build_drawdown_series(limits: GuardrailLimits,
-                          platform_rules: list[DrawdownRule],
-                          account_name: str) -> DrawdownSeries:
-    """The engine daily loss limit (resets at the FX trading-day rollover,
-    master §8) + every platform rule under its own semantics (trailing
-    ratchets, static is a fixed inception reference — neither resets daily).
-    Per-instrument drawdown is handled separately (it needs per-instrument
-    PnL, not account state)."""
-    rules: list[tuple[str, str, DrawdownRule, bool]] = [
-        ("engine:daily", "engine",
-         DrawdownRule(type="static", anchor="intraday", basis="equity",
-                      limit_pct=limits.daily_drawdown_pct), True),
-    ]
-    for r in platform_rules:
-        key = f"{account_name}:{r.type}:{r.anchor}:{r.basis}"
-        rules.append((key, "platform", r, False))     # platform rules never reset daily
-    return DrawdownSeries(limits=limits, rules=tuple(rules))
 
 
 @dataclass
@@ -148,7 +57,8 @@ class GuardrailOutcome:
 class Guardrails:
     def __init__(self, limits: GuardrailLimits, cfg: RiskConfig,
                  series: DrawdownSeries, sink: HaltSink, logger, *,
-                 taper_start: float, entry_halt: float) -> None:
+                 taper_start: float, entry_halt: float,
+                 session_boundaries: Sequence[ZonedTime]) -> None:
         self._limits = limits
         self._cfg = cfg
         self._series = series
@@ -156,12 +66,17 @@ class Guardrails:
         self._log = logger
         self._start = taper_start
         self._halt = entry_halt
+        self._boundaries = tuple(session_boundaries)   # the Governor's, master §8 / C1
         self._halted_scopes: set[str] = set()  # {"all","session",<instrument>}
         self._flattened_scopes: set[str] = set()
         self._instruments_halted: set[str] = set()
         self._session_halted = False
+        self._session_until: datetime | None = None    # when the session halt lapses
         self._equity_flattened = False
         self._last_taper: float | None = None
+
+    def _next_boundary(self, at: datetime) -> datetime:
+        return min(next_local(at, b.zone, b.at) for b in self._boundaries)
 
     # -- re-arm on human resume (GAP-P9I-06) --------------------------------- #
 
@@ -175,8 +90,55 @@ class Guardrails:
         self._flattened_scopes.clear()
         self._instruments_halted.clear()
         self._session_halted = False
+        self._session_until = None
         self._equity_flattened = False
         self._log.event("GUARDRAILS_REARMED")
+
+    # -- restart: restore before the first check (GAP-P12D-55 / GAP-0050) --- #
+
+    @property
+    def series(self) -> DrawdownSeries:
+        return self._series
+
+    def restore_state(self, *, anchors: Mapping[str, Mapping], taper_factor: float | None,
+                      halts: Sequence = (), now: datetime | None = None) -> list:
+        """Put the persisted drawdown anchors back, RE-APPLY every uncleared halt still
+        in force through the same edge with the same scope and reason (ACIS-07 §7), and
+        RE-PUSH the last taper to the (fresh) Governor, before the first check. A session
+        halt whose own boundary is at or before `now` has lapsed (master §8): it is not
+        re-applied or latched, and is RETURNED so the caller closes its row as expired."""
+        restored = self._series.restore(anchors)
+        self._log.event("ANCHORS_RESTORED", rule_keys=list(restored),
+                        ignored=sorted(set(anchors) - set(restored)))
+        if halts and now is None:
+            raise ValueError("restoring halts needs the boot instant (session expiry)")
+        expired = [h for h in halts if h[0] == "session" and self._next_boundary(h[3]) <= now]
+        halts = [h for h in halts if h not in expired]
+        for kind, scope, reason, at, *_ in halts:   # latches set: the first check coalesces
+            if kind == "session":
+                self._sink.apply_session_halt(at, reason)     # lifts at ITS boundary
+                self._session_halted = True
+                self._session_until = self._next_boundary(at)
+            elif kind == "flatten":
+                self._sink.flatten(scope, reason)
+                self._flattened_scopes.add(scope)
+            else:
+                self._sink.apply_halt(scope, reason)
+                self._halted_scopes.add(scope)
+            if scope not in ("all", "session"):
+                self._instruments_halted.add(scope)
+            self._equity_flattened |= reason == "equity_floor"
+        if halts:
+            self._log.event("HALTS_RESTORED", halts=[[k, s, r, a.isoformat()]
+                                                     for k, s, r, a, *_ in halts])
+        if expired:
+            self._log.event("SESSION_HALTS_EXPIRED", halts=[[r, a.isoformat()]
+                                                            for _, _, r, a, *_ in expired])
+        if taper_factor is not None:
+            self._sink.apply_risk_state(taper_factor=taper_factor)
+            self._last_taper = taper_factor
+            self._log.event("TAPER_RESTORED", factor=taper_factor)
+        return expired
 
     # -- racing-HALT coalescing (C-RSK-4) ------------------------------------ #
     # Idempotent + serialized: a scope already covered by an equal-or-more-severe
@@ -191,47 +153,55 @@ class Guardrails:
             return True
         return scope in self._halted_scopes
 
+    # Audit F0/X2: every latch is set only AFTER the edge call returned, so an edge that
+    # failed is re-issued on the next check instead of being latched as done.
+
     def _issue_halt(self, scope: str, reason: str) -> None:
         if self._covered(scope):
             return
-        self._halted_scopes.add(scope)
         self._sink.apply_halt(scope, reason)
+        self._halted_scopes.add(scope)
         if scope not in ("all", "session"):
             self._instruments_halted.add(scope)
 
     def _issue_session_halt(self, now: datetime, reason: str) -> None:
+        if self._session_until is not None and now >= self._session_until:
+            self._session_halted = False            # the Governor's halt lapsed here (§8)
+            self._session_until = None
         if "all" in self._flattened_scopes or "all" in self._halted_scopes \
                 or self._session_halted:
             return
-        self._session_halted = True
         self._sink.apply_session_halt(now, reason)
+        self._session_halted = True
+        self._session_until = self._next_boundary(now)
 
     def _issue_flatten(self, scope: str, reason: str) -> None:
         if scope in self._flattened_scopes or "all" in self._flattened_scopes:
             return
-        self._flattened_scopes.add(scope)
         self._sink.flatten(scope, reason)
+        self._flattened_scopes.add(scope)
         if scope != "all":
             self._instruments_halted.add(scope)
 
     # -- the evaluation ------------------------------------------------------ #
 
     def check(self, ctx: GuardrailContext) -> GuardrailOutcome:
+        self._sink.flush()         # re-record any halt the ledger could not write (audit F0)
         equity_breached = ctx.equity < Decimal(str(self._limits.equity_floor_usd))
 
         # 1. Equity breaker — highest, unthrottleable, human-only resume. Spec
         #    §7: flatten THEN global HALT (both are distinct wiring actions —
         #    flatten closes via execution, HALT blocks new entries). One-shot
-        #    (idempotent via `_equity_flattened`); both mark the scope covered so
-        #    every later halt/flatten coalesces under them.
+        #    (idempotent via `_equity_flattened`, set once BOTH edge calls returned);
+        #    both mark the scope covered so every later halt/flatten coalesces under them.
         if equity_breached and not self._equity_flattened:
-            self._equity_flattened = True
             self._log.event("EQUITY_FLOOR_BREACH", equity=str(ctx.equity),
                             floor=self._limits.equity_floor_usd)
             self._sink.flatten("all", "equity_floor")
             self._sink.apply_halt("all", "equity_floor")
             self._flattened_scopes.add("all")
             self._halted_scopes.add("all")
+            self._equity_flattened = True
 
         # 2. Platform + engine drawdown series, each under its own semantics.
         states = self._series.measure(

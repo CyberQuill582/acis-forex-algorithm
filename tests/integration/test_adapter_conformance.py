@@ -188,3 +188,199 @@ def test_gap0013_feed_face_still_exposes_no_account_surface() -> None:
         for member in dir(cls):
             if not member.startswith("_"):
                 assert not forbidden.search(member)
+
+
+# ── GAP-P12D-57: the venue's quantity and request limits, held by the execution path ──
+# Composed over each adapter through the REAL orchestrator: whatever a face declares
+# as its minimum lot, lot step and request cap, the engine never sends a quantity the
+# venue cannot take, never rounds one UP, never exceeds the budget on an open — and a
+# close always goes through.
+
+def _orchestrator(face, tmp_path, *, requests_per_day=1000, now=T0, store=None):
+    from random import Random
+
+    from config.schemas import ExecutionConfig
+    from core.execution.orchestrator import ExecutionOrchestrator
+    from core.execution.venue import FillReportStore
+    from core.execution.venue_quality import VenueQuality
+    from tests.optimizer_fixtures import CapturingLogger
+
+    async def instant(_s: float) -> None:
+        return None
+
+    log = CapturingLogger()
+    cfg = ExecutionConfig(
+        fragment_threshold_lots=1.0, fragment_size_jitter=(0.85, 1.15),
+        fragment_time_jitter_s=(0.5, 3.0), min_fragment_lots=0.10, vwap_threshold_lots=5.0,
+        vwap_window_s=300, fast_decay_seconds=30, signature_lot_variance=0.15,
+        dispatch_budget_ms=100, max_venue_requests_per_day=requests_per_day)
+    orch = ExecutionOrchestrator(
+        cfg, {face.name: face}, VenueQuality(), store or FillReportStore(tmp_path / "f.db"),
+        slippage_alert_bps=8.0, rng=Random(7), logger=log, session_id="conf",
+        now_fn=lambda: now, sleep_fn=instant)
+    return orch, log
+
+
+def _order(units, action="open", direction=1, order_id="o-lim"):
+    from types import MappingProxyType
+
+    from core.governor.portfolio_types import SizedOrder
+    return SizedOrder(
+        order_id=order_id, signal_id="s", instrument="EUR_USD", direction=direction,
+        size_units=Decimal(str(units)), entry_price=1.10, stop_loss=1.09, take_profit=None,
+        reason="formula", factors_snapshot=MappingProxyType({}), sized_at=T0,
+        param_set_id="ps", action=action)
+
+
+def _lot_units(lots: float) -> Decimal:
+    return Decimal(str(lots)) * Decimal("100000")
+
+
+async def test_sub_minimum_order_is_refused_and_never_reaches_the_venue(adapter, tmp_path) -> None:
+    face = adapter()
+    below = _lot_units(face.descriptor.min_lot) - _lot_units(face.descriptor.lot_step) / 2
+    orch, log = _orchestrator(face, tmp_path)
+    reports = await orch.submit(_order(below), valid_for_seconds=300)
+    assert [r.status for r in reports] == [FillStatus.REJECTED]   # a report, not a drop
+    assert reports[0].remaining_units == below
+    assert await face.open_positions() == ()                      # the venue never saw it
+    assert log.events("EXEC_MIN_LOT_REFUSED")
+
+
+async def test_quantity_is_rounded_down_to_the_lot_step_never_up(adapter, tmp_path) -> None:
+    face = adapter()
+    step, minimum = _lot_units(face.descriptor.lot_step), _lot_units(face.descriptor.min_lot)
+    sized = minimum * 2 + step * Decimal("0.345")                 # not a whole number of steps
+    orch, log = _orchestrator(face, tmp_path)
+    reports = await orch.submit(_order(sized), valid_for_seconds=300)
+    filled = sum((r.filled_units for r in reports), Decimal("0"))
+    unsent = sum((r.remaining_units for r in reports if r.status is FillStatus.REJECTED),
+                 Decimal("0"))
+    assert filled == minimum * 2                                  # DOWN to the step
+    assert filled % step == 0 and filled <= sized                 # never a part-step, never up
+    assert filled + unsent == sized                               # the remainder is reported
+    (pos,) = await face.open_positions()
+    assert pos.size_units == filled
+    assert log.events("EXEC_LOT_STEP_ROUNDED")
+
+
+async def test_spent_request_budget_refuses_opens_but_never_a_close(adapter, tmp_path) -> None:
+    face = adapter()
+    lot = _lot_units(face.descriptor.min_lot)
+    orch, log = _orchestrator(face, tmp_path, requests_per_day=2)
+    for i in range(2):
+        (r,) = await orch.submit(_order(lot, order_id=f"o{i}"), valid_for_seconds=300)
+        assert r.status is FillStatus.FILLED
+    refused = await orch.submit(_order(lot, order_id="o-over"), valid_for_seconds=300)
+    assert [r.status for r in refused] == [FillStatus.REJECTED]
+    (pos,) = await face.open_positions()
+    assert pos.size_units == lot * 2                              # the refused open never got there
+    assert log.events("EXEC_REQUEST_BUDGET_REFUSED")
+    # de-risking is never throttled: the close (naming the long) goes through, logged
+    closed = await orch.submit(_order(lot * 2, action="close", direction=1,
+                                      order_id="o-close"), valid_for_seconds=300)
+    assert [r.status for r in closed] == [FillStatus.FILLED]
+    assert await face.open_positions() == ()
+    assert log.events("EXEC_REQUEST_BUDGET_DERISK")
+
+
+# Reduce-only closes (builder F1): a close NAMES its position — its direction is the
+# position's side — and the engine trades the opposite side. It may shrink |position| at
+# the venue, never open, add to, or flip one, and the freeze and a spent budget admit only it.
+
+async def test_a_close_into_a_flat_venue_is_refused(adapter, tmp_path) -> None:
+    face = adapter()
+    orch, log = _orchestrator(face, tmp_path)
+    reports = await orch.submit(_order(_lot_units(face.descriptor.min_lot), action="close"),
+                                valid_for_seconds=300)
+    assert [r.status for r in reports] == [FillStatus.REJECTED]
+    assert await face.open_positions() == ()                      # nothing opened
+    assert log.events("EXEC_CLOSE_REFUSED")
+
+
+async def test_a_close_naming_the_other_side_is_refused_not_added(adapter, tmp_path) -> None:
+    face = adapter()
+    lot = _lot_units(face.descriptor.min_lot)
+    orch, log = _orchestrator(face, tmp_path, requests_per_day=1)
+    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)   # budget now spent
+    wrong = await orch.submit(_order(lot, action="close", direction=-1, order_id="c-short"),
+                              valid_for_seconds=300)
+    assert [r.status for r in wrong] == [FillStatus.REJECTED]     # the venue holds no short
+    (pos,) = await face.open_positions()
+    assert (pos.direction, pos.size_units) == (1, lot)            # neither doubled nor flipped
+    assert not log.events("EXEC_REQUEST_BUDGET_DERISK")           # never reached the venue
+
+
+async def test_a_close_larger_than_the_position_is_capped_never_flips(adapter, tmp_path) -> None:
+    face = adapter()
+    lot = _lot_units(face.descriptor.min_lot)
+    orch, log = _orchestrator(face, tmp_path)
+    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)
+    reports = await orch.submit(_order(lot * 3, action="close", order_id="c-big"),
+                                valid_for_seconds=300)
+    filled = sum((r.filled_units for r in reports), Decimal("0"))
+    unsent = sum((r.remaining_units for r in reports if r.status is FillStatus.REJECTED),
+                 Decimal("0"))
+    assert filled == lot and unsent == lot * 2                    # capped at the holding
+    assert all(r.direction == -1 for r in reports)                # traded the opposite side
+    assert await face.open_positions() == ()                      # flat, not short
+    assert log.events("EXEC_CLOSE_CAPPED")
+
+
+async def test_request_budget_survives_a_restart(adapter, tmp_path) -> None:
+    from datetime import timedelta
+
+    from core.execution.venue import FillReportStore
+    face = adapter()
+    lot = _lot_units(face.descriptor.min_lot)
+    store = FillReportStore(tmp_path / "fills.db")
+    orch, _ = _orchestrator(face, tmp_path, requests_per_day=2, store=store)
+    for i in range(2):
+        await orch.submit(_order(lot, order_id=f"o{i}"), valid_for_seconds=300)
+    # a fresh process on the same fill log, an hour later: the budget is still spent
+    orch2, log2 = _orchestrator(face, tmp_path, requests_per_day=2, store=store,
+                                now=T0 + timedelta(hours=1))
+    refused = await orch2.submit(_order(lot, order_id="o-after"), valid_for_seconds=300)
+    assert [r.status for r in refused] == [FillStatus.REJECTED]
+    assert log2.events("EXEC_REQUEST_BUDGET_REFUSED")
+    # 25 hours on, the rolling 24-hour window has passed: opens flow again
+    orch3, _ = _orchestrator(face, tmp_path, requests_per_day=2, store=store,
+                             now=T0 + timedelta(hours=25))
+    (r,) = await orch3.submit(_order(lot, order_id="o-next-day"), valid_for_seconds=300)
+    assert r.status is FillStatus.FILLED
+
+
+# ── close_position: the venue's own atomic reduce (audits X3/F4, ACIS-06 §7.5) ──
+# Every adapter maps it to its venue's close (cTrader ProtoOAClosePositionReq by
+# position id; OANDA positionFill=REDUCE_ONLY; FIX PositionEffect=C). Whatever the venue,
+# it may only take a position DOWN: never open one, add to one, or flip one.
+
+async def _close(face, units, direction=1, fragment_id="cl"):
+    return await face.close_position(
+        fragment_id=fragment_id, order_id="ord-cl", instrument="EUR_USD",
+        direction=direction, units=Decimal(str(units)), requested_price=1.10, now=T0,
+        session_id="conf")
+
+
+async def test_close_position_on_a_flat_venue_opens_nothing(adapter) -> None:
+    face = adapter()
+    report = await _close(face, 1000)
+    assert report.status is FillStatus.REJECTED
+    assert await face.open_positions() == ()
+
+
+async def test_close_position_naming_the_other_side_opens_nothing(adapter) -> None:
+    face = adapter()
+    await _submit(face)                                           # long 1,000
+    report = await _close(face, 1000, direction=-1)               # "close the short"
+    assert report.status is FillStatus.REJECTED
+    (pos,) = await face.open_positions()
+    assert (pos.direction, pos.size_units) == (1, Decimal("1000"))
+
+
+async def test_close_position_larger_than_the_holding_never_flips(adapter) -> None:
+    face = adapter()
+    await _submit(face)                                           # long 1,000
+    report = await _close(face, 3000)
+    assert report.filled_units == Decimal("1000") and report.direction == -1
+    assert await face.open_positions() == ()                      # flat, not short 2,000

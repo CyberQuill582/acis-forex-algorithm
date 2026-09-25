@@ -184,9 +184,11 @@ def test_heartbeat_writer_atomic_and_readable(tmp_path) -> None:
     from core.risk.alpha_decay import AlphaDecayDetector
     log = CapturingLogger()
     rb = cfg.platform_rules.accounts["dev_paper"]
-    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "dev_paper")
+    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "dev_paper",
+                                   initial_capital=rb.initial_capital)
     g = Guardrails(cfg.guardrails, risk_cfg, series, _NullSink(), log,
-                   taper_start=0.60, entry_halt=0.80)
+                   taper_start=0.60, entry_halt=0.80,
+                   session_boundaries=cfg.system.session_boundaries)
     alpha = AlphaDecayDetector(recent_window=50, min_trades=30,
                                baseline_min_trades=50, sharpe_mult=0.5,
                                recovery_trades=20, recovery_mult=0.8)

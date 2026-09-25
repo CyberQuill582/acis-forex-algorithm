@@ -104,6 +104,20 @@ def test_trading_day_starts_at_the_real_rollover() -> None:
     assert trading_day(datetime(2026, 1, 13, 22, 0, tzinfo=UTC)) == date(2026, 1, 13)
 
 
+def test_central_european_midnight_follows_eu_summer_time() -> None:
+    # FTMO's day starts at 00:00 CE(S)T (GAP-P12D-54): 23:00 UTC in winter, 22:00 in summer
+    assert local_to_utc(date(2026, 1, 15), "00:00", "Europe/Prague") == \
+        datetime(2026, 1, 14, 23, tzinfo=UTC)
+    assert local_to_utc(date(2026, 7, 15), "00:00", "Europe/Prague") == \
+        datetime(2026, 7, 14, 22, tzinfo=UTC)
+    # the local-date rule is an hour off at 00:00 on the two switch Sundays — both the
+    # resolved and the true instant sit inside the FX weekend, so no anchor can move
+    for switch, true_utc in ((date(2026, 3, 29), datetime(2026, 3, 28, 23, tzinfo=UTC)),
+                             (date(2026, 10, 25), datetime(2026, 10, 24, 22, tzinfo=UTC))):
+        assert in_weekend(local_to_utc(switch, "00:00", "Europe/Prague"))
+        assert in_weekend(true_utc)
+
+
 def test_config_zones_are_exactly_the_modelled_zones() -> None:
     # config/calendars.py's Zone literal must never name a zone fx_clock cannot resolve
     from typing import get_args

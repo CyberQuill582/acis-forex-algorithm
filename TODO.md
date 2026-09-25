@@ -1,6 +1,6 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **STATUS (2026-09-17): SPEC COMPLETE (master v2.19). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the VPS deployment gate is ✅, the untrained-baseline freeze is ENFORCED (tag `baseline-untrained-v1`), the full Dukascopy tick set is downloaded and validated, and the evolve-driver + walk-forward runner exist. 814 green; ledger 185 entries, 0 violations. The cost-stress ladder has RUN: the cost question is settled and was never the problem — read GAP-P12D-49 first.**
+> **STATUS (2026-09-17): SPEC COMPLETE (master v2.20). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the VPS deployment gate is ✅, the untrained-baseline freeze is ENFORCED (tag `baseline-untrained-v1`), the full Dukascopy tick set is downloaded and validated, and the evolve-driver + walk-forward runner exist. 814 green; ledger 185 entries, 0 violations. The cost-stress ladder has RUN: the cost question is settled and was never the problem — read GAP-P12D-49 first.**
 > `ACIS_SPEC.md` v2.12 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
@@ -93,6 +93,9 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - **BUILDER finished its audit fixes (2026-09-25, head `5d108de`).** The lead verified the F3 trial count on it: 23, the same as base. It found [[GAP-P12D-85]]: fold ends book weekend-holding violations. Next: ASK the owner for the merge go.
   - [x] 2026-09-25 **MERGE 1 DONE** (`9b2d9b6`, the BUILDER branch, on the owner's explicit go; the combined tree gave 853 passed, and the governance gate is green). **GAP-P12D-84 FIXED straight after:** gapped stops now fill at the gap price. It was falsified, and the full suite gives 856 passed. **BUILDER-2's owner-approved job was SENT 2026-09-25:** merge main at `1e5c2ba`, then fix every [[GAP-P12D-83]] finding. That is the only launch. Then ASK the owner for merge 2.
   - ~~**FIRST change after the merges:** fix [[GAP-P12D-84]]~~ (done 2026-09-25, above) (the graded book fills gapped stops at the stop, pre-existing on main). It is deferred only because the BUILDER branch edits the same file.
+  - [x] 2026-09-25 **MERGE 2 DONE: the BUILDER-3 branch**, on the owner's explicit go. The lead re-ran the auditors' repros for all blockers on the fixed head; the branch suite gave 898 passed, 6 skipped. The specs were amended in the same merge: master v2.20, ACIS-05 v1.5, ACIS-06 v1.3, ACIS-07 v1.2. GAP-P12D-55/74/75/77/78/79/80/81 are fixed, and -57/-58 mitigated.
+    - **Still OWNER-ONLY:** commit the corrected `ftmo` rulebook (the draft is in archive/BUILDER3_REPORT_2026-09-24.md; [[GAP-P12D-54]]) and set the equity floor for the demo account ([[GAP-P12D-56]]). Every current order rounds to ZERO lots until NAV-relative sizing lands ([[GAP-P12D-61]]).
+    - **ANNUAL:** re-verify and declare next year's FX holidays each December ([[GAP-P12D-58]]).
   - **Watch the behavioural interaction.** BUILDER-3's always-on pre-close ban, weekend flatten and lot rounding act on code that BUILDER's oracle and BUILDER-2's leakage suite exercise. Anything that passes alone but fails combined is a finding, fixed before the next merge.
 
 **BUILDER-3 IS IN (2026-09-25):** branch `worktree-agent-a9e00713d15bb5082`, BUILT, PENDING AUDIT. The lead re-ran the suite on it: **842 passed, 6 skipped**.
@@ -100,12 +103,12 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 - [x] Stage 2: lot-step round-down and a minimum-lot refusal, plus a rolling 24-hour venue request budget of 1,000 that survives a restart, with an exemption for verified reducing closes ([[GAP-P12D-57]]).
 - [x] Stage 3: the 2-hour pre-close entry ban applies on every account ([[GAP-P12D-58]]).
 - [x] Stage 4: a daily-reset rule type anchored on the balance at a local reset instant, plus a declared `initial_capital`. FTMO's own worked examples are reproduced ([[GAP-P12D-54]]/[[GAP-P12D-59]]). The `platform_rules.yaml` drafts for `ftmo` and `e8` are in its report; do NOT commit the `e8` entry until E8's server time zone is verified.
-- [ ] Stage 5, the weekend flatten, is designed but not built; it is blocked by [[GAP-P12D-74]].
+- [x] 2026-09-25 Stage 5, the weekend flatten, is BUILT on the fixed close path and MERGED ([[GAP-P12D-74]] fixed).
 - **New findings, verified by the lead and filed:**
   - [[GAP-P12D-74]]: a Governor "close" ADDS to the position.
   - [[GAP-P12D-75]]: a restart silently clears every explicit HALT. Critical.
   - The governance gate was RED on main from comment shape; that is FIXED by the lead (comment-only, proven code-identical by AST).
-- [ ] **DELEGATED:** BUILDER-3 fixes [[GAP-P12D-75]] (restore halts at boot) and [[GAP-P12D-74]] (reduce-only close semantics) on its branch.
+- [x] 2026-09-25 **DELEGATED:** BUILDER-3 fixes [[GAP-P12D-75]] (restore halts at boot) and [[GAP-P12D-74]] (reduce-only close semantics) on its branch. DONE, audited, fixed and MERGED as merge 2.
 - [x] 2026-09-25: BUILDER-3 finished stages 6 (halts restored at boot, [[GAP-P12D-75]]), 7 (reduce-only closes, [[GAP-P12D-74]]) and 5 (weekend flatten). Head `d8361a7`, 11 commits, 35 files; no guard, spec or ledger file touched. Author's count: 856 passed, 6 skipped.
 - [ ] **The constitution's TWO audits of the BUILDER-3 branch are RUNNING** (launched 2026-09-25; pinned brief `AUDIT_BRIEF_BUILDER3_2026-09-25.md`):
   - AUDIT-INTERNAL `a253f98af675aef1f`: its top priority is finding any input where the branch is LOOSER than main;
@@ -181,7 +184,7 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - [[GAP-P12D-54]] and [[GAP-P12D-60]] rulebook corrections;
   - [[GAP-P12D-59]] daily-limit semantics and a pre-breach flatten;
   - [[GAP-P12D-61]] the Governor's risk unit (with, never ahead of, the edge).
-- [x] 2026-09-24 **D7. Spec wording** ([[GAP-P12D-53]]): correct §5.6's century-study figure. DONE under the owner's delegation, master v2.19. **D3** (the LLM-contamination law) is also now in §5.6 ([[GAP-P12D-66]], mitigated; its enforcement is owed).
+- [x] 2026-09-24 **D7. Spec wording** ([[GAP-P12D-53]]): correct §5.6's century-study figure. DONE under the owner's delegation, master v2.20. **D3** (the LLM-contamination law) is also now in §5.6 ([[GAP-P12D-66]], mitigated; its enforcement is owed).
 - [x] 2026-09-25 **D8. The plateau law's reading of "dies"** ([[GAP-P12D-34]]), and the go-ahead to dual-audit and merge the BUILDER branch. DONE: both audits ran, every finding was fixed, and the branch was MERGED on the owner's explicit go (ACIS-03 v1.5 §6.4). The "dies" reading and the E6 range step stay flagged for the owner's review, owned by the GAP-P12D-34 residual.
 - [ ] **D9. The venue** (from the SCOUT): the OANDA token test, then the FTMO Free Trial as demo venue (a §15 deviation); send the drafted firm emails; the equity floor for the demo account.
 - [x] 2026-09-24 **SCOUT** — prop-venue due diligence: the owner's outstanding PROP-FIRM RESEARCH (a)–(f) below, the filter for compatibility with automation on funded accounts, and the **demo-venue recommendation that feeds Track A step 1**. Report: archive/RESEARCH_PROP_VENUES_2026-09-24.md. **IN.**

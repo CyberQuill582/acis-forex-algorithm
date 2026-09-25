@@ -263,11 +263,13 @@ def build_paper_loop(
         session_boundaries=cfg.system.session_boundaries,
         week_close=fx.week_close,
         week_open=fx.week_open,
+        holidays=fx.holidays,
         scalp_horizon_s=(signals_cfg.momentum_scalp_horizon_bars[1]
                          * signals_cfg.momentum_scalp_bar_seconds),
         atr_period=signals_cfg.atr_period,
         blackout=blackout or (lambda instrument, now: False),
         logger=log,
+        resume_gate=lambda token: None,    # the paper loop keeps no halt ledger
     )
     loop = PaperLoop(factory, engine, lib, agon, governor, writer, store, log,
                      portfolio_fn, regime_cycle_s=regime_cycle_s)

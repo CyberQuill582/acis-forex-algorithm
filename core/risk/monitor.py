@@ -5,34 +5,30 @@ Consumes `FillReport`s (position/trade/PnL accounting, F17 Decimal) and broker
 account truth; computes the `RiskSnapshot`; drives the equity breaker, drawdown
 HALTs, the ratified taper, alpha-decay throttle, and Tier-G flatten through the
 single upward `HaltSink`. Owns the §8.6 heartbeat and restart reconciliation.
-
-Accounting note (recorded as GAP at phase 9): realised PnL is booked in the
-instrument's QUOTE currency and treated as account currency — exact for
-USD-quoted pairs (EUR_USD, XAU_USD); multi-quote FX→USD conversion is the
-phase-11 cost-calibration / adapter concern (master §13). Broker `equity` is
-always authoritative for the breaker and drawdown series (§9.5).
+Quote-currency PnL is converted to USD where the pair has a USD leg (GAP-P9E-04);
+broker `equity` is authoritative for the breaker and drawdown series (§9.5). A store-backed
+monitor refuses to evaluate until `restore_on_boot` ran (ACIS-07 §7, audit F7).
 """
 
 from __future__ import annotations
 
 import json
-import math
 import os
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from statistics import NormalDist, stdev
 
 from config.schemas import RiskConfig, GuardrailLimits
+from core.data.errors import DataQualityError
 from core.execution.venue import BrokerAccount, BrokerPosition, FillReport, FillStatus
 from core.risk.alpha_decay import AlphaDecayDetector
+from core.risk.exposure_metrics import max_cluster_pct, portfolio_var_pct
 from core.risk.guardrails import GuardrailContext, Guardrails
 from core.risk.risk_types import RiskPosition, RiskSnapshot, Trade
 from core.risk.sink import HaltSink
-
-_Z_99 = NormalDist().inv_cdf(0.99)      # ≈ 2.326 — 1% VaR z-score
+from core.risk.usd_conversion import usd_factor
 
 
 @dataclass
@@ -60,6 +56,7 @@ class RiskMonitor:
         self._session_id = session_id
         self._log = logger
         self._store = store
+        self._restored = store is None           # ACIS-07 §7: restore before the first evaluate
         self._positions: dict[str, _Pos] = {}
         self._order_meta: dict[str, dict] = {}   # order_id -> metadata for enrichment
         self._trades: list[Trade] = []
@@ -151,6 +148,8 @@ class RiskMonitor:
     def evaluate(self, account: BrokerAccount, now: datetime, *,
                  marks: dict[str, float] | None = None,
                  tierg_flatten: dict | None = None) -> RiskSnapshot:
+        if not self._restored:                   # audit F7: enforced, not a convention
+            raise DataQualityError("boot", None, "store-backed: run restore_on_boot first")
         now = now.astimezone(timezone.utc)
         marks = marks or {}
         for inst, px in marks.items():
@@ -163,8 +162,11 @@ class RiskMonitor:
         daily_pnl = daily_realised + unrealised
 
         per_inst_dd = self._per_instrument_drawdown(marks, nav)
-        var_pct = self._var_pct(marks, nav)
-        cluster_pct = self._max_cluster_pct(marks, nav)
+        notional = {inst: self._notional(inst, pos, marks) for inst, pos in self._positions.items()}
+        var_pct = portfolio_var_pct(notional, self._marks, float(nav),
+                                    var_horizon_seconds=self._cfg.var_horizon_seconds,
+                                    eval_cadence_s=self._cfg.eval_cadence_s)
+        cluster_pct = max_cluster_pct(notional, self._clusters, float(nav))
         slip = (sum(self._slippage) / len(self._slippage)) if self._slippage else 0.0
 
         outcome = self._guards.check(GuardrailContext(
@@ -204,30 +206,16 @@ class RiskMonitor:
             platform_drawdown=tuple(s for s in outcome.platform_drawdown
                                     if s.rule_key != "engine:daily"),
             taper_factor=outcome.taper_factor, session_id=self._session_id)
-        if self._store is not None:
-            self._store.write_snapshot(snap)
+        if self._store is not None:        # after the guard acted; never gates it (audit F0)
+            self._store.persist_evaluate(                     # (GAP-0050 / GAP-P12D-55)
+                snap, alpha_armed=self._alpha.armed, taper_factor=outcome.taper_factor,
+                anchors=self._guards.series.export(), log=self._log)
         return snap
 
     # -- quote→USD conversion (GAP-P9E-04 / rescoped GAP-0092) ---------------- #
 
-    def _usd_factor(self, instrument: str, price: float) -> float | None:
-        """Convert a QUOTE-currency amount for `instrument` to USD at `price`.
-        XXX_USD (quote is USD) → 1.0; USD_XXX (USD base) → 1/price (the quote
-        YYY→USD rate is 1/(USD_YYY)). A true CROSS pair (neither side USD) has
-        no derivable rate here → None; the caller falls back to quote-ccy and
-        logs CONVERSION_UNAVAILABLE (a phase-11 FX-rate-table job). This covers
-        the entire enabled universe (EUR_USD, USD_JPY) exactly, so the
-        per-instrument DD HALT/taper, VaR, and cluster caps are no longer
-        contaminated by a quote-vs-account currency mismatch."""
-        base, _, quote = instrument.partition("_")
-        if quote == "USD":
-            return 1.0
-        if base == "USD":
-            return (1.0 / price) if price else 1.0
-        return None
-
     def _to_usd(self, instrument: str, amount_quote: Decimal, price: float) -> Decimal:
-        factor = self._usd_factor(instrument, price)
+        factor = usd_factor(instrument, price)
         if factor is None:
             self._log.event("CONVERSION_UNAVAILABLE", instrument=instrument,
                             note="cross pair — quote-ccy used, phase-11 FX table owed")
@@ -268,39 +256,6 @@ class RiskMonitor:
         quote_notional = Decimal(str(abs(float(pos.signed_units)) * mark))
         return float(self._to_usd(inst, quote_notional, mark))
 
-    def _var_pct(self, marks, nav) -> float:
-        """Delta-normal, UNDIVERSIFIED (no correlation credit — conservative
-        sum of per-position VaR), scaled to a DECLARED holding-period horizon
-        (GAP-P9E-03: a VaR without a stated horizon is meaningless — the raw
-        per-mark σ is a ~`eval_cadence_s`-horizon VaR, ~93× smaller than the
-        1-day VaR the 3% cap presumes). σ from the rolling log-return of marks,
-        scaled by √(var_horizon_seconds / eval_cadence_s) to the declared
-        horizon. (The 3% cap's re-confirmation against this horizon is RAISED
-        to the owner — GAP-P9E-03 — as the horizon was previously undeclared;
-        VaR is not yet wired in-loop, GAP-0091b, so nothing live changes.)"""
-        horizon_scale = math.sqrt(self._cfg.var_horizon_seconds
-                                  / self._cfg.eval_cadence_s)
-        total = 0.0
-        for inst, pos in self._positions.items():
-            hist = self._marks.get(inst)
-            if hist is None or len(hist) < 3:
-                continue
-            rets = [math.log(hist[i] / hist[i - 1]) for i in range(1, len(hist))
-                    if hist[i - 1] > 0 and hist[i] > 0]
-            if len(rets) < 2:
-                continue
-            sigma = stdev(rets) * horizon_scale        # sample σ, horizon-scaled
-            total += self._notional(inst, pos, marks) * _Z_99 * sigma
-        return total / float(nav) * 100.0
-
-    def _max_cluster_pct(self, marks, nav) -> float:
-        worst = 0.0
-        for members in self._clusters.values():
-            notional = sum(self._notional(inst, self._positions[inst], marks)
-                           for inst in members if inst in self._positions)
-            worst = max(worst, notional / float(nav) * 100.0)
-        return worst
-
     # -- heartbeat (§8.6 / ACIS-12) ------------------------------------------ #
 
     def write_heartbeat(self, now: datetime, mode: str, fast_loop_seq: int) -> None:
@@ -328,23 +283,33 @@ class RiskMonitor:
                 stop_loss=pos.stop_loss, take_profit=pos.take_profit))
         return tuple(out)
 
-    def restore_restrictive_state(self, *, alpha_armed: bool) -> None:
-        """Persisted risk-restrictive state is restored BEFORE the first
-        evaluate — a restart is never a relaxation (GAP-0050). GAP-P9I-05: the
-        restored throttle must be RE-PUSHED to the (fresh) Governor over the
-        upward edge — restoring the detector's flag alone leaves a rebooted
-        Governor un-throttled."""
+    def restore_restrictive_state(self, *, alpha_armed: bool, taper_factor: float | None = None,
+                                  anchors: dict | None = None, halts: list | None = None,
+                                  now: datetime | None = None) -> None:
+        """Restored BEFORE the first evaluate — a restart is never a relaxation (GAP-0050).
+        GAP-P9I-05: the throttle is RE-PUSHED to the (fresh) Governor over the upward edge;
+        so are the anchors, the taper (GAP-P12D-55) and open halts (ACIS-07 §7). A session
+        halt that lapsed while the engine was down is closed, not re-applied."""
+        expired = self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor,
+                                             halts=halts or (), now=now)
+        if expired and self._store is not None:
+            self._store.expire_halts([h.halt_id for h in expired], now)
+        self._restored = True
         self._alpha.restore_armed(alpha_armed)
         self._alpha_armed_prev = alpha_armed
         if alpha_armed:
             self._sink.apply_risk_state(alpha_decay=True)
             self._log.event("ALPHA_DECAY_RESTORED", armed=True)
 
-    def on_human_resume(self) -> None:
-        """A human resume (via the MCP/Governor layer, phase 10) re-arms the
-        guardrail latches so a later re-breach fires again — the equity breaker
-        is a one-shot per armed cycle, never a process-lifetime suppressor
-        (GAP-P9I-06). Human-only by construction (no agent path calls this)."""
+    def on_human_resume(self, human_token: str, now: datetime) -> None:
+        """A human resume (MCP/Governor, phase 10) re-arms the latches — the equity breaker
+        is one-shot per ARMED CYCLE, never per process (GAP-P9I-06) — and clears the
+        persisted halts so a restart does not re-apply them (ACIS-07 §7). Human-only by
+        construction; a blank token is refused before anything is cleared."""
+        if not isinstance(human_token, str) or not human_token.strip():
+            raise DataQualityError("human_token", human_token, "only a human resumes")
+        if self._store is not None:
+            self._store.clear_halts(now, human_token)
         self._guards.rearm()
 
     def reconcile_on_restart(self, broker_positions: tuple[BrokerPosition, ...],

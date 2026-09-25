@@ -1,7 +1,9 @@
 """Order fragmentation + signature randomisation (ACIS-06 v1.1 §6).
 
-The critical invariant (C-EXE-1): fragments sum EXACTLY to the parent total —
-execution never creates or destroys a unit the Governor sized. Randomness is
+The critical invariant (C-EXE-1): fragments sum EXACTLY to the total planned —
+execution never creates or destroys a unit. Every fragment is a whole multiple of
+the `quantum` (the venue's lot step, GAP-P12D-57): all but the last are rounded
+DOWN to it and the last absorbs the rest, so no fragment is rounded up. Randomness is
 injected (seeded `random.Random` in tests, `SystemRandom` in production);
 time is injected via `now`.
 
@@ -14,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from config.schemas import ExecutionConfig
 from core.data.errors import DataQualityError
@@ -45,18 +47,21 @@ class FragmentPlan:
     fragments: tuple[Fragment, ...]
 
 
-def _split_units(total: Decimal, n: int, lo: float, hi: float, rng) -> list[Decimal]:
-    """n jittered sizes summing EXACTLY to total (renormalised multipliers,
-    cent-quantized, remainder absorbed by the last fragment)."""
+def _split_units(total: Decimal, n: int, lo: float, hi: float, rng,
+                 quantum: Decimal) -> list[Decimal]:
+    """n jittered sizes summing EXACTLY to total (renormalised multipliers, each
+    rounded DOWN to the quantum, remainder absorbed by the last fragment)."""
     weights = [rng.uniform(lo, hi) for _ in range(n)]
     scale = float(total) / sum(weights)
-    sizes = [(Decimal(str(w * scale))).quantize(_CENT) for w in weights[:-1]]
+    sizes = [(Decimal(str(w * scale)) / quantum).to_integral_value(rounding=ROUND_DOWN)
+             * quantum for w in weights[:-1]]
     sizes.append(total - sum(sizes, Decimal("0")))
     return sizes
 
 
 def plan(order_id: str, total_units: Decimal, *, fast_decay: bool,
-         cfg: ExecutionConfig, venues: list[str], now: datetime, rng) -> FragmentPlan:
+         cfg: ExecutionConfig, venues: list[str], now: datetime, rng,
+         quantum: Decimal = _CENT) -> FragmentPlan:
     """Classify and split one SizedOrder (ACIS-06 §7 steps 2–3).
 
     - fast-decay -> one aggressive IOC fragment, no fragmentation (speed > stealth)
@@ -86,12 +91,12 @@ def plan(order_id: str, total_units: Decimal, *, fast_decay: bool,
         path, n, window = "single", 1, 0.0
 
     # dust law: never allow a fragment that could quantize under min_fragment_lots
-    # (worst case is the lo-jittered share of the renormalised split)
-    min_units = Decimal(str(cfg.min_fragment_lots)) * UNITS_PER_LOT
+    # or under one quantum (worst case is the lo-jittered share of the renormalised split)
+    min_units = max(Decimal(str(cfg.min_fragment_lots)) * UNITS_PER_LOT, quantum)
     while n > 1 and (total_units / n) * Decimal(str(lo / ((lo + hi) / 2))) < min_units:
         n -= 1
 
-    sizes = _split_units(total_units, n, lo, hi, rng) if n > 1 else [total_units]
+    sizes = _split_units(total_units, n, lo, hi, rng, quantum) if n > 1 else [total_units]
 
     # venues arrive best-quality-first; fragment 0 routes to the best venue,
     # later fragments rotate through the list (§6 signature randomisation —

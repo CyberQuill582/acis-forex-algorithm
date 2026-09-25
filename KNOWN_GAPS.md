@@ -232,15 +232,17 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-81: lot-step rounding can orphan one leg of a pair group, leaving a naked directional position — on the BUILDER-3 branch, looser than main
 - Severity: high · Likelihood: medium
-- Status: open (2026-09-25 — found by AUDIT-INTERNAL (F11) in the BUILDER-3 branch audit. The lead REPRODUCED it with `r9_pair_leg_rounding.py`: with legs of 1,500 and 900 units, base `bdd3a75` fills both, while head `d8361a7` leaves only EUR_USD +1,000 at the venue, because the 900-unit leg is under the minimum lot and refused)
+- Status: fixed (MERGED 2026-09-25 (BUILDER-3 branch, owner's explicit go; the constitution's two audits GAP-P12D-77, every finding fixed and the blockers re-verified by the lead on the auditors' own repros). `submit_group` sends all legs or none, and a pair leg sent alone is refused; the lead re-ran `r9`: the 1,500/900 pair leaves the venue FLAT)
 - Area: the BUILDER-3 branch (lot rounding in execution); core/governor/capital_governor.py (atomic groups, §5.5 both-or-neither at min-leg); core/execution/orchestrator.py
 - Description: the new per-order lot rounding and minimum-lot refusal act on each leg independently. A pair group whose smaller leg rounds below the minimum loses that leg, and the surviving leg is a directional position the strategy never intended. That breaks master §5.5's atomic-group law (both legs or neither).
 - Justification: open and BLOCKING for the merge. FIX: group atomicity in execution. Rounding and minimum-lot checks run over the WHOLE group before any leg is sent, and if any leg would be refused or rounded to zero, the whole group is refused. Proof: a regression test mirroring the reproduction, falsified.
+- Proof: `test_a_leg_below_the_minimum_refuses_the_whole_group`, `test_a_pair_leg_sent_alone_is_refused`, `test_a_group_the_venue_can_take_opens_both_legs`, `test_a_group_is_refused_when_the_budget_cannot_send_both_legs`.
+- Residual: none — group atomicity is enforced in execution and pinned.
 - Linked: [[GAP-P12D-57]], [[GAP-P12D-77]], [[GAP-0049]]
 
 ## GAP-P12D-80: PRE-EXISTING ON MAIN — the engine's daily-loss session halt fires at most once per process; the Guardrails latch is reset only by a human resume
 - Severity: critical · Likelihood: high
-- Status: open (2026-09-25 — found by AUDIT-INTERNAL (F2) in the BUILDER-3 branch audit. The lead REPRODUCED it on BOTH base `bdd3a75` (i.e. main) and the branch with `r2b_inprocess_latch.py`: within one process, the day-1 breach halts (`drawdown_halt`), but a 2.1% breach on day 3 does not (`formula`))
+- Status: fixed (MERGED 2026-09-25 (BUILDER-3 branch, owner's explicit go; the constitution's two audits GAP-P12D-77, every finding fixed and the blockers re-verified by the lead on the auditors' own repros). The session latch re-arms at the session boundary; the lead re-ran `r2b`: an in-process day-3 breach gives `drawdown_halt`, where main gave `formula`)
 - Area: core/risk/guardrails.py (`_session_halted`, reset only in `rearm()`, which is called on a human resume); master §8 (the daily-loss limit is SESSION-scoped and auto-clears at the boundary); ACIS-07
 - Description:
   - **The latch outlives the halt.** The Governor's session halt auto-clears at the next session boundary, as §8 intends. But the Guardrails latch `_session_halted`, which stops the monitor from re-issuing, stays set until a human resume.
@@ -248,11 +250,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **It is a guardrail that works once per process lifetime.** It went unseen because every test exercises a single breach, and the production runtime does not exist yet. It sits on main now, and the backtest harness's risk path would inherit it.
   - **It is the root of the branch's [[GAP-P12D-78]].**
 - Justification: open and BLOCKING (a guardrail defect). The fix RESTORES the spec's own semantics and is tightening-only: the guard fires again on every day it is breached. **DELEGATED:** it is fixed on the BUILDER-3 branch, and raised to the owner as a HALT-semantics item: the session latch re-arms at the session boundary, exactly when the Governor's session halt auto-clears. Proof: an in-process multi-day breach test and a restart variant, falsified.
+- Proof: `test_a_breach_on_a_later_day_halts_again_in_one_process`, `test_after_a_restart_the_next_day_a_fresh_breach_halts`.
+- Residual: none — the pre-existing main defect is fixed at its root and pinned in-process and across restarts.
 - Linked: [[GAP-P12D-78]], [[GAP-P12D-77]], [[GAP-P12D-59]]
 
 ## GAP-P12D-79: on the BUILDER-3 branch, one failed halt-ledger write during an equity-floor breach loses the equity breaker entirely — no halt, no freeze, never re-issued
 - Severity: critical · Likelihood: low
-- Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X2) in the dual audit of the BUILDER-3 branch. The lead REPRODUCED it on the branch export with the auditor's `r2_store_failure.py`. A `database is locked` error on the `halt_event` write during the equity-floor breach makes `evaluate` raise. Afterwards entries are allowed (`formula`), the orchestrator is not frozen, no halt row exists, and two further evaluates below the floor re-issue nothing. On main the equity breaker has no store dependency)
+- Status: fixed (MERGED 2026-09-25 (BUILDER-3 branch, owner's explicit go; the constitution's two audits GAP-P12D-77, every finding fixed and the blockers re-verified by the lead on the auditors' own repros). The guard acts first and the ledger write follows, retried and alarmed; a latch is set only after success; the lead re-ran `r2`: with the write failing, entries are `halt`, the orchestrator is frozen, and both rows persist)
 - Area: the BUILDER-3 branch (the persistent halt sink and restore_on_boot); core/risk/guardrails.py (latch set before the sink call); master §8 (the equity breaker is unthrottleable and first)
 - Description:
   - **Two ordering choices combine.** The Guardrails latch `_equity_flattened` is set BEFORE the sink call. The new persistent sink writes the ledger BEFORE it forwards to the Governor or execution. So any store failure (a lock from a second process such as the MCP plane, a full disk, an I/O error) swallows the flatten and the HALT, and the latch prevents any retry.
@@ -260,11 +264,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Justification: open and BLOCKING for the merge.
   - **The fix principle: the guard acts first, and recording can never gate it.** Forward the halt or flatten to the Governor and execution FIRST, then persist. If persisting fails, retry and alarm, and keep the halt in force in memory; never swallow it. Set the latch only after the action succeeded.
   - **Proof:** regression tests that inject a store failure at each write and assert the halt and flatten still take effect, falsified per A16.
+- Proof: `test_the_equity_breaker_holds_when_any_store_write_fails`, `test_an_edge_call_that_fails_is_reissued_not_latched`.
+- Residual: none — the act-first order is pinned at four store write points.
 - Linked: [[GAP-P12D-75]], [[GAP-P12D-77]], [[GAP-P12D-78]]
 
 ## GAP-P12D-78: on the BUILDER-3 branch, a stale restored session-halt row latches the breaker, so after a restart the next day's 2% breach no longer halts — LOOSER than main
 - Severity: high · Likelihood: medium
-- Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X1). The lead REPRODUCED it on exports of base `bdd3a75` and branch head `d8361a7` with the auditor's `r1_stale_session_latch.py`:
+- Status: fixed (MERGED 2026-09-25 (BUILDER-3 branch, owner's explicit go; the constitution's two audits GAP-P12D-77, every finding fixed and the blockers re-verified by the lead on the auditors' own repros). A lapsed session row closes as `auto:session_boundary` and is never re-latched; the lead re-ran `r1`: a day-2 fresh breach gives `drawdown_halt`, and after recovery still `drawdown_halt`, matching base)
   - **base:** day-2 fresh 2% breach → `drawdown_halt`; still `drawdown_halt` after an in-session recovery.
   - **branch:** → `formula_zero`, then `formula` (TRADING) after the recovery; the day-1 session row is still open)
 - Area: the BUILDER-3 branch (restore_on_boot, the persistent halt sink); core/risk/guardrails.py `_session_halted`; master §8 (the daily loss is session-scoped and auto-clears at the boundary)
@@ -275,11 +281,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Justification: open and BLOCKING for the merge.
   - **The fix:** session-scoped halts must be restored WITH their expiry. A row whose session boundary has passed is closed as auto-expired, never re-latched. The restore must re-arm the Guardrails latches consistently with the restored state.
   - **Proof:** a regression test mirroring the reproduction (restart the next trading day; a fresh breach halts; the halt survives an in-session recovery), falsified.
+- Proof: `test_after_a_restart_the_next_day_a_fresh_breach_halts`, `test_a_session_halt_lifts_at_its_own_boundary_after_a_restart`, `test_a_restart_inside_the_session_keeps_the_halt_until_its_boundary`.
+- Residual: none — the latch semantics are restored and pinned; production wiring belongs to GAP-0091b.
 - Linked: [[GAP-P12D-75]], [[GAP-P12D-77]], [[GAP-P12D-79]], [[GAP-P12D-59]]
 
 ## GAP-P12D-77: the dual audit of the BUILDER-3 branch — findings and triage
 - Severity: high · Likelihood: high
-- Status: open (2026-09-25 — the constitution's two lenses only. EXTERNAL is in (archive/AUDIT_BUILDER3_BRANCH_EXTERNAL_2026-09-25.md), and INTERNAL is running. Lead verification: the full branch suite re-run gives 856 passed, 6 skipped; X1 and X2 were reproduced)
+- Status: fixed (MERGED 2026-09-25 (BUILDER-3 branch, owner's explicit go; the constitution's two audits GAP-P12D-77, every finding fixed and the blockers re-verified by the lead on the auditors' own repros); the specs are amended in the same merge: master v2.20, ACIS-05 v1.5, ACIS-06 v1.3, ACIS-07 v1.2)
 - Area: the BUILDER-3 branch `worktree-agent-a9e00713d15bb5082` (head `d8361a7`)
 - Description: triage of the EXTERNAL findings.
   - **Each has its own entry:**
@@ -331,6 +339,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - F11 ([[GAP-P12D-81]]): the 1,500/900 pair → the venue is FLAT.
   - F4/X3: two concurrent closes → FLAT. Checked on the venue's own state, one open plus three closes gives FILLED, REJECTED, REJECTED and a flat venue; the repro's hedging-subclass reading was an artifact of its private bookkeeping, which closes never touch.
   The adapted repro copies, which add the new required `logger` argument and the boot restore that F7 now enforces, are in the session scratchpad under lead/. No guardrail, rulebook, spec, ledger or baseline file was touched; the config gains schema only (the Europe/Prague zone, FX holidays, and a split-out rulebook schema module).
+- Proof: the proofs under GAP-P12D-55, -57, -58, -74, -75, -78, -79, -80 and -81, plus `test_the_risk_store_is_wal_with_full_sync` (X4) and `test_a_typo_in_initial_capital_is_fatal_at_load` (F6).
+- Residual: GAP-P12D-54 — the `ftmo`/`e8` rulebook VALUES still need the owner's commit (drafts in archive/BUILDER3_REPORT_2026-09-24.md), and the FTMO 1-Step rule type (X7) is not built. The production wiring of halts, the flatten and the restore belongs to GAP-0091b.
 - Linked: [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-74]], [[GAP-P12D-75]], [[GAP-P12D-58]], [[GAP-P12D-76]], [[GAP-P12D-70]]
 
 ## GAP-P12D-76: the development laptop keeps losing power abruptly — four hard power-offs in 13 days — so it cannot host the demo engine
@@ -348,7 +358,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-75: a restart silently clears every explicit HALT — `halt_event` rows are written but never read back
 - Severity: critical · Likelihood: high
-- Status: open (2026-09-25 — found by BUILDER-3 (F2). The lead VERIFIED it on main: core/risk/store.py writes `halt_event` (`record_halt`) and clears it (`clear_halt`), but nothing in `core/`, `monitoring/` or `scripts/` ever reads the table back)
+- Status: fixed (MERGED 2026-09-25 (BUILDER-3 branch, owner's explicit go; the constitution's two audits GAP-P12D-77, every finding fixed and the blockers re-verified by the lead on the auditors' own repros). Every uncleared halt is re-applied at boot through the same edge, with the same scope and reason, and a store-backed monitor refuses to evaluate before that; ACIS-07 v1.2)
 - Area: core/risk/store.py, core/risk/monitor.py (restart restore), core/governor/capital_governor.py (halt state), the future three-loop runtime boot, master §8 ("halts are cheap; resumes are human-only")
 - Description:
   - **What survives a restart and what doesn't.** Every HALT the engine issues is persisted, but the process that restarts starts with no halts at all.
@@ -357,11 +367,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Justification: open and blocking for any runtime or demo attach.
   - **The fix is tightening-only:** restore every uncleared `halt_event` at boot, before the first evaluate, re-applying it through the same upward edge. **DELEGATED:** it is sent to BUILDER-3's branch.
   - **Proof:** regression tests in which a restart after a global HALT still refuses entries until a human resume, falsified per A16.
+- Proof: `test_equity_floor_halt_survives_a_restart_until_a_human_resumes`, `test_an_agent_halt_is_reapplied_with_its_own_scope_and_reason`, `test_a_store_backed_monitor_refuses_to_evaluate_before_its_restore`.
+- Residual: GAP-0091b — the production runtime must route every halt and MCP control through the halt-recording layer and call the restore at boot.
 - Linked: [[GAP-P12D-55]], [[GAP-0050]], [[GAP-P12D-74]]
 
 ## GAP-P12D-74: a Governor "close" order ADDS to the position it means to close — close direction is unspecified between ACIS-05 and ACIS-06, and the execution freeze lets it through
 - Severity: high · Likelihood: high
-- Status: open (2026-09-25 — found by BUILDER-3 (F1). Its reproduction used the real Governor and orchestrator against a whole-unit mock venue: pair legs went from −441 to −882 and from −486 to −972 after their "closes". The lead VERIFIED the mechanism in main's code: `check_group_exits` builds `SizedOrder(direction=leg.direction, action="close")`, the orchestrator sends `direction=order.direction` verbatim, and nothing inverts it)
+- Status: fixed (MERGED 2026-09-25 (BUILDER-3 branch, owner's explicit go; the constitution's two audits GAP-P12D-77, every finding fixed and the blockers re-verified by the lead on the auditors' own repros). A close is REDUCE-ONLY and atomic through `ExecutionFace.close_position`, and the freeze admits only such closes; ACIS-05 v1.5 / ACIS-06 v1.3 C-EXE-7)
 - Area: core/governor/capital_governor.py `check_group_exits` (GAP-0040), core/execution/orchestrator.py (submit; the freeze admits `action == "close"`), specs/ACIS-05 / ACIS-06 (the SizedOrder contract), tests/integration test coverage of the seam
 - Description:
   - **The bug.** A close order carries the POSITION's direction, and execution treats every order as a trade in its direction. So executing a group exit doubles both legs instead of flattening them.
@@ -377,6 +389,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - The Governor's current `direction = leg.direction` stays as the position identifier.
     - ACIS-05/06 get the convention stated in a versioned amendment.
   - **Proof:** a seam test that asserts the venue is FLAT after a group exit, and that the freeze refuses an exposure-increasing "close". The fix is sent to BUILDER-3's branch.
+- Proof: `test_governor_pair_exit_leaves_the_venue_flat`, `test_two_concurrent_closes_never_flip_the_position`, `test_a_venue_stop_between_read_and_close_opens_nothing`, `test_a_hedging_venue_never_ends_net_opposite`, `test_close_position_is_reduce_only_on_the_shipped_mock`.
+- Residual: GAP-P12D-70 — venue-initiated fills (a server-side stop firing) still have no path into ACIS; every real adapter must implement `close_position` as the venue's atomic close (ACIS-13).
 - Linked: [[GAP-0040]], [[GAP-P12D-75]], [[GAP-P12D-58]], [[GAP-P12D-70]]
 
 ## GAP-P12D-73: the plateau law shrinks the Deflated-Sharpe trial set — a champion refused after the holdout gate drops out of the trials, which loosens a ratified gate
@@ -644,11 +658,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Justification: open and RAISED; owner-owned.
   - **What the fix needs:** a per-account daily boundary in the firm's zone; a pre-breach FLATTEN on platform limits, which changes the §9.5 sentence above; and deciding whether the engine's daily halt should last until the next trading day rather than the next session.
   - **Why it is raised, not fixed:** all of these are HALT/veto semantics, which are human-only.
+- **Progress 2026-09-25 (BUILDER-3 merge):** fixed parts: the session latch re-arms each day (GAP-P12D-80), and per-account daily rules reset in the FIRM's zone (Europe/Prague for FTMO). The pre-breach FLATTEN on platform limits remains [spec]: master §9.5 still says "open positions and their stops are untouched". That stays an owner decision.
 - Linked: [[GAP-P12D-52]], [[GAP-P12D-54]], [[GAP-P12D-55]], [[GAP-0010]]
 
 ## GAP-P12D-58: FTMO forbids "gap trading" on every account, and ACIS's pre-close entry ban switches off whenever weekend holding is allowed
 - Severity: high · Likelihood: high
-- Status: open (2026-09-24 — found by the SCOUT agent in [[GAP-P12D-52]]. The lead VERIFIED FTMO's wording on its Forbidden Trading Practices page (modified 2026-02-02) and the code at core/governor/capital_governor.py, where the `weekend_ban` gate runs only when `not self._rules.weekend_holding_allowed`)
+- Status: mitigated (MERGED 2026-09-25 (BUILDER-3 branch, owner's explicit go; the constitution's two audits GAP-P12D-77, every finding fixed and the blockers re-verified by the lead on the auditors' own repros). The pre-close entry ban binds EVERY account, the no-holding flatten runs before the weekend and before every declared FX holiday closure, and Dec 25 / Jan 1 for 2025–2027 are declared; ACIS-05 v1.5 / master v2.20)
 - Area: core/governor/capital_governor.py (entry gates); config/platform_rules.yaml; master §9.5; [[GAP-P12D-03]] (the event calendar)
 - Description: FTMO's forbidden practices include "gap trading", defined as opening trades "two hours or less before a relevant financial market is closed for at least two hours" and "when major global news, macroeconomic events, or corporate reports or earnings are scheduled". The page limits this to no account type, so it covers Swing accounts too.
   - **ACIS's gate is tied to the wrong flag.** Its 2-hour pre-close entry ban (`weekend_entry_buffer_s`) runs only when `weekend_holding_allowed` is false. On an FTMO Swing account (weekend holding allowed), ACIS would open trades in the last two hours before the Friday close, which is a forbidden practice.
@@ -658,11 +673,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **[impl]:** decouple the pre-close entry ban from the weekend-holding flag.
   - **[spec]:** a rulebook field for "pre-close entry ban" and a scheduled-news entry blackout, independent of the news-restricted flag; plus the missing weekend flatten, or amending §9.5's sentence.
   - **Precondition for Track A:** this is a hard precondition before pointing ACIS at any FTMO account, the free trial included, because the trial runs the same rules.
+- Proof: `test_swing_account_refuses_an_entry_an_hour_before_the_friday_close`, `test_no_entry_opens_in_the_two_hours_before_a_holiday_closure`, `test_a_no_holding_account_is_flattened_before_a_holiday_closure`, `test_flatten_starts_with_the_entry_ban_and_names_each_position`.
+- Justification: mitigated. Two things remain. The NEWS half of FTMO's gap-trading clause needs the historical and live event calendar, GAP-P12D-03. The holiday list is an ANNUAL obligation, to re-verify against the firm's table each December; non-FX calendars are not declared yet.
 - Linked: [[GAP-P12D-52]], [[GAP-P12D-03]], [[GAP-P12D-54]]
 
 ## GAP-P12D-57: the execution path ignores the venue's quantity and request limits — sub-minimum orders, no lot-step rounding, no daily request budget
 - Severity: high · Likelihood: high
-- Status: open (2026-09-24 — found by the SCOUT agent in [[GAP-P12D-52]]. The lead VERIFIED that core/execution/venue.py declares `min_lot` and `lot_step` on `CapabilityDescriptor` while core/execution/orchestrator.py `_capable_venues` checks only `max_order_lots`, and that FTMO's page forbids "more than 2,000 server requests per day")
+- Status: mitigated (MERGED 2026-09-25 (BUILDER-3 branch, owner's explicit go; the constitution's two audits GAP-P12D-77, every finding fixed and the blockers re-verified by the lead on the auditors' own repros). Lot-step round-down and the minimum-lot refusal, the rolling venue request budget (1,000 a day, surviving restarts) and close pacing are enforced; ACIS-06 v1.3 C-EXE-6/8)
 - Area: core/execution/orchestrator.py, core/execution/venue.py, core/governor/capital_governor.py (sizing quantised to 0.01 units), config/system_config.yaml (`base_unit_usd: 1000.0`, `fragment_threshold_lots: 1.0`); [[GAP-0075]]
 - Description:
   1. **Orders are below the venue minimum, and nothing rounds them.** The Governor sizes `base_unit × conviction × liquidity × correlation × regime × marginal_alpha × vol_norm × taper` and quantises to 0.01 units, not to the venue's lot step. The SCOUT's arithmetic gives a typical EUR/USD order of about 332 units (≈0.0033 lot) and a neutral one of 926 units, against a common 0.01-lot minimum of 1,000 units (FTMO's and E8's own values are unverified). Most orders are un-placeable. The honest fix rounds DOWN, which makes most orders zero, because rounding up would break the Governor's clamp-only-downward law. Sizing therefore has to become NAV-relative for a prop account, and that is a spec decision.
@@ -671,6 +688,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **[impl]:** lot-step and minimum-lot enforcement in the adapter/orchestrator (a missing capability is a refusal, never silent rounding up), and a hard adapter-level daily request counter. The SCOUT suggests holding it at ≤1,000 a day, half the cap.
   - **[spec — owner ratification]:** NAV-relative prop sizing.
   - **Precondition for Track A:** both are preconditions before ACIS is pointed at any venue.
+- Proof: `test_quantity_rounds_down_to_whole_steps_and_refuses_below_the_minimum`, `test_request_budget_is_a_rolling_24_hours`, `test_a_close_is_admitted_and_counted_past_the_budget`, `test_a_refused_close_is_paced_not_resent_every_tick`, `test_the_pace_survives_a_restart`.
+- Justification: mitigated, not closed. With lot steps enforced, most of today's orders (about 330 units) now round to ZERO: correct and safe, but the engine cannot trade a prop account until sizing becomes NAV-relative, which is owned by GAP-P12D-61 [spec].
 - Linked: [[GAP-P12D-52]], [[GAP-0075]], [[GAP-P12D-56]], [[GAP-P12D-27]]
 
 ## GAP-P12D-56: the equity floor is an absolute $9,000 sized for a $10k paper account — it halts any smaller account at start-up and gives no warning on a $10k prop account
@@ -687,7 +706,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-55: a process restart relaxes every drawdown limit — the anchors live only in memory and re-base at the first equity seen after boot
 - Severity: critical · Likelihood: high
-- Status: open (2026-09-24 — found by the SCOUT agent in [[GAP-P12D-52]]. The lead REPRODUCED it with the real config and the real `build_drawdown_series` for the `ftmo` account. At equity 9,400 after a 10,000 start, the three measures read `engine:daily` 6.0%, trailing 6.0% and static 6.0%. A freshly built series at the same 9,400, which is what a restart does, reads 0.0% on all three with the taper back at 1.0. Guardrail semantics, so RAISED, not self-fixed)
+- Status: fixed (MERGED 2026-09-25 (BUILDER-3 branch, owner's explicit go; the constitution's two audits GAP-P12D-77, every finding fixed and the blockers re-verified by the lead on the auditors' own repros). The drawdown anchors and the day-open anchor persist and are restored before the first evaluate; ACIS-07 v1.2)
 - Area: core/risk/guardrails.py (`DrawdownSeries._anchors`, `_RuleAnchor`); core/risk/store.py (`save_restrictive_state`); core/risk/monitor.py (`restore_restrictive_state`); deploy/systemd (`Restart=` supervision); master §8/§9.5; ACIS-07
 - Description:
   - **Nothing on disk remembers where the account started.** `DrawdownSeries._anchors` is an in-memory dict. The static inception anchor, the trailing high-water mark and the engine's daily day-open anchor are never persisted. The static anchor is also "the first observed basis", not a declared initial capital. So after any restart, every drawdown measure re-bases to the current equity or balance and reads 0%.
@@ -702,6 +721,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - restore the saved taper;
     - regression tests for restart at a drawdown, falsified per A16.
   - **Interlock:** it interlocks with [[GAP-P12D-54]]'s schema change (daily limits anchored on the balance at a named reset instant).
+- Proof: `test_restart_at_a_drawdown_still_reads_it_on_every_rule`, `test_restart_across_a_trading_day_boundary_reanchors_the_daily_rule`, `test_a_loss_taken_while_the_engine_was_down_is_not_forgotten`, `test_restore_refuses_a_corrupt_anchor_and_skips_a_retired_rule`.
+- Residual: GAP-0091b — the production three-loop runtime must call the restore at boot (the runtime does not exist yet).
 - Linked: [[GAP-P12D-52]], [[GAP-P12D-54]], [[GAP-P12D-56]], [[GAP-0050]], [[GAP-P9E-01]], [[GAP-0102]]
 
 ## GAP-P12D-54: the `ftmo` rulebook contradicts FTMO's published rules in both directions, and the §9.5 schema cannot express FTMO's daily loss
@@ -734,6 +755,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - (b) probably an extension to the schema and to `_RuleAnchor`, adding balance-at-reset anchors in a named timezone with limits as a percentage of initial capital. That is a §9.5 / ACIS-07 change for owner ratification.
   - **Coming next.** The SCOUT agent is verifying every firm's rules, and its corrections list lands here.
   - **Until then**, no backtest or demo on an FTMO account may be read as faithful to FTMO's rules.
+- **Progress 2026-09-25 (BUILDER-3 merge):** the schema CAN now express FTMO's daily loss (a `daily` rule type with `reset: {zone, at}`, `reset_basis`, and limits as a % of `initial_capital`), and the tests reproduce FTMO's own worked examples (`test_ftmo_day1_floor_is_95000_on_equity`, `test_ftmo_day2_floor_is_97000_after_a_102000_close`). What remains is OWNER-ONLY: committing the corrected `ftmo` entry, and an `e8` entry once E8's server time zone is verified (drafts in archive/BUILDER3_REPORT_2026-09-24.md §4), plus the FTMO 1-Step rule type (audit X7, not built).
 - Linked: [[GAP-P12D-52]], [[GAP-P11I-02]], [[GAP-0102]], [[GAP-P12D-44]]
 
 ## GAP-P12D-53: master §5.6 misstates the century trend-following evidence, and the figure it quotes is the per-market one

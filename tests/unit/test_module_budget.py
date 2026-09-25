@@ -22,15 +22,14 @@ PRODUCTION = ["core", "monitoring", "config", "scripts", "tests/backtest"]
 
 # path -> line count on 2026-09-11 (the ceiling), all owned by GAP-P12M-01
 GRANDFATHERED = {
-    "config/schemas.py": 622,                   # 702 → 622: calendars → config/calendars.py (P12D-10)
+    "config/schemas.py": 581,                   # 702 → 622: calendars → config/calendars.py (P12D-10); → 581: rulebook → config/rulebook.py (P12D-54)
     "core/signals/agon.py": 506,
-    "core/governor/capital_governor.py": 448,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22)
+    "core/governor/capital_governor.py": 436,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22); 447 (P12D-58); 437: exposure caps → exposure.py; 436
     "scripts/download_histdata.py": 400,        # 456 → 400 after scripts/dl_common.py extraction
     "core/regime/nvma.py": 395,
     "core/signals/provenance.py": 391,
-    "core/risk/monitor.py": 378,
-    "core/execution/venue.py": 378,
-    "core/risk/guardrails.py": 313,
+    "core/risk/monitor.py": 343,                # 378 → 368: usd factor → usd_conversion.py (P12D-55); 343: VaR/cluster → exposure_metrics.py
+    "core/execution/venue.py": 318,             # 378 → 342: FillReportStore → fill_store.py (P12D-57); 318: attach, quality moved out
 }
 
 

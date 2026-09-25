@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-RISK-007` |
-| **Version** | 1.1 (**LOCKED** 2026-07-17, phase-9 start) |
+| **Version** | 1.2 (**LOCKED** 2026-09-25 — halt ledger act-first + restore, persisted drawdown anchors, daily-reset platform rules, session-latch re-arm; v1.1 2026-07-17 phase-9 start) |
 | **Layer / DIR** | Layer 7 · `[DIR:core/risk]` · **the only upward channel** |
 | **Consumes** | `FillReport` (ACIS-06) + broker account state (§7.5 execution face) + all stores (regime, governor, portfolio) + Tier-G flatten conditions (ACIS-10) |
 | **Emits** | `RiskSnapshot`; **HALT / flatten / taper / alpha-decay → Capital Governor ONLY** (single upward edge, risk-restrictive-only per GAP-0014); the §8.6 engine heartbeat |
@@ -120,7 +120,7 @@ On `flag`: set `alpha_decay_flag`, instruct the Governor via `apply_risk_state(a
 
 ## 8. State machine
 
-Global: `NORMAL → THROTTLED(alpha_decay) → HALTED(session|instrument|global) → FLATTENED(equity_floor)`. Session-drawdown halt auto-clears at the next session boundary; instrument halt clears when its condition clears *or* by human resume per policy; **equity-floor flatten and explicit global HALT clear only by human `acis_resume`** (master §12 asymmetry: any agent may halt; only a human resumes). Alpha-decay throttle clears only on confirmed recovery. Evaluated on the medium/fast cadence with the equity breaker on the fast path.
+Global: `NORMAL → THROTTLED(alpha_decay) → HALTED(session|instrument|global) → FLATTENED(equity_floor)`. Session-drawdown halt auto-clears at the next session boundary, **and its latch re-arms there: a breach after that boundary halts again** (v1.2, GAP-P12D-80 — the code had latched for the process's life); instrument halt clears when its condition clears *or* by human resume per policy; **equity-floor flatten and explicit global HALT clear only by human `acis_resume`** (master §12 asymmetry: any agent may halt; only a human resumes). Alpha-decay throttle clears only on confirmed recovery. Evaluated on the medium/fast cadence with the equity breaker on the fast path.
 
 ## 9. Persistence & logging
 
@@ -145,7 +145,7 @@ CREATE TABLE halt_event (
     reason TEXT NOT NULL, cleared_at TIMESTAMPTZ, cleared_by TEXT   -- 'human:<token>' only
 );
 ```
-`halt_event.cleared_by` records that a resume was human — a machine can never populate it (enforced in ACIS-08).
+`halt_event.cleared_by` records that a resume was human — a machine can never populate it (enforced in ACIS-08). **v1.2:** `cleared_by` is `human:<random resume id>` (no bit derived from the token) or `auto:session_boundary` (a session halt that lapsed at its own boundary); the opaque `halt_id` is `<kind>|ts|scope|reason|<random>`. The risk store opens in WAL with `synchronous=FULL`, so a power loss cannot drop a committed halt (audit X4, GAP-P12D-76).
 
 ## 11. MCP contract
 
@@ -188,5 +188,11 @@ Surfaces `acis://risk/snapshot` (latest `RiskSnapshot` incl. `alpha_decay_state`
 **The upward edge:** Risk → Governor HALT/flatten/taper/decay is the only upward call in the system; it must be the sole path by which trading stops, and it must be irreversible without a human for equity/global scope. **Owns conflict-table rows:** "daily drawdown limit hit → halt new positions for session"; and conflict-priority #1 (Risk HALT beats everything). **Done-when (phase 9, master §15):** every regime/veto/override/HALT and the equity breaker has an isolated test (CLAUDE.md testing bar); all phase-9 glitch-class tests present (racing HALTs, restart reconciliation, trailing-anchor, weekend-gap-through-stop with ACIS-06, Tier-G-during-blackout stricter-outcome); the ACIS-12 scenario-replay gate green against the shipped book; the watchdog tests green end-to-end with this layer's heartbeat writer; import contract passing; the upward edge proven to be the *only* one (a test asserts no other module can stop trading and no non-human path resumes an equity/global HALT).
 
 ## Changelog
+- **1.2 (LOCKED, 2026-09-25)** — merged 2026-09-25 from the BUILDER-3 branch on the owner's explicit go, after the constitution's two audits (GAP-P12D-77..81, every finding fixed and lead-verified); amendment text applied under the owner's delegation; tightening only, no guardrail VALUE changed:
+  - **Act first, then persist (GAP-P12D-79):** every halt, session halt and flatten crossing the upward edge is APPLIED FIRST and then persisted in `halt_event`; a failed write is retried and alarmed (`HALT_LEDGER_WRITE_FAILED`) and never undoes or delays the halt; a latch is set only after the action succeeded.
+  - **Restore at boot (GAP-P12D-75/78, fulfilling this spec's existing "active halts … RESTORED before the first evaluate"):** a store-backed monitor REFUSES to evaluate until restored; every open row is re-applied through the same edge with the same scope and reason; a session halt is restored with its original instant and lapses at its own boundary, a row whose boundary already passed is closed `auto:session_boundary` and never re-applied; only a human resume clears any other row.
+  - **Drawdown anchors survive a restart (GAP-P12D-55):** the static inception anchor, the trailing high-water mark and the daily day-open anchor (with its day) join the persisted restrictive state; a rollover missed while down is bracketed by the observations either side.
+  - **Platform `daily` rules (GAP-P12D-54/59):** a rule may reset at a declared local instant (`reset: {zone, at}`, e.g. `Europe/Prague` 00:00 for FTMO) with its anchor's basis captured there (`balance | equity | max`), and a limit expressed as a percentage of the account's declared `initial_capital` (finite, > 0, fatal if malformed); a declared `initial_capital` anchors static rules and seeds trailing ones. Reproduces FTMO's published worked examples.
+  - **Session latch re-arms at the boundary (GAP-P12D-80).**
 - **1.1 (LOCKED, 2026-07-17 — phase-9 start consistency update, master v2.5→v2.11)** — §9.5 account doctrine folded in (C11/GAP-0014): platform-measured drawdown as a first-class `PlatformDrawdownState` series under each rule's own semantics, sourced from the §7.5 execution face, HALTing like engine limits at 1.0; the RATIFIED pre-limit taper (GAP-0010 — F9's raise resolved by the owner 2026-07-15) computed here with exact piecewise hand-vectors and min-across-limits, delivered over the upward edge; the edge declared risk-restrictive-only with GAP-0050 explicit set/clear semantics (None = unchanged; recovery-gated explicit False is the only legitimate clear; restart restores a persisted throttle); Tier-G flatten execution (GAP-0011, condition from ACIS-10, resume human-only); §8.6 heartbeat writer per the ACIS-12 contract; `scenario_replay.py` registered in this layer's units (ACIS-12 owns its spec); GAP-0052 boot `rebuild_groups` made a boot-contract line; config keys aligned to the shipped `guardrail_limits.yaml` names incl. the schema-floored taper fractions; `risk:` block required/schema-fatal; done-when renumbered to phase 9 with the ACIS-12 gates included. New registry entries C-RSK-8..11; C-RSK-6 rewritten from "raised" to "ratified + implemented". No guardrail value, HALT, veto, or resume semantics changed — this pass only *adds* the ratified and constitutional machinery around them.
 - **1.0 (DRAFT)** — From master §8 + `ACIS_Agent_Prompt.md` §3.7 + S3 equity breaker + S2 layer-7 card; C5/F13 corrected alpha-decay baseline validity + NaN-safe Sharpe; F9 drawdown buffer explicitly raised-not-applied; racing-HALT and restart-reconciliation glitch classes specified.

@@ -90,18 +90,25 @@ def mk_fill(*, order_id: str, instrument: str, direction: int, units: float,
 
 def build_monitor(cfg, sink, *, account: str = "dev_paper",
                   taper_start: float | None = None,
-                  entry_halt: float | None = None, logger=None, store=None):
+                  entry_halt: float | None = None, logger=None, store=None, boot=None):
+    """A monitor as a process boots it: with a store and a `boot` instant, the persisted
+    state is restored before anything evaluates (ACIS-07 §7; the monitor enforces it)."""
     from tests.optimizer_fixtures import CapturingLogger
     log = logger or CapturingLogger()
     rb = cfg.platform_rules.accounts[account]
     from config.account_doctrine import compose
     doctrine = compose(cfg.guardrails, rb)
-    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, account)
+    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, account,
+                                   initial_capital=rb.initial_capital)
     g = Guardrails(
         cfg.guardrails, cfg.system.risk, series, sink, log,
         taper_start=taper_start if taper_start is not None else doctrine.taper_start_fraction,
-        entry_halt=entry_halt if entry_halt is not None else doctrine.entry_halt_fraction)
+        entry_halt=entry_halt if entry_halt is not None else doctrine.entry_halt_fraction,
+        session_boundaries=cfg.system.session_boundaries)
     alpha = mk_alpha(cfg.system.risk)
     mon = RiskMonitor(cfg.system.risk, cfg.guardrails, g, alpha, sink,
                       cfg.instruments.clusters, "s1", log, store=store)
+    if store is not None and boot is not None:
+        from core.risk.store import restore_on_boot
+        restore_on_boot(store, mon, boot)
     return mon, g, alpha, log

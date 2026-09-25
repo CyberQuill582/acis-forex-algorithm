@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-EXEC-006` |
-| **Version** | 1.1 (**LOCKED** 2026-07-17, phase-8 start) |
+| **Version** | 1.3 (**LOCKED** 2026-09-25 — reduce-only closes, lot-step/min-lot enforcement, request budget, atomic pair groups; v1.2 2026-07-21 server-side stops; v1.1 2026-07-17 phase-8 start) |
 | **Layer / DIR** | Layer 6 · `[DIR:core/execution]` |
 | **Consumes** | `SizedOrder` (ACIS-05) |
 | **Emits** | `FillReport` (frozen) → Risk Monitor (ACIS-07); order flow → broker/venue |
@@ -32,7 +32,7 @@
 
 **Inputs:** a `SizedOrder` (size > 0; size == 0 is a no-op that emits nothing); live venue quality scores; broker connectors (reused from ACIS-01's feed layer where applicable, but order entry is a distinct authenticated channel). Config `execution:`. A global execution-freeze flag settable by the Risk Monitor's flatten path.
 
-**Guard:** `size_units == 0` → return `()` (no-op, logged `EXEC_NOOP`); execution-freeze active (post-flatten) → reject new opens, allow only position-closing/managing orders.
+**Guard:** `size_units == 0` → return `()` (no-op, logged `EXEC_NOOP`); execution-freeze active (post-flatten) → reject new opens, admit ONLY reduce-only closes (v1.3).
 
 ## 3. Architecture & responsibility
 
@@ -145,7 +145,7 @@ No independent control tools; execution obeys the Governor + Risk. `acis_flatten
 | broker disconnect mid-order | freeze dispatch → reconcile vs broker (authoritative) → resume; no duplicate fills |
 | slippage > alert | `SLIPPAGE_ALERT`; auto-throttle only if human-enabled (F10) |
 | fragment sum ≠ total | impossible by construction; asserted (would create/destroy size) |
-| execution-freeze active | block opens, allow closes |
+| execution-freeze active | block opens; admit only REDUCE-ONLY closes (a close that would open, add to or flip a position is `REJECTED`) |
 
 ## 13. Logic-flaw registry
 - **C-EXE-1 (fragment invariant):** fragments sum exactly to the parent total; property test over random splits — no unit created or destroyed.
@@ -153,7 +153,9 @@ No independent control tools; execution obeys the Governor + Risk. `acis_flatten
 - **C-EXE-3 (F10):** slippage alert always; auto-throttle OFF by default and only en-/disabled via human-ratified config; dark-pool language absent; test asserts no autonomous resize on slippage.
 - **C-EXE-4 (partial/reject):** partials and rejects each emit a FillReport and never double-fill; idempotent by fragment_id.
 - **C-EXE-5 (reconnect/restart):** post-reconnect reconciliation treats the broker as authoritative before new submits; test simulates disconnect with a working order and asserts no duplicate fill.
-- **C-EXE-6 (no resize):** Execution never changes `size_units`; test feeds a SizedOrder and asserts total filled ≤ sized total (and == on full fill).
+- **C-EXE-6 (no resize):** Execution never changes `size_units`; total filled ≤ sized, and equal to sized less the REPORTED sub-lot-step remainder on a full fill (v1.3: quantities are sent in whole venue lot steps, rounded DOWN; a sub-step remainder and any quantity below the venue's minimum lot are `REJECTED` FillReports — never silent, never rounded up).
+- **C-EXE-7 (v1.3, reduce-only close, GAP-P12D-74):** `ExecutionFace.close_position(instrument, direction, units, …)` is the ONLY path a close takes to a venue: REDUCE-ONLY and atomic at the venue — it takes up to `units` off the `direction` side and never opens, adds to or flips a position; with nothing held on that side it returns `REJECTED`. A FillReport's `direction` is the side TRADED. Adapters carry the close intent, never a plain opposite-side order: cTrader `ProtoOAClosePositionReq(positionId)`, OANDA `REDUCE_ONLY` / position close, FIX `PositionEffect=C`. Tests: `test_governor_pair_exit_leaves_the_venue_flat` and the `test_close_position_*` conformance cases.
+- **C-EXE-8 (v1.3, venue limits, GAP-P12D-57/81):** a required per-venue `max_venue_requests_per_day` (rolling 24 h, every submit attempt, survives restart); once spent, opens are refused and only a close that shrinks the venue position passes. A refused close is PACED, never blocked: after n consecutive failures the next waits min(2 s·2^(n−1), 300 s), and past 100 attempts per rolling 24 h every close waits 300 s (`EXEC_CLOSE_PACED`; attempts persisted in a `close_attempt` table). Pair-group legs go through `submit_group`, all or none: every leg is checked after rounding (capable venue, minimum lot, budget for the whole group) before any is sent; a pair leg sent alone is refused.
 
 ## 14. Test contract (postcondition-style)
 
@@ -166,5 +168,6 @@ No independent control tools; execution obeys the Governor + Risk. `acis_flatten
 **What Risk (ACIS-07) consumes:** a stream of `FillReport`s (fills, partials, rejects) from which it maintains `PortfolioState`, PnL, drawdown, and its risk metrics, and against which it evaluates HALT conditions. **Owns conflict-table rows:** none directly (it never sizes), but it *executes* the flatten that a HALT/equity-breaker demands. **Done-when (phase 8, master §15):** §14 green; import contract passing; reconnect/partial/reject glitch tests present (the weekend-gap-through-stop joint test lands with ACIS-07's accounting at phase 9); mock adapter conformant.
 
 ## Changelog
+- **1.3 (LOCKED, 2026-09-25)** — merged 2026-09-25 from the BUILDER-3 branch on the owner's explicit go, after the constitution's two audits (GAP-P12D-77..81, every finding fixed and lead-verified); amendment text applied under the owner's delegation; tightening only, no guardrail VALUE changed: C-EXE-7 reduce-only `close_position` and the freeze admitting only such closes (GAP-P12D-74, audit X3/F4); C-EXE-8 lot-step round-down + minimum-lot refusal, the rolling request budget, close pacing, and all-or-none pair groups (GAP-P12D-57/81); C-EXE-6 reworded for the reported remainder; the fill log opens in WAL + `synchronous=FULL` (audit X4). **Version-history note:** the v1.2 server-side-stop content (VPS gate, 2026-07-21, master §279) was added inline without a header or changelog bump — recorded here.
 - **1.1 (LOCKED, 2026-07-17 — phase-8 start consistency update)** — v2.10 item (c) applied: `dispatch_budget_ms = 100` set as the execution-layer latency observability value (GAP-0007 pattern — measured, logged `EXEC_BUDGET_EXCEEDED`, surfaced, never a guardrail; venue RTT observed separately). Master §7.5 execution-side contract concretised for phase 8 (new §7.5): `ExecutionFace` ABC, mandatory `CapabilityDescriptor` with loud `EXEC_CAPABILITY_REJECT`, GAP-0013 transport-only session split restated structurally, per-adapter conformance suite as the release gate (mock conformant in phase 8; platform adapters are ACIS-13/phase 12), flat-or-decide attach (GAP-0018). v2.11 time-base honesty: the "VWAP" path renamed `scheduled` with declared `weighting` (no consolidated volume tape in v1 retail FX — §16 naming law). RNG (`SystemRandom` prod / seeded tests) and clock/sleep made injected dependencies. Config keys normalised (`vwap_threshold_lots`, `vwap_window_s`), block schema-fatal if missing. Done-when moved to the renumbered phase 8; weekend-gap joint test explicitly deferred to phase 9 with ACIS-07. No guardrail, HALT, veto, or sizing semantics changed.
 - **1.0 (DRAFT)** — From master §7 + `ACIS_Agent_Prompt.md` §3.6 + S2 layer-6 card; F10 slippage auto-throttle deliberately raised-not-applied; fragment exact-sum invariant made explicit; dark-pool dropped for forex.

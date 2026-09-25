@@ -19,6 +19,8 @@ from pydantic import Field, model_validator
 
 from config.calendars import (ExchangeCalendar, FxCalendar, Session, ZonedTime,  # noqa: F401
                               _Strict, check_boundaries)
+from config.rulebook import (AccountRulebook, DrawdownRule, NewsRules,  # noqa: F401
+                             PlatformRules)
 
 
 class ConfigError(Exception):
@@ -194,6 +196,7 @@ class ExecutionConfig(_Strict):
     fast_decay_seconds: int = Field(gt=0)
     signature_lot_variance: float = Field(gt=0, lt=1)
     dispatch_budget_ms: int = Field(gt=0)
+    max_venue_requests_per_day: int = Field(gt=0)   # GAP-P12D-57: per venue, rolling 24 h
 
     @model_validator(mode="after")
     def _bounds(self) -> "ExecutionConfig":
@@ -431,46 +434,8 @@ class GuardrailLimits(_Strict):
 
 
 # --------------------------------------------------------------------------- #
-# platform_rules.yaml — account doctrine (SPEC §9.5): one rulebook per account,
-# drawdown limits with their EXACT measurement semantics.
+# platform_rules.yaml — the account doctrine (SPEC §9.5): config/rulebook.py
 # --------------------------------------------------------------------------- #
-
-class NewsRules(_Strict):
-    restricted: bool
-    window_before_s: int | None = Field(default=None, ge=0)
-    window_after_s: int | None = Field(default=None, ge=0)
-
-    @model_validator(mode="after")
-    def _windows_if_restricted(self) -> "NewsRules":
-        if self.restricted and (self.window_before_s is None or self.window_after_s is None):
-            raise ValueError("restricted account requires explicit blackout windows (SPEC §3.5)")
-        return self
-
-
-class DrawdownRule(_Strict):
-    type: Literal["static", "trailing"]
-    anchor: Literal["eod", "intraday"]
-    basis: Literal["balance", "equity"]
-    limit_pct: float = Field(gt=0)
-
-
-class AccountRulebook(_Strict):
-    platform: str
-    news: NewsRules
-    min_hold_seconds: int = Field(ge=0)
-    max_lots: float | None = Field(default=None, gt=0)
-    weekend_holding_allowed: bool
-    drawdown_rules: list[DrawdownRule]  # may be empty (personal account), but must be declared
-    consistency_max_day_profit_pct: float | None = Field(default=None, gt=0)
-    min_trading_days: int | None = Field(default=None, gt=0)
-    # Per-account override of the §9.5 taper — stricter-only (ratified floor).
-    taper_start_fraction: float | None = Field(default=None, gt=0, le=0.60)
-    entry_halt_fraction: float | None = Field(default=None, gt=0, le=0.80)
-
-
-class PlatformRules(_Strict):
-    accounts: dict[str, AccountRulebook] = Field(min_length=1)
-
 
 # --------------------------------------------------------------------------- #
 # event_sources.yaml — trusted channels + Tier-1/Tier-G taxonomy (SPEC §3.5–3.6)

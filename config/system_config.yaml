@@ -119,6 +119,9 @@ execution:                       # ACIS-06 v1.1 (SPEC 7) - required block
   fast_decay_seconds: 30
   signature_lot_variance: 0.15
   dispatch_budget_ms: 100        # v2.10(c) observability value - never a guardrail
+  max_venue_requests_per_day: 1000  # GAP-P12D-57: HARD cap per venue over any rolling 24 h
+                                 # (every submit attempt) - half FTMO's and E8's 2,000/day;
+                                 # spent -> opens refused, closes still go through
 monitoring:                      # ACIS-08 v1.1 (SPEC 12) - required block
   transport: stdio
   heartbeat_fast_s: 10           # SPEC 12 fast-loop SLA ceiling
