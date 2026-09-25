@@ -1,0 +1,25 @@
+== E1 validity under H0 (mean 0), 10y horizon, P(sup W >= 20); Ville bound 0.05
+  tails=normal  daily s*  P=0.0205  days clipped/path=0.000
+  tails=normal  annual s* P=0.0000  days clipped/path=0.000
+  tails=t3      daily s*  P=0.0280  days clipped/path=2.432
+  tails=t3      annual s* P=0.0000  days clipped/path=0.001
+  tails=t2.2    daily s*  P=0.0285  days clipped/path=1.976
+  tails=t2.2    annual s* P=0.0000  days clipped/path=0.005
+== E1 power: P(W>=20 within Y years), true SR, daily s* (the favourable reading)
+  SR 0.3: 2y=0.03  5y=0.06  10y=0.10  20y=0.17  40y=0.33
+  SR 0.5: 2y=0.05  5y=0.11  10y=0.22  20y=0.41  40y=0.76
+  SR 0.8: 2y=0.10  5y=0.25  10y=0.52  20y=0.84  40y=1.00
+  SR 1.0: 2y=0.14  5y=0.40  10y=0.75  20y=0.96  40y=1.00
+  SR 1.5: 2y=0.36  5y=0.80  10y=0.98  20y=1.00  40y=1.00
+== E1 power with ANNUAL s* (literal 'vol target'), SR 1.0
+  5y=0.00  10y=0.00  20y=0.00  40y=0.76
+== E2 (kill) on a DEAD strategy (true SR 0), mu_claim = (SR_dev/2) as a daily mean return, daily s*
+  SR_dev 0.5: freeze(W>=5) 0.25y=0.00 1y=0.06 3y=0.13 10y=0.25 20y=0.34 | kill(W>=20) 1y=0.01 3y=0.03 10y=0.08 20y=0.12
+  SR_dev 0.8: freeze(W>=5) 0.25y=0.00 1y=0.08 3y=0.18 10y=0.40 20y=0.56 | kill(W>=20) 1y=0.01 3y=0.05 10y=0.15 20y=0.26
+  SR_dev 1.2: freeze(W>=5) 0.25y=0.00 1y=0.10 3y=0.28 10y=0.57 20y=0.81 | kill(W>=20) 1y=0.01 3y=0.09 10y=0.30 20y=0.58
+== E2 on a LOSING strategy (true SR -0.5), SR_dev 0.8
+  freeze 0.25y=0.00 1y=0.16 3y=0.47 10y=0.87 | kill 1y=0.03 3y=0.20 10y=0.63
+== P(E2 silent for the first 3 months) on a dead strategy, SR_dev 0.8: 0.998
+== E2 LITERAL (mu_claim = SR_dev/2 = 0.4 as a raw fraction of equity): days to kill
+  daily s*: killed=1.00 median day=1.0
+  annual s*: killed=1.00 median day=10.0

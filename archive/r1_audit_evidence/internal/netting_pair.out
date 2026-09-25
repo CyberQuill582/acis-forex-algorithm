@@ -1,0 +1,4 @@
+pair ENTRY  EURUSD: target  20.00 ->  20.00  change +0.00  order=no
+pair ENTRY  USDCHF: target   0.00 ->  -2.50  change -2.50  order=YES
+pair EXIT   EURUSD: target  20.00 ->  20.00  change +0.00  order=no
+pair EXIT   USDCHF: target  -2.50 ->   0.00  change +2.50  order=YES

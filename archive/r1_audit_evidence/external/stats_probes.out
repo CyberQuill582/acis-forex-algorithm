@@ -1,0 +1,34 @@
+C:\Users\USER\AppData\Local\Temp\claude\C--Users-USER-Documents-Private-ClaudeInsights-Knowledgevault-acis\75c0b09c-58e4-45d3-8918-2ac09096071f\scratchpad\audit_r1_external\stats_probes.py:8: RuntimeWarning: overflow encountered in exp
+  return np.exp(np.cumsum(np.log1p(np.outer(x, LAM)), axis=0)).mean(axis=1)
+== P1: E2 as literally written, mu_claim = SR_dev/2 (a Sharpe number) minus a daily return
+  sigma* = annual target 0.20: E2 >= 20 (KILL) in 200/200 runs of a true SR-0.6 family; median day 24.0
+  sigma* = daily 0.20/16: E2 >= 20 (KILL) in 200/200 runs of a true SR-0.6 family; median day 2.0
+  dimensionally consistent mu_claim = (SR_dev/2)*sigma_d/sqrt(256) = 0.000234/day (vs 0.3 as written)
+== P2: days for E1 to reach 20 (edge shown) at a true annual SR, both readings of sigma*
+  SR 0.3, sigma* annual: P(E1>=20 within 3y) 0.00, within 10y 0.00, median years inf
+  SR 0.3, sigma* daily : P(E1>=20 within 3y) 0.04, within 10y 0.12, median years inf
+  SR 0.5, sigma* annual: P(E1>=20 within 3y) 0.00, within 10y 0.00, median years inf
+  SR 0.5, sigma* daily : P(E1>=20 within 3y) 0.07, within 10y 0.21, median years 21.8
+  SR 0.8, sigma* annual: P(E1>=20 within 3y) 0.00, within 10y 0.00, median years 44.0
+  SR 0.8, sigma* daily : P(E1>=20 within 3y) 0.15, within 10y 0.43, median years 11.0
+  SR 1.0, sigma* annual: P(E1>=20 within 3y) 0.00, within 10y 0.00, median years 35.0
+  SR 1.0, sigma* daily : P(E1>=20 within 3y) 0.18, within 10y 0.67, median years 7.0
+== P3: stage C, residualised held-out portfolio, kill at t < -0.5
+  common-factor share of the edge 1.0: residual-alpha kill rate 0.308
+  common-factor share of the edge 0.7: residual-alpha kill rate 0.126
+  common-factor share of the edge 0.4: residual-alpha kill rate 0.032
+  2024-25 holdout alone, true SR 0.0: P(t < -0.5) = 0.309
+  2024-25 holdout alone, true SR 0.3: P(t < -0.5) = 0.178
+  2024-25 holdout alone, true SR 0.5: P(t < -0.5) = 0.114
+  2024-25 holdout alone, true SR 0.8: P(t < -0.5) = 0.051
+== P4: +/-1 sign-flipped LOG returns, price-unit P&L of an always-long unit position
+  EURUSD-like 0.5%/day: mean daily price-P&L per unit notional +9.62e-06 (theory sigma^2/2 = 1.25e-05); annual +0.246% on 8% vol -> SR +0.031
+  XAU-like 1%/day: mean daily price-P&L per unit notional +5.75e-05 (theory sigma^2/2 = 5.00e-05); annual +1.472% on 16% vol -> SR +0.092
+  NATGAS-like 3.5%/day: mean daily price-P&L per unit notional +6.75e-04 (theory sigma^2/2 = 6.13e-04); annual +17.273% on 56% vol -> SR +0.308
+== P5: a demeaned random walk is a bridge: sign(12m lookback) trend rule, gross P&L t-stat
+  path 768 days: mean t of the trend rule -0.587 (theory -sqrt(2L/(pi n)) ~ -0.457); undemeaned = 0
+  path 3072 days: mean t of the trend rule -0.258 (theory -sqrt(2L/(pi n)) ~ -0.229); undemeaned = 0
+== P6: fixed-sequence chain at alpha plus a separate Holm set at alpha, all nulls true
+  chain 2, Holm set 3, rho 0.0: FWER 0.0960 (claimed 0.05)
+  chain 2, Holm set 3, rho 0.5: FWER 0.0807 (claimed 0.05)
+  chain 1, Holm set 4, rho 0.0: FWER 0.0957 (claimed 0.05)

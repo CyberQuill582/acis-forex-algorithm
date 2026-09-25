@@ -6,6 +6,83 @@
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
 
+## ▶ NEXT SESSION — START HERE (handover written 2026-09-25, evening; the owner wound the session up)
+
+**State, verified at handover:**
+- `main` is clean and all work is committed.
+- The full suite: 1008 passed. The governance gate is green, and the ledger shows 259 entries, 0 violations.
+- The spec is at master **v2.22**, with ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-08 v1.3, ACIS-09 v1.8 and ACIS-11 v1.2.
+- **Nothing is running.** No agents, no worktrees, no background jobs.
+- The branches `worktree-agent-a128ab904780ce593`, `-a8937e82f9a7a5391` and `-a9e00713d15bb5082` are all merged. They are kept, and safe to delete.
+- **GitHub:** see the push note at the end of this block.
+
+**What happened on 2026-09-25** (details further down in this file and in the ledger):
+1. **Merges 1–3.** The BUILDER, BUILDER-3 and BUILDER-2 branches (the leakage suite and the look register) were merged, each on the owner's go.
+2. **The cloud R1 plan.** It was imported by path to `CLOUD_AUDIT/reports/r1/` and reviewed in `R1_LEAD_REVIEW_2026-09-25.md`. The lead's disagreements, with evidence, are GAP-P12D-101/102 and GAP-P12D-95.
+3. **The owner ratified** the R-1 direction, then all fourteen decisions R1-D1..D14, which were applied as v2.21. R1-D9 and R1-D14 (the swap regime, and the account size / vol target) are decided at the FIRST REAL-DATA LOOK.
+4. **The two audits** (owner-launched) found 37 issues in v2.21. They were triaged in `R1_AUDIT_TRIAGE_2026-09-25.md`; the owner said "Ratify all"; they are applied as v2.22. The ledger entries are GAP-P12D-103..123.
+
+**NEXT, in order:**
+1. **The R1 build** (PLAN_R1 §2; the spec is now ready). **ASK the owner FIRST, as ONE standalone question:** build in-session, or launch a builder agent? Any launch needs the owner's explicit go. Then:
+   - **R1.1 — the lab:**
+     - the generator fix (demean nothing), [[GAP-P12D-91]];
+     - variance-matched planting at the decision horizon and a price-unit null, [[GAP-P12D-90]], [[GAP-P12D-117]] (ACIS-09 C-BT-12);
+     - joint bridges, [[GAP-P12D-92]];
+     - the B0 calibration machinery, [[GAP-P12D-105]];
+     - re-stating every recorded synthetic verdict, GAP-P12D-49 included.
+   - **R1.2 — register v2:** the daily return vector, the search-space hash, origin/cutoff and the cycle-order row ([[GAP-P12D-98]]).
+   - **R1.3 — rules, RSIM and costs:**
+     - the TREND family with Carver's scalars, [[GAP-P12D-122]];
+     - the faithful MOP member, [[GAP-P12D-116]];
+     - the split cost filters, [[GAP-P12D-115]];
+     - the swap table and its calendar in C8, [[GAP-P12D-93]];
+     - the one lot rule, [[GAP-P12D-123]];
+     - the indicator move, [[GAP-P12D-99]].
+   - **R1.4 — the verdict and e-processes:**
+     - `passed` with its gates, [[GAP-P12D-104]];
+     - serial gatekeeping and α-spending, [[GAP-P12D-111]];
+     - the HAC standard error, [[GAP-P12D-121]];
+     - the bootstrap and PBO, [[GAP-P12D-119]], [[GAP-P12D-120]];
+     - the per-account re-grade, [[GAP-P12D-112]];
+     - the raw stage C, [[GAP-P12D-114]];
+     - the bettors, [[GAP-P12D-110]];
+     - the portfolio unit, [[GAP-P12D-100]].
+   - **R1.5 — data.** The owner runs `python scripts/download_dukascopy_s3.py check`, then the hourly candles are pulled for the 30 instruments.
+   - **R1.6 — engine parity and the position policy:**
+     - Carver's band in the Governor, [[GAP-P12D-118]];
+     - flatten-then-promote, [[GAP-P12D-108]];
+     - minimum size and practice mode, [[GAP-P12D-106]];
+     - NAV-relative sizing, [[GAP-P12D-61]].
+   - **R1.7 — retire the explicit list only,** AFTER the staging mechanism is re-homed ([[GAP-P12D-107]]).
+   - **At each phase's end:** the constitution's two audits. ASK the owner to launch them; never launch them unasked.
+   - **The first real-data look** comes only after R1.1–R1.4 are green on the lab. At that point the owner decides R1-D9 + R1-D14 (the venue's swap regime and the account size / vol target, [[GAP-P12D-94]], [[GAP-P12D-101]]) and registers stage A's order.
+2. **Track A (the demo, the owner's priority):**
+   - the practice-mode spec, [[GAP-P12D-69]] (rung 2 needs it);
+   - the ACIS-13 review pass, [[GAP-P12D-70]];
+   - the three-loop runtime, [[GAP-0091b]].
+3. **Owner-only items:**
+   - the OANDA practice-token test, with the FTMO free trial as fallback;
+   - committing the corrected `ftmo` rulebook, [[GAP-P12D-54]];
+   - the equity floor per account, [[GAP-P12D-56]];
+   - the VPS, [[GAP-P12D-76]];
+   - a second copy of the tick set, [[GAP-P12D-50]];
+   - the laptop clock, [[GAP-P12D-51]];
+   - the look register's outside anchor, [[GAP-P12D-86]];
+   - OPTIONAL: whether to drop NVMA's confidence < 0.55 veto (it was KEPT);
+   - marking R-1 "relayed" in `cloud-handoff/RATIFICATIONS.md`.
+
+**Standing rules:**
+- NO agent launches without the owner's explicit go; the session ASKS.
+- Only the constitution's two audits.
+- After a session limit, RESUME agents; never relaunch them.
+- Nothing looser than v2.20 is built ahead of its rules.
+
+**Where things are:**
+- `R1_LEAD_REVIEW_2026-09-25.md` (the drafts and disagreements);
+- `R1_AUDIT_TRIAGE_2026-09-25.md` (C1–C15, D-a..D-g);
+- `CLOUD_AUDIT/reports/r1/PLAN_R1.md` (the build plan, which is finder evidence);
+- `archive/r1_lead_probes/` and `archive/r1_audit_evidence/` (the scripts behind every number).
+
 ## ⚠ START HERE — handover from the 2026-09-23/24 session
 
 ### 🟢 R-1: THE TRAINING DIRECTION, RATIFIED 2026-09-25 — and the cloud's R1 plan, imported and reviewed
@@ -50,7 +127,7 @@ The specifics need explicit OLD/NEW amendments for: the 2-year window, the DSR �
 
   The R1-D* numbers do not collide with the local D1–D9 below. R1-D2 supersedes local D1 (C+D) for fixed families; R1-D1 is local D4; R1-D3/D4/D8 carry local D5.
 - [ ] **OWNER, OPTIONAL: the NVMA confidence veto.** The plan's A7 list of NVMA safety-veto triggers omits `confidence < 0.55`. The lead KEPT it: dropping a veto trigger is a veto-semantics change the owner was never asked about. Rule on it only if you want it dropped.
-- [ ] **The constitution's TWO audits of the applied R1 amendments are RUNNING.** The owner launched them explicitly on 2026-09-25 ("Launch both now").
+- [x] 2026-09-25 **The constitution's TWO audits of the applied R1 amendments RAN** (both finished; triaged and applied as v2.22). The owner launched them explicitly on 2026-09-25 ("Launch both now").
   - What is under audit: commit `271d8e0`, under the pinned brief, now archive/AUDIT_BRIEF_R1_AMENDMENTS_2026-09-25.md (`c440b17`).
   - Resume handles (after a session limit, RESUME with `SendMessage`; never relaunch): AUDIT-INTERNAL `a4931719099e7f704` · AUDIT-EXTERNAL `a1c16d9c51348e948`.
   - 2026-09-25: both were cut off by the session limit (resets 15:00 Nairobi) and were RESUMED with `SendMessage` after the reset, per the owner's directive. Neither was relaunched.

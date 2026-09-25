@@ -1,0 +1,6 @@
+bar SR > z0.95/sqrt(Y): Y=11 -> 0.496, Y=10 -> 0.520
+FWER chain alone=0.0495  Holm set alone=0.0510  union=0.0977
+one family, 3 looks, look-corr 0.0: P(any look passes | null) = 0.1409
+one family, 3 looks, look-corr 0.5: P(any look passes | null) = 0.1220
+one family, 3 looks, look-corr 0.8: P(any look passes | null) = 0.0944
+one family, 3 looks, look-corr 0.95: P(any look passes | null) = 0.0716

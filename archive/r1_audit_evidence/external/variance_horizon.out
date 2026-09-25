@@ -1,0 +1,3 @@
+step (20 s)  planted/null variance ratio   1.023   within 1 +/- 0.05: True
+1 hour       planted/null variance ratio   4.518   within 1 +/- 0.05: False
+1 day        planted/null variance ratio  14.715   within 1 +/- 0.05: False

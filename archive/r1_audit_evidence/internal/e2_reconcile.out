@@ -1,0 +1,7 @@
+claim SR 1.0: kill by 1y=0.03 3y=0.22 median_years=6.380952380952381
+claim SR 0.5: kill by 1y=0.01 3y=0.06 median_years=>10
+claim SR 0.4: kill by 1y=0.01 3y=0.05 median_years=>10
+claim SR 0.25: kill by 1y=0.00 3y=0.03 median_years=>10
+6sigma scale, thr 5: 1y=0.18 median=3.1y
+6sigma scale, thr 20: 1y=0.04 median=6.6y
+1sigma scale, thr 20: 1y=0.48 median=1.0y
