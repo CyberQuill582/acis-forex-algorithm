@@ -1,6 +1,7 @@
 """Daily-reset platform rules and a declared initial capital (GAP-P12D-54 / -59; §9.5).
 
-FTMO's own rules (ftmo.com/en/trading-objectives/, modified 2026-05-13), 2-Step:
+FTMO's own rules (ftmo.com/en/trading-objectives/, dateModified 2026-09-24 when re-fetched by
+the external audit on 2026-09-25; the 2-Step semantics are unchanged — audit X8):
   * Maximum Daily Loss — "recalculated daily at 00:00 CE(S)T as the difference between:
     the account balance recorded at 00:00 CE(S)T of the current day and the Maximum Daily
     Loss Amount, which is 5% of the Initial Simulated Capital", tested on "account equity
