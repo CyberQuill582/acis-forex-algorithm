@@ -1,7 +1,7 @@
 # MISSION R1 — ACIS: research and plan the new training and validation direction (owner-ratified R-1)
 
 Read `FLEET_PLAN.md` first. Its hard rules bind here: reports only, quote your sources, grade the evidence, and use
-no real market data. This mission runs **after** the six-project fleet, on the reserve credit.
+no real market data. This mission runs after KALLOS and **before** creative-pipeline and PROKOPE (the owner's order, 2026-09-25: "R1 first"), on the remaining cloud credit.
 
 ## 0. The task, in the owner's words (2026-09-25)
 > "I want thorough research and planning done on the 6 recommended steps. Web search should be used as a first
@@ -128,7 +128,8 @@ Cross-cutting questions:
 ## 6. Boundaries and budget
 - **No real market data.** This mission designs how real data will be used; it does not use any. Synthetic
   experiments only.
-- **Credit:** R1 runs on the reserve. If the credit runs out, the owner's plan usage continues it automatically.
+- **Credit:** R1 runs on the remaining cloud credit, ahead of the last two fleet reviews. If the credit runs out, the
+  owner's plan usage continues it automatically.
   Finish PLAN_R1.md whatever happens.
 - **Usage limits:** if a usage limit stops the session, stop cleanly with everything pushed. The owner will type
   "continue" after the reset.

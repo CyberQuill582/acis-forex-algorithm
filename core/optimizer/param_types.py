@@ -29,6 +29,20 @@ GENE_SPECS: dict[str, tuple[float, float, bool]] = {
 }
 
 
+def repair_invariants(genes: dict[str, float | int]) -> dict[str, float | int]:
+    """Cross-field invariants enforced by repair, never by emitting invalid (§6). Shared by the
+    QIEA decoder and the §5.6 plateau neighbourhood, so a neighbour is exactly what QIEA emits."""
+    g = dict(genes)
+    if g["ema_slow"] <= g["ema_fast"]:
+        g["ema_slow"] = int(min(GENE_SPECS["ema_slow"][1], g["ema_fast"] + 1))
+    if g["atr_multiplier_tp"] <= g["atr_multiplier_sl"]:
+        g["atr_multiplier_tp"] = min(
+            GENE_SPECS["atr_multiplier_tp"][1], g["atr_multiplier_sl"] + 0.1
+        )
+    # rsi_oversold (20..35) < rsi_overbought (65..80) holds for all in-range values
+    return g
+
+
 @dataclass(frozen=True)
 class ParamSet:
     ema_fast: int

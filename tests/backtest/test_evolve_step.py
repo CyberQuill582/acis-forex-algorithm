@@ -7,6 +7,8 @@ import random
 from datetime import timedelta
 from types import SimpleNamespace
 
+from core.optimizer.plateau import PlateauVerdict
+from core.optimizer.qiea import EvolutionResult
 from tests.backtest.evolve_step import cost_model, evolve_fold
 
 
@@ -42,7 +44,9 @@ def _run(tmp_path, acis_config, n_bars: int):
     for instrument in ("EUR_USD", "USD_JPY"):
         cache.write(instrument, T0.year, bars)
     loop = SimpleNamespace(params=_Stager())
-    fold = Fold(0, T0, TRAIN_END, TRAIN_END + timedelta(days=7),      # only the cached year
+    # fold index 1: the index only seeds QIEA (seed_for), and fold 0's EUR_USD zigzag champion is
+    # a knife-edge (rsi_period ±10% dies) that the §5.6 plateau law refuses (GAP-P12D-34)
+    fold = Fold(1, T0, TRAIN_END, TRAIN_END + timedelta(days=7),      # only the cached year
                 TRAIN_END + timedelta(days=365))
     cfg = _cfg(acis_config)
     record = evolve_fold(loop, FoldData(fold, ()), cfg=cfg, costs=_costs(cfg), cache=cache,
@@ -101,8 +105,9 @@ class _FixedQIEA:
     def __init__(self, *args, **kwargs) -> None:
         pass
 
-    def evolve(self, regime, history, *, seed, now):
-        return make_paramset(regime=regime) if history.bars else None
+    def evolve_outcome(self, regime, history, *, seed, now):
+        p = make_paramset(regime=regime) if history.bars else None
+        return EvolutionResult(p, p)
 
 
 def test_every_candidate_champion_with_a_sharpe_is_a_trial(tmp_path, acis_config, monkeypatch) -> None:
@@ -124,3 +129,30 @@ def test_every_candidate_champion_with_a_sharpe_is_a_trial(tmp_path, acis_config
     # both candidates are trials, even though only one of them is staged
     assert record["trial_sharpes"] == [eur["holdout_trade_sharpe"], jpy["holdout_trade_sharpe"]]
     assert len(loop.params.staged) == 1
+
+
+def test_a_plateau_refused_candidate_stays_a_deflated_sharpe_trial(tmp_path, acis_config, monkeypatch) -> None:
+    """Audit F3: the §5.6 plateau law runs AFTER the holdout gate, so a candidate it refuses has
+    already been scored on the holdout. It must stay in the DSR selection set (GAP-P12D-25), or the
+    law shrinks N and loosens the ratified gate. Fold 0 of this noisy zigzag stages a champion with
+    the law off ("base") and refuses it with the law on ("head"): both must count the same trials."""
+    rng = random.Random(3)
+    closes = [c + rng.gauss(0, 0.00015) for c in zigzag_closes(600)]
+    cfg = _cfg(acis_config)
+
+    def run(root):
+        cache = LabelledBarCache(root, SPEC)
+        for instrument in ("EUR_USD", "USD_JPY"):
+            cache.write(instrument, T0.year, bars_from_closes(closes))
+        fold = Fold(0, T0, TRAIN_END, TRAIN_END + timedelta(days=7), TRAIN_END + timedelta(days=365))
+        return evolve_fold(SimpleNamespace(params=_Stager()), FoldData(fold, ()), cfg=cfg, costs=_costs(cfg),
+                           cache=cache, instruments=["EUR_USD", "USD_JPY"], logger=CapturingLogger())
+
+    head = run(tmp_path / "head")
+    monkeypatch.setattr("core.optimizer.qiea.check_plateau", lambda genes, fitness: PlateauVerdict(0, ()))
+    base = run(tmp_path / "base")
+    assert (head["champions"], base["champions"]) == (0, 1)            # the fixture exercises a refusal
+    assert head["trial_sharpes"] == base["trial_sharpes"] and len(head["trial_sharpes"]) == 1
+    refused = [c for r in head["regimes"].values() for c in r["candidates"] if c.get("plateau_refused")]
+    assert len(refused) == 1 and not refused[0]["champion"]
+    assert refused[0]["holdout_trade_sharpe"] == head["trial_sharpes"][0]

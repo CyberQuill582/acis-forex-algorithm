@@ -1,7 +1,7 @@
 # SNAPSHOT — acis
 
-- **Built:** 2026-09-25T07:08:50Z (2026-09-25 10:08 EAST) by `cloud-handoff/cloud_sync.sh` on the owner's laptop.
-- **Code under review:** branch `main` at commit `0270212e35d0df62fffdbd89d3daa1a69f5f9217` — "Owner: BUILDER-2 fixes go to BUILDER-2 after the BUILDER branch merges (one job: re-merge + fix)".
+- **Built:** 2026-09-25T07:53:40Z (2026-09-25 10:53 EAST) by `cloud-handoff/cloud_sync.sh` on the owner's laptop.
+- **Code under review:** branch `main` at commit `974dbdadd538ffd0b4941169dd8979bcabc3e8cd` — "BUILDER-2's owner-approved job sent (re-merge main, fix GAP-P12D-83)".
   This branch's parent chain contains that commit; review the code *as of that commit*.
 - **The local side has NOT stopped.** Another Claude Code instance may keep committing after this
   moment. State the base commit in your reports; the owner reconciles later.

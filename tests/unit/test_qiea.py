@@ -59,20 +59,22 @@ def test_repair_tp_sl_invariant() -> None:
 # ---------------------------- evolution gates -------------------------------- #
 
 def test_evolve_returns_valid_paramset_and_logs_run() -> None:
+    # seed 5: seed 42's zigzag champion (ema_fast 6) dies at ema_fast +10% of range (§5.6, GAP-P12D-34)
     qiea, log = make_qiea()
-    ps = qiea.evolve(REGIME, zigzag_history(500), seed=42, now=T0)
+    ps = qiea.evolve(REGIME, zigzag_history(500), seed=5, now=T0)
     assert ps is not None
     assert ps.regime is REGIME  # ParamSet construction already proved ranges+invariants
     runs = log.events("EVOLUTION_RUN")
     assert len(runs) == 1
-    assert runs[0]["data"]["seed"] == 42
+    assert runs[0]["data"]["seed"] == 5
     assert runs[0]["data"]["train_bars"] == 400 and runs[0]["data"]["holdout_bars"] == 100
 
 
 def test_same_seed_same_history_identical_champion() -> None:
-    """Â§3 determinism scope: reproducibility is the binding requirement."""
-    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=7, now=T0)
-    b = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=7, now=T0)
+    """Â§3 determinism scope: reproducibility is the binding requirement. (Seed 5: seed 7's
+    champion is a knife-edge the §5.6 plateau law now refuses — pinned in test_plateau_law.py.)"""
+    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=5, now=T0)
+    b = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=5, now=T0)
     assert a is not None and b is not None
     assert a.gene_values() == b.gene_values()
     assert a.param_set_id == b.param_set_id
@@ -113,7 +115,7 @@ def test_evolves_on_every_bar_inside_the_span_not_a_bar_count() -> None:
     window = fitness_window(history, cfg, now)
     assert len(window) == 1440 and window[0].ts == now - timedelta(days=1)
     qiea, log = make_qiea(cfg)
-    assert qiea.evolve(REGIME, history, seed=42, now=now) is not None
+    assert qiea.evolve(REGIME, history, seed=5, now=now) is not None
     run = log.events("EVOLUTION_RUN")[0]["data"]
     assert run["train_bars"] + run["holdout_bars"] == 1440
 
@@ -122,11 +124,12 @@ def test_evolves_on_every_bar_inside_the_span_not_a_bar_count() -> None:
 
 def test_gap0036_same_seed_different_params_get_different_ids() -> None:
     """The audit-link id is content-derived: same seed, different history/regime
-    => different champion params => different param_set_id (Â§4 traceability)."""
-    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=42, now=T0)
+    => different champion params => different param_set_id (Â§4 traceability). (Seed 5 stages
+    on both histories; seed 42's RANGING_TIGHT champion fails the §5.6 plateau law.)"""
+    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=5, now=T0)
     b = make_qiea()[0].evolve(
         RegimeType.RANGING_TIGHT, zigzag_history(500, regime=RegimeType.RANGING_TIGHT, leg=25),
-        seed=42, now=T0,
+        seed=5, now=T0,
     )
     assert a is not None and b is not None
     assert a.param_set_id != b.param_set_id

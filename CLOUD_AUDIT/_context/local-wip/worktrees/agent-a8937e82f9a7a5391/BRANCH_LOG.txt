@@ -6,11 +6,3 @@ e51e5cc 2026-09-25 05:17:47 +0300 T6: a bar that opens through the stop exits at
 341115c 2026-09-25 00:43:20 +0300 T7: the leakage guard bites (GAP-P12D-65, stage 3)
 e6293c4 2026-09-25 00:41:33 +0300 Structural leakage suite T1 + T2 at every decision point (GAP-P12D-65, stages 1-2)
 577d882 2026-09-24 22:16:57 +0300 Merge branch 'worktree-agent-a128ab904780ce593' into worktree-agent-a8937e82f9a7a5391
-9b9ec80 2026-09-24 19:53:56 +0300 BUILDER report: five-agent edge pass, stages 1-5
-445198e 2026-09-24 19:43:49 +0300 Evaluation registry: pin that repeat draws are counted (falsification F12 survived)
-fbae9e1 2026-09-24 19:41:59 +0300 Record every QIEA evaluation, whichever gate ends the run (GAP-P12D-33 [impl])
-904b409 2026-09-24 19:31:05 +0300 The §5.6 parameter-plateau law, in the optimizer's staging path (GAP-P12D-34)
-533b202 2026-09-24 15:39:47 +0300 GAP-P12D-38 fixture: name the second barrier the falsification found
-2fcf3d1 2026-09-24 15:37:29 +0300 GAP-P12D-38 refuted: the "zero-duration trades" were an empty population's 0.0
-77ac588 2026-09-24 15:14:06 +0300 Oracle positive control: the harness now recognises a known-good strategy (GAP-P12D-37)
-1d40ed0 2026-09-24 14:21:04 +0300 BUILDER checkpoint: setup verified, TSMOM per-trade records absent on disk
