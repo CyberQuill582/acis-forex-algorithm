@@ -477,6 +477,17 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
     - Chrome was not signed in to AWS; the agent does not sign in.
     - **OWNER:** open the AWS console as root → Billing → Bills (this month, by service), plus the RDS and Lightsail consoles in every region.
     - On this laptop, the only ACIS job is the HistData download every 30 min (histdata.com, not AWS; it uses internet data).
+    - **RESOLVED the same evening from the owner's own console** (the owner signed in; the agent read the Bills and Credits pages, read-only). **There is NO drain.**
+      - The credits: $200 issued (the Explore-AWS tasks), $2.03 used, $197.97 left.
+      - September gross, all covered by credits:
+        - EBS gp3 storage of the dead data server's disk: $1.83 (20.8 GB-Mo);
+        - its compute: $0.12;
+        - the surviving snapshot: $0.04 so far (0.766 GB-Mo);
+        - S3 GETs: $0.03 (70,080);
+        - public IPv4: $0.01;
+        - RDS MySQL db.t4g.micro: 0.167 h, $0.00, so it no longer runs;
+        - Lambda, Glue, SNS, SQS, KMS, Secrets Manager, CloudWatch and Bedrock Claude Haiku 4.5: $0.00 (the Explore-AWS credit tasks).
+      - The only thing still accruing is the snapshot, a few cents a month. KEEP it ([[GAP-P12D-50]]).
 - [ ] **RDS is unverifiable with the current IAM user.** `rds:DescribeDBInstances` is `AccessDenied` for `acis-data` in every region, so the `db.t4g.micro` MySQL instance named in the owner's cost list can neither be confirmed nor deleted from here. **Only the root user in the console can check and remove it** — Billing → Bills, or RDS console with "any region" selected. This is the one item on that cost list that may still be billing.
 
 ## Standing rules (owner-directed)
