@@ -3,7 +3,7 @@
 - **Lane:** R1-D. **Model:** the system prompt names `claude-opus-5-5`; effort not observable from inside the session.
 - **Fresh context:** yes; this lane saw only its brief, the prior reports and BASE.
 - **BASE:** `974dbda`. **Date:** 2026-09-25. **Web used:** 8 of 40.
-- **Status:** first findings only. The "For PLAN_R1" draft arrives in checkpoint 2.
+- **Status:** SUPERSEDED by the final `R1D_INNOVATION_ARCH.md` (§2.9 is the final "For PLAN_R1"; its numbers supersede the drafts below).
 
 ## First findings
 
