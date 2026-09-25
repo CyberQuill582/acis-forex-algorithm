@@ -5,7 +5,7 @@
 - **Fresh context:** yes. No subagents launched.
 - **BASE:** `974dbdadd538ffd0b4941169dd8979bcabc3e8cd`, read-only at `/tmp/review-acis`.
 - **Date:** 2026-09-25, 08:00–~10:25 UTC.
-- **Web:** __WEB__ of the 30-call cap (searches and fetches combined).
+- **Web:** 25: 19 fetches (one returned 403) and 6 searches of the 30-call cap (searches and fetches combined).
 - **Data:** synthetic only. No market data, bundled datasets or `.bi5` fixtures were touched. Every number in §2 regenerates from `evidence/R1A/` (§2.9).
 - **Compute:** at most 2 worker processes, `OMP_NUM_THREADS=1`, heavy work in `/tmp/r1-R1A/`.
 - **LLM-originated marking.** Every design here is LLM-originated: the e-processes, the verdict rule, the bar numbers and the planning rates. They are **procedures**, not market hypotheses, so testing them on synthetic data is legitimate. Any strategy they end up admitting is still credited only on post-cutoff forward data when it is LLM-shaped (GAP-P12D-66).
@@ -30,7 +30,7 @@
 4. **"Register every run" is necessary but NOT sufficient under "iterate freely".** [sim, R = 400; extends C1]
    - With an adaptive researcher (70% hill-climbing), the test over the **registered union** (C1's SPA_union) runs at **10–16%** FPR, and Bonferroni over the registered runs at **6.5–13%**.
    - The count must run over the **declared search space**: max-t over the declared grid holds **5.2–5.5%**; fixed pooled family combinations with Holm hold **1.5%**.
-5. **Under R-1 a family is a fixed pooled combination (no argmax inside it), so VAL's CPCV + PBO stage drops out of the path.** The development verdict is a Holm lower bound over K family-versions. Power: __EXPOWER__. [sim]
+5. **Under R-1 a family is a fixed pooled combination (no argmax inside it), so VAL's CPCV + PBO stage drops out of the path.** The development verdict is a Holm lower bound over K family-versions. Power: 64–69% for the fixed combination against 45–58% for max-t over the declared grid, in the weak-idiosyncratic and common-factor worlds (99–100% in a strong world). [sim]
 6. **Breadth is real but saturates.** [derived + sim; correlations (a)]
    - IDM = √(N/(1 + (N − 1)ρ)) with ρ the correlation of the **rules' P&L**, which for trend rules is ≈ ρ_price² (measured).
    - The published TSMOM P&L correlations (MOP 2012) give a planning ρ of 0.10–0.15, and IDM(20 / 30 / 40) = **2.28–2.63 / 2.37–2.77 / 2.42–2.86**.
@@ -41,16 +41,20 @@
    - the raw same-window test leaks, and **the leak grows with the search**: 14.5% → 24% FPR from K = 20 to 200;
    - residualising restores **2.5–3.2%**;
    - power is flat past **6–8 held out of 30**;
-   - __EXHO__ [sim]
+   - residualised power is 19–96% for an idiosyncratic edge but **12–17% for a common-factor edge**: residualising removes the edge itself;
+   - a "kill if SR̂ < 0" on held-out instruments, or on the 2-year holdout, wrongly kills a realistic edge **18–32%** of the time, so the kill floors should sit at t < −0.5 [sim]
 9. **The acceptance bar (§2.7):**
    - **A:** development Holm lower bound > 0, i.e. **SR̂ > 0.81** at K ≤ 10 over 10 OOS years (72% power at a true 1.0);
-   - **B/C:** held-out and holdout **kill-only** at SR̂ < 0;
+   - **B/C:** held-out and holdout **kill-only** at t < −0.5. The usual SR̂ < 0 wrongly kills 18–32% of realistic edges;
    - **D:** E3 cost certified;
    - **E:** E1 **γ·W ≥ 20** for "edge shown";
    - **F:** the E2 kill at half the claimed SR.
 
-   Every stage has a measured FPR ≤ 5%. [sim; spec — owner ratification]
-10. **Corrections:** C1's 9.3-year frontier (SR 1, K = 1) is 6.2 years on daily data. __EXSHRINK__ [derived, sim]
+   Every stage's error rates are measured or derived; the end-to-end false-promotion rate is ≤ 0.2%. [sim; spec — owner ratification]
+10. **Corrections, and one addition.**
+    - C1's 9.3-year frontier (SR 1, K = 1) is **6.2 years** on daily data.
+    - **No historical gate catches a code-level look-ahead leak.** It works on held-out instruments and on 2024–25 alike. A live-versus-replay zero-decision-mismatch rule on the demo catches one in days (R1A-13, derived).
+    - Per-instrument parameter selection loses 4–10% of a pooled edge when instruments are alike (τ ≤ 0.1). EB shrinkage matches the better choice at every τ, and should gate any deviation. [derived, sim]
 
 ---
 
@@ -87,10 +91,10 @@ The mechanism, as used here: a bettor starts with wealth 1 and each day stakes a
 
 | | E1 EDGE (sign of edge) | E2 KILL (claim falsified) | E3 COST GAP (plumbing and cost) |
 |---|---|---|---|
-| unit | daily net P&L of the whole demo book, r_t, as a fraction of equity | same | per fill: d_i = realised − modelled cost, in units of the modelled cost; modelled = the shadow replay of the same fill through the C8 `CostModel` on the same feed |
+| unit | daily net P&L as a fraction of equity: of the whole demo book, and separately of each promoted family's sleeve (attributed) for γ_j·W_j | same | per fill: d_i = realised − modelled cost, in units of the modelled cost; modelled = the shadow replay of the same fill through the C8 `CostModel` on the same feed |
 | H0 | E[r_t \| past] ≤ 0 | E[r_t \| past] ≥ μ_claim | breach: E[d] ≤ +0.25. Certify: E[d] ≥ +0.25, and separately E[d] ≤ −0.25 |
 | bet on | x_t = max(r_t/(6σ*), −1) | x_t = max((μ_claim − r_t)/(6σ*), −1) | x_i = max((d_i − 0.25)/5, −1) for breach. Certify: (0.25 − d_i)/5 and (d_i + 0.25)/5 |
-| stake | λ_t = clip(m̂/(v̂ + m̂²), 0, 0.8), with m̂, v̂ the running mean and variance of past x plus a 20-observation prior (m 0, v 1/36) | same | same |
+| stake | **default `E_MIX`:** W = the mean of the wealths at fixed λ ∈ {0.05, 0.1, 0.2, 0.4, 0.8}. Alternative `E_BET`: λ_t = clip(m̂/(v̂ + m̂²), 0, 0.8), from the running mean and variance of past x plus a 20-observation prior (m 0, v 1/36) | same | same |
 | wealth | W_t = Π(1 + λ_s x_s) | same | same; **certify** when BOTH one-sided wealths ≥ 20 (intersection–union) |
 | verdict | W ≥ 20: sign shown (α 0.05). W ≥ 100: strong. Else "not yet", never "failed" | W ≥ 5: review, freeze scale-ups. W ≥ 20: kill | breach W ≥ 20: kill the venue or recalibrate C8. Certify at W ≥ 20 on both |
 
@@ -99,7 +103,7 @@ The mechanism, as used here: a bettor starts with wealth 1 and each day stakes a
 - **Recommended default: `E_MIX`.** It has no prior and no plug-in, and its median path rises steadily: 1.3 / 1.9 / 2.4 after 1 / 2 / 3 years at SR 1.0. The plug-in `E_BET`'s median path dips to 0.85 in year 1, which an owner reading W daily will misread, even though it hits W ≥ 20 early slightly more often [sim].
 - **Tripwire rule (new; load-bearing).** The lower bound (−1) is what makes the bet safe, so it must be a **tripwire, not a winsorisation**:
   - a day with r_t < −6σ* means the sizing broke;
-  - a fill with d_i − 0.25 < −5, or a cost more than 5 modelled costs above the model, is a reconciliation breach.
+  - a fill whose realised cost differs from the modelled cost by more than ~5 modelled costs, in either direction, is a reconciliation breach.
   - Either one halts the verdict and raises a K5 event. It must never be silently clipped. §2.2.3 shows what silent clipping does.
 - Complexity: one shared function (~25 lines) and three call sites (~15 lines). Concepts added: 1 (a bettor's wealth). E2 replaces the CUSUM leg of VAL K5; E3 gives VAL §5.4's "≥ 100 reconciled round trips" a stopping rule.
 - Alternatives measured and **rejected**:
@@ -195,8 +199,12 @@ The same for the recommended **`E_MIX`**:
    - It is **not** allowed for LLM-originated or LLM-refined hypotheses: this model's cutoff covers 2024–25.
 2. **Breadth** (§2.3) raises the portfolio SR that E1 sees. At an IDM of 2.1–2.4, the same per-instrument edge is seen 4.4–5.8× faster.
 
-### 2.2.7 What each e-process does NOT protect against
+**2.2.7 What each e-process does NOT protect against.**
 - A leak. E1 on a leaky strategy's forward record is honest, because forward data cannot leak, but a backtest-derived μ_claim can be inflated by one. E2 then kills faster, which is the right direction.
+  - **A faster, non-statistical leak catcher exists only in live time (R1A-13; my inference).** Every live decision is made before the next bar exists. Replay the same bars through the backtest path once they have closed, and require **zero decision mismatches** (same side, same target position, same bar).
+  - A look-ahead leak in the backtest/research path shows up as systematic mismatches within days, long before any P&L statistic could see it.
+  - This is VAL's R3 (identical decisions, research simulator vs harness) applied to live vs replay. It also catches non-determinism.
+  - It matters because **no historical gate catches a code leak**: the leak works on held-out instruments and on 2024–25 alike.
 - Non-stationarity: a real edge that decays. E1 still controls the false-positive rate, but its power falls. E2 at a pre-registered μ_claim is the decay alarm.
 - **An unregistered restart.** Resetting W to 1 after a bad month, or after a "fix", is a new look. Every restart must be registered and **counted** in the forward weights of §2.5, or W is meaningless.
 
@@ -278,7 +286,20 @@ Readings:
 - **Score:** the *true* Sharpe of what each method picks, per instrument, i.e. the realised OOS edge.
 - **True profile over speeds:** 0.15 / 0.25 / 0.30 / 0.30 / 0.25 / 0.20. Heterogeneity τ is correlated 0.8 across speeds.
 
-__SHRINK__
+Mean true per-instrument SR of what each method picks (the realised OOS edge; oracle = the best speed per instrument):
+
+| true heterogeneity τ | oracle | literature-fixed speed | pooled argmax | **per-instrument argmax** | **EB-shrunk argmax** | P(EB allows deviation) |
+|---|---|---|---|---|---|---|
+| 0.0 | 0.300 | 0.300 | 0.285 | **0.256** (−10% vs pooled) | 0.284 | 0.0% |
+| 0.1 | 0.330 | 0.300 | 0.285 | **0.273** (−4%) | 0.288 | 0.1% |
+| 0.2 | 0.375 | 0.300 | 0.288 | 0.317 (+10%) | 0.317 | 8.1% |
+| 0.3 | 0.428 | 0.301 | 0.296 | 0.372 (+26%) | 0.372 | 63.4% |
+
+- **Per-instrument argmax loses 4–10% of the edge when the true heterogeneity is ≤ 0.1**: it fits noise. It gains only when τ ≥ 0.2.
+- **EB-shrunk selection is never worse than the better of the two** (≈ pooled at τ ≤ 0.1, ≈ per-instrument at τ ≥ 0.2).
+- Its deviation flag is calibrated: it fires 0–0.1% of the time at τ ≤ 0.1, 8% at 0.2 and 63% at 0.3.
+- **A caveat on the fixed column.** The literature-fixed speed sits on the true peak here by construction. A literature choice one step off the plateau would lose ≈ 0.05 (the profile's slope). The equal-weight combination of all six speeds has a true SR of ≈ 0.24 × FDM ≈ 0.26 per instrument, where FDM ≈ 1.07 at a speed correlation of 0.85. That is ~14% below the best single speed.
+- That ~14% is the price of R1A-2's "no argmax inside a family". §2.5.3 shows the price is repaid in verdict power: 64–69% against 45–58% for grid selection at realistic edges. Choose the combination's grid coarse and near the literature's plateau so the price stays small.
 
 **2.4.3 The verdict statistics and the deviation rule (proposed; LLM-originated).**
 1. **"Is the rule's pooled edge > 0"** is the only question the history can answer. Statistic: the one-sided t of the **portfolio's** daily OOS P&L (§2.3.5), inside the register rule of §2.5.
@@ -331,22 +352,26 @@ Mean annual Sharpe of the kept "best run" on the development years: 0.57 / 0.67 
 
 Power, in %, at K = 20 / 50 / 100 / 200 registered runs (R = 300 per world). The "truth" is the forward 2-year annual Sharpe of a **fixed, pre-registered** EWMAC(16,64) pooled on all 20 development instruments, averaged over the replications:
 
-| verdict rule | **idiosyncratic trend, weak** (μ 0.05) | **idiosyncratic trend** (μ 0.08; fixed-config truth 0.87; best config in the grid ≈ 2.0 in sample) | **common-factor trend** (μ 0.08; fixed-config truth 0.58) |
+| verdict rule | **idiosyncratic trend, weak** (μ 0.05; fixed-config truth 0.31) | **idiosyncratic trend** (μ 0.08; fixed-config truth 0.87; best config in the grid ≈ 2.0 in sample) | **common-factor trend** (μ 0.08; fixed-config truth 0.58) |
 |---|---|---|---|
-| Bonferroni over runs *(invalid: 6.5–13% FPR)* | __W1__ | 94.7 / 98.3 / 99.3 / 99.7 | 66.0 / 69.7 / 66.0 / 61.0 |
-| max-t over the registered union *(invalid: 10–16% FPR)* | __W2__ | 95.0 / 99.0 / 99.3 / 99.7 | 68.7 / 72.3 / 67.7 / 65.0 |
-| **max-t over the declared grid** (FPR 5.2–5.5%) | __W3__ | 99.0 / 100 / 100 / 100 | 58.0 / 56.7 / 56.7 / 56.7 |
-| **Holm over fixed family combinations** (FPR 1.5%) | __W4__ | 100 / 100 / 100 / 100 | **69.3 / 69.0 / 69.0 / 69.0** |
-| e-Bonferroni over runs (FPR 0%) | __W5__ | 26.0 / 25.0 / 21.0 / 15.0 | 17.3 / 15.7 / 13.7 / 11.7 |
-| forward 2 y once, best run | __W6__ | 44.7 / 63.3 / 73.3 / 78.7 | 19.7 / 19.0 / 17.7 / 16.7 |
-| forward 2 y once, best family combination | __W7__ | 80.3 / 85.3 / 85.3 / 85.3 | 27.7 / 28.0 / 28.0 / 28.0 |
+| Bonferroni over runs *(invalid: 6.5–13% FPR)* | 42.0 / 50.0 / 51.0 / 51.0 | 94.7 / 98.3 / 99.3 / 99.7 | 66.0 / 69.7 / 66.0 / 61.0 |
+| max-t over the registered union *(invalid: 10–16% FPR)* | 44.0 / 54.7 / 55.3 / 56.7 | 95.0 / 99.0 / 99.3 / 99.7 | 68.7 / 72.3 / 67.7 / 65.0 |
+| **max-t over the declared grid** (FPR 5.2–5.5%) | 45.0 / 47.3 / 47.3 / 47.3 | 99.0 / 100 / 100 / 100 | 58.0 / 56.7 / 56.7 / 56.7 |
+| **Holm over fixed family combinations** (FPR 1.5%) | **64.3 / 68.3 / 68.3 / 68.3** | 100 / 100 / 100 / 100 | **69.3 / 69.0 / 69.0 / 69.0** |
+| e-Bonferroni over runs (FPR 0%) | 0.3 / 0 / 0 / 0 | 26.0 / 25.0 / 21.0 / 15.0 | 17.3 / 15.7 / 13.7 / 11.7 |
+| forward 2 y once, best run | 12.3 / 13.0 / 15.7 / 16.0 | 44.7 / 63.3 / 73.3 / 78.7 | 19.7 / 19.0 / 17.7 / 16.7 |
+| forward 2 y once, best family combination | 26.3 / 27.0 / 27.0 / 27.0 | 80.3 / 85.3 / 85.3 / 85.3 | 27.7 / 28.0 / 28.0 / 28.0 |
 
 Readings:
-1. **The fixed family combination costs no power, and in the common-factor world it gains 11–12 pp over the declared-grid max-t** (69% against 57–58%). The combination is not charged for the 770-configuration multiplicity; the grid max-t is.
+1. **The fixed family combination costs no power, and at realistic edge sizes it GAINS 11–23 pp over the declared-grid max-t:**
+   - weak idiosyncratic world: **64–68% against 45–47%**;
+   - common-factor world: **69% against 57–58%**.
+
+   The combination is not charged for the 770-configuration multiplicity; the grid max-t is. It is the most powerful valid rule measured, and also the one with the lowest FPR (1.5%).
 2. **In the strong idiosyncratic world, search does find better configurations.** The best run's forward Sharpe (1.1–1.8) exceeds the fixed EWMAC16's 0.87. A fixed combination forgoes that gain *in what is traded*, but not in the verdict's power (both 100%).
    - The honest way to capture that gain is to register the better-looking configuration as a **new family-version** and let it earn its place forward.
    - The combination's forward test is also more powerful than the best run's at K ≤ 100 (80–85% against 45–73%). A single run, often on a 5-instrument sub-universe, is noisier than the pooled combination.
-3. **e-values on development history are valid but weak** (12–26% where Holm has 69–100%). e-values belong on the forward record.
+3. **e-values on development history are valid but weak** (0–26% where Holm has 64–100%). e-values belong on the forward record.
 4. **The rules inflated on the null** (Bonferroni over runs, the registered union) look "more powerful" in the common-factor world. That is their false-positive rate talking.
 
 **2.5.4 How it composes with VAL's CPCV + PBO and C1's SPA/StepM, and the one rule.**
@@ -403,14 +428,15 @@ Same simulations; the kept best run's base configuration applied to the 8 held-o
 
 | held-out test | null FPR (K 20→200) | idiosyncratic weak | idiosyncratic μ 0.08 | common-factor μ 0.08 |
 |---|---|---|---|---|
-| raw, same window *(leaky)* | 14.5 → 24.0 | __H1__ | 87.7 / 93.0 / 96.3 / 98.0 | 67.7 / 73.7 / 72.0 / 72.7 |
-| **residualised, same window** | 2.5–3.2 | __H2__ | **59.7 / 77.7 / 89.7 / 96.3** | **16.0 / 17.0 / 14.3 / 12.3** |
-| forward 2 y | 5.0–7.0 | __H3__ | 34.3 / 38.0 / 41.3 / 43.0 | 16.3 / 16.0 / 18.0 / 18.0 |
+| raw, same window *(leaky)* | 14.5 → 24.0 | 34.0 / 40.7 / 42.7 / 42.7 | 87.7 / 93.0 / 96.3 / 98.0 | 67.7 / 73.7 / 72.0 / 72.7 |
+| **residualised, same window** | 2.5–3.2 | 18.7 / 25.0 / 29.7 / 30.3 | **59.7 / 77.7 / 89.7 / 96.3** | **16.0 / 17.0 / 14.3 / 12.3** |
+| forward 2 y | 5.0–7.0 | 11.7 / 13.0 / 14.3 / 14.0 | 34.3 / 38.0 / 41.3 / 43.0 | 16.3 / 16.0 / 18.0 / 18.0 |
 
 **The catch, measured.**
 - Residualising on the development P&L removes whatever the held-out instruments share with the development instruments. For an idiosyncratic edge that is only noise, and power is 60–96%.
 - For a **common-factor edge** (a USD-wide trend) it removes the edge itself: power falls from ~70% (raw) to **12–17%**, barely above the 2.5–3.2% null.
-- So a residualised held-out *kill* (SR̂ < 0) is safe for either kind of edge. It kills a real edge rarely, because the residual mean stays ≥ 0 in expectation.
+- **The kill side, measured** (kill-rate reruns, R = 200 per world). A residualised held-out kill at SR̂ < 0 wrongly kills a real **common-factor** edge **24–27%** of the time (K 20→200). That is about the same as the 2-year forward kill of the best run (21.5–24.5%), and far above the raw test's 4–5.5%. For a weak idiosyncratic edge (fixed-config truth 0.32) it is **18–28%**. The 2-year forward kill of the best run is 25.5–32.5% in the same world.
+- **Any "kill if SR̂ < 0" on a short or narrow record wrongly kills a realistic edge 18–32% of the time**, whether it is held out by instrument or by time. Stacked B and C let a weak real edge survive only ≈ 0.75 × 0.72 ≈ 54%. The kill floor must therefore sit below zero (§2.7, the kill-floor table).
 - A held-out *pass* can only certify idiosyncratic transfer.
 - A factor-borne edge can be tested honestly only on **forward time** (G4/G5). That is one more reason R-1 item 6 names forward time as the decisive test.
 
@@ -434,23 +460,35 @@ All proposed; LLM-originated; **[spec — owner ratification]** for A, C and E, 
 
 | # | gate | bar (exact) | measured / derived FPR | power |
 |---|---|---|---|---|
-| **A** | G2 development | Register-corrected lower bound **LB_j = SR̂_j − z_{1−0.05/K}/√Y > 0**. SR̂_j is the annual Sharpe of family-version j's pooled combination on daily expanding-window OOS P&L; Y ≈ 10 (test years 2014–2023); K = every family-version declared on 2012–2023. **Budget K ≤ 10** ⇒ the bar is SR̂ > 0.81 (K = 5: 0.74; K = 3: 0.67) | 1.5% [sim, adaptive null, Holm over fixed combinations]; ≤ 5% by construction | true portfolio SR 1.0: 72% (K = 10), 80% (K = 5); SR 0.7: 36% / 46% [derived]. Planted, sim: __APOWER__ |
-| **B** | G3 held-out instruments | M = 6–8 of 30, stratified and blind. Residualised same-window SR̂ of the frozen family on them: **kill if < 0**; "transfers" if its one-sided t > 1.645 (support only) | 2.5–3.2% false "transfers" [sim]; a false kill of a true idiosyncratic edge: Φ(−(1−β)·SR_M·√10) ≈ 3–7% at SR_M 0.6 [derived] | detects "transfers" __BPOWER__ |
-| **C** | G4 holdout 2024–25, once | **kill if SR̂ < 0** (owner's alternative: < −0.5) | catches a dead strategy 50% (alternative: 24%) | falsely kills a true 1.0 8% (1.7%), a true 0.5 24% (8%) [derived] |
+| **A** | G2 development | Register-corrected lower bound **LB_j = SR̂_j − z_{1−0.05/K}/√Y > 0**. SR̂_j is the annual Sharpe of family-version j's pooled combination on daily expanding-window OOS P&L; Y ≈ 10 (test years 2014–2023); K = every family-version declared on 2012–2023. **Budget K ≤ 10** ⇒ the bar is SR̂ > 0.81 (K = 5: 0.74; K = 3: 0.67) | 1.5% [sim, adaptive null, Holm over fixed combinations]; ≤ 5% by construction | true portfolio SR 1.0: 72% (K = 10), 80% (K = 5); SR 0.7: 36% / 46% [derived]. Planted, sim: 64–69% at a fixed-config truth of 0.31–0.58 (7 families, adaptive researcher) |
+| **B** | G3 held-out instruments | M = 6–8 of 30, stratified and blind. Residualised same-window t of the frozen family on them: **kill if t < −0.5**; "transfers" if t > 1.645 (support only). Skip B, and let the forward stages decide, when the family's development P&L is factor-dominated (mean pairwise P&L correlation across instruments > 0.3) | 2.5–3.2% false "transfers" [sim]; a false kill of a true idiosyncratic edge: Φ(−(1−β)·SR_M·√10) ≈ 3–7% at SR_M 0.6 [derived] | "transfers" detected: 19–30% (weak idiosyncratic edge), 60–96% (strong), 12–17% (common-factor). Wrongful kill at SR̂ < 0: 18–28% (weak idiosyncratic), 24–27% (common-factor) [sim] |
+| **C** | G4 holdout 2024–25, once | **kill if t < −0.5** (i.e. SR̂ < −0.35 over 2 y). The owner's alternative is VAL/C1's SR̂ < 0 | catches a dead strategy 31% (at SR̂ < 0: 50%) | falsely kills a true 1.0 2.8% (at SR̂ < 0: 7.9%), and a true 0.5 11% (24%) [derived; sim agrees at 25–32% for SR̂ < 0] |
 | **D** | G5a forward cost | **E3 certify** the realised − modelled cost per fill inside ±25%: both one-sided W ≥ 20, with the 5×-modelled-cost tripwire. **E3 breach** W ≥ 20 = kill the venue or recalibrate C8 | false certify ≤ 2.5% at the band edge, false breach ≤ 2.2% (dispersion ≤ 1) [sim] | certify: median 102–166 fills; a 2× cost error: 30–44 fills; +50%: 88–114 [sim] |
 | **E** | G5b forward edge | **γ_j · W_j ≥ 20** (E1; γ_j = 1 for the first promotion if J_max = 1, else pre-committed weights). "Edge shown" | ≤ 3.7% over 20 y of daily looks, five null shapes [sim] | portfolio SR 1.5: median 2.4–3.0 y; 2.0: 1.4–1.6 y; 1.0: 6.1–6.8 y [sim] |
 | **F** | G5b forward kill | **E2 with μ_claim = SR̂_j/2** (a 50% haircut of A's estimate). W ≥ 5: freeze scaling. W ≥ 20: kill | false kill when the haircut claim is true: ≤ 6.5% by 1 y, 10–11% by 10 y at W ≥ 5; ≤ 2.5% at W ≥ 20 [sim] | truth 0 against a claim of 1.0: 25% by 1 y, median 3.1 y (W ≥ 5) [sim] |
+
+**The kill-floor trade-off** (B and C) [derived; the t-statistic of the kill test ~ N(δ, 1)]. δ ≈ 0.67 is the measured weak-edge case (25% wrongful kill at t < 0 in §2.6.3); δ = SR·√2 for the 2-year holdout:
+
+| kill if t < | catches a dead strategy | wrongly kills: weak edge (δ 0.67) | holdout, true SR 0.5 | holdout, true SR 1.0 |
+|---|---|---|---|---|
+| 0 (VAL/C1) | 50% | 25% | 24% | 7.9% |
+| **−0.5 (proposed)** | **31%** | **12%** | **11%** | **2.8%** |
+| −1.0 | 16% | 4.7% | 4.4% | 0.8% |
+
+- A has already bounded the false-promotion rate at ≤ 5%, so B and C are **secondary** filters. They should not destroy a quarter of the real edges each.
+- −0.5 halves the wrongful kills for a 38% loss of catch rate.
+- **Neither B nor C catches a look-ahead leak.** The leak is in the code, so it works on any historical instrument and period, including 2024–25. Only live time catches it; see R1A-13.
 
 **End to end** [derived from the rows above; the stages use disjoint data, so the probabilities multiply]. P(A passes at K = 10) × P(C does not kill) × P(E "edge shown" within t years of demo), true **portfolio** SR:
 
 | true portfolio SR | P(A) | P(C survives) | "edge shown" within 1 / 2 / 3 / 5 y of demo |
 |---|---|---|---|
-| 0 (null) | ≤ 5% (1.5% measured) | 50% | ≤ 0.1% at any horizon (≤ 0.05 × 0.5 × 0.05) |
+| 0 (null) | ≤ 5% (1.5% measured) | 50% (69% at the −0.5 floor) | ≤ 0.2% at any horizon (≤ 0.05 × 0.69 × 0.05) |
 | 1.0 | 72% | 92% | 2–5% / 9–12% / 14–18% / 25–29% |
 | 1.5 | 98% | 98% | 8–17% / 32–40% / 49–57% / 73–78% |
 | 2.0 | ≈ 100% | ≈ 100% | 19–34% / 58–67% / 80–83% / — |
 
-The pipeline is safe against false promotion (≤ 0.1%). At realistic portfolio Sharpes it is **slow to say yes**: at SR 1.0, "edge shown" within 3 years of demo happens 14–18% of the time. Optional continuation (R1A-12) shifts each column two years earlier for literature-fixed hypotheses.
+The table uses C's kill at SR̂ < 0. At the proposed −0.5 floor, P(C survives) rises to 97% at a true 1.0. The pipeline is safe against false promotion (≤ 0.2%). At realistic portfolio Sharpes it is **slow to say yes**: at SR 1.0, "edge shown" within 3 years of demo happens 14–18% of the time. Optional continuation (R1A-12) shifts each column two years earlier for literature-fixed hypotheses.
 
 **What a full pass certifies, stated plainly.**
 - **A + B + C + D:** "a pre-declared pooled family had a significant register-corrected OOS mean on 2012–2023; it was not contradicted on held-out instruments or on 2024–25; and the venue's costs match the model". That is the bar to **run the demo at scale, or to buy a challenge** (a C1/ECO money decision).
@@ -469,7 +507,7 @@ Each item has five parts: **value** (what gets sharper), **complexity** (lines a
 - Verdict: **adopt**.
 
 **R1A-2. A family is a fixed pooled combination; no argmax inside a family.** **[spec]**
-- Value: removes within-family multiplicity; FPR 1.5% on the adaptive null. It **deletes** VAL's CPCV + PBO stage from the R-1 path. Power in the planted worlds: __P2POWER__.
+- Value: removes within-family multiplicity; FPR 1.5% on the adaptive null. It **deletes** VAL's CPCV + PBO stage from the R-1 path. Power in the planted worlds: 64–69% for Holm over fixed combinations against 45–58% for the declared-grid max-t at realistic edges (fixed-config truth 0.31–0.58); both 99–100% in a strong world.
 - Complexity: −(the CPCV/PBO stage, never built) and −(per-regime QIEA selection). A combination is ~10 lines.
 - Grade: [sim].
 - Falsifier: a planted world where the fixed combination's power falls below the declared-grid max-t's by > 15 pp at equal FPR. Then allow grid selection with rule R1A-1.
@@ -488,19 +526,21 @@ Each item has five parts: **value** (what gets sharper), **complexity** (lines a
 - Certifying a per-instrument net SR of 0.3 takes **8.4–13 y** at K = 1 on 20–40 instruments (16–25 y at K = 10). That argues for **≤ 3–5 family-versions on 2012–2023**.
 - Value: the plan's universe size and look budget rest on a measured law, not hope.
 - Complexity: 0.
+- Grade: correlations (a) [S9, S10]; the law derived; checked by [sim].
 - Falsifier: the realised ρ_P&L of the chosen universe, measured **on exploration data only** (pre-2012 or synthetic), above 0.3. Then 20–40 instruments buy < 1.8× and the budget halves.
 - Verdict: **adopt**.
 
 **R1A-5. The universe of 30, with 6–8 held out, stratified and blind, locked.** **[impl + spec]**
-- Value: an independent same-window falsifier with 54–59% power at a per-instrument SR of 0.3 (up to 93% at 0.5). It costs 4–6% of development breadth, and the curve is flat past 8. Residualised FPR is 2.5–3.2%; the raw same-window test is 14.5–24% and must never be used.
+- Value: an independent same-window test. Its power is 54–59% at a per-instrument SR of 0.3 (up to 93% at 0.5) [derived]. It costs 4–6% of development breadth, and the curve is flat past 8. The simulated residualised power is 19–30% (weak world, per-instrument SR ≈ 0.12, which agrees with the analytic 22%) and 60–96% (strong world). Residualised FPR is 2.5–3.2%. The raw same-window test is 14.5–24% on the null and must never be used.
 - Complexity: +1 register line type; a loader refusal (~20 lines); the residualisation (~5 lines).
-- Falsifier: a common-factor planted world in which the residualised test kills a real edge. Measured: in the common-factor world the residualised test has only 12–17% power, so it must be kill-only (§2.6.3).
+- Grade: [sim] + [derived].
+- Falsifier: a residualised false-kill rate (SR̂ < 0) above 25% on a real idiosyncratic edge (18–28% at SR̂ < 0, measured on a weak edge; hence the −0.5σ floor of §2.7). For a **common-factor** edge the residualised test has only 12–17% power (§2.6.3), so it can never certify one: kill-only, and factor claims go to forward time.
 - Verdict: **adopt**, as a kill-only falsifier.
 
 **R1A-6. Forward edge e-process E1.** **[impl; thresholds spec]**
 - Statistic: **`W_t` = the mean over λ ∈ {0.05, 0.1, 0.2, 0.4, 0.8} of Π(1 + λ·max(r_s/(6σ*), −1))**, on the demo book's daily net P&L, with σ* declared (`E_MIX`). The alternative is a plug-in λ_t = clip(m̂/(v̂ + m̂²), 0, 0.8).
 - Verdict: γ_j·W ≥ 20 = sign of edge shown. Read it daily.
-- Value: FPR ≤ 3.7% over 20 years of daily looks, where daily t-peeking gives 38–47%. Median to "shown": 1.4–1.6 y at portfolio SR 2.0, 2.4–3.0 y at 1.5, 6.1–6.8 y at 1.0.
+- Value: FPR ≤ 3.7% over 20 years of daily looks, where daily t-peeking gives 38–47%. Median to "shown" (both bettors, three null shapes): 1.4–1.7 y at portfolio SR 2.0, 2.4–3.0 y at 1.5, 5.8–6.8 y at 1.0.
 - Complexity: ~25 lines, 1 concept (bettor's wealth). −(the CUSUM in VAL K5 for the edge claim).
 - Grade: method (a)/(b); numbers [sim].
 - Falsifier: FPR > 5% on any synthetic null without a tripwire event.
@@ -510,6 +550,7 @@ Each item has five parts: **value** (what gets sharper), **complexity** (lines a
 - μ_claim = SR̂_dev/2. W ≥ 5 freezes scaling; W ≥ 20 kills.
 - Value: false kill ≤ 6.5% in year 1. Catches a truth of 0 against a claim of 1.0 in 25% of cases by 1 y (median 3.1 y).
 - Complexity: +5 lines.
+- Grade: [sim]. The flat 50% haircut is a rule of thumb that Harvey & Liu criticise as nonlinear in reality (search summary only, (c)). It is used here only as a deliberately conservative kill claim, not as an estimate.
 - Falsifier: a false-kill rate > 11% by 10 y at W ≥ 5 when the claim is true.
 - Verdict: **adopt**.
 
@@ -518,6 +559,7 @@ Each item has five parts: **value** (what gets sharper), **complexity** (lines a
 - Certify: both sides W ≥ 20. Breach: W ≥ 20 → kill or recalibrate.
 - Value: certify at a median 102–166 fills (≈ 3–17 weeks at 6–40 fills/week). A doubled cost is caught in 30–44 fills. False certify ≤ 2.5%.
 - Complexity: ~15 lines on R1A-6's bettor.
+- Grade: [sim]; the fill rates are (b) turnover plus a (c) fills-per-turnover assumption.
 - Falsifier: measured fill-gap dispersion > 1.5 modelled costs. Then certification needs ~600 fills, and the tripwire must widen.
 - Verdict: **adopt**.
 
@@ -527,12 +569,14 @@ Each item has five parts: **value** (what gets sharper), **complexity** (lines a
 - From then: E1 and E2 run silently. "Edge shown" is not expected before year 2–3 even at portfolio SR 1.5.
 - Value: prevents "it trades" or "it's up" being read as "it works" (the owner directive in CLAUDE.md).
 - Complexity: 0.
+- Grade: [sim] + [derived].
+- Falsifier: an observed fill rate below 6 a week. Then every week figure scales up by the shortfall.
 - Verdict: **adopt**.
 
 **R1A-10. Acceptance bar A–F** (§2.7) **[spec]**
 - **A:** Holm lower bound > 0 on 10 OOS years, K ≤ 10, i.e. **SR̂ > 0.81** (0.74 at K = 5). Power 72% (80%) at SR 1.0.
-- **B:** residualised held-out SR̂ ≥ 0, kill-only.
-- **C:** holdout SR̂ ≥ 0, kill-only.
+- **B:** residualised held-out, kill-only at t < −0.5; skipped for factor-dominated families.
+- **C:** holdout 2024–25 once, kill-only at t < −0.5 (SR̂ < −0.35).
 - **D:** E3 certified.
 - **E:** E1 γW ≥ 20 for "edge shown".
 - **F:** E2 on, at μ_claim = SR̂/2.
@@ -542,20 +586,37 @@ Each item has five parts: **value** (what gets sharper), **complexity** (lines a
 - Verdict: **adopt** (owner ratification).
 
 **R1A-11. EB shrinkage as a report, and per-instrument deviation only for cost reasons (or τ̂ > SE√(1 − ρ)).**
-- Value: __P11VAL__.
+- Value: per-instrument argmax loses 4–10% of the edge at τ ≤ 0.1; EB matches the better of pooled and per-instrument at every τ, and its deviation flag fires 0–0.1% when τ ≤ 0.1 [sim].
 - Complexity: ~15 lines, or 0 if the rule is "pool except cost".
+- Grade: [sim]; method (a) (James–Stein / empirical Bayes).
 - Falsifier: EB-shrunk selection loses to pooled in the τ ≥ 0.2 world.
 - Verdict: **adapt**, as a reporting tool and a gate on deviation, not as a selector.
 
 **R1A-12. Optional continuation of E1 from the first holdout day, for literature-fixed hypotheses only.**
 - Value: ~2 y earlier "edge shown" at portfolio SR 1.5.
 - Complexity: 0 lines; a rule.
+- Grade: (a) [S6].
 - Falsifier: none statistical (Grünwald et al. (a)). The risk is contamination; not for LLM-shaped ideas.
 - Verdict: **adapt** (owner decision).
 
+**R1A-13. Live-versus-replay decision reconciliation on the demo (zero-mismatch rule).** **[impl]**
+- Rule: after each bar closes, the live decision must equal the replay decision on the same bars (side, target, timing). Any mismatch raises K3 or K5.
+- Value: the only gate that can catch a look-ahead leak (GAP-P12D-65) after the fact. It is deterministic, so a single mismatch is a finding, and it works in days, not years.
+- Complexity: ~30 lines on the shadow replay that E3 already needs.
+- Grade: [derived]. It extends VAL R3.
+- Falsifier: a planted one-bar leak in the replay path that yields no mismatch within 20 decisions.
+- Verdict: **adopt**.
+
+**R1A-14. Kill floors below zero for the secondary gates:** B and C kill at t < −0.5.
+- Value: halves the wrongful kills of realistic edges (25% → 12%) and keeps 31% catch of dead strategies. Gate A already bounds false promotion at ≤ 5%.
+- Complexity: 0.
+- Grade: [sim] + [derived].
+- Falsifier: a pipeline-level null FPR above 5% with the −0.5 floors.
+- Verdict: **adapt** (owner choice between 0, −0.5 and −1.0).
+
 **Rejected:**
 - **online FDR (LORD, SAFFRON, alpha-investing) over development runs.** Invalid under adaptive reuse of the same history (§2.5.1). It is fine only for streams tested on fresh data, where R1A-6's weights already are e-LOND's single-discovery case.
-- **e-values computed on development history as the development gate:** valid (0% FPR) but weak. Power is 15–26% where Holm on the same data has 100% (§2.5.3). e-values belong where data arrive sequentially: the forward record.
+- **e-values computed on development history as the development gate:** valid (0% FPR) but weak. Power is 0–26%, where Holm on the same data has 64–100% (§2.5.3). e-values belong where data arrive sequentially: the forward record.
 - **the known-σ mixture SPRT:** 20% FPR under vol mis-sizing.
 - **stacked-panel pooled tests.**
 - **raw same-window held-out tests.**
@@ -568,12 +629,13 @@ Everything runs from `CLOUD_AUDIT/reports/r1/evidence/R1A/` with `OMP_NUM_THREAD
 |---|---|---|---|
 | e-processes E1, E2, E3 | `python sim_eprocess_demo.py 2000`, then `python sim_eprocess_demo.py 2000 costonly` (the tripwire/clip variants) | `sim_out_eprocess.json` | ~2 min + 1 min |
 | breadth, IDM, the panel-vs-portfolio FPR, the price→P&L correlation map | `python sim_breadth.py 400` | `sim_out_breadth.json` | ~1 min |
-| register verdicts under an adaptive researcher; held-out instruments | `python sim_register_verdict.py null 400`; `... idio 300 0.08`; `... factor 300 0.08`; `... idio_strong 300 0.10` | `sim_out_register_<world>.json` | ~8–10 min per world |
+| register verdicts under an adaptive researcher; held-out instruments | `python sim_register_verdict.py null 400` → `sim_out_register_null.json`; `... idio 300 0.08` → `sim_out_register_idio_mu08.json` (renamed by hand from an earlier run with an identical generator); `... factor 300` → `sim_out_register_factor.json`; `... idio_weak 300 0.05` → `sim_out_register_idio_weak_mu005.json`; the kill-rate reruns `... factor 200 0.08` → `sim_out_register_factor_mu008.json` and `... idio 200 0.05` → `sim_out_register_idio_mu005.json` | as listed | ~6–10 min per world |
 | pooled vs per-instrument vs EB parameter choice | `python sim_shrinkage.py 2000` | `sim_out_shrinkage.json` | < 1 min |
 
 Declared simplifications:
 - the returns are Gaussian with a common factor (the e-process sims also use t4, GARCH-t, skewed and mis-sized nulls);
 - there are no costs in the register simulation (FPR is cost-free on a null; power is gross);
+- the calendar family's two forms are opposite signs, so its fixed combination is identically zero. It still counts in Holm's K, which is conservative;
 - the "researcher" is a stylised hill-climber;
 - the planted edges are Markov drift states, idiosyncratic (per instrument) or common-factor.
 
@@ -631,6 +693,10 @@ Declared simplifications:
    - Severity: medium. Likelihood: high. Proposed status: open. **[spec — owner ratification]**
 10. **Optional continuation: for literature-fixed (GAP-P12D-66-exempt) hypotheses only, E1 may start at the first day of the 2024–25 holdout and continue into the demo** (one continuous look).
     - Severity: low. Likelihood: n/a. Proposed status: owner decision. **[spec — owner ratification]**
+11. **Kill floors for held-out and holdout gates at t < −0.5, not SR̂ < 0.** Measured: "SR̂ < 0" wrongly kills realistic edges 18–32% per gate.
+    - Severity: medium. Likelihood: high. Proposed status: owner decision. **[spec — owner ratification]**
+12. **Live-versus-replay decision reconciliation (zero mismatches) on the demo, as the only post-hoc look-ahead catcher.**
+    - Severity: high. Likelihood: medium. Proposed status: open. **[impl]** (extends the structural leakage work of GAP-P12D-65).
 
 ## 6. Sources
 
