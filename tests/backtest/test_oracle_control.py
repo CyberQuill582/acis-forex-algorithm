@@ -188,6 +188,24 @@ def test_a_near_fail_rung_the_harness_passes_voids_the_verdict(monkeypatch, tmp_
     assert _engine_calls(calls) == [] and "planted-near-fail oracle was not refused" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("kinds", [("null", "permuted"), ("planted",)])
+def test_no_verdict_without_the_positive_control_and_a_control(monkeypatch, tmp_path, cfg, capsys, kinds) -> None:
+    """Audits E3/F4: `--kinds null permuted` used to exit 0 and print "planted passes" for a market
+    that never ran — a dead grader "held". Without planted, or without any control, nothing runs."""
+    calls: list = []
+    mod = _falsify_script(monkeypatch, tmp_path, cfg, {k: ["section-14 win_rate"] for k in kinds}, calls)
+    assert mod.main() == 5
+    assert calls == [] and "NO VERDICT" in capsys.readouterr().out
+
+
+def test_the_held_message_names_only_the_markets_graded(monkeypatch, tmp_path, cfg, capsys) -> None:
+    calls: list = []
+    mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"]}, calls)
+    assert mod.main() == 0
+    held = [line for line in capsys.readouterr().out.splitlines() if "falsification held" in line]
+    assert held == ["falsification held on the markets graded in this run: planted passed; null did not"]
+
+
 def test_a_recognised_oracle_hands_over_to_the_unchanged_engine_stage(monkeypatch, tmp_path, cfg) -> None:
     calls: list = []
     mod = _falsify_script(monkeypatch, tmp_path, cfg,

@@ -16,8 +16,15 @@ walk-forward (`run_walk_forward`: production config, account, costs and gates). 
 answers: null and permuted must NOT pass; planted MUST pass. Writes
 data/validation/falsification/<run id>/<kind>.json (and oracle_<kind>.json,
 oracle_deflation.json: the Deflated Sharpe the ratified gate gives the oracle under each engine
-run's own selection set). Exit 0 only when all three hold. A quick run exits 3: its graded
-span is under the two years §14 demands, so nothing can pass by design.
+run's own selection set).
+
+Exit codes:
+  0  held: planted passed and every graded control did not (only the markets graded are named)
+  1  FALSIFICATION FAILED: a wrong answer on some market
+  2  refused: an enabled instrument has no synthetic first mid
+  3  quick run: a shape check, never a verdict
+  4  VERDICT VOID: the oracle positive control failed (stage 1); the engine never ran
+  5  NO VERDICT: --kinds lacks planted, or has no control (audits E3/F4); nothing ran
 """
 
 from __future__ import annotations
@@ -54,6 +61,13 @@ def main() -> int:
     ap.add_argument("--kinds", nargs="+", choices=KINDS, default=list(KINDS))
     ap.add_argument("--workers", type=int, default=2)
     a = ap.parse_args()
+    if not a.quick and ("planted" not in a.kinds or set(a.kinds) == {"planted"}):
+        # audits E3/F4: without planted there is no positive control and no expected pass, so a
+        # dead grader would "hold" on the controls alone; without a control, a grader that passes
+        # everything would "hold" on planted alone
+        print(f"NO VERDICT: --kinds {' '.join(a.kinds)} — a falsification verdict needs planted (the "
+              "positive control and the one expected pass) AND at least one of null / permuted")
+        return 5
     if a.quick:
         a.train_days, a.test_days, a.graded_days = 28, 12, 36
     folds = plan(a.train_days, a.test_days, math.ceil(a.graded_days / a.test_days))
@@ -114,7 +128,9 @@ def main() -> int:
     if wrong:
         print("FALSIFICATION FAILED — wrong answer on:", ", ".join(wrong))
         return 1
-    print("falsification held: null and permuted fail, planted passes")
+    controls = [k for k in sorted(results) if k != "planted"]
+    print(f"falsification held on the markets graded in this run: planted passed; "
+          f"{', '.join(controls)} did not")
     return 0
 
 
