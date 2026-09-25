@@ -59,10 +59,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--controls-only", action="store_true")
     ap.add_argument("--account", default=None)
-    ap.add_argument("--train-days", type=int, default=12)   # 12/2/3 stages a champion and orders (probed)
+    ap.add_argument("--train-days", type=int, default=12)
     ap.add_argument("--test-days", type=int, default=2)
     ap.add_argument("--folds", type=int, default=3)
-    ap.add_argument("--tick-seconds", type=int, default=300)
+    # 12/2/3 at 60 s stages a champion and 20 orders under T6 (probed 2026-09-25). At 300 s every
+    # 60 s bar is one tick, every stop is a gap-through, and the reference is VACUOUS.
+    ap.add_argument("--tick-seconds", type=int, default=60)
     ap.add_argument("--step-hours", type=int, default=24)
     ap.add_argument("--production-optimizer", action="store_true",
                     help="evolve with the production population (a short tape then usually stages nothing: VACUOUS)")
