@@ -144,33 +144,205 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-123: the low-to-medium batch from the R1 dual audit — twelve clarifications, one disposition each
+- Severity: low · Likelihood: high
+- Status: open [spec, batched under A6] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS_SPEC.md v2.21, ACIS-04 v1.3, ACIS-09 v1.7, OOS_VALIDATION.md, the ACIS-00 index
+- Description: the dispositions, each with its finding:
+  - **I9:** rung 2 requires the practice mode ([[GAP-P12D-69]]).
+  - **I11:** a pair family is refused while either leg is capped.
+  - **I14:** the "stricter meanwhile" wording becomes "the as-built v2.20 path", with its axes listed, and no R1.x phase lands before the rules it assumes.
+  - **I15:** one lot rule: round the target toward zero, then order = target − current, in RSIM and C-EXE-6 alike.
+  - **I16:** no per-fold embargo for fixed families; `train_window` is amended.
+  - **I17:** the C9-per-member and plateau conventions are defined.
+  - **I18:** the held-out draw's spelling is pinned ("XCU/USD" style, verified by the lead).
+  - **I19:** read-path residue: ACIS-11's registry against the look register, ACIS-00 invariant 7 and the ACIS-11 row, the OOS_VALIDATION DSR mark, C-BT-8, master §10, "minimum size" and "freezes scaling".
+  - **E14:** the news prong points to [[GAP-P12D-58]]/[[GAP-P12D-03]].
+  - **E15:** IDM = √N_eff, with the 2.5 caps.
+  - **E16:** rung 3's expected horizon is recorded.
+  - **E17 + E18:** a swap charge calendar in C8, and the minimum lot and step read from the platform, dated.
+- Justification: open. Disposition: the correction pass C15, pending the owner's go. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-103]]
+
+## GAP-P12D-122: the trend family's forecast-scalar source is not chosen — null-fixed scalars run ~24% above Carver's published ones
+- Severity: low-medium · Likelihood: high
+- Status: open [owner decision D-f] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: master v2.21 §5.6 ("fixed before any real-data look"), the TREND family's provenance record
+- Description: PLAN_R1's null-fixed 4.66/3.26/2.28 against Carver's 3.75/2.65/1.87 (pysystemtrade `futuresconfig.yaml`, archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E12). The (scalar, normaliser, EWMA convention) triple is not pinned.
+- Justification: open. Disposition: D-f recommendation: Carver's published values with his normaliser and span convention. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-103]], [[GAP-P12D-110]]
+
+## GAP-P12D-121: stage A's Sharpe bound ignores autocorrelation — size 6.3–7.2% at lag-1 ρ of 0.05–0.10 (Lo 2002)
+- Severity: low-medium · Likelihood: medium
+- Status: open [spec — gate rule] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS-09 v1.7 C-BT-11 v2 stage A
+- Description: SR̂ > z/√Y holds its size under fat tails and GARCH, but not under serial correlation (archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E11, seeded).
+- Justification: open. Disposition: C14: a HAC (Newey–West) or Lo-corrected standard error. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-111]], [[GAP-P12D-103]]
+
+## GAP-P12D-120: max-t over the declared grid does not say how the null of the maximum is obtained
+- Severity: medium-low · Likelihood: medium
+- Status: open [spec — gate rule] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS-09 v1.7 C-BT-11 v2 (explored families)
+- Description: White (2000) needs a dependent-data bootstrap; independent-normal critical values or an i.i.d. bootstrap are wrong for correlated daily series (archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E10).
+- Justification: open. Disposition: C13: a stationary bootstrap of the members jointly, recentred (White; Romano–Wolf), with the block length pre-registered. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-103]]
+
+## GAP-P12D-119: PBO ≤ 0.20 is four times looser than the cited paper's customary 0.05, and undeclared
+- Severity: medium-low · Likelihood: medium
+- Status: open [spec — gate rule] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS-09 v1.7 C-BT-11 v2 (explored families)
+- Description: Bailey–Borwein–López de Prado–Zhu (2015) §3.1: reject when PBO > 0.05 (archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E9).
+- Justification: open. Disposition: C12: a declared deviation (max-t carries the α; PBO is a secondary kill), with S = 16 pinned. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-103]]
+
+## GAP-P12D-118: the no-trade buffer is defined two incompatible ways, and needs portfolio state AGON lacks
+- Severity: medium · Likelihood: high
+- Status: open [spec] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: master §2 row, §5.5, CLAUDE.md rule 5, ACIS-04 C-ALP-4
+- Description: a dead zone around a zero forecast (§2, rule 5) against a band around the current position (§5.5, Carver). Under the first, an open position is KEPT when forecasts cancel (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I10, archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E8).
+- Justification: open. Disposition: C11: Carver's band around the current position, owned by the Governor. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-103]]
+
+## GAP-P12D-117: the synthetic-lab law has two holes — the variance match names no horizon, and the ±1-sign null has zero edge only in log units
+- Severity: medium-high · Likelihood: certain
+- Status: open [spec + impl] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS-09 v1.7 C-BT-12, tests/backtest/synthetic_market.py
+- Description: the confounded generator passes "1 ± 0.05" at its 20 s step (1.023) while its daily ratio is 14.7; and exp-built prices give a long-biased rule σ²/2 a day (SR +0.31 at NATGAS-like volatility) (archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E3, E7, seeded).
+- Justification: open. Disposition: C10: match at the decision horizon by construction; flip arithmetic increments, or add antithetic paths; add a price-unit null test. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-90]], [[GAP-P12D-91]], [[GAP-P12D-103]]
+
+## GAP-P12D-116: the TREND family's "MOP-2012 12-month sign" baseline points to a 3-horizon SPOT vote, not MOP's 12-month EXCESS-return sign
+- Severity: medium · Likelihood: certain
+- Status: open [spec + impl] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: master v2.21 §5.6, ACIS-04 v1.3 §6.6, core/signals/canonical.py, GAP-0073
+- Description: MOP 2012 signs the 12-month excess return (eq. 5; App. A.3). On the repo's rates, spot and excess 12-month signs disagree on 3.0–12.1% of days across FX pairs, 2013–2025. So GAP-0073's "immaterial" is false (archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E6).
+- Justification: open. Disposition: C9: a faithful excess-return member; the 3-horizon vote stays a separate member; GAP-0073 re-opened. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-71]], [[GAP-P12D-103]]
+
+## GAP-P12D-115: the "cost ≤ ⅓ of pre-cost Sharpe" filter is attributed to Carver but departs from his speed limit twice
+- Severity: medium · Likelihood: high
+- Status: open [owner decision D-g] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: master v2.21 §5.6, ACIS-09 v1.7 stage A
+- Description: Carver caps TURNOVER cost at ~0.13 SR units against a fixed expected Sharpe. The spec adds swap, which is mostly carry return for FX, and stage A uses a REALISED per-instrument Sharpe: an unregistered look (archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E5).
+- Justification: open. Disposition: D-g recommendation: Carver's pinned turnover cap plus a separate swap-markup viability filter against a fixed expectation. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-93]], [[GAP-P12D-103]]
+
+## GAP-P12D-114: stage C's residualised held-out kill fires on ~31% of real factor-borne edges, as often as on noise
+- Severity: medium · Likelihood: high
+- Status: open [owner decision D-e — gate rule] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS-09 v1.7 C-BT-11 v2 stage C, OOS_VALIDATION.md held-out set
+- Description: a zero residual alpha gives t ~ N(0,1), so P(t < −0.5) = 0.309 (verified by the lead). The worst case kills an SR-0.5 edge ~39% of the time. Three picks near-duplicate explored instruments (USOIL/UKOIL, US100/US500, GER40/EU50) (archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E4).
+- Justification: open. Disposition: D-e recommendation: grade the held-out set RAW, still kill-only; keep the frozen draw. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-97]], [[GAP-P12D-103]]
+
+## GAP-P12D-113: the spec retires things "at R1.7", a phase defined only in PLAN_R1 — whose list also retires unamended master laws
+- Severity: medium-high · Likelihood: low-medium
+- Status: open [spec] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS_SPEC.md v2.21 §5, ACIS-03 v2.0 §1
+- Description: PLAN_R1's R1.7 also retires marginal-alpha (§6's mandatory scale-down floor), the fragmenter, C4 and MR/SCALP/PAIR, none of which v2.21 amended (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I8).
+- Justification: open. Disposition: C8: an explicit retirement list in the spec; everything else retires only by its own amendment. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-107]], [[GAP-P12D-103]]
+
+## GAP-P12D-112: the family verdict grades the research universe, but §14 and C-BT-7 still require a per-account grade
+- Severity: medium-high · Likelihood: high
+- Status: open [spec] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: master §14 (per-account paragraph), ACIS-09 C-BT-7, C-BT-11 v2
+- Description: the validated portfolio (23 instruments, its IDM) is not what a small account can hold (GAP-P12D-101), so "the graded book is the tradeable book" is false (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I7).
+- Justification: open. Disposition: C7: rung 1 also requires a per-account re-grade on the live-eligible universe with the account's rules active. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-101]], [[GAP-P12D-103]]
+
+## GAP-P12D-111: stage A controls family-wise error at ~2α, not α; its looks go unadjusted; and α restarts every quarter
+- Severity: high · Likelihood: certain
+- Status: open [spec — gate rule; lifetime α = owner decision D-d] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS-09 v1.7 C-BT-11 v2 stage A
+- Description: a fixed-sequence chain plus a parallel Holm set, each at α, gives FWER 0.081–0.096 (seeded; ≈ 0.0975 for independent sets, lead arithmetic). "≤ 3 looks per family" has no correction. The quarterly stream has no lifetime budget (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I13, archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E2, FDA Multiple Endpoints guidance 2022 §§5, 7).
+- Justification: open. Disposition: C6: serial gatekeeping, a declared look budget k at α/k, and the order registered before any look; D-d (recommended: α-spending, 0.03 then half the remainder). Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-102]], [[GAP-P12D-121]], [[GAP-P12D-103]]
+
+## GAP-P12D-110: the stage-D forward bettors are mis-specified — E2 mixes a Sharpe with a return, σ* has no unit, and the clip contradicts "never clipped"
+- Severity: medium-high · Likelihood: high
+- Status: open [spec] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS-09 v1.7 C-BT-11 v2 stage D; master §14 rung 2
+- Description: a literal E2 kills every family within days (200/200 at a true SR of 0.6). With an annual σ*, E1 never certifies. And "E2 silent ≥ 3 months" is met by 99.8% of dead strategies. PLAN_R1's "25% killed by 1 year" is the FREEZE figure (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I6, archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E1, E13; the units verified by the lead).
+- Justification: open. Disposition: C5: σ* daily; μ_claim = (SR̂_dev/2)·σ*; a tripwire sets W := 0 permanently; E2's weakness stated. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-103]]
+
+## GAP-P12D-109: §4's "NVMA's one effect on trading is the veto" contradicts §6's regime sizing factor, C4, §3.6 and ACIS-02 — built literally, it is an unannounced size-UP
+- Severity: high · Likelihood: high
+- Status: open [spec + owner decision D-b] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS_SPEC.md v2.21 §4, §6, §5.5 C4, §3.6; ACIS-02 step 8 and C-REG-6; core/governor/capital_governor.py:292-303
+- Description: removing `regime_f` (verified in sizing by the lead) multiplies orders by 1/regime_f (3.3× at stability 0.5, confidence 0.6). "Every trigger stays" is false: the no-params trigger was REPLACED by the A4 row (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I5).
+- Justification: open. Disposition: C4: narrow §4 and amend ACIS-02; D-b recommendation: keep `regime_f` until the position policy and NAV-relative sizing ([[GAP-P12D-61]]). Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-61]], [[GAP-P12D-103]]
+
+## GAP-P12D-108: the staging rule plus continuous target positions is a permanent promotion deadlock
+- Severity: medium · Likelihood: high
+- Status: open [owner decision D-c] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: master §5 C1/C2, ACIS-03 §7–§8, `param_library.py` `PositionGate`
+- Description: promotion needs a flat book, and a pooled trend book is essentially never flat. §5.7's per-strategy demotion is undefined under netting (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I12).
+- Justification: open. Disposition: D-c recommendation: keep the law; promote by a staged flatten-then-promote at a valid session boundary. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-107]], [[GAP-P12D-103]]
+
+## GAP-P12D-107: the staging rule is "unchanged", but its only implementation is on the retirement list
+- Severity: high · Likelihood: medium
+- Status: open [spec + impl] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS-03 v2.0 §1, core/optimizer/param_library.py, core/signals/provenance.py:22
+- Description: `PromotionForbiddenError`, `PositionGate` and stage/promote/on_boundary live in `param_library.py`, which "the ParamLibrary staging" retires. `provenance.py:22` imports the error (verified by the lead). The §13 staging test is QIEA-bound (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I4).
+- Justification: open. Disposition: C3: re-home the mechanism as the rule registry's staging; carve §7–§8 and C1/C2 out of "legacy"; move the import before any retirement. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-99]], [[GAP-P12D-113]], [[GAP-P12D-103]]
+
+## GAP-P12D-106: "validated", the predicate of the new `tradeable=False` trigger, is defined nowhere
+- Severity: high · Likelihood: high
+- Status: open [owner decision D-a — veto semantics] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: master §2 row (A4), ACIS-03 v2.0, CLAUDE.md rule 5
+- Description: read as rung 1, an LLM-originated family can never trade, so it can never build the forward record stage D needs. Read loosely, the veto is vacuous. Today's demo trades QIEA sets nobody validated (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I3).
+- Justification: open. Disposition: D-a recommendation: rung 1 in live mode; a registered family whose machinery passed B0 may trade at minimum size in paper/practice mode. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-69]], [[GAP-P12D-103]]
+
+## GAP-P12D-105: the applied claim ladder dropped B0, "machinery proven first", which the ratified A6 draft required
+- Severity: high · Likelihood: medium
+- Status: open [spec] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: master v2.21 §14 rung 1, ACIS-09 C-BT-11 v2
+- Description: R1_LEAD_REVIEW's ratified A6 made rung 1 = B0–B5. The applied text has no lab-calibration precondition, which is the GAP-P12D-37 class: a grader that is itself wrong (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I2).
+- Justification: open. Disposition: C2: restore B0 as a precondition of any real-data verdict. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-37]], [[GAP-P12D-103]]
+
+## GAP-P12D-104: C-BT-11 v2 redefines `passed`, the field the live gate reads, without the §14 Max DD/SPX gates or C-BT-2/4/7
+- Severity: high · Likelihood: medium
+- Status: open [spec — gate rule] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Area: ACIS-09 v1.7 C-BT-11 v2 and its live-gate paragraph; ACIS-08; monitoring/mode.py
+- Description: a built verdict would pass a 30% drawdown or a guardrail-hash mismatch to the human token (the live gate reads `passed`: ACIS-09's live-gate paragraph, `mode.py`, verified by the lead). A2 ratified replacing only the DSR clause (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I1).
+- Justification: open. Disposition: C1: `passed` = the verdict AND §14 gates AND C-BT-2/4/7; the live gate reads rung 2. Nothing is applied before the owner's go on the triage; the as-built v2.20 behaviour stands meanwhile.
+- Linked: [[GAP-P12D-96]], [[GAP-P12D-103]]
+
 ## GAP-P12D-103: the dual audit of the applied R1 amendments (master v2.21, commit 271d8e0)
 - Severity: high · Likelihood: high
-- Status: open (2026-09-25 — the constitution's two lenses, launched by the owner explicitly, under the pinned brief AUDIT_BRIEF_R1_AMENDMENTS_2026-09-25.md. INTERNAL IN: archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md, 19 findings. EXTERNAL still running. The lead re-verified F1, F4, F5, F6 and F18 on the tree before recording them)
+- Status: open (2026-09-25 — the constitution's two lenses, launched by the owner explicitly, under the pinned brief AUDIT_BRIEF_R1_AMENDMENTS_2026-09-25.md. BOTH IN: archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md (19 findings, I1–I19) and archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md (18 findings, E1–E18). TRIAGED in R1_AUDIT_TRIAGE_2026-09-25.md: 15 corrections restoring the ratified intent (C1–C15) and 7 owner decisions (D-a..D-g), minted as GAP-P12D-104..123. The lead verified I1, I4, I5, I6 and I18 on the tree, and E2, E4 and I13 by arithmetic)
 - Area: ACIS_SPEC.md v2.21 (§2, §4, §5, §5.5, §14), specs/ACIS-03 v2.0, ACIS-04 v1.3, ACIS-09 v1.7 (C-BT-11 v2, C-BT-12), OOS_VALIDATION.md, CLAUDE.md rule 5
 - Description: the guard VALUES are untouched (no `config/` change; master §6–§9.5 byte-identical; the confidence veto kept). But the applied text fails three of its own claims. The findings, verified by the lead where marked:
-  - **F1 (high, verified):** C-BT-11 v2 defines `passed` as stages A–C only, while ACIS-09's live gate and `monitoring/mode.py` read `passed`. So a built verdict would pass a 30% drawdown, or a guardrail-hash mismatch, to the human token. A2 ratified replacing only the DSR clause.
-  - **F2 (high):** the ratified A6 made rung 1 = B0–B5, but the applied text dropped B0 ("machinery proven first": the lab calibration).
-  - **F3 (high):** "validated", the new `tradeable=False` trigger's predicate, is defined nowhere. Read as rung 1, an LLM-originated family can never trade, so it can never earn the forward record stage D needs; and the as-built demo trades unvalidated sets.
-  - **F4 (high, verified):** the staging rule is "unchanged", but its only implementation (`param_library.py`: `PromotionForbiddenError`, `PositionGate`, stage/promote/on_boundary) is on the retirement list. `core/signals/provenance.py:22` imports it.
-  - **F5 (high, verified):** §4's "NVMA's one effect on trading is the veto" contradicts the unamended §6 regime sizing factor (`capital_governor.py:292-303`), C4, §3.6 and ACIS-02. Built literally, it is an unannounced size-UP (1/regime_f). One trigger (no params for the regime) was REPLACED, not kept.
-  - **F6 (medium-high, verified):** the stage-D bettors are mis-specified. E2 subtracts a Sharpe ratio from a return; σ* has no units; the clip contradicts "never clipped"; and "E2 silent ≥ 3 months" is met by 99.8% of dead strategies. PLAN_R1's "25% killed by 1 year" is the FREEZE figure.
-  - **F7 (medium-high):** the family verdict on the research universe is not the per-account grade §14/C-BT-7 still require.
-  - **F8 (medium-high):** "R1.7" is defined only in PLAN_R1, whose list also retires marginal-alpha, the fragmenter and C4, which v2.21 never amended.
-  - **F9–F14 (medium):**
-    - F9: rung 2 needs the practice mode ([[GAP-P12D-69]]);
-    - F10: two incompatible no-trade buffers, and the buffer needs portfolio state AGON lacks;
-    - F11: netting plus the cap leaves a pair leg alone;
-    - F12: staging plus continuous positions means promotion never happens;
-    - F13: stage A's α split, its look correction and the registration of the order are unstated (union FWER ≈ 0.098);
-    - F14: "stricter meanwhile" is false as a universal claim.
-  - **F15–F19 (low to low-medium):**
-    - F15: rounding positions vs rounding orders;
-    - F16: the embargo and config do not fit a fixed family;
-    - F17: C9 per member and the fixed-family plateau check are uncomputable as written;
+  - **I1 (high, verified):** C-BT-11 v2 defines `passed` as stages A–C only, while ACIS-09's live gate and `monitoring/mode.py` read `passed`. So a built verdict would pass a 30% drawdown, or a guardrail-hash mismatch, to the human token. A2 ratified replacing only the DSR clause.
+  - **I2 (high):** the ratified A6 made rung 1 = B0–B5, but the applied text dropped B0 ("machinery proven first": the lab calibration).
+  - **I3 (high):** "validated", the new `tradeable=False` trigger's predicate, is defined nowhere. Read as rung 1, an LLM-originated family can never trade, so it can never earn the forward record stage D needs; and the as-built demo trades unvalidated sets.
+  - **I4 (high, verified):** the staging rule is "unchanged", but its only implementation (`param_library.py`: `PromotionForbiddenError`, `PositionGate`, stage/promote/on_boundary) is on the retirement list. `core/signals/provenance.py:22` imports it.
+  - **I5 (high, verified):** §4's "NVMA's one effect on trading is the veto" contradicts the unamended §6 regime sizing factor (`capital_governor.py:292-303`), C4, §3.6 and ACIS-02. Built literally, it is an unannounced size-UP (1/regime_f). One trigger (no params for the regime) was REPLACED, not kept.
+  - **I6 (medium-high, verified):** the stage-D bettors are mis-specified. E2 subtracts a Sharpe ratio from a return; σ* has no units; the clip contradicts "never clipped"; and "E2 silent ≥ 3 months" is met by 99.8% of dead strategies. PLAN_R1's "25% killed by 1 year" is the FREEZE figure.
+  - **I7 (medium-high):** the family verdict on the research universe is not the per-account grade §14/C-BT-7 still require.
+  - **I8 (medium-high):** "R1.7" is defined only in PLAN_R1, whose list also retires marginal-alpha, the fragmenter and C4, which v2.21 never amended.
+  - **I9–I14 (medium):**
+    - I9: rung 2 needs the practice mode ([[GAP-P12D-69]]);
+    - I10: two incompatible no-trade buffers, and the buffer needs portfolio state AGON lacks;
+    - I11: netting plus the cap leaves a pair leg alone;
+    - I12: staging plus continuous positions means promotion never happens;
+    - I13: stage A's α split, its look correction and the registration of the order are unstated (union FWER ≈ 0.098);
+    - I14: "stricter meanwhile" is false as a universal claim.
+  - **I15–I19 (low to low-medium):**
+    - I15: rounding positions vs rounding orders;
+    - I16: the embargo and config do not fit a fixed family;
+    - I17: C9 per member and the fixed-family plateau check are uncomputable as written;
     - F18 (verified): the held-out draw reproduces only with slash spellings ("XCU/USD");
-    - F19: read-path residue.
-- Justification: open. Triage follows when the EXTERNAL lens is in: one consolidated correction pass restoring the ratified intent (tightening), plus owner decisions for F3 (what "validated" means per mode), F5 (whether regime_f leaves sizing, a size-up) and F12 (promotion under netting; the staging rule is law). Until then, no R1.x build starts, and the as-built v2.20 behaviour stands.
+    - I19: read-path residue.
+- Justification: open until the triage is applied. Triage (R1_AUDIT_TRIAGE_2026-09-25.md) is written; originally: one consolidated correction pass restoring the ratified intent (tightening), plus owner decisions for I3 (what "validated" means per mode), I5 (whether regime_f leaves sizing, a size-up) and I12 (promotion under netting; the staging rule is law). Until then, no R1.x build starts, and the as-built v2.20 behaviour stands.
 - Linked: [[GAP-P12D-89]], [[GAP-P12D-96]], [[GAP-P12D-101]], [[GAP-P12D-102]], [[GAP-P12D-69]]
 
 ## GAP-P12D-102: even swap-free, the R1 flagship family (pooled trend, "D1") most likely fails the plan's own development bar

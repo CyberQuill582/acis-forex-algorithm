@@ -56,7 +56,27 @@ The specifics need explicit OLD/NEW amendments for: the 2-year window, the DSR �
   - 2026-09-25: both were cut off by the session limit (resets 15:00 Nairobi) and were RESUMED with `SendMessage` after the reset, per the owner's directive. Neither was relaunched.
   - Reports: `archive/AUDIT_R1_AMENDMENTS_{INTERNAL,EXTERNAL}_2026-09-25.md`.
   - Then the lead triages every finding. The R1.1–R1.4 build waits for the triage.
-  - **INTERNAL IN (2026-09-25):** 19 findings, recorded as [[GAP-P12D-103]]; the lead verified F1, F4, F5, F6 and F18. EXTERNAL still running. Triage both together.
+  - [x] 2026-09-25 **BOTH LENSES IN, and TRIAGED** in `R1_AUDIT_TRIAGE_2026-09-25.md`. The umbrella is [[GAP-P12D-103]].
+    - Both agree: no guard value changed, and no trade passes that v2.20 refused for safety.
+    - But the applied text is wrong in places:
+      - `passed` lost the DD/SPX gates, [[GAP-P12D-104]];
+      - B0 was dropped, [[GAP-P12D-105]];
+      - the staging mechanism was put on the retirement list, [[GAP-P12D-107]];
+      - §4's size-up sentence, [[GAP-P12D-109]];
+      - the forward bettors' units, [[GAP-P12D-110]];
+      - stage A at ~2α, [[GAP-P12D-111]];
+      - and more: [[GAP-P12D-112]], [[GAP-P12D-113]], [[GAP-P12D-116]], [[GAP-P12D-117]], [[GAP-P12D-118]], [[GAP-P12D-119]], [[GAP-P12D-120]], [[GAP-P12D-121]], [[GAP-P12D-123]].
+- [ ] **OWNER: ratify the R1 audit triage.** It has two parts:
+  - the correction pass C1–C15, which restores the ratified intent and is tightening or clarifying;
+  - the seven decisions, each with the lead's recommendation:
+    - D-a: what "validated" means, [[GAP-P12D-106]];
+    - D-b: keep `regime_f` for now, [[GAP-P12D-109]];
+    - D-c: flatten-then-promote, [[GAP-P12D-108]];
+    - D-d: lifetime α-spending, [[GAP-P12D-111]];
+    - D-e: a raw held-out kill, [[GAP-P12D-114]];
+    - D-f: Carver's scalars, [[GAP-P12D-122]];
+    - D-g: the split cost filter, [[GAP-P12D-115]].
+  Then the lead applies it as master v2.22, runs the suite and the gate, and checks each correction against its finding's reproduction. No R1.x build starts before that.
 - [ ] **The R1 build order** (PLAN_R1 §2), once the rulings land:
   - R1.0 preconditions (merge 3 DONE);
   - R1.1 the lab;
