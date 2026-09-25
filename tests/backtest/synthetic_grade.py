@@ -135,4 +135,7 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
                                  "win_rate": v.win_rate, "profit_factor": v.profit_factor}
                              for k, v in report.per_strategy.items()},
             "failed": sorted(k for k, ok in report.targets_met.items() if not ok),
+            # every clause of `passed` but the trial count and the DSR (audit E2): empty while
+            # passed is False means the run failed ONLY the ratified DSR gate
+            "non_dsr_failed": list(non_dsr_failures(report, guardrail_hash(cfg.guardrails))),
             "seconds": time.perf_counter() - t0}

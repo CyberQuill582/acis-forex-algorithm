@@ -128,7 +128,7 @@ def test_void_reasons_need_planted_recognised_and_every_control_refused_by_a_sec
     assert len(ruled) == 1 and "null oracle broke the account's rules" in ruled[0]
 
 
-def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: list):
+def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: list, engine: dict | None = None):
     """scripts/falsify_engine.py with the heavy stages stubbed: threads, not processes, and its
     ROOT moved to `tmp_path` so no run directory is written under any data/."""
     spec = importlib.util.spec_from_file_location("falsify_engine", ROOT / "scripts" / "falsify_engine.py")
@@ -150,8 +150,11 @@ def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: li
 
     def grade(s, out, account, folds, root):
         calls.append(("grade", s.kind))
-        return {"kind": s.kind, "passed": s.kind == "planted", "trades": 40, "sharpe": 0.0, "dsr": 0.0,
-                "trials": 4, "trial_sharpes": [0.1, 0.2, 0.3, 0.4], "champions": [], "failed": [], "seconds": 0}
+        passed, non_dsr = (engine or {}).get(s.kind, (s.kind == "planted", [] if s.kind == "planted"
+                                                                             else ["section-14 win_rate"]))
+        return {"kind": s.kind, "passed": passed, "trades": 40, "sharpe": 0.0, "dsr": 0.0,
+                "trials": 4, "trial_sharpes": [0.1, 0.2, 0.3, 0.4], "champions": [], "failed": [],
+                "non_dsr_failed": non_dsr, "seconds": 0}
 
     monkeypatch.setattr(mod, "ROOT", tmp_path)
     monkeypatch.setattr(mod, "load_config", lambda path: cfg)
@@ -204,6 +207,24 @@ def test_the_held_message_names_only_the_markets_graded(monkeypatch, tmp_path, c
     assert mod.main() == 0
     held = [line for line in capsys.readouterr().out.splitlines() if "falsification held" in line]
     assert held == ["falsification held on the markets graded in this run: planted passed; null did not"]
+
+
+def test_a_planted_refusal_only_by_the_dsr_gate_is_gate_limited_not_an_engine_failure(
+        monkeypatch, tmp_path, cfg, capsys) -> None:
+    """Audit E2: stage 1 excludes the DSR clauses, so a planted run that met every other clause of
+    `passed` and failed only the (open, GAP-P12D-33/37) DSR gate was reported as the engine's
+    failure. It is GATE-LIMITED: its own exit code and message."""
+    calls: list = []
+    mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"]}, calls,
+                          engine={"planted": (False, [])})
+    assert mod.main() == 6
+    out = capsys.readouterr().out
+    assert "GATE-LIMITED" in out and "NOT an engine verdict" in out and "FALSIFICATION FAILED" not in out
+    # a planted run that ALSO failed a non-DSR clause is the engine's failure, and so is a passing control
+    for engine in ({"planted": (False, ["section-14 profit_factor"])}, {"null": (True, [])}):
+        mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"]},
+                              calls, engine=engine)
+        assert mod.main() == 1 and "FALSIFICATION FAILED" in capsys.readouterr().out
 
 
 def test_a_recognised_oracle_hands_over_to_the_unchanged_engine_stage(monkeypatch, tmp_path, cfg) -> None:

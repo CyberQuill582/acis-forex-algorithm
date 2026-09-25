@@ -25,6 +25,9 @@ Exit codes:
   3  quick run: a shape check, never a verdict
   4  VERDICT VOID: the oracle positive control failed (stage 1); the engine never ran
   5  NO VERDICT: --kinds lacks planted, or has no control (audits E3/F4); nothing ran
+  6  GATE-LIMITED: every control was refused and planted met every non-DSR clause of `passed`,
+     failing ONLY the ratified trial-count / Deflated Sharpe gate (audit E2). While GAP-P12D-33/37
+     is open that refusal is uninterpretable, so it is reported as the gate's, NOT the engine's
 """
 
 from __future__ import annotations
@@ -125,8 +128,17 @@ def main() -> int:
         print("quick run: a shape check only — under two graded years nothing can pass, so no verdict")
         return 3
     wrong = sorted(k for k, r in results.items() if r["passed"] != EXPECT_PASS[k])
+    planted = results["planted"]
+    if wrong == ["planted"] and not planted["non_dsr_failed"]:
+        # audit E2: every other clause of `passed` held, so the only refusal is the ratified
+        # trial-count / Deflated Sharpe gate (GAP-P12D-33/37) — that says nothing about the engine
+        print(f"GATE-LIMITED — planted met every non-DSR clause of passed and failed only the "
+              f"trial-count / Deflated Sharpe gate (dsr={planted['dsr']}, trials={planted['trials']}; "
+              "GAP-P12D-33/37): uninterpretable, NOT an engine verdict")
+        return 6
     if wrong:
-        print("FALSIFICATION FAILED — wrong answer on:", ", ".join(wrong))
+        print("FALSIFICATION FAILED — wrong answer on:", ", ".join(wrong),
+              f"(planted's non-DSR failures: {planted['non_dsr_failed']})" if "planted" in wrong else "")
         return 1
     controls = [k for k in sorted(results) if k != "planted"]
     print(f"falsification held on the markets graded in this run: planted passed; "
