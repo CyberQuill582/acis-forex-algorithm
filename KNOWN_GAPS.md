@@ -144,6 +144,26 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-81: lot-step rounding can orphan one leg of a pair group, leaving a naked directional position — on the BUILDER-3 branch, looser than main
+- Severity: high · Likelihood: medium
+- Status: open (2026-09-25 — found by AUDIT-INTERNAL (F11) in the BUILDER-3 branch audit. The lead REPRODUCED it with `r9_pair_leg_rounding.py`: with legs of 1,500 and 900 units, base `bdd3a75` fills both, while head `d8361a7` leaves only EUR_USD +1,000 at the venue, because the 900-unit leg is under the minimum lot and refused)
+- Area: the BUILDER-3 branch (lot rounding in execution); core/governor/capital_governor.py (atomic groups, §5.5 both-or-neither at min-leg); core/execution/orchestrator.py
+- Description: the new per-order lot rounding and minimum-lot refusal act on each leg independently. A pair group whose smaller leg rounds below the minimum loses that leg, and the surviving leg is a directional position the strategy never intended. That breaks master §5.5's atomic-group law (both legs or neither).
+- Justification: open and BLOCKING for the merge. FIX: group atomicity in execution. Rounding and minimum-lot checks run over the WHOLE group before any leg is sent, and if any leg would be refused or rounded to zero, the whole group is refused. Proof: a regression test mirroring the reproduction, falsified.
+- Linked: [[GAP-P12D-57]], [[GAP-P12D-77]], [[GAP-0049]]
+
+## GAP-P12D-80: PRE-EXISTING ON MAIN — the engine's daily-loss session halt fires at most once per process; the Guardrails latch is reset only by a human resume
+- Severity: critical · Likelihood: high
+- Status: open (2026-09-25 — found by AUDIT-INTERNAL (F2) in the BUILDER-3 branch audit. The lead REPRODUCED it on BOTH base `bdd3a75` (i.e. main) and the branch with `r2b_inprocess_latch.py`: within one process, the day-1 breach halts (`drawdown_halt`), but a 2.1% breach on day 3 does not (`formula`))
+- Area: core/risk/guardrails.py (`_session_halted`, reset only in `rearm()`, which is called on a human resume); master §8 (the daily-loss limit is SESSION-scoped and auto-clears at the boundary); ACIS-07
+- Description:
+  - **The latch outlives the halt.** The Governor's session halt auto-clears at the next session boundary, as §8 intends. But the Guardrails latch `_session_halted`, which stops the monitor from re-issuing, stays set until a human resume.
+  - **So in one process only the FIRST daily-loss breach ever halts.** Every later day's breach is silently ignored.
+  - **It is a guardrail that works once per process lifetime.** It went unseen because every test exercises a single breach, and the production runtime does not exist yet. It sits on main now, and the backtest harness's risk path would inherit it.
+  - **It is the root of the branch's [[GAP-P12D-78]].**
+- Justification: open and BLOCKING (a guardrail defect). The fix RESTORES the spec's own semantics and is tightening-only: the guard fires again on every day it is breached. **DELEGATED:** it is fixed on the BUILDER-3 branch, and raised to the owner as a HALT-semantics item: the session latch re-arms at the session boundary, exactly when the Governor's session halt auto-clears. Proof: an in-process multi-day breach test and a restart variant, falsified.
+- Linked: [[GAP-P12D-78]], [[GAP-P12D-77]], [[GAP-P12D-59]]
+
 ## GAP-P12D-79: on the BUILDER-3 branch, one failed halt-ledger write during an equity-floor breach loses the equity breaker entirely — no halt, no freeze, never re-issued
 - Severity: critical · Likelihood: low
 - Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X2) in the dual audit of the BUILDER-3 branch. The lead REPRODUCED it on the branch export with the auditor's `r2_store_failure.py`. A `database is locked` error on the `halt_event` write during the equity-floor breach makes `evaluate` raise. Afterwards entries are allowed (`formula`), the orchestrator is not frozen, no halt row exists, and two further evaluates below the floor re-issue nothing. On main the equity breaker has no store dependency)
@@ -199,7 +219,25 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - lot rounding is down-only;
     - no guard, rulebook, spec or ledger file is touched.
   - **Unconfirmed:** E8's rules (its help centre returned 403).
-- Justification: open. The INTERNAL lens's findings are appended when they land, and then one consolidated fix list goes back to BUILDER-3. The merge needs [[GAP-P12D-78]] and [[GAP-P12D-79]] fixed and verified by the lead, plus the owner's go.
+- **INTERNAL lens IN (2026-09-25; archive/AUDIT_BUILDER3_BRANCH_INTERNAL_2026-09-25.md): the branch is NOT tightening-only.** Its F0 is X2, and its F1 is X1.
+  - **New entries, reproduced by the lead:**
+    - [[GAP-P12D-80]] (F2): PRE-EXISTING ON MAIN, the daily-loss halt fires once per process;
+    - [[GAP-P12D-81]] (F11): lot rounding orphans a pair leg.
+  - **F4:** the reduce-only close race. It confirms X3: two concurrent closes leave the venue SHORT 100k, and a hedging venue ends net short 200k. It is a BLOCKER before any demo or live attach.
+  - **F3 (DELEGATED DECISION):** a restart while the account is up now reads a later loss LOWER than main, because main re-anchors at the post-restart equity by accident. The branch is RESTART-INVARIANT and faithful to the firm's static rule, which anchors on initial capital. The lead ACCEPTS restart-invariance as the property, and the branch's claim is corrected from "tightening-only" to "restart-invariant; tightening elsewhere".
+  - **F6:** an `initial_capital` typo can disable the static rule. FIX: schema validation plus a test.
+  - **F5:** re-emitted closes are unbounded, and a restart forgets attempts. FIX: backoff, a ceiling, and persisted attempts (with X6).
+  - **F7:** restore-before-evaluate is only a convention. FIX: enforce it.
+  - **F8:** a Governor-only resume re-halts at the next restart. FIX: one human-resume path that clears the ledger rows.
+  - **F9, F10, F12 (Low):** fix them. F10 is the same as X9.
+  - **Honest negatives:**
+    - no halt clears without a non-blank token;
+    - rounding never rounds up;
+    - sequential closes on a netting venue never grow a position;
+    - with no restore or declared capital, the drawdown series matches base exactly;
+    - corrupt anchors fail closed;
+    - 20 of 21 mutants were killed.
+- Justification: open. ONE consolidated fix list went back to BUILDER-3 on 2026-09-25. The merge needs [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-80]] and [[GAP-P12D-81]] fixed with regression tests and verified by the lead, X3/F4 fixed or filed as an attach blocker, and the owner's go. The merge needs [[GAP-P12D-78]] and [[GAP-P12D-79]] fixed and verified by the lead, plus the owner's go.
 - Linked: [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-74]], [[GAP-P12D-75]], [[GAP-P12D-58]], [[GAP-P12D-76]], [[GAP-P12D-70]]
 
 ## GAP-P12D-76: the development laptop keeps losing power abruptly — four hard power-offs in 13 days — so it cannot host the demo engine

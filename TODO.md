@@ -82,7 +82,18 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - [[GAP-P12D-78]]: a stale restored session halt means a restart makes the next day's breach NOT halt. Looser than main.
   - [[GAP-P12D-79]]: one failed ledger write loses the equity breaker.
 
-  The rest is in [[GAP-P12D-77]]. The INTERNAL audit is still running. Then one fix list goes back to BUILDER-3.
+  The rest is in [[GAP-P12D-77]].
+- **INTERNAL audit IN (2026-09-25).** The branch is NOT tightening-only. Also reproduced by the lead:
+  - [[GAP-P12D-80]]: **PRE-EXISTING ON MAIN**, the engine's daily-loss halt fires only ONCE per process;
+  - [[GAP-P12D-81]]: lot rounding orphans a pair leg.
+- [ ] **ONE consolidated fix list was sent to BUILDER-3** (2026-09-25). The merge waits for:
+  - [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-80]] and [[GAP-P12D-81]] fixed and verified by the lead;
+  - the atomic close intent (X3/F4);
+  - WAL durability;
+  - bans and flattens on holiday closures;
+  - close backoff;
+  - the owner's go.
+  - DELEGATED: restart-invariance (F3) is accepted as the property.
 - [ ] **Not wired yet:** production must route halts and MCP controls through the new halt-recording layer, call the resume-clear, and call the weekend flatten each tick. All three wait on the three-loop runtime ([[GAP-0091b]]).
 
 **ACIS-13 DRAFTED (2026-09-25, SPEC-AUTHOR): `specs/ACIS-13-VENUE_ADAPTERS.md` v0.1, a DRAFT, NOT LOCKED.**
