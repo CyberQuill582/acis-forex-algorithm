@@ -7,11 +7,12 @@ Stage 1 (T7): the oracle positive control goes through the real harness, honest 
 next-tick peek, once per cut. VOID (exit 4), and the engine never runs, unless T1 AND T2 both
 catch the peek and neither flags the honest oracle.
 Stage 2: a planted market is labelled, evolved and replayed through the production path once
-as the reference, then once per decision day per test (every later price perturbed: T2; the
+as the reference, then once per decision epoch per test (one tick after each 17:00 New York
+rollover, and each fold boundary; every later price perturbed: T2; the
 tape cut off: T1). Every label, evolution record, regime, signal, order and trade decided
 before the cut must be byte-identical. Exit 0 no violation detected, 1 leak, 5 VACUOUS (the reference staged
 or ordered nothing). Writes data/validation/leakage/<run id>/report.json. Synthetic data only.
-The day grid catches a sub-day peek only where it crosses a cut; the per-decision-point guard
+The daily grid catches a sub-day peek only where it crosses a cut; the per-decision-point guard
 is the component sweep in the default suite (tests/backtest/test_leakage_components.py). This
 is the end-to-end backstop for long-reach channels, wired like the other slow gates (A16).
 """
@@ -50,7 +51,7 @@ def controls(cfg, account: str) -> dict:
     folds = plan(1, 2, 2, embargo=EMBARGO)
     spec = MarketSpec("planted", START, (folds[-1].test_end - START).days, (("EUR_USD", FIRST_MID["EUR_USD"]),),
                       tick_seconds=300)
-    cuts, out = decision_cuts(spec), {}
+    cuts, out = decision_cuts(spec, folds), {}
     for name, every in (("honest", 0), ("peek", 1)):
         def run(t=None, mode="perturb", every=every):
             return oracle_decisions(spec, cfg, account, folds, NullLogger(), instruments=["EUR_USD"],
@@ -72,7 +73,8 @@ def main() -> int:
     # 12/2/3 at 60 s stages a champion and 20 orders under T6 (probed 2026-09-25). At 300 s every
     # 60 s bar is one tick, every stop is a gap-through, and the reference is VACUOUS.
     ap.add_argument("--tick-seconds", type=int, default=60)
-    ap.add_argument("--step-hours", type=int, default=24)
+    ap.add_argument("--step-hours", type=int, default=None,
+                    help="add a uniform grid on top of the 17:00 New York decision epochs (finer, linear cost)")
     ap.add_argument("--production-optimizer", action="store_true",
                     help="evolve with the production population (a short tape then usually stages nothing: VACUOUS)")
     ap.add_argument("--workers", type=int, default=1)
@@ -103,7 +105,7 @@ def main() -> int:
     instruments = sorted(cfg.instruments.enabled)
     spec = MarketSpec("planted", START, (folds[-1].test_end - START).days,
                       tuple((i, FIRST_MID[i]) for i in instruments), tick_seconds=a.tick_seconds)
-    cuts = decision_cuts(spec, timedelta(hours=a.step_hours))
+    cuts = decision_cuts(spec, folds, timedelta(hours=a.step_hours) if a.step_hours else None)
     print(f"engine: {len(folds)} folds, {spec.days} days, {len(cuts)} cuts x 2 tests -> {out}", flush=True)
     t0 = time.perf_counter()
     _, _, reference = variant_decisions(spec, account, folds, out / "ref", ROOT, small, None, "perturb")

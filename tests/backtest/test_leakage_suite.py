@@ -132,8 +132,18 @@ def test_every_engine_variant_runs_in_a_fresh_spawned_process(monkeypatch, tmp_p
         pool.shutdown()
 
 
-def test_the_grid_is_every_weekday_the_market_holds(monkeypatch) -> None:
-    from tests.backtest.synthetic_grade import START
+def test_the_grid_is_the_17h_new_york_decision_epochs_plus_the_fold_boundaries() -> None:
+    """X8: the engine decides daily at the 17:00 New York rollover, so the grid cuts one tick
+    after each rollover that opens a trading day; the fold boundaries are cuts too."""
+    from zoneinfo import ZoneInfo
+    from tests.backtest.synthetic_grade import START, plan
     from tests.backtest.synthetic_market import MarketSpec
-    cuts = decision_cuts(MarketSpec("null", START, 14, (("EUR_USD", 1.1),)))
-    assert len(cuts) == 9 and all(c.weekday() < 5 and c.hour == 0 for c in cuts)   # 13 days, 4 weekend
+    spec = MarketSpec("null", START, 14, (("EUR_USD", 1.1),))
+    folds = plan(3, 2, 2, embargo=timedelta(days=2))
+    cuts = decision_cuts(spec, folds)
+    tick = timedelta(seconds=spec.tick_seconds)
+    epochs = [(c - tick).astimezone(ZoneInfo("America/New_York")) for c in cuts
+              if (c - tick).astimezone(ZoneInfo("America/New_York")).hour == 17]
+    assert len(epochs) == 9 and all(e.minute == 0 and e.weekday() not in (4, 5) for e in epochs)
+    assert {f.train_end for f in folds} | {f.test_start for f in folds} <= set(cuts)
+    assert all(spec.start < c < spec.end for c in cuts) and cuts == sorted(cuts)

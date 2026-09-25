@@ -290,13 +290,13 @@ ORACLE_SPEC = MarketSpec("planted", START, (ORACLE_FOLDS[-1].test_end - START).d
                          tick_seconds=300)
 
 
-def _oracle_sweeps(cfg, leak_every: int):
+def _oracle_sweeps(cfg, leak_every: int, grid=None):
     kw = dict(instruments=["EUR_USD"], leak_every=leak_every)
 
     def run(t=None, mode="perturb"):
         return oracle_decisions(ORACLE_SPEC, cfg, cfg.system.active_account, ORACLE_FOLDS, NullLogger(),
                                 cut=t, mode=mode, **kw)
-    ref, cuts = run(), decision_cuts(ORACLE_SPEC)
+    ref, cuts = run(), grid if grid is not None else decision_cuts(ORACLE_SPEC, ORACLE_FOLDS)
     return ref, future_perturbation(ref, run, cuts), truncation(ref, lambda t: run(t, "truncate"), cuts)
 
 
@@ -309,9 +309,10 @@ def test_the_harness_level_controls_honest_oracle_silent_and_next_tick_peek_caug
 
 
 def test_a_daily_grid_cannot_see_a_sparse_intraday_peek(acis_config) -> None:
-    """The engine-level sweep (scripts/leakage_suite.py) cuts once per decision DAY. A peek on
-    one tick in twenty only crosses a daily cut if it falls on the last tick before midnight,
-    so this sweep stays silent — pinned, because it is why the components are swept at every
-    decision point and the engine only at its day grid."""
-    _, s2, s1 = _oracle_sweeps(acis_config, 20)
+    """A once-a-day grid (here: every midnight) sees a peek only where it crosses a cut. A peek
+    on one tick in twenty never falls on the last tick before midnight on this tape, so the
+    sweep stays silent — pinned, because it is why the components are swept at every decision
+    point, while the engine (scripts/leakage_suite.py) is swept at its daily decision epochs."""
+    midnights = [START + timedelta(days=d) for d in range(1, ORACLE_SPEC.days) if (START + timedelta(days=d)).weekday() < 5]
+    _, s2, s1 = _oracle_sweeps(acis_config, 20, grid=midnights)
     assert s2.silent and s1.silent

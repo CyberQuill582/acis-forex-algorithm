@@ -12,7 +12,8 @@ Mental model:
     are bit-identical in every variant (pinned by test).
   * `TickClock` holds the tick times the LOADER actually delivers (the FX weekend dropped), so
     a bar's emission stamp is the tick that really completes it, not a tick the loader drops.
-  * `decision_cuts` is the exhaustive grid: every step (a day by default) that holds a tick.
+  * `decision_cuts` is the engine's grid: one tick after every 17:00 New York rollover (the
+    engine's daily decision epoch, X8) and every fold boundary; a finer `step` is optional.
   * `LeakyOracleLoop` is the T7 positive control for the guard: the oracle positive control
     (oracle.py) with ONE change — on every `every`-th tick it holds the sign of the NEXT tick's
     return, read through `market.returns`. It must be caught by T1 and T2; the honest oracle,
@@ -28,6 +29,7 @@ from datetime import datetime, timedelta
 from functools import partial
 from typing import Iterator, Mapping, Sequence
 
+from core.data.fx_clock import rollover_utc
 from core.data.normaliser import RawTick
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.leakage import Decision, perturb_returns
@@ -86,15 +88,26 @@ class TickClock:
         return self._ts[i] if i < len(self._ts) else datetime.max.replace(tzinfo=ts.tzinfo)
 
 
-def decision_cuts(spec: MarketSpec, step: timedelta = _DAY) -> list[datetime]:
-    """Every grid point after the start at which the market has a tick (weekends hold none)."""
-    out, t = [], spec.start + step
+def decision_cuts(spec: MarketSpec, folds: Sequence[Fold] = (), step: timedelta | None = None) -> list[datetime]:
+    """The engine's daily decision epochs, each followed by data: one tick after every 17:00 New
+    York rollover that opens a trading day (the daily bar, TSMOM's close and the daily-loss day
+    turn over there, X8; Friday's and Saturday's open the weekend), and every fold boundary
+    (evolution decides at the train end). `step` adds a uniform grid on top, at linear cost."""
+    tick = timedelta(seconds=spec.tick_seconds)
+    cuts: set[datetime] = set()
+    day = spec.start.date() - _DAY
+    while day <= spec.end.date():
+        if day.weekday() not in (4, 5):
+            cuts.add(rollover_utc(day) + tick)
+        day += _DAY
+    for f in folds:
+        cuts |= {f.train_end, f.test_start, f.test_end}
+    t = spec.start + step if step is not None else spec.end
     while t < spec.end:
-        d = (t - spec.start).days % 7
-        if d < 5:
-            out.append(t)
+        cuts.add(t)
         t += step
-    return out
+    total = ticks_before(spec, spec.end)
+    return sorted(c for c in cuts if 0 < ticks_before(spec, c) < total)
 
 
 class LeakyOracleLoop(OracleLoop):

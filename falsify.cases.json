@@ -329,6 +329,22 @@
       "mutation": "    return finish(0, f\"clean: no violation detected at {len(cuts)} cuts ({compared} decisions compared under T1 and T2): \"",
       "test": "python -m pytest tests/backtest/test_leakage_suite.py -q -x -p no:cacheprovider -k silent_engine",
       "expect": "test_every_decision_day_is_swept_by_both_tests_and_a_silent_engine_exits_0"
+    },
+    {
+      "id": "GAP-P12D-83 X8 the engine grid cuts one tick after each 17:00 New York rollover",
+      "file": "tests/backtest/leakage_markets.py",
+      "anchor": "            cuts.add(rollover_utc(day) + tick)",
+      "mutation": "            cuts.add(rollover_utc(day).replace(hour=0, minute=0) + _DAY)",
+      "test": "python -m pytest tests/backtest/test_leakage_suite.py -q -x -p no:cacheprovider -k decision_epochs",
+      "expect": "test_the_grid_is_the_17h_new_york_decision_epochs_plus_the_fold_boundaries"
+    },
+    {
+      "id": "GAP-P12D-83 X9 the forward tier starts after the model's knowledge cutoff",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "FORWARD_START = datetime(2026, 7, 1, tzinfo=timezone.utc)   # after the June-2026 model cutoff (X9)",
+      "mutation": "FORWARD_START = datetime(2026, 1, 1, tzinfo=timezone.utc)   # after the June-2026 model cutoff (X9)",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k forward_starts",
+      "expect": "test_tiers_follow_the_test_windows_and_forward_starts_after_the_model_cutoff"
     }
   ]
 }
