@@ -196,7 +196,27 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - **X6/X8/X9 (LOW):** the labeller tape is too short to show F3; the engine grid is anchored at 00:00 UTC, not 17:00 New York; tier "forward" starts 2026-01, before the June-2026 model cutoff ([[GAP-P12D-66]]).
     - **Honest negatives:** whole-tail statistic leaks are caught; exclusive create is atomic; looks survive crashed grades; T6's stop-at-open matches OANDA and backtrader.
     - **The auditor's verdict:** a strict empirical detector for value look-ahead on price data, not a certificate.
-  - **INTERNAL lens:** running.
+  - **INTERNAL lens IN (2026-09-25, archive/AUDIT_BUILDER2_BRANCH_INTERNAL_2026-09-25.md): "every guard can be made to miss"; NOT fit to merge until fixed.** Findings:
+    - **HIGH-1: the look register can be bypassed.** The lead REPRODUCED all five cases with `r_look_register.py`:
+      - L1: a validation-tier line in a temp dir grades to completion while the canonical register is untouched;
+      - L2: a source named `dukascopy` but keyed `synthetic` grades as tier 0;
+      - L3: one line serves three grades;
+      - L4: a hand-forged line on disk passes `verify_look`;
+      - L5: an empty file left by a power cut bricks the register with `JSONDecodeError`, which `run_oos_validation` does not catch.
+      The fix: pin ONE canonical register; derive the tier from the source OBJECT; CONSUME a line at grade time, so one line is one grade; hash-chain or otherwise make deletion and forgery detectable; tolerate or repair a truncated line and fail closed; record each look's outcome. This matches EXTERNAL X4.
+    - **MEDIUM-1:** a whole-file statistic memoised on the source name hides from both T1 and T2 (0/129 cuts, against 129/129 when recomputed), because `PerturbedMarket` keeps the reference's name and workers are reused. FIX: give each variant a distinct source name, in a fresh spawned process.
+    - **MEDIUM-2:** a gap exit reading its own bar's close passes the exhaustive fitness sweep, because every exit is stamped at j+0.5. This agrees with EXTERNAL X2. FIX: stamp at j.
+    - **MEDIUM-3:** the evolution sweep's T2 has never caught anything. Only T1 catches the author's own mutation and peeks of +5, +20 and +60 min. FIX: a T2 control that bites.
+    - **MEDIUM-4:** the AGON sweep cannot fail on a look-ahead in AGON's own code. With the perturbation switched off, the AGON sweep, the bar-builder sweep and every T7 control stay green. FIX: controls that bite.
+    - **LOW:** concurrent first-look registrations; the dirty flag counts untracked files and the commit is not re-checked at grade time; a bar opening beyond the target then touching the stop is booked as a stop (= X3); T6's ACIS-03 amendment is owed; the engine tap is not in the default suite.
+    - **Honest negatives:**
+      - the engine path catches a planted F3 leak (T2 −2,200, T1 −1,704 decisions), and the honest run is clean;
+      - the 60 s reference is not vacuous (51,118 labels, 20 orders);
+      - all 14 new falsification cases go red for their stated reasons;
+      - 10 of 10 T6 hand mutants were killed;
+      - `passed` is byte-identical;
+      - the export gives 864 passed, 6 skipped.
+  - **Status: BOTH LENSES IN; the fixes are not yet assigned.** Per the owner's 2026-09-25 rule, sending this list back to BUILDER-2 is a NEW launch and needs the owner's explicit go. The alternative is the lead fixing it in-session.
 - Justification: open until both lenses' findings are triaged and the branch merges on the owner's go. It merges AFTER the BUILDER branch, which it stacks on.
 - Linked: [[GAP-P12D-64]], [[GAP-P12D-65]], [[GAP-P12D-82]], [[GAP-P12D-72]]
 
