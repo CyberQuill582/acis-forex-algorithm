@@ -25,8 +25,8 @@ from config.account_doctrine import guardrail_hash
 from config.schemas import load_config
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.money import quote_to_account
-from tests.backtest.oracle import (NOTIONAL_FRACTION, STRATEGY, OracleLoop, OracleTick, grade_oracle,
-                                   non_dsr_failures, oracle_ticks, void_reasons)
+from tests.backtest.oracle import grade_oracle, non_dsr_failures, oracle_ticks, void_reasons
+from tests.backtest.oracle_loop import NOTIONAL_FRACTION, STRATEGY, OracleLoop, OracleTick
 from tests.backtest.synthetic_grade import FIRST_MID, START, plan
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, episodes
 from tests.backtest.test_metrics_and_grader import GH, _block, _report
@@ -115,11 +115,17 @@ def test_non_dsr_failures_is_every_clause_of_passed_but_the_trials() -> None:
     assert non_dsr_failures(_report(trial_count=0, deflated_sharpe=float("nan")), GH) == ()
 
 
-def test_void_reasons_need_planted_recognised_and_every_control_refused() -> None:
+def test_void_reasons_need_planted_recognised_and_every_control_refused_by_a_section_14_row() -> None:
     assert void_reasons({"planted": (), "null": ("section-14 win_rate",),
                          "permuted": ("section-14 annual_sharpe",)}) == []
     assert "planted oracle failed" in void_reasons({"planted": ("section-14 avg_duration",)})[0]
-    assert "null oracle cleared" in void_reasons({"planted": (), "null": ()})[0]
+    assert "not refused by any section-14 row" in void_reasons({"planted": (), "null": ()})[0]
+    # audit F2: a control refused only by a sample floor or a rule is not refused by the grade,
+    # and an oracle that breaks a rule it is built to keep voids the run by itself
+    floor_only = void_reasons({"planted": (), "null": ("12 trades < 30",)})
+    assert len(floor_only) == 1 and "not refused by any section-14 row" in floor_only[0]
+    ruled = void_reasons({"planted": (), "null": ("section-14 win_rate", "rule violation weekend_holding")})
+    assert len(ruled) == 1 and "null oracle broke the account's rules" in ruled[0]
 
 
 def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: list):

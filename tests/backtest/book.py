@@ -4,8 +4,9 @@ A backtest IS a runtime, so the position layer the fast-loop GAPs (0075/0091b/00
 deferred lives here. Invariants:
 
   * An order fills at its `entry_price`. A position closes on a stop or target touch, an
-    opposite-direction order (reverse), or the max hold. A same-side repeat is ignored
-    (GAP-0075: the loop re-sizes every tradeable tick).
+    opposite-direction order (reverse), an `action="close"` order (at the tick's mid; nothing
+    to close is a no-op), or the max hold. A same-side repeat is ignored (GAP-0075: the loop
+    re-sizes every tradeable tick).
   * PnL is Decimal: gross minus the instrument's OWN C8 friction — one cost model per
     instrument, because costs are in price units and prices differ by scale (EUR/USD
     ~1.1, USD/JPY ~150; GAP-P12D-19) — plus financing on every real 17:00-New-York
@@ -94,6 +95,13 @@ class PositionModel:
         `regime` is the regime active when the loop opened the order (GAP-P12D-31), so a
         run can say which regime made or lost the money."""
         existing = book.open_by_inst.get(order.instrument)
+        if order.action == "close":
+            # a flatten fills at THIS tick's mid, as a max-hold close does — never at the order's
+            # entry_price (a Governor close carries its leg's original entry price)
+            if existing is not None:
+                book.book_close(self.close_at(existing, st.mid, st.timestamp, "close", book, st.spread),
+                                order.instrument)
+            return
         if existing is not None:
             if existing.direction == order.direction:
                 return                                   # same-side dedup (GAP-0075)
