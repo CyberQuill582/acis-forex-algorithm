@@ -13,6 +13,15 @@
 - **Ledger IDs.** Only IDs that exist at BASE are cited. The local pass minted new ledger entries after
   BASE; they are named in prose.
 - **Nothing here is a §14 result.** Every number is synthetic or a simulation.
+- **Delta since the snapshot (P5).** `cloud-handoff` moved from BASE `7695ed0` to `main` `6a58e89`, built
+  2026-09-25 01:57 UTC. It did not move again during this session. In between, the local pass committed:
+  - its four finals and the dual audit of the BUILDER branch;
+  - master v2.19 under delegation;
+  - an ACIS-13 v0.1 draft (the cTrader adapter);
+  - new ledger entries (the P12D series after 51), referred to here in prose;
+  - the verification of the BUILDER-3 branch.
+
+  §4.2 reconciles against all of it. The code reviewed is still BASE.
 
 ---
 
@@ -25,8 +34,8 @@
    - The outer loop of pipeline revisions is uncounted (C1).
 2. **The positive-control loss (GAP-P12D-49) is mostly structure, not a verdict on strategy.**
    - A live TSMOM holds each instrument's only position slot 97–99% of the time, which locks out the arena
-     (C3; the lead confirmed the mechanism in code, and re-ran it on a second market: §4.3 of
-     `P3_LEAD_VERIFICATION.md`).
+     (C3; the lead confirmed the mechanism in code, and re-ran it on a second market:
+     `P3_LEAD_VERIFICATION.md` § C3, where TSMOM held 95% of graded time and the arena made 0 trades).
    - The synthetic control is a Brownian bridge that penalises any long-lookback vote by construction
      (lead-confirmed with the production generator and a closed form). Its share of the ladder loss is
      disputed; the local reading, "minor", is probably right (§4.2 L8).
@@ -69,7 +78,7 @@
 | 4 | **Prop-fit: audit and merge the local BUILDER-3 branch; don't rebuild it.** It already has lot-step round-down with a min-lot refusal, a request budget, an always-on pre-close ban, and a daily-reset rule type with `initial_capital`. Use C5's S-A..S-D and N-1 as its regression cases; the FTMO rule is the 00:00 CE(S)T balance, tested on equity. The owner sets the equity-floor **value** for $6k. | D | C5 S-A..S-D and N-1 (**C**, re-run identical); SCOUT; §4.2 L15 | The $9k floor otherwise HALTs a $6k account at start-up, and the `ftmo` stand-in is *looser* than FTMO | ~0 new lines here (already built locally); two audits | [owner decision] (floor value) + [impl] |
 | 5 | **Minimal demo runtime.** Promote `build_paper_loop` into `core/runtime`, with a RiskMonitor gate before submit. One face, on the venue the owner's conditional ruling picks (the OANDA token check first, else the FTMO Free Trial on cTrader). Broker-side SL+TP brackets and one max-hold timer. One instrument, one module, TSMOM off, one position per instrument. Blackouts from a static calendar. The local `practice` mode, bound to the account type the venue reports. | D | C4 §2.5 (P: design, line counts estimated); C5 D15 (S); §4.2 L12, L17 | The owner's first priority, with the least new code | +400–600 lines, no framework | [impl] |
 | 6 | **Make the graded book's fills honest.** Trigger a long's stop on the bid and a short's on the ask, and fill at the worse of the stop and the touch. Flag wide-spread ticks instead of dropping them. Apply the same fix in `simulate_trades`. Price each pair leg from its own instrument. | E | C2 #1–4 (**C**); fitness seed (**C**) | Removes +0.3–0.5 pip/trade optimism and an unbounded tail from every future number | +~40 lines, 0 concepts | [impl] |
-| 7 | **Take TSMOM out of the shared position slot** until a daily-horizon TSMOM exists. The cheapest form is `modules_enabled.TSMOM: false`; the next is emitting only on a vote flip. **Do not** drop the veto alone: that gives one-minute churn. | E+D | C3 §2.3 (**C** mechanism; lockout re-observed by the lead on the h7 market, §4.3 of P3) | Restores the arena (planted: +6.97 [+0.32, +13.62] vs −0.49) | −0 to +10 lines | [spec — owner ratification] (ACIS-04 §6.6 calls TSMOM canonical) |
+| 7 | **Take TSMOM out of the shared position slot** until a daily-horizon TSMOM exists. The cheapest form is `modules_enabled.TSMOM: false`; the next is emitting only on a vote flip. **Do not** drop the veto alone: that gives one-minute churn. | E+D | C3 §2.3 (**C** mechanism; lockout re-observed by the lead on the h7 market: 127/127 trades TSMOM, P3 § C3) | Restores the arena (planted: +6.97 [+0.32, +13.62] vs −0.49) | −0 to +10 lines | [spec — owner ratification] (ACIS-04 §6.6 calls TSMOM canonical) |
 | 8 | **Repair the positive control** before trusting any falsification run. Stop demeaning the realised noise (demean only the planted drift). Add a multi-day episode family, weekend gaps, spread spikes, GARCH-t noise and a common factor. | E | C3 finding 2 (**C**, closed form); C2 §2.7 (S) | The control stops punishing slow votes, and stops *paying* long-horizon reversal on the null | +~60 lines | [impl] |
 | 9 | **Replace `passed` with the stack the local lead already delegated (D1 = C+D), which C1 independently confirms in its spine.** (0) A pre-grade attempt register. (A) CPCV + PBO ≤ 0.20 deflated for looks, with SPA/StepM over the union as an optional cross-check. (B) One expanding-window engine confirmation on daily OOS returns, over ≤ 3 registered looks. (C) The 2024–25 holdout once, kill-only. Remove the as-built DSR and `annual_sharpe > 1.5` from `passed`. | E | C1 (**C** as-built FPR side and keep-best; **P** power); VAL; §4.2 L2–L6 | FPR back to ~5%, and a gate that can say yes to a real ~1.0 | Net lines shrink in `report.py`; +~40 lines register; the research simulator is the real cost | [spec — owner ratification] |
 | 10 | **Build the first candidates outside the minute arena, as small handcrafted rules:** ARC's slate (scheduled flows first), plus its daily-trend sleeve. For that sleeve, a slow EWMA on 17:00 New York closes, forecast-scaled and capped, vol-targeted, with cost ≤ ⅓ of expected pre-cost SR. Grade each through #9 only. | E | C3 §2.4 (P, one engine seed plus 18 cheap-alternative seeds; synthetic; **LLM-originated**); ARC §4 and §6; field brief S3; §4.2 L13 | The horizons the evidence says can clear retail and prop costs | +~100 lines per sleeve | [owner decision] |
@@ -235,8 +244,12 @@ ARC = `RESEARCH_EDGE_FACTORY`, and AE and AI = the external and internal audits 
   not re-run.
 - **Every engine number is 5 folds × 150 graded days on a 2-instrument, uniform-20 s synthetic tape**, not
   the 25-fold ladder. Directions are stable across 3 seeds; magnitudes are not. The null arm has one seed.
-- **The multi-day horizon test** has one engine seed per arm. The lead re-ran both arms at seed 7 (§4.3 of
-  P3), and the cheap alternative has 18 more seeds. More engine seeds were not affordable.
+- **The multi-day horizon test** has one engine seed per arm.
+  - The lead re-ran both arms at seed 7 (P3 § C3).
+  - `h7_off` reproduced exactly (−3.96).
+  - The lost as-built `h7_on` came out at −5.37, with all 127 trades TSMOM and 0 from the arena.
+  - The EWMA alternative reproduced at +10.79.
+  - More engine seeds were not affordable. The 18-seed alternative distribution was not re-run.
 - **C1's power figures** were not re-run by any lead. Only the FPR side and the keep-best inflation were.
 - **C4's line counts for replacements, and the 400–600-line demo runtime,** are LLM estimates.
 - **Whether cTrader or FTMO deduplicates on `clientOrderId`** is unknown. It decides whether C5 D2 is a

@@ -1,0 +1,5 @@
+EUR_USD  MEAN_REVERSION  n=   8 net=   +0.00 occupancy=  0.0% exits={'stop': 4, 'target': 4}
+EUR_USD  TREND           n= 193 net=   -1.02 occupancy=  1.1% exits={'target': 79, 'stop': 110, 'reverse': 4}
+USD_JPY  MEAN_REVERSION  n=  13 net=   -0.07 occupancy=  0.0% exits={'target': 6, 'stop': 7}
+USD_JPY  TREND           n= 191 net=   -2.87 occupancy=  2.5% exits={'target': 73, 'stop': 113, 'reverse': 5}
+passed=False n_trades=405 net=-3.96 label_s=277 grade_s=699

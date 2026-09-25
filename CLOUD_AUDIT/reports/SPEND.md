@@ -16,6 +16,6 @@
 | 18:04 | Run 2 P2 launch: C1 (3h), C2 (2h), C3 (3h), C4 (2h), C5 (2h) | 5 opus lanes | general-purpose type, model opus; fresh time boxes |
 | 2026-09-24 19:52 | Run 2 cut off by the usage limit before synthesis; container reclaimed | — | C3's `h7_on` and `p7_off_scr*` runs were lost with `/tmp` |
 | 2026-09-25 02:35 | **Finishing session** (lead only): network tripwire OK; review tree rebuilt at BASE; handoff re-unpacked (it moved to `6a58e89`) | 1 (lead) | Opus 5.5 by system prompt; effort not observable (xhigh configured) |
-| 02:36–~03:00 | Synthetic engine re-runs `h7_on` + `h7_off` (seed 7, 5 folds), 2 processes | 0 agents | The one bounded horizon re-run, plus its reproduction arm |
+| 02:36–~02:55 | Synthetic engine re-runs `h7_on` + `h7_off` (seed 7, 5 folds), 2 processes | 0 agents | The one bounded horizon re-run, plus its reproduction arm |
 | 02:40–~03:05 | One `opus` general-purpose helper digests the local finals for §4.2 (a work agent, not an audit) | 1 | 25-minute box |
-| (finishing total, est.) | Lead reading, P3, synthesis, close | 1 lead + 1 helper | **Rough estimate $12–20**, unobservable from inside the session; the owner's usage panel is the truth |
+| (finishing total, est.) | Lead reading, P3, synthesis, close (02:35–~04:55 UTC, with an idle wait while the runs graded) | 1 lead + 1 helper | **Rough estimate $12–20**, unobservable from inside the session; the owner's usage panel is the truth |

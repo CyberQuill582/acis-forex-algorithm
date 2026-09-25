@@ -7,7 +7,9 @@
 > - **Runs that never reached this report:**
 >   1. `h7_on`, the as-built arm of the horizon test (a multi-day market with TSMOM live). The lead
 >      **re-ran it once** on 2026-09-25: synthetic only, seed 7, the same driver and arguments, 15 GB free
->      before launch. Its row is filled below and marked [lead-filled].
+>      before launch, about 18 minutes. It completed: 127 trades, all TSMOM, net −5.37, and 0 fast-arena
+>      trades. The lead also re-ran `h7_off` in parallel, and it reproduced the committed result exactly.
+>      Both rows are filled below and marked [lead-filled].
 >   2. `p7_off_scr*`, the scrambled-invisible-gene runs for §2.6 (GAP-0035). **Not re-run**: they need
 >      several ~22-minute engine runs, which is more than one bounded re-run. **§2.6 is UNVERIFIED.**
 > - **Unfilled placeholders.** The lane left `__EXEC__`, `__NULLROW__`, `__NULLSHORT__`, `__H7ON_ROW__`,
@@ -193,7 +195,7 @@ weekdays, each with a random sign.
 | arm (seed 7, 5 folds, 150 graded days) | trades | net $ | gross $ | friction $ | entries aligned with the episode sign | mean hold |
 |---|---|---|---|---|---|---|
 | **TSMOM off** (fast arena alone) | 405 | **−3.96** | +0.22 | 4.17 | TREND 194/384 = **50.5%** | 0.35 h |
-| **TSMOM on** (as built) | __H7ON_ROW__ |
+| **TSMOM on** (as built) | 127 | **−5.37** | −3.94 | 1.43 | TSMOM 84/127 = 66% | 55.8 h (125/127 `max_hold`); fast arena **0 trades** [lead-filled: re-run 2026-09-25, same driver and arguments, seed 7; `evidence/LEAD/probe_occupancy_h7_on_out.txt`] |
 | named alternative: EWMA 8/32-day on daily closes, $150 fixed, same path, same C8 cost | 9 flips | **+10.79** (EUR +2.54, USD_JPY +8.25) | +10.89 | 0.11 | — | days–weeks |
 | the same alternative over 18 more seeds (36 instrument-paths) | — | **mean +2.92 per instrument-path, SE 1.29; 67% positive** | | | | |
 | the same alternative on the 1–4 h planted market (19 seeds, 38 instrument-paths) | — | mean −3.63, SE 4.10 (no edge, as expected) | | | | |
@@ -217,7 +219,7 @@ outputs are `probe_slow_trend_multiday_seeds.txt` and `probe_slow_trend_planted_
    evolution optimises the same minute-scale rule. It can select nothing slower.
 4. **TSMOM is the only multi-day holder, and it is mis-tuned for this horizon**: 63/126/252-day lookbacks
    against 3–20-day episodes, and the 48 h harness cap truncates it. With TSMOM on, the arena is locked
-   out as usual (__H7ON_OCC__).
+   out as usual ([lead-filled] on the h7 re-run TSMOM holds 95.0% (EUR_USD) and 95.3% (USD_JPY) of graded calendar time, and the fast modules make 0 trades).
 5. **The Governor and `DISCARD_OPPOSITE`** are not the binding constraints here. The fast modules fail
    on direction before sizing matters.
 
@@ -341,7 +343,22 @@ them (see the status note). GAP-0035's share of per-module variance remains unme
 
 ### 2.8 Run ledger (runtime of every run)
 
-__RUNS__
+[lead-filled from `evidence/C3/runs_summary.csv` (minutes of labelling + grading, 2 processes in parallel) and the lead's re-runs]
+
+| run | market | arm | label + grade (min) |
+|---|---|---|---|
+| timing1 | planted s7, 1 fold | TSMOM live | 1.6 + 2.7 |
+| p7_on | planted s7 | TSMOM live | 5.8 + 17.5 |
+| p7_off | planted s7 | TSMOM off | 5.7 + 15.1 |
+| p11_off | planted s11 | TSMOM off | 5.3 + 14.7 |
+| p13_off | planted s13 | TSMOM off | 5.4 + 14.8 |
+| n7_on | null s7 | TSMOM live | 5.9 + 18.0 |
+| n7_off | null s7 | TSMOM off | 5.9 + 15.8 |
+| p7_noveto | planted s7 | no-veto patch | 5.3 + 16.9 |
+| h7_off | multi-day s7 | TSMOM off | 5.9 + 16.2 |
+| h7_off (lead re-run, 2026-09-25) | multi-day s7 | TSMOM off | 4.6 + 11.7; **identical result** (405 trades, −3.96) |
+| h7_on (lead re-run, 2026-09-25) | multi-day s7 | TSMOM live (as built) | 4.6 + 13.6 |
+| p7_off_scr* | planted s7 | scrambled invisible genes | **lost; not re-run** |
 
 ---
 

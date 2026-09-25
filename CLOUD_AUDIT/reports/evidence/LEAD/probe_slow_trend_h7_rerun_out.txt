@@ -1,0 +1,2 @@
+h7_off EUR_USD: slow EWMA 8/32d on $150 -> gross +2.59 cost 0.05 net +2.54 flips 4
+h7_off USD_JPY: slow EWMA 8/32d on $150 -> gross +8.30 cost 0.06 net +8.25 flips 5
