@@ -50,7 +50,11 @@ The specifics need explicit OLD/NEW amendments for: the 2-year window, the DSR �
 
   The R1-D* numbers do not collide with the local D1–D9 below. R1-D2 supersedes local D1 (C+D) for fixed families; R1-D1 is local D4; R1-D3/D4/D8 carry local D5.
 - [ ] **OWNER, OPTIONAL: the NVMA confidence veto.** The plan's A7 list of NVMA safety-veto triggers omits `confidence < 0.55`. The lead KEPT it: dropping a veto trigger is a veto-semantics change the owner was never asked about. Rule on it only if you want it dropped.
-- [ ] **ASKED 2026-09-25, and the owner answered: "After you rule".** The dual audit (A3's two lenses) of the R1 spec amendments runs AFTER the owner rules on R1-D1..D14, on the final applied text. At that point the session ASKS again for the launch itself. Nothing launches before that.
+- [ ] **The constitution's TWO audits of the applied R1 amendments are RUNNING.** The owner launched them explicitly on 2026-09-25 ("Launch both now").
+  - What is under audit: commit `271d8e0`, under the pinned brief `AUDIT_BRIEF_R1_AMENDMENTS_2026-09-25.md` (`c440b17`).
+  - Resume handles (after a session limit, RESUME with `SendMessage`; never relaunch): AUDIT-INTERNAL `a4931719099e7f704` · AUDIT-EXTERNAL `a1c16d9c51348e948`.
+  - Reports: `archive/AUDIT_R1_AMENDMENTS_{INTERNAL,EXTERNAL}_2026-09-25.md`.
+  - Then the lead triages every finding. The R1.1–R1.4 build waits for the triage.
 - [ ] **The R1 build order** (PLAN_R1 §2), once the rulings land:
   - R1.0 preconditions (merge 3 DONE);
   - R1.1 the lab;
