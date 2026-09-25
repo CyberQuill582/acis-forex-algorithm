@@ -164,7 +164,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-83: the dual audit of the BUILDER-2 branch (leakage suite, look register, T6)
 - Severity: medium · Likelihood: high
-- Status: open (2026-09-25 — the constitution's two lenses only, launched under the pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`. The branch `worktree-agent-a8937e82f9a7a5391` is at head `5d96570`, and BUILDER-2's own work sits on top of the BUILDER-branch merge `577d882`. Lead pre-checks: `report.py` gains only an informational `look` field and the `passed` gate is byte-identical; no guard, spec or ledger file is touched)
+- Status: open (2026-09-25 — the constitution's two lenses only, launched under the pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`. The branch `worktree-agent-a8937e82f9a7a5391` is at head `5d96570`, and BUILDER-2's own work sits on top of the BUILDER-branch merge `577d882`. Lead pre-checks: `report.py` gains only an informational `look` field and the `passed` gate is byte-identical; no guard, spec or ledger file is touched; the lead re-ran the full branch suite independently: 864 passed, 6 skipped, which matches the author)
 - Area: the BUILDER-2 branch — the leakage suite (T1/T2/T7), the look register and its `run_walk_forward` refusal, and T6 gap-through exits in `core/optimizer/fitness.py`
 - Description: BUILT, PENDING AUDIT. Findings are appended here when the two reports land.
 - Justification: open until both lenses' findings are triaged and the branch merges on the owner's go. It merges AFTER the BUILDER branch, which it stacks on.
