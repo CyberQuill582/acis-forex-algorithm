@@ -19,6 +19,7 @@ from core.optimizer.param_types import LabelledBar, ParamSet
 
 WORST_FITNESS = -1.0
 E_R_REPORT_CAP = 10.0  # log-reporting cap when no losing trades exist
+AT_THE_OPEN = frozenset({"gap", "target_gap"})   # exit kinds settled by the bar's opening price
 # GAP-0071: there is deliberately NO module ATR-period constant — the period
 # is threaded from the ONE declared config value (signals.atr_period) by the
 # caller, so fitness calibrates the SL/TP genes on the same ATR AGON spends
@@ -89,8 +90,9 @@ class Trade:
     exit_bar: int          # the bar the exit was decided on (the last bar when `marked`)
     exit_price: float
     pnl: float             # net of both sides' C8 cost
-    # how it closed: "gap" (at the open, through the stop), "stop" / "target" (intrabar),
-    # "hold" (max hold, at the close), "mark" (the window-end mark, GAP-0039: not a decision)
+    # how it closed: at the open, "gap" (through the stop) or "target_gap" (beyond the target);
+    # intrabar, "stop" / "target"; "hold" (max hold, at the close); "mark" (the window-end
+    # mark, GAP-0039: not a decision)
     exit_kind: str
 
     @property
@@ -144,16 +146,21 @@ def trade_path(
             bars_held += 1
             exit_mid: float | None = None
             kind = ""
-            # SL checked before TP on the same bar — conservative (§6.1). A bar that OPENS
-            # through the stop fills at that open, the first price after the gap (T6,
-            # GAP-P12D-65); a gap through the target still fills at the target, never better.
+            # The open is the bar's first price, so it settles the order when it lies past a level:
+            # through the stop -> the stop fills there (T6); beyond the target -> the target fills
+            # there (X3, as OANDA v20 / backtrader). Between the levels the intrabar order is
+            # unknowable, and the stop is checked first — conservative (§6.1).
             if direction > 0:
-                if bar.low <= sl:
+                if bar.open > tp:
+                    exit_mid, kind = bar.open, "target_gap"
+                elif bar.low <= sl:
                     exit_mid, kind = (bar.open, "gap") if bar.open < sl else (sl, "stop")
                 elif bar.high >= tp:
                     exit_mid, kind = tp, "target"
             else:
-                if bar.high >= sl:
+                if bar.open < tp:
+                    exit_mid, kind = bar.open, "target_gap"
+                elif bar.high >= sl:
                     exit_mid, kind = (bar.open, "gap") if bar.open > sl else (sl, "stop")
                 elif bar.low <= tp:
                     exit_mid, kind = tp, "target"
@@ -161,8 +168,8 @@ def trade_path(
                 exit_mid, kind = bar.close, "hold"
             if exit_mid is not None:
                 # a fill at the open pays the latest spread known then, the prior bar's close
-                # (X2, GAP-P12D-83): the gap bar's own closing spread is its future
-                exit_spread = bars[i - 1].spread if kind == "gap" else bar.spread
+                # (X2, GAP-P12D-83): the bar's own closing spread is its future
+                exit_spread = bars[i - 1].spread if kind in AT_THE_OPEN else bar.spread
                 pnl = direction * (exit_mid - entry_mid) - entry_cost - costs.per_side_cost(exit_spread)
                 trades.append(Trade(signal_bar, direction, entry_mid, i, exit_mid, pnl, kind))
                 direction = 0

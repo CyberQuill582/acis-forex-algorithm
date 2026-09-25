@@ -191,12 +191,28 @@ def test_a_gap_through_the_stop_is_not_rescued_by_a_rally_to_the_target(directio
 
 
 @pytest.mark.parametrize("direction", [1, -1])
-def test_a_gap_through_the_target_is_not_credited(direction: int) -> None:
-    """Tightening only: a bar that opens BEYOND the target still fills at the target's price,
-    never at the better open."""
+def test_a_bar_that_opens_beyond_the_target_fills_there_at_the_open(direction: int) -> None:
+    """X3 (GAP-P12D-83): a take-profit fills at the first price equal to or better than its level
+    (OANDA v20 TakeProfitOrder; backtrader Limit), and a bar's first price is its open. It pays
+    the prior bar's closing spread, the latest known at the fill."""
     t, i, entry, sl, tp, o = _gap(direction, lambda e, s, p: p + direction * 3 * _band_step(e, s, p))
     assert direction * (o - tp) > 0
-    assert (t.exit_bar, t.exit_price) == (i + 2, tp)
+    assert (t.exit_bar, t.exit_price, t.exit_kind) == (i + 2, o, "target_gap")
+    assert t.pnl == pytest.approx(direction * (o - entry) - _cost(0) - _cost(0), abs=1e-15)
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_a_bar_that_opens_beyond_the_target_is_not_booked_as_a_later_stop(direction: int) -> None:
+    """The audit's X3 repro: the bar opens beyond the target, then its range runs back past the
+    stop. The open already settled the order at the target side; the stop cannot come first."""
+    bars, i, entry, sl, tp = _trade_bars(direction, lambda e, s, t: _quiet(e, s, t, 1))
+    step = _band_step(entry, sl, tp)
+    o, far = tp + direction * 2 * step, sl - direction * step
+    high, low = (o + step / 10, far) if direction > 0 else (far, o - step / 10)
+    bars.append(LabelledBar(ts=bars[-1].ts + timedelta(minutes=1), open=o, high=high, low=low,
+                            close=(o + far) / 2, spread=_spread(1), regime=bars[-1].regime))
+    t, = trade_path(PS, bars, TEST_COSTS, atr_period=ATR)
+    assert (t.exit_bar, t.exit_price, t.exit_kind) == (i + 2, o, "target_gap")
 
 
 @pytest.mark.parametrize("direction", [1, -1])

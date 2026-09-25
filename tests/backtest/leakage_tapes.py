@@ -11,7 +11,8 @@ Mental model:
     a peek at the NEXT close, because a signal is emitted with its fill at the next open.
   * `trade_path_decisions` stamps the fitness simulator's decisions on that axis: an entry
     signal is decided at its bar's close (i + 0.5) and emitted with its fill at the next open
-    (i + 1); a gap exit is decided at bar j's OPEN and stamped j, so any read of bar j's
+    (i + 1); an exit the open settles (a gap through the stop, or an open beyond the target)
+    is decided at bar j's OPEN and stamped j, so any read of bar j's
     close, range or closing spread shows (the audit's MEDIUM-2 / X2); an intrabar or
     max-hold exit is stamped j + 0.5;
     the window-end mark (GAP-0039) is bookkeeping, not a decision, and is never compared.
@@ -28,7 +29,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
-from core.optimizer.fitness import Trade
+from core.optimizer.fitness import AT_THE_OPEN, Trade
 from core.optimizer.param_types import LabelledBar
 from core.regime.regime_types import RegimeType
 from tests.backtest.leakage import Decision, perturb_path
@@ -125,7 +126,7 @@ def trade_path_decisions(trades: Sequence[Trade]) -> list[Decision]:
     for t in trades:
         out.append(Decision(t.signal_bar + 0.5, t.signal_bar + 1.0, "signal", (t.signal_bar, t.direction)))
         out.append(Decision(t.signal_bar + 1.0, t.signal_bar + 1.0, "fill", (t.signal_bar, t.entry_price)))
-        if t.exit_kind == "gap":                    # decided at bar j's OPEN (MEDIUM-2 / X2)
+        if t.exit_kind in AT_THE_OPEN:              # decided at bar j's OPEN (MEDIUM-2 / X2 / X3)
             out.append(Decision(float(t.exit_bar), float(t.exit_bar), "exit",
                                 (t.signal_bar, t.exit_bar, t.exit_price, t.pnl)))
         elif not t.marked:
