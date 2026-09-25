@@ -1251,6 +1251,10 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **DO NOT DELETE IT.**
   - Its cost is at most ~$3 a month in the standard tier; the archive tier is about 75% less, with a 90-day minimum.
   - **To verify** (owner decision; a small cost): create a volume from it in eu-west-1, attach it to a temporary instance, and check the files against `server/manifest.jsonl` in the S3 bucket.
+- **Confirmed 2026-09-25 from AWS's own emails** (the owner's Gmail, read at the owner's request):
+  - **The timeline:** the account was placed on HOLD on 09-15, suspended on 09-16, **CLOSED on 09-21 05:29 UTC** ("AWS Account Closure Confirmation"), and reinstated on 09-23 ("removed the temporary hold").
+  - **The 09-23 email says:** "we may have removed your resources … your EBS volumes may have been snapshot". So `snap-0b6cc0700013b7ab1` (09-21 16:53) is AWS's protective snapshot of the data server's volume. The second copy is very likely recoverable: restore the snapshot to a volume (AWS's restore guide; the owner decides).
+  - **Never delete that snapshot.** A generic "delete orphaned snapshots" audit would destroy it.
 - Linked: [[GAP-P12D-14]], [[GAP-P12D-12]], [[GAP-0001]], tests/backtest/OOS_VALIDATION.md
 
 ## GAP-P12D-51: the development laptop's clock is ~16 minutes slow and the Windows Time service is not running
