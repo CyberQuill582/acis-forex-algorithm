@@ -24,7 +24,6 @@ data/validation/cost_stress/<run id>/{ladder.json,rung_*.json}.
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -34,7 +33,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from config.schemas import load_config  # noqa: E402
-from tests.backtest.oos_runner import train_years  # noqa: E402
+from tests.backtest.oos_runner import strict_json, train_years  # noqa: E402
 from tests.backtest.synthetic_grade import FIRST_MID, START, grade, label_year, plan  # noqa: E402
 from tests.backtest.synthetic_market import KINDS, MarketSpec  # noqa: E402
 
@@ -94,6 +93,15 @@ def verdict(rows: list[dict], bar: float) -> str:
             "venue choice can rescue this")
 
 
+def ladder_document(*, kind: str, account: str, folds: int, days: int, bar: float, quick: bool,
+                    rows: list[dict]) -> str:
+    """ladder.json, as strict RFC 8259 JSON (audits F6/E7): a rung whose §14 duration band is
+    empty has avg_duration_s NaN, and a run with no Sharpe has dsr NaN — both are written null."""
+    return strict_json({"kind": kind, "account": account, "folds": folds, "days": days, "bar": bar,
+                        "quick": quick, "verdict": verdict(rows, bar),
+                        "cost_decomposition": decompose(rows), "rungs": rows})
+
+
 def main() -> int:
     cfg = load_config(ROOT / "config")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -150,10 +158,9 @@ def main() -> int:
 
     rows.sort(key=lambda r: (r["spread_floor"], r["cost_stress"]))
     line = verdict(rows, a.bar)
-    (out / "ladder.json").write_text(json.dumps(
-        {"kind": a.kind, "account": a.account, "folds": len(folds), "days": days,
-         "bar": a.bar, "quick": a.quick, "verdict": line, "cost_decomposition": decompose(rows),
-         "rungs": rows}, indent=1), encoding="utf-8")
+    (out / "ladder.json").write_text(ladder_document(
+        kind=a.kind, account=a.account, folds=len(folds), days=days, bar=a.bar, quick=a.quick,
+        rows=rows), encoding="utf-8")
     print("\n" + ("quick run: a shape check only — under two graded years nothing can pass, "
                   "so no verdict" if a.quick else line))
     print("ladder:", out / "ladder.json")
