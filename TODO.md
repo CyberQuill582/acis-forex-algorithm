@@ -79,7 +79,11 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 - [ ] **The constitution's TWO audits of the BUILDER-2 branch are RUNNING** (pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`; [[GAP-P12D-83]]):
   - AUDIT-INTERNAL `a2c3bcf53066dd551`;
   - AUDIT-EXTERNAL `a9d24cf88c3353a04`.
-- **Merge order:** BUILDER first, then BUILDER-2 (it stacks on BUILDER), then BUILDER-3. Each needs the owner's go.
+- **Merge protocol (the lead does it in the main session, with no new agents; each merge needs the owner's explicit go):**
+  - **Order:** (1) BUILDER, after its fixes are verified; (2) BUILDER-2, RE-MERGED onto BUILDER's final head, because it stacks on the old `9b9ec80` snapshot and BUILDER has added commits since; (3) BUILDER-3.
+  - **Measured file overlap (2026-09-25):** BUILDER ∩ BUILDER-2 = `tests/backtest/oracle.py` and `synthetic_grade.py`; BUILDER-3 overlaps neither.
+  - **After EACH merge, before the next:** the full suite, `python scripts/governance_gate.py --session` and `ledger_check`, all on the COMBINED tree.
+  - **Watch the behavioural interaction.** BUILDER-3's always-on pre-close ban, weekend flatten and lot rounding act on code that BUILDER's oracle and BUILDER-2's leakage suite exercise. Anything that passes alone but fails combined is a finding, fixed before the next merge.
 
 **BUILDER-3 IS IN (2026-09-25):** branch `worktree-agent-a9e00713d15bb5082`, BUILT, PENDING AUDIT. The lead re-ran the suite on it: **842 passed, 6 skipped**.
 - [x] Stage 1: drawdown anchors and the taper persist across restarts ([[GAP-P12D-55]]).
