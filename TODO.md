@@ -53,6 +53,12 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - BUILDER-3: `.claude/worktrees/agent-a9e00713d15bb5082`, branch `worktree-agent-a9e00713d15bb5082`.
 - **2026-09-25, just after midnight:** all five were cut off by the session limit, and all five were RESUMED with `SendMessage` after the reset, per the owner's directive. None was relaunched.
 
+**OWNER DIRECTIVE (2026-09-25): NO agent launches unless the owner explicitly asks for them.** It is recorded in CLAUDE.md and in memory.
+- **Why:** credits.
+- **New work counts as a launch.** Sending an existing agent new work needs the owner's go.
+- **Resuming is allowed.** Resuming an approved agent's interrupted, in-flight task is permitted.
+- **Due audits and builds** are listed here as ASKS, never launched.
+
 **OWNER DIRECTIVES (2026-09-24, before sleeping):**
 - (1) "let them continue". The night run goes on.
 - (2) **Audits are ONLY the constitution's two per phase.** No extra audit agents unless the owner asks. It is recorded in CLAUDE.md's audit section and in memory.
