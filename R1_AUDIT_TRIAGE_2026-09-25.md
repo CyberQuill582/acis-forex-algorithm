@@ -4,7 +4,7 @@
 
 - **The reports:** `archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md` (19 findings, I1–I19) and
   `archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md` (18 findings, E1–E18). Both ran on Opus in fresh context,
-  under the pinned brief `AUDIT_BRIEF_R1_AMENDMENTS_2026-09-25.md`. Both were interrupted once by a session limit
+  under the pinned brief `archive/AUDIT_BRIEF_R1_AMENDMENTS_2026-09-25.md`. Both were interrupted once by a session limit
   and resumed with `SendMessage`, not relaunched.
 - **Both lenses agree on the headline:**
   - no guard VALUE changed;

@@ -51,7 +51,7 @@ The specifics need explicit OLD/NEW amendments for: the 2-year window, the DSR �
   The R1-D* numbers do not collide with the local D1–D9 below. R1-D2 supersedes local D1 (C+D) for fixed families; R1-D1 is local D4; R1-D3/D4/D8 carry local D5.
 - [ ] **OWNER, OPTIONAL: the NVMA confidence veto.** The plan's A7 list of NVMA safety-veto triggers omits `confidence < 0.55`. The lead KEPT it: dropping a veto trigger is a veto-semantics change the owner was never asked about. Rule on it only if you want it dropped.
 - [ ] **The constitution's TWO audits of the applied R1 amendments are RUNNING.** The owner launched them explicitly on 2026-09-25 ("Launch both now").
-  - What is under audit: commit `271d8e0`, under the pinned brief `AUDIT_BRIEF_R1_AMENDMENTS_2026-09-25.md` (`c440b17`).
+  - What is under audit: commit `271d8e0`, under the pinned brief, now archive/AUDIT_BRIEF_R1_AMENDMENTS_2026-09-25.md (`c440b17`).
   - Resume handles (after a session limit, RESUME with `SendMessage`; never relaunch): AUDIT-INTERNAL `a4931719099e7f704` · AUDIT-EXTERNAL `a1c16d9c51348e948`.
   - 2026-09-25: both were cut off by the session limit (resets 15:00 Nairobi) and were RESUMED with `SendMessage` after the reset, per the owner's directive. Neither was relaunched.
   - Reports: `archive/AUDIT_R1_AMENDMENTS_{INTERNAL,EXTERNAL}_2026-09-25.md`.
