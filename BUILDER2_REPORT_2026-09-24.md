@@ -9,6 +9,12 @@
 
 It follows the VALIDATOR's §3/§5/§7 (`archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md`).
 
+> **Read §8 first.** Both constitutional audits (GAP-P12D-83) found real defects in stages 1–5. §8 records the fixes, and it supersedes §§1–7 wherever they disagree. In particular:
+> - T1/T2 are detectors, not a "structural" guard;
+> - a silent sweep is "no violation detected", never "clean";
+> - the look register was rebuilt;
+> - gap exits changed twice.
+
 **Untouched:** every threshold and gate, `ACIS_SPEC.md` and `specs/`, `KNOWN_GAPS.md` and `TODO.md`, the guardrail and platform configs, and `data/`. Drafts that belong in those files are in §7 below.
 
 **Every stage is BUILT — PENDING AUDIT.**
@@ -233,3 +239,100 @@ Concrete next steps:
   - findings F1–F3 need IDs.
 - **GAP-P12D-64:** the register is built (`97591b2`), with residuals R5–R7. The [spec] half (raising the gate per look) stays with the owner.
 - **F4:** two small tooling tickets: the gate path inside worktrees, and CRLF-proof A16 anchors.
+
+## 8. Fixes after dual audit (GAP-P12D-83, 2026-09-25)
+
+Owner-approved job. Both audits are in the main tree: `archive/AUDIT_BUILDER2_BRANCH_INTERNAL_2026-09-25.md` (HIGH-1, MEDIUM-1..4, LOW) and `archive/AUDIT_BUILDER2_BRANCH_EXTERNAL_2026-09-25.md` (X1..X9). X1 was fixed on main as GAP-P12D-84. Every other finding is fixed below. Each auditor repro is now a regression test, and every fix was committed separately after a green full suite and A16 falsification.
+
+**Step 0: re-merge main.** Main `1e5c2ba..974dbda` was merged at `f0dd0b1`. It brings the BUILDER branch after its own audit fixes, plus GAP-P12D-84 (the graded book fills a gapped-through stop at the gap price).
+- Conflicts were only in `oracle.py` and `synthetic_grade.py`, and both sides' intent was kept: BUILDER's final oracle (`oracle_loop.py`: NAV-sized notional, graded rungs, weekend-flat and min-hold rules), plus this branch's tier-0 look registration and injection hooks. `grade_oracle` takes an optional `market` and `loop_cls`, and returns `trades` and `orders`. The leaky T7 control now subclasses main's `OracleLoop`, and overrides its `sign(instrument, now)`.
+- Suite: **886 passed, 6 skipped** before any fix.
+
+| # | finding | commit | full suite | regression tests (new or changed) | A16 cases, all red |
+|---|---|---|---|---|---|
+| 1 | HIGH-1 L1–L5 + race; X4 (a)–(f); X9 | `2587bca` | 896 / 6 | `test_look_register.py` (15 tests), `test_oos_runner.py` (outcome + consumed line) | 14 (GAP-P12D-64 …) |
+| 2 | MEDIUM-1 | `04af557` | 897 + 1 adjusted / 6 | `test_a_whole_file_statistic_memoised_on_the_source_name_is_caught`, `test_every_engine_variant_runs_in_a_fresh_spawned_process` | 2 (M1) |
+| 3 | MEDIUM-2 + X2 | `c09e392` | 904 / 6 | `test_a_gap_exit_that_reads_its_own_close_is_caught_by_t1_and_t2` (the audit's exact leak, planted in a copy of the real `trade_path`), `test_no_gap_exit_is_decided_from_its_own_bars_later_data`, `test_a_gap_exit_never_pays_the_gap_bars_own_closing_spread`, `test_an_intrabar_stop_and_a_max_hold_close_name_their_kind` | 3 new + 2 T6 re-pointed |
+| 4 | MEDIUM-3 + MEDIUM-4 | `72081a7` | 907 / 6 | `test_evolution_that_peeks_past_its_train_end_is_caught_by_t2_alone`, `test_a_bar_builder_that_closes_on_the_completing_tick_is_caught_by_t2`, `test_a_whole_tape_median_on_agons_channel_is_caught_by_t2`; the evolution sweep now runs on a non-saturated tape | 4 ("perturbation off" → control RED) |
+| 5 | X3 | `3c40cca` | 909 / 6 | `test_a_bar_that_opens_beyond_the_target_fills_there_at_the_open`, `test_a_bar_that_opens_beyond_the_target_is_not_booked_as_a_later_stop` (the audit's repro) | 3 + 3 re-pointed |
+| 6 | X5 + X7 | `311788d` | 909 / 6 | the suite's verdict pinned (`… no violation detected at …`, never "clean") | 2 |
+| 7 | X8 (+ X9 case) | `5ef463b` | 909 / 6 | `test_the_grid_is_the_17h_new_york_decision_epochs_plus_the_fold_boundaries`, `test_tiers_follow_the_test_windows_and_forward_starts_after_the_model_cutoff` | 2 |
+| 8 | LOW: the engine tap in the default suite | `8ea560a` | **912 / 6** | `test_leakage_engine.py` (3 tests; the end-to-end one takes ~15 s) | 2 |
+
+A16 used the constitution's engine (`specs_constitution/checks/falsify.mjs --root . --only <id>`), one case at a time. It reverts one guard, requires the named test to go red for its stated reason, and restores the file with a sha256 check. At the end, all branch-owned cases were re-run on the final code: **41 of 41 red for their stated reason**, every file restored, and no tracked change left behind. The 4 remaining cases in `falsify.cases.json` are the pre-existing guardrail cases; 3 of them cannot match on a CRLF checkout (F4).
+
+### 8.1 What each fix does
+
+**1. The look register is complete by construction** (`tests/backtest/look_register.py`; the mental model is in its header).
+- **One canonical register for real data.** A tier > 0 look outside `data/validation/looks` is refused, both at registration and at grade time (L1, X4a). Tier-0 synthetic looks, which are unlimited by protocol, may live in their run's directory.
+- **The tier comes from the source object.** `TickSource` classes declare `provenance` ("real" or "synthetic"), and the loader key must equal the object's `name`. A source that declares neither is refused, never tier 0 (L2, X4d).
+- **An append-only hash chain.** Each line carries the sha256 of the previous line's bytes. Lines are written atomically: a temp file, fsync, then an exclusive hard link. The chain breaks, and the register fails closed, on any of:
+  - a missing number;
+  - an edited or inserted line;
+  - a grade marker whose line was deleted (L4, X4b).
+- **A torn or empty line is reported and counted.** It never raises `JSONDecodeError` and never bricks the register (L5, X4f).
+- **One line is one grade.** `begin_grade` consumes the line (`<N>.graded.json`, exclusive) after re-checking the chain and every run property: source and class, instruments, span, config hash, account, cost stress and spread floor. For real data it also re-checks the git commit on a clean tracked tree; untracked files are ignored (L3, X4c).
+- **Concurrent registrations are unambiguous.** A loser re-reads the register before deciding, so exactly one registration is "first look", and the other must say what changed.
+- **Every grade records its outcome** (`<N>.outcome.json`): the pass fields, annual Sharpe, trade count, DSR, trial count and per-trade returns. So the DSR/PBO trial variance can be derived (X4).
+- **The report carries** the per-family and per-tier counts, the chain head and any torn lines. A renamed family still adds to its tier's total (X4e).
+- **X9 (delegated decision):** "forward" starts at `FORWARD_START = 2026-07-01`, after the June-2026 model cutoff (GAP-P12D-66). Real data from 2026-01..06 is exploration.
+- **No threshold or gate changed.** `report.py` is untouched since stage 4, and `passed` is byte-identical.
+
+**2. Distinct variant names, and fresh spawned processes.**
+- `PerturbedMarket` names each variant `<name>~<mode>@<cut>`.
+- `scripts/leakage_suite.py` runs each engine variant through `fresh_process_pool`: a spawn context (never fork), with `max_tasks_per_child=1`.
+- The auditor's leak class is now a standing T7 control. It is caught, with one statistic computed per variant.
+
+**3. Gap exits are stamped at the open and pay the prior bar's spread.**
+- `Trade` records an `exit_kind`: gap, target_gap, stop, target, hold or mark (`marked` is now a property of it).
+- A gap exit is stamped at its bar's open (j), not j + 0.5. So the audit's exact leak (`min(max(open, close), sl)`), planted in a copy of the real `trade_path`, is caught by T2 and by T1.
+- An exit at the open pays the prior bar's closing spread. With the new stamp, the sweep *itself* catches the old closing-spread charge, which a falsification case proves.
+
+**4. Controls that bite on their own.**
+- The evolution sweep runs on a noisy zigzag tape. Its honest champion's fitness is 0.754 (under the 0.8 cap), and a 30-minute peek still stages a champion, which T2 alone catches.
+- AGON is fed one tick at a time, so its own code has no path to a later datum. Its channels are its callbacks, so the control answers the session-median channel from the whole tape (the F3 class at AGON's input), and T2 sees the scalp's decisions move.
+- A bar builder that closes on the completing tick is caught by T2.
+- Four A16 cases switch the tick-tape or bar-tape perturbation off, and each named control goes RED.
+
+**5. X3.** `trade_path` settles at the open first:
+- an open beyond the target fills at the open (`target_gap`), as OANDA v20 TakeProfitOrder and backtrader Limit fill;
+- an open through the stop fills at the open (`gap`);
+- only between the two levels does the stop-before-target convention apply (§6.1).
+
+**6. Honest wording.**
+- The verdict reads "no violation detected at N cuts (M decisions compared under T1 and T2): a detector certifies nothing by its silence" (Fonseca, arXiv 2607.04958).
+- `Sweep.clean` is renamed `Sweep.silent`.
+- Gençay is cited only for "statistics cannot remove a leak". T1/T2 are described as two-run detectors, and T8 is named as the by-construction guard, which is not built.
+
+**7. X8.** `decision_cuts(spec, folds, step)` cuts one tick after every 17:00 New York rollover that opens a trading day, and at every fold boundary. `--step-hours` now adds a uniform grid on top.
+
+**8. LOW.** The engine tap runs end to end on a tiny tape in the default suite, and a stub loop pins signal and order recording.
+
+### 8.2 Residuals (for the ledger)
+
+- **R8 — tail deletion of the register.** Deleting the LAST line together with its markers leaves no evidence inside the register. Each report now carries the chain head, which gives an anchor outside it. The real anchor would be a copy of the register off this laptop, or committed to git; the register lives in git-ignored `/data/`, one copy (GAP-P12D-50/76). That is the owner's decision.
+- **R9 — the chain is unsigned.** Anyone running the code can append a valid line, but an appended line is itself a counted look. That was the whole point of L4.
+- **R10 — per-family counts depend on honest family names.** A rename resets "what changed". The per-tier totals do not reset.
+- **R11 — selection is now more lenient than grading on a favourable gap.** The graded book (GAP-P12D-84, main) fills a take-profit at its level, even when the first tick is beyond it. The fitness simulator now fills at the open (X3), so selection is slightly more lenient than grading on favourable gaps. The fix is on main's `book.py`: a target should fill at `max(price, tp)` for longs and `min(price, tp)` for shorts. That is the lead's call.
+- **R12 — AGON's own code has no channel to the future, by construction.** The sweep certifies its callbacks and inputs, not its code. T1 does not flip on the whole-tape median at the swept cuts, so only T2 is asserted.
+- **R13 — F1 is still open.** The fitness entry fill still pays the entry bar's CLOSING spread (GAP-P12D-82 F1; the exit side is fixed here). It awaits the ACIS-03 amendment. Once it lands, the fill decision should carry its cost, so a regression is catchable (X2's second suggestion).
+- **R14 — in-process component sweeps.** A memo keyed on something the variants still share, other than the name (for example `spec`), is excluded at the engine level by the fresh process, but not in the in-process component sweeps.
+- **R15 — X5 and X6 are only partly fixed.** No threshold-flip (Fonseca M2) or re-stamp (M3) control exists beyond X2's. The non-price channels (tick rate, volume) are constant on `SyntheticMarket`. The labeller tape (130 ticks) is too short to exercise F3 (X6).
+- **R16 — tooling.** `scripts/governance_gate.py` resolves the checks folder wrongly inside `.claude/worktrees/*`. The three pre-existing multi-line guardrail A16 cases cannot match on a CRLF checkout (F4, unchanged).
+
+### 8.3 Draft ACIS-03 §6.1 wording (T6 + X2 + X3; `specs/` untouched)
+
+Replace "exit intrabar at ATR-multiple SL/TP (SL checked before TP on the same bar — conservative)" with:
+
+> exit at the ATR-multiple SL/TP. **A bar's open is its first price and settles the order when it lies beyond a level: an open through the stop exits at that open, and an open beyond the target exits at that open — the first price equal to or worse / better than the level, as venues fill stop and limit orders (OANDA v20, backtrader). Between the two levels the intrabar order is unknowable and SL is checked before TP on the same bar — conservative. An exit at the open pays the C8 cost of the prior bar's closing spread, the latest spread known at the fill (v1.x, GAP-P12D-65 T6, GAP-P12D-83 X2/X3).**
+
+### 8.4 Draft ACIS-09 wording: the look register (a new subsection; `specs/` untouched)
+
+> **Look register (GAP-P12D-64).** Every grade is a look, and its line is written before the grade runs. Lines live in ONE register, `data/validation/looks/`, for every real-data tier; synthetic (tier 0) looks may live in their run's directory. Each line records: the registration time, the git commit (a real-data look requires a clean tracked tree), the full-config hash, the hypothesis family, the data tier (derived from the graded source's declared provenance and its test windows: exploration before 2012 or before the generating model's knowledge cutoff, validation 2012–2023, holdout 2024–25, forward from the cutoff), the source and its class, instruments, date span, account, cost stress, spread floor, what changed since the family's previous look (required for a real re-look), the operator, and the hash of the previous line (an append-only chain). `run_walk_forward` refuses to grade unless its line is on disk, unconsumed, part of an intact chain, and registered for exactly that run (and, for real data, the tree is still clean at the recorded commit); the grade consumes the line and records its outcome (pass fields, annual Sharpe, trade count, DSR, trials, per-trade returns). A torn line is reported and counted, never fatal; a broken chain refuses every registration and grade. The register counts looks; it changes no threshold and no gate.
+
+### 8.5 Final state
+
+- Head **`8ea560a`** (fixes), then this report.
+- Full suite: **912 passed, 6 skipped**.
+- `ledger_check`: 0 violations.
+- The budget and comment-shape checks show no new violations. `core/optimizer/fitness.py` is 299 of 300 lines, so the next change there should extract something.
