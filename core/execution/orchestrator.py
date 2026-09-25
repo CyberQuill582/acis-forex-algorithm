@@ -3,11 +3,13 @@ how much.
 
 Hard walls: never sends more than `size_units` (C-EXE-6); never opens what the
 Governor sized to zero; the execution-freeze (Risk flatten path, phase 9) blocks
-opens while allowing closes; slippage is REPORTED, never acted on (F10: no throttle
-knob). Randomness and time are injected. `dispatch_budget_ms` is observability only
-(v2.10 item c). The venue's own limits DO gate (GAP-P12D-57, venue_limits.py): whole
-lot steps rounded DOWN, below the minimum lot refused, and a spent request budget
-refuses opens but never a close that truly shrinks the position — each a FillReport.
+opens while allowing reduce-only closes; slippage is REPORTED, never acted on (F10:
+no throttle knob). Randomness and time are injected. `dispatch_budget_ms` is
+observability only (v2.10 item c). The venue's own limits DO gate (GAP-P12D-57,
+venue_limits.py): whole lot steps rounded DOWN, below the minimum lot refused, a spent
+request budget refuses opens. A close is REDUCE-ONLY (GAP-0040 exits, ACIS-06 §7): it
+names its position's side, trades the opposite side, and is capped at — or refused
+without — the venue's holding on that side. Every refusal is a FillReport.
 """
 
 from __future__ import annotations
@@ -27,12 +29,18 @@ from core.execution.venue import (
     UNITS_PER_LOT,
     VenueQuality,
 )
-from core.execution.venue_limits import WINDOW, RequestBudget, lot_units, venue_quantity
+from core.execution.venue_limits import (WINDOW, RequestBudget, capable_venues, lot_units,
+                                         reducible, venue_quantity)
 from core.governor.portfolio_types import SizedOrder
 
 # §7 steps 5–6: "bounded" remainder/reroute policy — the bounds, as constants.
 MAX_REMAINDER_RETRIES = 2      # partial-fill remainder resubmissions per fragment
 MAX_REROUTES = 1               # venue reroutes after a rejection per fragment
+
+
+def _side(order: SizedOrder) -> int:
+    """The side traded: a close names its position's side and trades the opposite."""
+    return -order.direction if order.action == "close" else order.direction
 
 
 class ExecutionOrchestrator:
@@ -103,7 +111,8 @@ class ExecutionOrchestrator:
 
         fast_decay = valid_for_seconds < self._cfg.fast_decay_seconds
         total_lots = float(order.size_units / UNITS_PER_LOT)
-        venues = self._capable_venues(order, total_lots, need_ioc=fast_decay)
+        venues = capable_venues(self._faces, self._quality, order, total_lots,
+                                need_ioc=fast_decay)
         if not venues:
             self._log.event("EXEC_CAPABILITY_REJECT", order_id=order.order_id,
                             instrument=order.instrument, lots=total_lots,
@@ -142,24 +151,6 @@ class ExecutionOrchestrator:
 
     # -- internals --------------------------------------------------------------- #
 
-    def _capable_venues(self, order: SizedOrder, total_lots: float,
-                        *, need_ioc: bool) -> list[str]:
-        """Venues whose descriptor covers this order, best quality first.
-        A missing capability excludes the venue — never silent emulation."""
-        capable = []
-        for name, face in self._faces.items():
-            d = face.descriptor
-            if order.instrument not in d.symbol_map:
-                continue
-            if total_lots > d.max_order_lots:
-                continue
-            if need_ioc and not d.supports_ioc:
-                continue
-            capable.append(name)
-        capable.sort(key=lambda n: self._quality.score(n, order.instrument),
-                     reverse=True)
-        return capable
-
     async def _dispatch(self, order: SizedOrder, fragment: Fragment,
                         fragment_plan: FragmentPlan) -> list[FillReport]:
         delay = (fragment.scheduled_at - self._now()).total_seconds()
@@ -172,6 +163,11 @@ class ExecutionOrchestrator:
         reroutes = 0
         retries = 0
         while True:
+            if order.action == "close":               # reduce-only, at THIS venue
+                units, refused = await self._reduce_only(order, units, venue, fragment_id)
+                reports.extend(refused)
+                if units == 0:
+                    return reports
             units, boundary = self._venue_quantity(order, units, venue, fragment_id)
             reports.extend(boundary)
             if units == 0:
@@ -187,8 +183,8 @@ class ExecutionOrchestrator:
             self._record(report)
             reports.append(report)
             if report.status is FillStatus.REJECTED:
-                nxt = [v for v in self._capable_venues(
-                    order, float(units / UNITS_PER_LOT),
+                nxt = [v for v in capable_venues(
+                    self._faces, self._quality, order, float(units / UNITS_PER_LOT),
                     need_ioc=fragment_plan.path == "ioc") if v != venue]
                 if reroutes < MAX_REROUTES and nxt:
                     reroutes += 1
@@ -219,17 +215,15 @@ class ExecutionOrchestrator:
         idempotent fragment_ids make the retry double-fill-safe. Two failures
         ⇒ give up (None)."""
         face, budget = self._faces[venue], self._requests[venue]
-        for attempt in (1, 2):
-            now = self._now()
-            derisk = (order.action == "close" and budget.used(now) >= budget.limit
-                      and await self._shrinks(face, order, units))       # no read for opens
-            if not budget.admit(now, closing=derisk, order_id=order.order_id, log=self._log):
+        for attempt in (1, 2):      # a close here was checked reduce-only at this venue
+            if not budget.admit(self._now(), closing=order.action == "close",
+                                order_id=order.order_id, log=self._log):
                 return self._synthetic_reject(order, "request_budget", units=units,
                                               fragment_id=f"{fragment_id}:budget")
             try:
                 return await face.submit_order(
                     fragment_id=fragment_id, order_id=order.order_id,
-                    instrument=order.instrument, direction=order.direction,
+                    instrument=order.instrument, direction=_side(order),
                     units=units, requested_price=order.entry_price,
                     ioc=ioc, now=self._now(), session_id=self._session)
             except ConnectionError:
@@ -242,13 +236,20 @@ class ExecutionOrchestrator:
                 if attempt == 2:
                     return None
 
-    @staticmethod
-    async def _shrinks(face: ExecutionFace, order: SizedOrder, units: Decimal) -> bool:
-        """A spent budget exempts only a close that really shrinks the venue position:
-        the `close` label is no proof while the close-direction contract is open."""
-        held = [p for p in await face.open_positions() if p.instrument == order.instrument]
-        return (len(held) == 1 and held[0].direction == -order.direction
-                and units <= held[0].size_units)
+    async def _reduce_only(self, order: SizedOrder, units: Decimal, venue: str,
+                           tag: str) -> tuple[Decimal, list[FillReport]]:
+        """A close trades only what `venue` holds on the side it names: capped at that
+        holding, refused without one. What is not sent is a REJECTED report."""
+        held = reducible(await self._faces[venue].open_positions(), order)
+        if held >= units:
+            return units, []
+        kind = "EXEC_CLOSE_REFUSED" if held == 0 else "EXEC_CLOSE_CAPPED"
+        self._log.event(kind, order_id=order.order_id, venue=venue, units=str(units),
+                        held=str(held))
+        report = self._synthetic_reject(order, kind, units=units - held,
+                                        fragment_id=f"{tag}:reduce")
+        self._record(report)
+        return held, [report]
 
     def _venue_quantity(self, order: SizedOrder, units: Decimal, venue: str,
                         tag: str) -> tuple[Decimal, list[FillReport]]:
@@ -291,7 +292,7 @@ class ExecutionOrchestrator:
         return FillReport(
             fill_id=f"{order.order_id}:{fragment_id or 'cap'}:rej",
             order_id=order.order_id, fragment_id=fragment_id or "none",
-            instrument=order.instrument, direction=order.direction,
+            instrument=order.instrument, direction=_side(order),
             requested_price=order.entry_price, fill_price=0.0,
             filled_units=Decimal("0"), slippage_bps=0.0, fill_time=self._now(),
             venue=venue, status=FillStatus.REJECTED,

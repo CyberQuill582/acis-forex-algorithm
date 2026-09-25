@@ -45,9 +45,9 @@ def exec_cfg(**overrides) -> ExecutionConfig:
 
 
 def mk_order(units="250000", action="open", instrument="EUR_USD",
-             order_id="ord-1") -> SizedOrder:
+             order_id="ord-1", direction=1) -> SizedOrder:
     return SizedOrder(
-        order_id=order_id, signal_id="sig-1", instrument=instrument, direction=1,
+        order_id=order_id, signal_id="sig-1", instrument=instrument, direction=direction,
         size_units=Decimal(units), entry_price=1.10, stop_loss=1.09,
         take_profit=1.12, reason="formula",
         factors_snapshot=MappingProxyType({}), sized_at=T0,
@@ -181,13 +181,26 @@ async def test_full_fill_lifecycle_and_store(tmp_path) -> None:
 
 
 async def test_frozen_blocks_opens_allows_closes(tmp_path) -> None:
-    orch, log, _, _ = mk_orchestrator(tmp_path)
+    # Reduce-only closes (builder F1) made this STRICTER: the freeze admits only them. A
+    # "close" into a flat venue used to FILL (opening a position during a flatten);
+    # it is now REJECTED, and only a close of a position the venue holds goes through.
+    face = MockExecutionFace()
+    orch, log, _, _ = mk_orchestrator(tmp_path, faces={"mock": face})
     orch.set_freeze(True, "risk_flatten")
     assert await orch.submit(mk_order("100000"), valid_for_seconds=300) == ()
     assert log.events("EXEC_FROZEN_REJECT")
-    closes = await orch.submit(mk_order("100000", action="close"),
+    flat = await orch.submit(mk_order("100000", action="close", order_id="c-flat"),
+                             valid_for_seconds=300)
+    assert [r.status for r in flat] == [FillStatus.REJECTED]        # nothing to close
+    assert await face.open_positions() == () and log.events("EXEC_CLOSE_REFUSED")
+    orch.set_freeze(False, "test")
+    await orch.submit(mk_order("100000", order_id="o-long"), valid_for_seconds=300)
+    orch.set_freeze(True, "risk_flatten")
+    closes = await orch.submit(mk_order("100000", action="close", order_id="c-long"),
                                valid_for_seconds=300)
-    assert closes and closes[0].status is FillStatus.FILLED   # a flatten can close
+    assert [r.status for r in closes] == [FillStatus.FILLED]         # a flatten can close
+    assert closes[0].direction == -1                                 # by trading the other side
+    assert await face.open_positions() == ()                         # and the venue is FLAT
 
 
 async def test_capability_reject_unknown_instrument(tmp_path) -> None:

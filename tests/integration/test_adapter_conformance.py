@@ -275,32 +275,55 @@ async def test_spent_request_budget_refuses_opens_but_never_a_close(adapter, tmp
     (pos,) = await face.open_positions()
     assert pos.size_units == lot * 2                              # the refused open never got there
     assert log.events("EXEC_REQUEST_BUDGET_REFUSED")
-    # de-risking is never throttled: the close goes through, and the exception is logged
-    closed = await orch.submit(_order(lot * 2, action="close", direction=-1,
+    # de-risking is never throttled: the close (naming the long) goes through, logged
+    closed = await orch.submit(_order(lot * 2, action="close", direction=1,
                                       order_id="o-close"), valid_for_seconds=300)
     assert [r.status for r in closed] == [FillStatus.FILLED]
     assert await face.open_positions() == ()
     assert log.events("EXEC_REQUEST_BUDGET_DERISK")
 
 
-async def test_spent_budget_refuses_a_close_that_would_add_to_the_position(adapter,
-                                                                         tmp_path) -> None:
-    # Only a close that truly shrinks the venue position is exempt. A `close` carrying
-    # the position's OWN direction (as the Governor's group exits do today) would add
-    # to it, so it is an open in all but name and is refused once the budget is spent.
+# Reduce-only closes (builder F1): a close NAMES its position — its direction is the
+# position's side — and the engine trades the opposite side. It may shrink |position| at
+# the venue, never open, add to, or flip one, and the freeze and a spent budget admit only it.
+
+async def test_a_close_into_a_flat_venue_is_refused(adapter, tmp_path) -> None:
+    face = adapter()
+    orch, log = _orchestrator(face, tmp_path)
+    reports = await orch.submit(_order(_lot_units(face.descriptor.min_lot), action="close"),
+                                valid_for_seconds=300)
+    assert [r.status for r in reports] == [FillStatus.REJECTED]
+    assert await face.open_positions() == ()                      # nothing opened
+    assert log.events("EXEC_CLOSE_REFUSED")
+
+
+async def test_a_close_naming_the_other_side_is_refused_not_added(adapter, tmp_path) -> None:
     face = adapter()
     lot = _lot_units(face.descriptor.min_lot)
     orch, log = _orchestrator(face, tmp_path, requests_per_day=1)
-    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)
-    adds = await orch.submit(_order(lot, action="close", direction=1, order_id="o-mislabel"),
-                             valid_for_seconds=300)
-    assert [r.status for r in adds] == [FillStatus.REJECTED]
+    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)   # budget now spent
+    wrong = await orch.submit(_order(lot, action="close", direction=-1, order_id="c-short"),
+                              valid_for_seconds=300)
+    assert [r.status for r in wrong] == [FillStatus.REJECTED]     # the venue holds no short
     (pos,) = await face.open_positions()
-    assert pos.size_units == lot                                  # not doubled
-    too_big = await orch.submit(_order(lot * 2, action="close", direction=-1,
-                                       order_id="o-flip"), valid_for_seconds=300)
-    assert [r.status for r in too_big] == [FillStatus.REJECTED]   # would flip, not close
-    assert log.events("EXEC_REQUEST_BUDGET_REFUSED")
+    assert (pos.direction, pos.size_units) == (1, lot)            # neither doubled nor flipped
+    assert not log.events("EXEC_REQUEST_BUDGET_DERISK")           # never reached the venue
+
+
+async def test_a_close_larger_than_the_position_is_capped_never_flips(adapter, tmp_path) -> None:
+    face = adapter()
+    lot = _lot_units(face.descriptor.min_lot)
+    orch, log = _orchestrator(face, tmp_path)
+    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)
+    reports = await orch.submit(_order(lot * 3, action="close", order_id="c-big"),
+                                valid_for_seconds=300)
+    filled = sum((r.filled_units for r in reports), Decimal("0"))
+    unsent = sum((r.remaining_units for r in reports if r.status is FillStatus.REJECTED),
+                 Decimal("0"))
+    assert filled == lot and unsent == lot * 2                    # capped at the holding
+    assert all(r.direction == -1 for r in reports)                # traded the opposite side
+    assert await face.open_positions() == ()                      # flat, not short
+    assert log.events("EXEC_CLOSE_CAPPED")
 
 
 async def test_request_budget_survives_a_restart(adapter, tmp_path) -> None:

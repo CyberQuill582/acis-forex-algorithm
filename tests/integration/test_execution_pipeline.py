@@ -122,6 +122,28 @@ async def test_pair_group_executes_both_legs(tmp_path) -> None:
         "EUR_USD", "USD_JPY"}
 
 
+async def test_governor_pair_exit_leaves_the_venue_flat(tmp_path) -> None:
+    """Reduce-only closes (builder F1): the Governor's group-exit closes carry each
+    leg's OWN direction (they name the position). Executed, they must FLATTEN both
+    legs. Before the convention was enforced they were sent verbatim and DOUBLED them
+    (EUR_USD −441 → −882, USD_JPY −486 → −972)."""
+    from tests.unit.test_governor import _pair_signals
+    gov, _ = mk_governor()
+    legs = gov.allocate_group(_pair_signals(), mk_portfolio(), mk_regime(), T0)
+    orch, face, _ = mk_exec(tmp_path, unit_venue())
+    for leg in legs:
+        await orch.submit(leg, valid_for_seconds=300)
+    opened = {p.instrument: (p.direction, p.size_units) for p in await face.open_positions()}
+    assert set(opened) == {"EUR_USD", "USD_JPY"}
+    closes = gov.check_group_exits({legs[0].group_id: "coupling_break"}, T0)
+    assert [(c.action, c.direction) for c in closes] == [("close", leg.direction) for leg in legs]
+    for close in closes:
+        reports = await orch.submit(close, valid_for_seconds=300)
+        traded = [r for r in reports if r.status is FillStatus.FILLED]
+        assert traded and all(r.direction == -close.direction for r in traded)
+    assert await face.open_positions() == ()                 # FLAT, not doubled
+
+
 async def test_zero_sized_order_never_reaches_a_venue(tmp_path) -> None:
     """The Governor's zero IS the veto — execution must not resurrect it."""
     agon, _, _ = make_agon(tmp_path)

@@ -6,10 +6,12 @@ Invariants:
     Execution never rounds up: that would add size the Governor did not size (it only
     ever clamps downward). The unsendable remainder is reported, never dropped.
   * A quantity below the venue's `min_lot` is refused with a REJECTED FillReport.
+  * A close is REDUCE-ONLY: it names its position (its direction is the position's side),
+    trades the opposite side, and never exceeds the venue's holding on that side — so it
+    can shrink |position| but never open, add to, or flip one.
   * Each venue has a hard budget of trading requests (every submit attempt) over ANY
-    rolling 24 hours, which is stricter than a firm's "per day" cap whatever its day
-    boundary. Once spent, opens are refused; a close is never blocked (de-risking is
-    never throttled) and every such exception is logged.
+    rolling 24 hours, stricter than a firm's "per day" cap whatever its day boundary.
+    Once spent, opens are refused; a reduce-only close never is (logged as such).
   * A restart does not reset the budget: it is seeded from the persisted fill log.
 """
 
@@ -18,15 +20,36 @@ from __future__ import annotations
 from collections import deque
 from datetime import datetime, timedelta
 from decimal import ROUND_FLOOR, Decimal
-from typing import Iterable
+from typing import Iterable, Mapping
 
-from core.execution.venue import UNITS_PER_LOT, CapabilityDescriptor
+from core.execution.venue import (UNITS_PER_LOT, BrokerPosition, CapabilityDescriptor,
+                                  ExecutionFace, VenueQuality)
+from core.governor.portfolio_types import SizedOrder
 
 WINDOW = timedelta(hours=24)
 
 
 def lot_units(lots: float) -> Decimal:
     return Decimal(str(lots)) * UNITS_PER_LOT
+
+
+def capable_venues(faces: Mapping[str, ExecutionFace], quality: VenueQuality,
+                   order: SizedOrder, total_lots: float, *, need_ioc: bool) -> list[str]:
+    """Venues whose descriptor covers this order, best quality first. A missing
+    capability excludes the venue — never silent emulation."""
+    capable = [name for name, face in faces.items()
+               if order.instrument in face.descriptor.symbol_map
+               and total_lots <= face.descriptor.max_order_lots
+               and (face.descriptor.supports_ioc or not need_ioc)]
+    return sorted(capable, key=lambda n: quality.score(n, order.instrument), reverse=True)
+
+
+def reducible(positions: Iterable[BrokerPosition], order: SizedOrder) -> Decimal:
+    """What a close may trade: the venue's holding on the side the close names —
+    0 when the venue is flat on the instrument or holds the other side."""
+    return sum((p.size_units for p in positions
+                if p.instrument == order.instrument and p.direction == order.direction),
+               Decimal("0"))
 
 
 def venue_quantity(units: Decimal, d: CapabilityDescriptor) -> tuple[Decimal, Decimal]:
