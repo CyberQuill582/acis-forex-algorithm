@@ -30,3 +30,13 @@
 | 08:23 | **Metered $38.83.** R1-D (finished 08:21, 290 k tokens) and R1-B (finished ~08:23, 329 k tokens) are done; R1-A and R1-C are finishing | 2 lanes + lead | **$38.83 metered** |
 | 09:07 | **Metered $55.96.** All four lanes are finished: R1-D 08:21, R1-B ~08:23, R1-C ~08:40, R1-A 09:08. Remaining is lead-only work: P3, PLAN v2 and the close | lead | **$55.96 metered** |
 | 09:14 | **PLAN_R1 v2 (final) pushed**, with P3 row 13 (R1-A register verdict re-run at R = 80) and the lead receipts. Ledger check with the reports copied into the review tree: 221 / 0 | lead | see the close row |
+| ~09:16 | **Close.** The meter last refreshed at 09:07 ($55.96). By token arithmetic the lead-only work since then (P3 row 13, PLAN v2, the close) adds ≈ $2–4. **Estimated final: ≈ $58–60 metered**, or ≈ $67–70 on the owner's panel if the meter under-reads by ~15% as the KALLOS lead observed. PLAN_R1 v1 landed at ≈ $35–38 metered, inside the conductor's $65 rule | 4 lanes (all finished) + lead | **≈ $58–60 metered (est.)** |
+
+**Lanes run (all `opus`, general-purpose, fresh context, no subagents):**
+
+| Lane | Finished (UTC) | Subagent tokens | Web calls used / cap |
+|---|---|---|---|
+| R1-D innovation and architecture | 08:21 | 290 k | 31 / 40 |
+| R1-B edge and breadth | ~08:23 (report says 08:40) | 329 k | 36 / 40 |
+| R1-C synthetic market lab | ~08:40 | 319 k | 23 / 25 |
+| R1-A validation science | 09:08 | 439 k | 25 / 30 |
