@@ -1,4 +1,4 @@
-"""The structural leakage suite, end to end (GAP-P12D-65): T1 and T2 over the REAL decision path.
+"""The leakage detector suite, end to end (GAP-P12D-65): T1 and T2 over the REAL decision path.
 
     python scripts/leakage_suite.py --controls-only     # stage 1 alone: seconds
     python scripts/leakage_suite.py --workers 2         # THE run: stage 1, then the engine sweep
@@ -9,7 +9,7 @@ catch the peek and neither flags the honest oracle.
 Stage 2: a planted market is labelled, evolved and replayed through the production path once
 as the reference, then once per decision day per test (every later price perturbed: T2; the
 tape cut off: T1). Every label, evolution record, regime, signal, order and trade decided
-before the cut must be byte-identical. Exit 0 clean, 1 leak, 5 VACUOUS (the reference staged
+before the cut must be byte-identical. Exit 0 no violation detected, 1 leak, 5 VACUOUS (the reference staged
 or ordered nothing). Writes data/validation/leakage/<run id>/report.json. Synthetic data only.
 The day grid catches a sub-day peek only where it crosses a cut; the per-decision-point guard
 is the component sweep in the default suite (tests/backtest/test_leakage_components.py). This
@@ -57,8 +57,8 @@ def controls(cfg, account: str) -> dict:
                                     cut=t, mode=mode, leak_every=every)
         ref = run()
         out[name] = {"t2": future_perturbation(ref, run, cuts), "t1": truncation(ref, lambda t: run(t, "truncate"), cuts)}
-    void = [f"the honest oracle failed {s.test}" for s in out["honest"].values() if not s.clean]
-    void += [f"the next-tick peek passed {s.test}" for s in out["peek"].values() if s.clean]
+    void = [f"the honest oracle failed {s.test}" for s in out["honest"].values() if not s.silent]
+    void += [f"the next-tick peek passed {s.test}" for s in out["peek"].values() if s.silent]
     return {"void": void, "sweeps": {f"{n}_{k}": s.summary() for n, r in out.items() for k, s in r.items()}}
 
 
@@ -131,7 +131,9 @@ def main() -> int:
         print(" ", s.summary())
     if any(s.violations for s in sweeps):
         return finish(1, "LEAK — a decision before a cut changed with the data after it (see violations)")
-    return finish(0, "clean: no decision before any cut depends on the data after it")
+    compared = sum(s.compared for s in sweeps)
+    return finish(0, f"no violation detected at {len(cuts)} cuts ({compared} decisions compared under T1 and T2): "
+                     "a detector certifies nothing by its silence (Fonseca, arXiv 2607.04958)")
 
 
 if __name__ == "__main__":

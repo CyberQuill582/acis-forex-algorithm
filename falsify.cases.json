@@ -91,14 +91,6 @@
       "expect": "test_the_perturbation_moves_every_later_price_and_its_scale_and_nothing_earlier"
     },
     {
-      "id": "GAP-P12D-65 the perturbed market changes the future at its source",
-      "file": "tests/backtest/leakage_markets.py",
-      "anchor": "            self._variant[instrument] = (array(\"d\", perturb_returns(base, self._k))",
-      "mutation": "            self._variant[instrument] = (array(\"d\", base)",
-      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k harness_level",
-      "expect": "test_the_harness_level_controls_honest_oracle_clean_and_next_tick_peek_caught"
-    },
-    {
       "id": "GAP-P12D-64 a real re-look must say what changed",
       "file": "tests/backtest/look_register.py",
       "anchor": "        if tier > 0 and previous is not None and not changed.strip():",
@@ -321,6 +313,22 @@
       "mutation": "                exit_spread = bar.spread",
       "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k no_gap_exit",
       "expect": "test_no_gap_exit_is_decided_from_its_own_bars_later_data"
+    },
+    {
+      "id": "GAP-P12D-65 the perturbed market changes the future at its source",
+      "file": "tests/backtest/leakage_markets.py",
+      "anchor": "            self._variant[instrument] = (array(\"d\", perturb_returns(base, self._k))",
+      "mutation": "            self._variant[instrument] = (array(\"d\", base)",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k harness_level",
+      "expect": "test_the_harness_level_controls_honest_oracle_silent_and_next_tick_peek_caught"
+    },
+    {
+      "id": "GAP-P12D-83 X5 a silent sweep is never reported as clean",
+      "file": "scripts/leakage_suite.py",
+      "anchor": "    return finish(0, f\"no violation detected at {len(cuts)} cuts ({compared} decisions compared under T1 and T2): \"",
+      "mutation": "    return finish(0, f\"clean: no violation detected at {len(cuts)} cuts ({compared} decisions compared under T1 and T2): \"",
+      "test": "python -m pytest tests/backtest/test_leakage_suite.py -q -x -p no:cacheprovider -k silent_engine",
+      "expect": "test_every_decision_day_is_swept_by_both_tests_and_a_silent_engine_exits_0"
     }
   ]
 }

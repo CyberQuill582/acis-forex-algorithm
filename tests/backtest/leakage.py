@@ -1,7 +1,11 @@
-"""Structural look-ahead checks T1 and T2 (GAP-P12D-65; archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md §7.3).
+"""Look-ahead DETECTORS T1 and T2 (GAP-P12D-65; archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md §7.3).
 
 No statistic can deflate a leak away: a leaky strategy's advantage is real in sample and out
-of sample alike (DSR, PBO and CPCV all pass it, §7.2). Only a structural test catches it.
+of sample alike (DSR, PBO and CPCV all pass it, §7.2; Gençay, arXiv 2608.27734 §6.1). T1 and T2
+are two-run differential detectors (Fonseca, arXiv 2607.04958 §8.3): they re-run on a changed
+future and can EXHIBIT a leak, but "certify nothing by their silence". The by-construction
+guard, a decision-time data accessor (T8), is not built. A silent sweep is reported as "no
+violation detected at N cuts", never as clean.
 
 Mental model:
   * A run is a list of `Decision`s. Each carries two stamps on the run's own time axis:
@@ -73,13 +77,14 @@ class Sweep:
     violations: tuple[Violation, ...]
 
     @property
-    def clean(self) -> bool:
+    def silent(self) -> bool:
+        """No violation witnessed: a detector's silence, never a certificate."""
         return not self.violations
 
     def summary(self) -> str:
         head = f"{self.test}: {self.cuts} cuts, {self.compared} decisions compared, "
-        if self.clean:
-            return head + "no violation"
+        if self.silent:
+            return head + "no violation detected"
         return head + f"{len(self.violations)} violating cut(s); first: {self.violations[0].describe()}"
 
 

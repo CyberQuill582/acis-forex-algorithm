@@ -4,8 +4,10 @@ A check that finds nothing proves nothing until it has been shown to find someth
 control plants the look-ahead the research names — a decision that reads the NEXT bar's
 return — into a real component or through the real harness. T1 and T2 must both catch it, on
 the same exhaustive grid the honest sweeps use (test_leakage_components.py), while the honest
-configuration raises no alarm. Gençay (arXiv 2608.27734 §6.1): such a leak "survives
-statistical deflation completely; only the structural guardrail removes it".
+configuration raises no alarm. Statistics cannot remove such a leak (Gençay, arXiv 2608.27734
+§6.1: a leaky oracle keeps DSR = 1.00); T1/T2 are empirical detectors that exhibit the leaks
+they trigger and certify nothing by their silence (Fonseca, arXiv 2607.04958 §8.3), which is
+why every control must bite and why a silent sweep is never called clean.
 """
 
 from __future__ import annotations
@@ -242,8 +244,8 @@ def test_a_one_tick_label_peek_is_caught_by_t2_and_is_invisible_to_t1(acis_confi
         results[name] = (future_perturbation(ref, lambda t: _labels(cfg, PerturbedMarket(spec, t, "perturb"), **kw), cuts),
                          truncation(ref, lambda t: _labels(cfg, PerturbedMarket(spec, t, "truncate"), **kw), cuts))
     (h2, h1), (p2, p1) = results["honest"], results["peek"]
-    assert h2.clean and h1.clean, (h2.summary(), h1.summary())
-    assert p2.violations and p1.clean, (p2.summary(), p1.summary())
+    assert h2.silent and h1.silent, (h2.summary(), h1.summary())
+    assert p2.violations and p1.silent, (p2.summary(), p1.summary())
     assert {v.missing[0].kind for v in p2.violations} == {"label"}
 
 
@@ -298,9 +300,9 @@ def _oracle_sweeps(cfg, leak_every: int):
     return ref, future_perturbation(ref, run, cuts), truncation(ref, lambda t: run(t, "truncate"), cuts)
 
 
-def test_the_harness_level_controls_honest_oracle_clean_and_next_tick_peek_caught(acis_config) -> None:
+def test_the_harness_level_controls_honest_oracle_silent_and_next_tick_peek_caught(acis_config) -> None:
     ref, h2, h1 = _oracle_sweeps(acis_config, 0)
-    assert h2.clean and h1.clean and h2.compared > 30, (h2.summary(), h1.summary())
+    assert h2.silent and h1.silent and h2.compared > 30, (h2.summary(), h1.summary())
     assert {d.kind for d in ref} == {"order", "trade"}
     _, p2, p1 = _oracle_sweeps(acis_config, 1)
     assert p2.violations and p1.violations, (p2.summary(), p1.summary())
@@ -312,4 +314,4 @@ def test_a_daily_grid_cannot_see_a_sparse_intraday_peek(acis_config) -> None:
     so this sweep stays silent — pinned, because it is why the components are swept at every
     decision point and the engine only at its day grid."""
     _, s2, s1 = _oracle_sweeps(acis_config, 20)
-    assert s2.clean and s1.clean
+    assert s2.silent and s1.silent

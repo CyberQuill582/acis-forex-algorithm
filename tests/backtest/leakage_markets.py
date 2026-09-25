@@ -1,4 +1,4 @@
-"""Synthetic tapes for the structural leakage checks (GAP-P12D-65; leakage.py holds T1/T2).
+"""Synthetic tapes for the leakage detectors (GAP-P12D-65; leakage.py holds T1/T2).
 
 Mental model:
   * `PerturbedMarket` is `spec`'s market with its future changed at a cut: "perturb" (T2)

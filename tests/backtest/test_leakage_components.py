@@ -47,7 +47,7 @@ US = timedelta(microseconds=1)
 def _both(reference, run, cuts, min_compared: int):
     t2 = future_perturbation(reference, lambda t: run(t, "perturb"), cuts)
     t1 = truncation(reference, lambda t: run(t, "truncate"), cuts)
-    assert t2.clean and t1.clean, (t2.summary(), t1.summary())
+    assert t2.silent and t1.silent, (t2.summary(), t1.summary())
     assert t2.compared >= min_compared and t1.compared >= min_compared, (t2.summary(), t1.summary())
 
 

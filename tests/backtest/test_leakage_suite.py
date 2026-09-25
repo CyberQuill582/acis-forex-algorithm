@@ -81,7 +81,7 @@ def test_a_guard_that_does_not_bite_voids_the_run_before_any_engine_compute(monk
     assert any("peek passed" in v for v in _report(tmp_path)["stage1"]["void"])
 
 
-def test_every_decision_day_is_swept_by_both_tests_and_a_clean_engine_exits_0(monkeypatch, tmp_path) -> None:
+def test_every_decision_day_is_swept_by_both_tests_and_a_silent_engine_exits_0(monkeypatch, tmp_path) -> None:
     calls: list = []
     mod = _script(monkeypatch, tmp_path, controls=_quiet_controls, variant=_fake_engine(calls))
     assert mod.main() == 0
@@ -91,7 +91,8 @@ def test_every_decision_day_is_swept_by_both_tests_and_a_clean_engine_exits_0(mo
     assert sorted((m, c.isoformat()) for m, c in calls if c is not None) == sorted(
         (m, c) for m in ("perturb", "truncate") for c in cuts)
     assert calls[0] == ("perturb", None)                                  # the reference ran first
-    assert all("no violation" in s for s in report["stage2"]["sweeps"])
+    assert all("no violation detected" in s for s in report["stage2"]["sweeps"])
+    assert report["verdict"].startswith("no violation detected at") and "clean" not in report["verdict"].lower()
 
 
 def test_a_leaking_engine_exits_1_and_names_the_decisions(monkeypatch, tmp_path) -> None:
@@ -102,7 +103,7 @@ def test_a_leaking_engine_exits_1_and_names_the_decisions(monkeypatch, tmp_path)
     assert "T2 future-perturbation" in report["stage2"]["violations"][0]
 
 
-def test_a_reference_that_decided_nothing_is_vacuous_not_clean(monkeypatch, tmp_path) -> None:
+def test_a_reference_that_decided_nothing_is_vacuous_never_a_pass(monkeypatch, tmp_path) -> None:
     calls: list = []
     mod = _script(monkeypatch, tmp_path, controls=_quiet_controls, variant=_fake_engine(calls, orders=False))
     assert mod.main() == 5 and calls == [("perturb", None)]               # no variant was run
