@@ -497,6 +497,11 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
         - **The conclusion:** the $2.03 is the server's disk while it existed (09-11..09-21). AWS deleted the resources at closure and kept the snapshot. Nothing has run since.
         - **OWNER, optional:** cancel the Claude Haiku Marketplace subscription if unused (Marketplace → Manage subscriptions). It costs $0 unless called.
       - **OPEN, owner:** say which screen shows the drop, with its figures and dates. To confirm nothing accrues, re-read Credits → "Total estimated amount used" (and Bills → EBS GB-Mo) tomorrow. If it rose by more than a few cents, something is running; the prime unseen suspect is anything in a region or service `acis-data` cannot list.
+- [x] 2026-09-25 **The `ACIS HistData Download` scheduled task was REMOVED at the owner's request.** It was the "ghost" PowerShell window: it fired every 30 min with `-WindowStyle Hidden`, which still flashes a console, though the HistData pull has been COMPLETE since 2026-09-15 (1,352 files, a `COMPLETE` marker). Its definition is kept as `archive/scheduled_task_ACIS_HistData_Download.xml`; `scripts/dl_supervisor.ps1` stays. **If a download task is ever needed again,** launch it windowless (a `pythonw`/`wscript` wrapper, or "run whether logged on or not"), never a bare `powershell -WindowStyle Hidden`.
+- [x] 2026-09-25 Laptop housekeeping, done at the owner's request (outside ACIS, recorded for context):
+  - the dead AutoDev/SynapseChamber auto-push tasks were removed;
+  - the 2019 ELAN touchpad driver packages were removed (backup in `Documents/removed_scheduled_tasks_2026-09-25`), and the touchpad now uses Windows' Precision Touchpad driver;
+  - a restart is owed by the owner.
 - [ ] **RDS is unverifiable with the current IAM user.** `rds:DescribeDBInstances` is `AccessDenied` for `acis-data` in every region, so the `db.t4g.micro` MySQL instance named in the owner's cost list can neither be confirmed nor deleted from here. **Only the root user in the console can check and remove it** — Billing → Bills, or RDS console with "any region" selected. This is the one item on that cost list that may still be billing.
 
 ## Standing rules (owner-directed)
