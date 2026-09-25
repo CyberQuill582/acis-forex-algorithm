@@ -1,12 +1,80 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **STATUS (2026-09-17): SPEC COMPLETE (master v2.20). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the VPS deployment gate is ✅, the untrained-baseline freeze is ENFORCED (tag `baseline-untrained-v1`), the full Dukascopy tick set is downloaded and validated, and the evolve-driver + walk-forward runner exist. 814 green; ledger 185 entries, 0 violations. The cost-stress ladder has RUN: the cost question is settled and was never the problem — read GAP-P12D-49 first.**
-> `ACIS_SPEC.md` v2.12 is the build authority. All master-spec guardrail decisions are human-ratified.
+> **STATUS (2026-09-25): SPEC COMPLETE (master v2.20). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). 1002 passed, 6 skipped; ledger 238 entries. The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
+> `ACIS_SPEC.md` v2.20 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
 
 ## ⚠ START HERE — handover from the 2026-09-23/24 session
+
+### 🟢 R-1: THE TRAINING DIRECTION, RATIFIED 2026-09-25 — and the cloud's R1 plan, imported and reviewed
+**The owner's ratification (2026-09-25, ~06:45 EAT, in the fleet-conductor session; relayed via `cloud-handoff/RATIFICATIONS.md`):** *"So this change in trajectory using the 6 recommendations youve given costs nothing to change because we havent started right? if so I ratify it"*. It covers the DIRECTION only:
+1. few, economically motivated rules with parameters pooled across instruments, chosen coarsely, replacing QIEA;
+2. breadth over length (20–40 instruments);
+3. an expanding training window;
+4. iterate freely, but register every run; the verdict is a search-aware test over the register, never the best run;
+5. unlimited synthetic iteration, for the machinery only (the generator's bridge bias fixed first);
+6. the only clean tests are held-out instruments and forward time; the 2024–25 holdout is looked at ONCE; the demo's forward record is decisive.
+
+The specifics need explicit OLD/NEW amendments for: the 2-year window, the DSR ≥ 0.95 gate, TSMOM as required canonical, QIEA's staging rule, and the 8-instrument universe.
+
+- [x] 2026-09-25 **The cloud R1 plan is IMPORTED by path** (`e12a8ab`, `CLOUD_AUDIT/reports/r1/`; start at `PLAN_R1.md` v2). It is finder evidence from the same model lineage: it clears nothing.
+- [x] 2026-09-25 **The lead's review is WRITTEN:** `R1_LEAD_REVIEW_2026-09-25.md`. It holds what was verified, seven disagreements with evidence (X1–X7), and A1–A7 re-drafted under ACIS governance. Ledger IDs were minted from PLAN_R1 §9 plus the lead's own findings:
+  - [[GAP-P12D-89]] declared search spaces;
+  - [[GAP-P12D-90]] the planted market's 3.3× volatility;
+  - [[GAP-P12D-91]] the demeaning bridge;
+  - [[GAP-P12D-92]] joint intraday bridges;
+  - [[GAP-P12D-93]] the C8 swap table;
+  - [[GAP-P12D-94]] the swap regime;
+  - [[GAP-P12D-95]] the execution clock and the rollover spread;
+  - [[GAP-P12D-96]] the §14 shape rows;
+  - [[GAP-P12D-97]] the holdout kill threshold;
+  - [[GAP-P12D-98]] daily return vectors in the register;
+  - [[GAP-P12D-99]] the indicator move;
+  - [[GAP-P12D-100]] the portfolio series;
+  - [[GAP-P12D-101]] the minimum lot vs account size (the lead's);
+  - [[GAP-P12D-102]] D1's power against its own bar (the lead's).
+- [x] 2026-09-25 **R1-D9 RULED by the owner** (the swap regime; asked twice): **decide at the first real-data look.** No emails wait on it. The cost model carries both worlds (FTMO's published swaps, and swap-free). E8 One/Pro Forex swap-free is confirmed on E8's own page; FTMO swap-free is unconfirmed. See [[GAP-P12D-94]].
+- [ ] **OWNER: rule on the R1 decisions** (the table in R1_LEAD_REVIEW §4, each with a recommendation):
+  - R1-D1 (A1, the expanding window);
+  - R1-D2 (A2, the register-aware verdict, with a fixed-sequence order: [[GAP-P12D-102]]);
+  - R1-D3 (A3, the trend family);
+  - R1-D4 (A4, retiring QIEA; **owner-only** re-baseline);
+  - R1-D5 (A5, 30 instruments / 7 held out);
+  - R1-D6 (one development tier);
+  - R1-D7 (A6, §14 as a claim ladder; **owner-only**, it loosens the live gate: [[GAP-P12D-96]]);
+  - R1-D8 (A7, netting; **owner-only**);
+  - R1-D10 to R1-D13;
+  - **R1-D14, NEW: account size and vol target against the minimum lot** ([[GAP-P12D-101]]), decided WITH D9 at the first real-data look.
+
+  The R1-D* numbers do not collide with the local D1–D9 below. R1-D2 supersedes local D1 (C+D) for fixed families; R1-D1 is local D4; R1-D3/D4/D8 carry local D5.
+- [ ] **ASK OWED: the dual audit (A3's two lenses) of the R1 spec amendments.** The session asks the owner when it runs (CLAUDE.md). The lead's recommendation: after the owner rules, on the final text, so no draft is audited twice.
+- [ ] **The R1 build order** (PLAN_R1 §2), once the rulings land:
+  - R1.0 preconditions (merge 3 DONE);
+  - R1.1 the lab;
+  - R1.2 register v2;
+  - R1.3 rules + RSIM + costs;
+  - R1.4 the verdict + e-processes;
+  - R1.5 data (hourly candles, 22 new instruments; the owner runs `scripts/download_dukascopy_s3.py check` first);
+  - R1.6 engine parity + the position policy;
+  - R1.7 retire.
+
+  **The first real-data look happens only after R1.0–R1.4 are green on the lab.**
+  - **[impl], buildable without a ruling (tightening or test-only):**
+    - [[GAP-P12D-98]] register v2 fields;
+    - [[GAP-P12D-99]] the indicator move;
+    - [[GAP-P12D-93]] the swap table in C8 as data;
+    - [[GAP-P12D-100]] the portfolio-series verdict unit;
+    - [[GAP-P12D-92]] the lab's joint bridges;
+    - [[GAP-P12D-95]] the per-symbol execution calendar.
+  - **After R1-D12:** [[GAP-P12D-91]] the generator fix and [[GAP-P12D-90]] variance-matched planting, and re-state every recorded synthetic verdict.
+  - **Decided with A2:** [[GAP-P12D-89]] and [[GAP-P12D-97]].
+- [ ] **Merge-3 follow-ups:**
+  - [[GAP-P12D-86]]: where the look register's outside anchor lives (owner);
+  - [[GAP-P12D-87]]: one fill model for selection and grading (decided with A3/A4);
+  - [[GAP-P12D-88]]: two tooling tickets.
+- [ ] **Relay bookkeeping:** `cloud-handoff/RATIFICATIONS.md` asks for R-1 to be marked relayed. That file belongs to the conductor session, so the owner marks it (or says so).
 
 **🔴 NEW OWNER DIRECTIVE (2026-09-24), and it re-orders the phase:** *"we need to have this engine up and running ASAP and I need to see it trade a demo account."* **Demo trading is now the top priority**, ahead of training quality. It is not a deviation — SPEC §15 phase 12 already reads *"Live broker connection via conformant adapters (**OANDA practice account first**, MT5 next; live only after §14 minimums met and human sign-off)"*. Getting a demo account trading IS phase 12's ordained first step.
 
@@ -39,7 +107,7 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 
 **NIGHT RUN (2026-09-24): five agents launched by the lead.** All are Opus, run without subagents, and write only their own files and branches.
 - **Roster and resume handles:**
-  - AUDIT-INTERNAL `a0cd7f51de98aa6dd` and AUDIT-EXTERNAL `a8b7e5d6992adfc12`: the BUILDER branch, under the pinned brief `AUDIT_BRIEF_BUILDER_2026-09-24.md`. Reports: AUDIT_BUILDER_BRANCH_{INTERNAL,EXTERNAL}_2026-09-24.md in archive/.
+  - AUDIT-INTERNAL `a0cd7f51de98aa6dd` and AUDIT-EXTERNAL `a8b7e5d6992adfc12`: the BUILDER branch, under the pinned brief archive/AUDIT_BRIEF_BUILDER_2026-09-24.md. Reports: AUDIT_BUILDER_BRANCH_{INTERNAL,EXTERNAL}_2026-09-24.md in archive/.
   - BUILDER-2 `a8937e82f9a7a5391`: the structural leakage suite T1/T2/T7, the look register and the T6 gap-through exit ([[GAP-P12D-65]], [[GAP-P12D-64]]). It stacks on the BUILDER branch.
   - BUILDER-3 `a9e00713d15bb5082`: the prop-safety TIGHTENING fixes, based on main:
     - restart persistence, [[GAP-P12D-55]];
@@ -76,10 +144,10 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 - [ ] Stage 6 (T4 config provenance, T8 decision-time accessor) was not built.
 - **Lead pre-check:** `report.py` gains only an informational `look` field, and `passed` is byte-identical. No guard, spec or ledger file is touched.
 - **Pre-existing leak paths it found** are filed as [[GAP-P12D-82]], with delegated decisions on F1/F2/F3/F5, built after the merges.
-- [ ] **The constitution's TWO audits of the BUILDER-2 branch are RUNNING** (pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`; [[GAP-P12D-83]]):
+- [x] 2026-09-25 **The constitution's TWO audits of the BUILDER-2 branch RAN** (pinned brief, now archive/AUDIT_BRIEF_BUILDER2_2026-09-25.md; [[GAP-P12D-83]]):
   - AUDIT-INTERNAL `a2c3bcf53066dd551`;
   - AUDIT-EXTERNAL `a9d24cf88c3353a04`.
-- [ ] **OWNER ANSWER (2026-09-25, asked explicitly): the BUILDER-2 fixes go to BUILDER-2 AFTER the BUILDER branch merges.** It gets ONE job: re-merge BUILDER's final head, then fix every finding in [[GAP-P12D-83]]:
+- [x] 2026-09-25 **DONE. OWNER ANSWER (2026-09-25, asked explicitly): the BUILDER-2 fixes go to BUILDER-2 AFTER the BUILDER branch merges.** It gets ONE job: re-merge BUILDER's final head, then fix every finding in [[GAP-P12D-83]]:
   - the register: one canonical location, tier from the source object, one line consumed per grade, tamper-evident, safe on a truncated line, outcomes recorded;
   - a distinct source name and a fresh process per variant;
   - gap exits stamped at j;
@@ -96,6 +164,7 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - [x] 2026-09-25 **MERGE 2 DONE: the BUILDER-3 branch**, on the owner's explicit go. The lead re-ran the auditors' repros for all blockers on the fixed head; the branch suite gave 898 passed, 6 skipped. The specs were amended in the same merge: master v2.20, ACIS-05 v1.5, ACIS-06 v1.3, ACIS-07 v1.2. GAP-P12D-55/74/75/77/78/79/80/81 are fixed, and -57/-58 mitigated.
     - **Still OWNER-ONLY:** commit the corrected `ftmo` rulebook (the draft is in archive/BUILDER3_REPORT_2026-09-24.md; [[GAP-P12D-54]]) and set the equity floor for the demo account ([[GAP-P12D-56]]). Every current order rounds to ZERO lots until NAV-relative sizing lands ([[GAP-P12D-61]]).
     - **ANNUAL:** re-verify and declare next year's FX holidays each December ([[GAP-P12D-58]]).
+  - [x] 2026-09-25 **MERGE 3 DONE: the BUILDER-2 branch** (`689a406`), on the owner's explicit go. BUILDER-2 finished every [[GAP-P12D-83]] fix (head `cb3059f`). The lead trial-merged it onto current main in a scratch worktree, with no conflicts: **1002 passed, 6 skipped**, comment shape showing no new violations, the ledger clean, and the merged tree byte-identical to the trial (`a9df1dd`). The auditors' attacks were re-aimed at the fixed API: all refused, and the gap-exit leak is caught. [[GAP-P12D-83]] is fixed and [[GAP-P12D-64]] mitigated. Residuals went to [[GAP-P12D-86]], [[GAP-P12D-87]] and [[GAP-P12D-88]]. Both worktrees were removed and the branch kept. The report and the three spent audit briefs moved to archive/.
   - **Watch the behavioural interaction.** BUILDER-3's always-on pre-close ban, weekend flatten and lot rounding act on code that BUILDER's oracle and BUILDER-2's leakage suite exercise. Anything that passes alone but fails combined is a finding, fixed before the next merge.
 
 **BUILDER-3 IS IN (2026-09-25):** branch `worktree-agent-a9e00713d15bb5082`, BUILT, PENDING AUDIT. The lead re-ran the suite on it: **842 passed, 6 skipped**.
@@ -110,7 +179,7 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - The governance gate was RED on main from comment shape; that is FIXED by the lead (comment-only, proven code-identical by AST).
 - [x] 2026-09-25 **DELEGATED:** BUILDER-3 fixes [[GAP-P12D-75]] (restore halts at boot) and [[GAP-P12D-74]] (reduce-only close semantics) on its branch. DONE, audited, fixed and MERGED as merge 2.
 - [x] 2026-09-25: BUILDER-3 finished stages 6 (halts restored at boot, [[GAP-P12D-75]]), 7 (reduce-only closes, [[GAP-P12D-74]]) and 5 (weekend flatten). Head `d8361a7`, 11 commits, 35 files; no guard, spec or ledger file touched. Author's count: 856 passed, 6 skipped.
-- [ ] **The constitution's TWO audits of the BUILDER-3 branch are RUNNING** (launched 2026-09-25; pinned brief `AUDIT_BRIEF_BUILDER3_2026-09-25.md`):
+- [x] 2026-09-25 **The constitution's TWO audits of the BUILDER-3 branch RAN** (pinned brief, now archive/AUDIT_BRIEF_BUILDER3_2026-09-25.md):
   - AUDIT-INTERNAL `a253f98af675aef1f`: its top priority is finding any input where the branch is LOOSER than main;
   - AUDIT-EXTERNAL `a137391bac5f1cb52`: FTMO/E8 rules, reduce-only semantics in real venue APIs, crash-safe persistence.
 
@@ -123,7 +192,7 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 - **INTERNAL audit IN (2026-09-25).** The branch is NOT tightening-only. Also reproduced by the lead:
   - [[GAP-P12D-80]]: **PRE-EXISTING ON MAIN**, the engine's daily-loss halt fires only ONCE per process;
   - [[GAP-P12D-81]]: lot rounding orphans a pair leg.
-- [ ] **ONE consolidated fix list was sent to BUILDER-3** (2026-09-25). The merge waits for:
+- [x] 2026-09-25 (done: fixed, verified and MERGED as merge 2) **ONE consolidated fix list was sent to BUILDER-3** (2026-09-25). The merge waits for:
   - [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-80]] and [[GAP-P12D-81]] fixed and verified by the lead;
   - the atomic close intent (X3/F4);
   - WAL durability;

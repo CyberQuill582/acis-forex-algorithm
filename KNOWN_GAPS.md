@@ -144,6 +144,147 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-102: even swap-free, the R1 flagship family (pooled trend, "D1") most likely fails the plan's own development bar
+- Severity: high · Likelihood: high
+- Status: open [spec — owner ratification, R1-D2] (2026-09-25 — found by the lead reviewing PLAN_R1; `archive/r1_lead_probes/d1_power.py` → `.out`)
+- Area: PLAN_R1 §6 B2 and its A2 (C-BT-11 v2); the testing procedure of stage A
+- Description: PLAN_R1 estimates D1's net portfolio Sharpe at +0.32..+0.79 swap-free (−0.15..+0.32 at FTMO's swaps). Its own stage-A bar is SR̂ > 0.81 (Holm, K ≤ 10, Y = 10), or 0.74 at K = 5. With the plan's own se = 1/√Y, D1 passes 6% / 21% / 47% of the time at the low / mid / high swap-free estimate, and 1% at FTMO swaps. A pre-registered fixed-sequence order (D1 first, at the full α; the next family only if it passes) controls family-wise error exactly as Holm does and lowers D1's bar to 0.50 at Y = 11 (fixed families need no 2-year burn-in): 28% / 58% / 84%.
+- Justification: open. Recommendation in R1_LEAD_REVIEW_2026-09-25.md §2 X2 and A2: fixed-sequence for the first cycle; Holm only among families outside the order. The owner rules with A2.
+- Linked: [[GAP-P12D-89]], [[GAP-P12D-94]], [[GAP-P12D-67]]
+
+## GAP-P12D-101: the R1 plan never models the venue's minimum lot — at the owner's account size most of its breadth cannot be held
+- Severity: high · Likelihood: certain
+- Status: open [owner decision R1-D14 + impl] (2026-09-25 — found by the lead; `archive/r1_lead_probes/lot_granularity.py` → `.out`, FTMO contract sizes from `archive/r1_lead_probes/ftmo_symbols_2026-09-25.json`; the 0.01-lot minimum is an ASSUMPTION, since the JSON carries no min-volume field)
+- Area: PLAN_R1 A3/A5 (breadth, IDM ≈ 2.4–2.5, N_eff ≈ 6), the research simulator (RSIM), ACIS-06 C-EXE-6 lot rounding, [[GAP-P12D-61]]
+- Description: Carver sizing (capital × vol target × weight × IDM) with ACIS's round-down to lot steps, class-equal weights over the 23 explored instruments:
+  - at $6,000 and a 10% vol target, 15 of 23 can NEVER hold one minimum lot (all 13 FX pairs, gold, silver);
+  - at $10,000 and 10%, 6 FX pairs never can, and the rest only at |forecast| ≥ 13–20, i.e. mostly flat;
+  - at $10,000 and 20%, or $25,000 and 10%, all can.
+
+  The instruments fine-grained enough to hold are the index CFDs, which carry FTMO's HIGHEST swap markups (3.6–5%/yr). So the swap regime and the account size are one decision. And unless RSIM rounds to lot steps exactly as execution does, the graded book is not the tradeable book (the GAP-P12D-36 class), and B4 fails by construction.
+- Justification: open. (1) [impl] RSIM must round exactly as C-EXE-6 does. (2) [spec, A5] an instrument is live-eligible on an account only if one minimum lot is ≤ its risk budget at |forecast| = 10 there. (3) [owner, R1-D14] account size and vol target are decided with R1-D9, at the first real-data look.
+- Linked: [[GAP-P12D-94]], [[GAP-P12D-57]], [[GAP-P12D-61]], [[GAP-P12D-102]]
+
+## GAP-P12D-100: a pooled rule must be graded on its portfolio daily series — the stacked instrument × day panel passes a zero-edge rule 9.5–32% of the time
+- Severity: high · Likelihood: medium
+- Status: open [impl] (2026-09-25 — from PLAN_R1 §9 #12, R1-A simulation; not re-run by the local lead)
+- Area: the verdict module (PLAN_R1 R1.4), C-BT-11 v2 (A2)
+- Description: pooling instruments into one panel and testing the stacked instrument-days treats correlated observations as independent. R1-A measured 9.5–32% false passes on a zero-edge rule, against 3.8–6.0% for the portfolio daily series.
+- Justification: open; built with the verdict module, pinned by a lab test that the panel form is never the graded unit.
+- Linked: [[GAP-P12D-89]], [[GAP-P12D-98]]
+
+## GAP-P12D-99: `core/signals/indicators.py` imports its indicators from `core/optimizer/fitness.py` — they must move before QIEA can be retired
+- Severity: low · Likelihood: certain
+- Status: open [impl] (2026-09-25 — from PLAN_R1 §9 #11; verified by the lead at `core/signals/indicators.py:16`)
+- Area: core/signals/indicators.py, core/optimizer/fitness.py (`atr_series`, `ema_series`, `rsi_series`)
+- Description: the signal layer re-exports three indicator functions defined in the optimizer's fitness module. Retiring `fitness.py` (PLAN_R1 A4 / R1.7) would break the signal layer unless they move first.
+- Justification: open; a pure move, behaviour-identical, proven by the existing indicator tests. It needs no ratification.
+- Linked: [[GAP-P12D-89]]
+
+## GAP-P12D-98: the look register stores per-trade returns, not the daily net-return vector a portfolio-level verdict needs
+- Severity: high · Likelihood: certain
+- Status: open [impl] (2026-09-25 — from PLAN_R1 §9 #10; after merge 3 each grade records its outcome with per-trade returns, which is not enough for daily-series tests)
+- Area: tests/backtest/look_register.py (`record_outcome`), the verdict module
+- Description: search-aware tests over the register (Holm or fixed-sequence on family portfolio series, SPA/StepM, CPCV/PBO for explored families) need each registered run's DAILY portfolio net-return vector, content-addressed. The register now keeps pass fields and per-trade returns only. It also lacks the declared-search-space hash, origin + model cutoff, cost-map hash and universe id that PLAN_R1 R1.2 lists.
+- Justification: open; additive fields, tightening only, no ratification needed.
+- Linked: [[GAP-P12D-64]], [[GAP-P12D-89]], [[GAP-P12D-100]]
+
+## GAP-P12D-97: the holdout kill at SR̂ < 0 wrongly kills 18–32% of real edges
+- Severity: medium · Likelihood: high
+- Status: open [spec — owner ratification, A2 stage C] (2026-09-25 — from PLAN_R1 §9 #9, R1-A simulation; not re-run by the local lead)
+- Area: the kill rule for the held-out instruments and the 2024–25 holdout (VALIDATOR K4)
+- Description: with two years of holdout, a true edge frequently shows a negative sample Sharpe. Killing at SR̂ < 0 throws away 18–32% of real edges; killing at t < −0.5 keeps the kill's power against false claims while sparing most real ones.
+- Justification: open; decided with A2 (R1-D2).
+- Linked: [[GAP-P12D-89]]
+
+## GAP-P12D-96: §14's trade-shape rows fail any daily-horizon rule whatever its edge
+- Severity: high · Likelihood: certain
+- Status: open [spec — OWNER-ONLY, R1-D7] (2026-09-25 — from PLAN_R1 §9 #8, a planted SR 0.87 daily rule: win rate 0.18, average hold 53.5 days, positive months 52%, re-run by the cloud lead)
+- Area: master §14 (ACIS_SPEC.md:361-367), tests/backtest/report.py (`WIN_RATE_MIN`, `POSITIVE_MONTHS_MIN_PCT`, `DURATION_*`)
+- Description: win rate > 48%, positive months > 70% and a 30 min–48 h average hold exclude every slow rule by construction, and "win rate > 48%" contradicts §5.6's own "trend-following wins ~35–48%" (ACIS_SPEC.md:213). An annual Sharpe > 1.5 cannot be certified on 12 years of history for any plausible edge.
+- Justification: open. It LOOSENS the live gate (`report.py:30-31`: "loosening is a master-spec change"), so it is owner-only, never delegated. The draft is A6 in R1_LEAD_REVIEW_2026-09-25.md.
+- Linked: [[GAP-P12D-37]], [[GAP-P12D-89]]
+
+## GAP-P12D-95: the execution clock — a 17:00 New York rebalance breaks FTMO's gap rule on Fridays, falls inside the index, metal and oil break, and buys the day's worst FX spread
+- Severity: high · Likelihood: certain
+- Status: open [impl] (2026-09-25 — from PLAN_R1 §9 #7, FTMO's own trading hours (a); the spread half found by the lead, `archive/r1_lead_probes/rollover_spread.py` → `.out`)
+- Area: the runtime's execution scheduling, the research simulator's calendar, [[GAP-P12D-58]]
+- Description: FTMO forbids opening trades ≤ 2 h before a ≥ 2 h closure, so a Friday 17:00 New York rebalance is forbidden, and at 17:00 New York indices, metals and oil are inside their 20:50–22:05 UTC break. The plan's fix executes FX at 17:05 New York. But that is the rollover: on Dukascopy ticks (Jan–Feb 2019, spreads only) EUR/USD's median spread is 2.2 pips at 17:05–17:10 against 0.3 over the London/New York day, and USD/JPY 1.7 against 0.3. Master §13 already uses this spike as a clock mark (ACIS_SPEC.md:355).
+- Justification: open. Decide on the 17:00 New York close; execute each symbol in a liquid hour outside the rollover window and every gap-rule window (e.g. FX 03:00–11:00 New York); pre-registered per symbol, in RSIM and the runtime alike.
+- Linked: [[GAP-P12D-58]], [[GAP-P12D-94]]
+
+## GAP-P12D-94: at FTMO's published swaps a pooled slow-trend book is marginal-to-negative — the account's swap regime is an owner decision
+- Severity: high · Likelihood: high
+- Status: open [owner decision R1-D9 — RULED 2026-09-25: decide at the first real-data look] (from PLAN_R1 §9 #6, R1-B; the swap table re-fetched and the markup decomposition checked by the lead)
+- Area: venue choice, the C8 cost model, the R1 slate's ranking
+- Description: net portfolio SR ≈ (s − c)·√N_eff gives −0.15..+0.32 at FTMO's median markup against +0.32..+0.79 swap-free (s = 0.15–0.34 per instrument). Swap is ~10× the trading cost of a medium-speed rule. E8's own help page lists "Swap free option: Yes" for E8 One (Forex) and E8 Pro Forex (Forex, Metals, Energies, Indices, Crypto), grade (a), read 2026-09-25; its +10% price is a search rendering (c). FTMO's own FAQ has no swap-free entry; third parties contradict each other.
+- Justification: open by ruling. **OWNER RULING 2026-09-25:** no emails wait on it; the cost model carries both worlds (FTMO's published table, and swap-free) as data ([[GAP-P12D-93]]); the owner picks the venue for slow trend just before the first real-data look, together with the account size ([[GAP-P12D-101]]). Never misrepresent eligibility for a swap-free account.
+- Linked: [[GAP-P12D-93]], [[GAP-P12D-101]], [[GAP-P12D-102]], [[GAP-P12D-54]]
+
+## GAP-P12D-93: the C8 financing model charges OANDA's flat 1% admin fee — FTMO's markup is 0.9–2.6%/yr on FX, ~4.8% on gold and 3.6–5.0% on index CFDs, per side
+- Severity: high · Likelihood: certain
+- Status: open [impl] (2026-09-25 — from PLAN_R1 §9 #5; verified by the lead: `tests/backtest/financing.py:7-11`, and the FTMO table in `archive/r1_lead_probes/ftmo_symbols_2026-09-25.json`)
+- Area: tests/backtest/financing.py, tests/backtest/carry.py, the C8 cost model
+- Description: the model applies OANDA's published method (tom-next differential minus a 1% fee both sides; gold at an assumed 0.25% lease rate). Against FTMO it under-charges FX by 0.3–1.6 points per side and indices and gold far more, so every slow-rule grade flatters the venue.
+- Justification: open. Carry the venue's per-symbol swap table as DATA in C8, both worlds per [[GAP-P12D-94]]'s ruling, with a dated snapshot each time the table is fetched (markups drift; stress ±50%).
+- Linked: [[GAP-P12D-94]], [[GAP-P12D-46]], [[GAP-P12D-41]]
+
+## GAP-P12D-92: any intraday refinement of correlated daily bars must bridge the common factor jointly — independent bridges plant a spurious lead-lag/pairs edge (t 6–9)
+- Severity: medium · Likelihood: medium
+- Status: open [impl] (2026-09-25 — from PLAN_R1 §9 #4, R1-C's own simulation; a DESIGN constraint on the proposed lab, C-4, not a defect of the current generator)
+- Area: the R1.1 synthetic lab (tick tapes derived from daily factor bars)
+- Description: bridging each instrument's day independently decorrelates the intraday path from the common factor, which a pairs or lead-lag rule then harvests as a fake edge (t 6.3–8.6 in R1-C's receipt).
+- Justification: open; the lab's C-4 builds one factor bridge plus idiosyncratic bridges, pinned by a no-lead-lag test.
+- Linked: [[GAP-P12D-91]]
+
+## GAP-P12D-91: the synthetic null and permuted markets are bridges — every path is demeaned, and two unit tests encode it
+- Severity: high · Likelihood: high
+- Status: open [impl] (2026-09-25 — from PLAN_R1 §9 #3; verified by the lead: `tests/backtest/synthetic_market.py:113-114` subtracts each path's mean, and `tests/backtest/test_synthetic_market.py:27-32` asserts zero net drift)
+- Area: tests/backtest/synthetic_market.py, tests/backtest/test_synthetic_market.py
+- Description: a demeaned random walk is a Brownian bridge, which mean-reverts by construction: R1-C measured −1.2 / +1.2 pooled SR bias for momentum / reversal at N = 20 on 2.8-year paths (the cloud lead reproduced it). "Demean only the planted drift" re-creates the bridge on the drift component. The fix is "demean nothing", with a random ±1 sign per shuffled return for the permuted kind.
+- Justification: open. [impl] with R1-D12: every recorded synthetic verdict (GAP-P12D-49 included) is re-stated after the fix.
+- Linked: [[GAP-P12D-90]], [[GAP-P12D-49]], [[GAP-P12D-92]]
+
+## GAP-P12D-90: the planted positive-control market is ~3.3× the null's daily volatility, with a frictionless oracle Sharpe of ~157 — every recorded synthetic verdict is confounded by it
+- Severity: high · Likelihood: certain
+- Status: open [spec — owner ratification, R1-D12] (2026-09-25 — from PLAN_R1 §9 #2; the lead's own arithmetic from the generator defaults agrees: ~9.6 episodes/day of ~450 ticks at 0.15σ drift → daily ratio ≈ 3.3; oracle 0.15·√(4320·252) ≈ 156.5)
+- Area: tests/backtest/synthetic_market.py (`drift_sigma`, `episode_hours`), every falsification and ladder verdict, [[GAP-P12D-49]]
+- Description: "planted passes, null fails" can be read off the volatility level and the cost/move ratio alone, not only off the planted drift. The positive control must differ from its null in drift only (variance-matched planting, R1-C C-2).
+- Justification: open; R1-D12. It moves recorded runs, so it is ratified before it is applied.
+- Linked: [[GAP-P12D-91]], [[GAP-P12D-49]], [[GAP-P12D-37]]
+
+## GAP-P12D-89: counting runs is not enough under adaptive iteration — search spaces must be declared and hashed before the first look, and families graded as fixed combinations
+- Severity: critical · Likelihood: high
+- Status: open [spec — owner ratification, R1-D2/R1-D4] (2026-09-25 — from PLAN_R1 §9 #1; R1-A simulation at R = 400, direction reproduced by the cloud lead at R = 80; not re-run locally)
+- Area: the verdict (C-BT-11 v2), the look register, master §5 (rule parameters)
+- Description: when a researcher hill-climbs, the set of tried runs depends on the data, so a union bound over tried runs leaks: max-t over the registered union passes noise 10–16% of the time and Bonferroni over runs 6.5–13%. Max-t over a pre-DECLARED grid holds ~5.2–5.5%; Holm over fixed family combinations 1.5%, with higher power.
+- Justification: open; A2 and A4 in R1_LEAD_REVIEW_2026-09-25.md. It extends [[GAP-P12D-64]].
+- Linked: [[GAP-P12D-64]], [[GAP-P12D-98]], [[GAP-P12D-100]], [[GAP-P12D-102]]
+
+## GAP-P12D-88: two tooling tickets — the governance gate cannot find the constitution checks from a worktree, and three A16 anchors cannot match on a CRLF checkout
+- Severity: low · Likelihood: certain
+- Status: open [impl] (2026-09-25 — BUILDER-2's F4/R16; the first reproduced by the lead from a scratch worktree during merge 3: "no checks directory at …\scratchpad\specs_constitution\checks")
+- Area: scripts/governance_gate.py (`CHECKS = REPO.parent / "specs_constitution" / "checks"`), `falsify.cases.json` multi-line anchors
+- Description: a worktree's `REPO.parent` is not the Knowledgevault folder, so the gate cannot run there; and the three pre-existing multi-line guardrail cases match only LF checkouts.
+- Justification: open; resolve the checks folder from the git common dir (or an env override), and make the anchors line-ending-agnostic.
+- Linked: [[GAP-P12D-83]]
+
+## GAP-P12D-87: selection and grading now fill a favourable gap through the target differently — one fill model must serve both
+- Severity: medium · Likelihood: medium
+- Status: open [spec — decided with the research simulator's fill model] (2026-09-25 — BUILDER-2's R11, confirmed by the lead: `core/optimizer/fitness.py` fills an open beyond the target AT THE OPEN (X3), while `tests/backtest/book.py` `maybe_close` fills a target AT ITS LEVEL)
+- Area: core/optimizer/fitness.py `trade_path`, tests/backtest/book.py `maybe_close`, the future RSIM (PLAN_R1 R1.3)
+- Description: selection is now slightly more lenient than grading on favourable gaps. It is the C8 "one model, both places" law applied to fills. Stops agree (first price at or worse, GAP-P12D-84 / T6).
+- Justification: open. The lead's recommendation: ONE fill model, defined once and used by RSIM and the graded book. For targets, keep the conservative level fill until the venue's take-profit gap behaviour is verified on the demo (prop simulators do not document price improvement). Decided with A3/A4, since `fitness.py` is retired under A4.
+- Linked: [[GAP-P12D-84]], [[GAP-P12D-83]], [[GAP-P12D-82]]
+
+## GAP-P12D-86: the look register's durability limits — tail deletion is undetectable without an outside anchor, the chain is unsigned, and family names are honour-system
+- Severity: medium · Likelihood: low
+- Status: open [owner decision — where the anchor lives] (2026-09-25 — BUILDER-2's R8–R10, merged with merge 3)
+- Area: tests/backtest/look_register.py, `data/validation/looks` (git-ignored, one copy on this laptop, GAP-P12D-50/76)
+- Description: deleting the LAST line with its markers leaves no trace inside the register (each report now carries the chain head as an outside anchor). Anyone running the code can append a valid line, though an appended line is itself a counted look. A renamed family resets its "what changed" history; the per-tier totals do not reset.
+- Justification: open. Recommendation: commit the chain head to git with each real-data grade, or copy the register off the laptop with the tick-set second copy (GAP-P12D-50). The owner decides.
+- Linked: [[GAP-P12D-64]], [[GAP-P12D-50]], [[GAP-P12D-76]]
+
 ## GAP-P12D-85: the walk-forward harness carries open positions through the embargo, where nothing can act — so on weekend-flat accounts every position open at a fold's end is booked as a `weekend_holding` violation
 - Severity: medium · Likelihood: high
 - Status: open (2026-09-25 — found by the BUILDER agent while fixing F2 of [[GAP-P12D-72]]; the evidence is in its branch report. The lead has NOT reproduced it; verify before relying on it)
@@ -168,7 +309,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-82: four latent look-ahead or artifact paths in the research instrument, found by the structural leakage suite (pre-existing on main)
 - Severity: medium · Likelihood: medium
-- Status: open (2026-09-25 — surfaced by BUILDER-2's T1/T2 leakage sweeps; see its branch report `BUILDER2_REPORT_2026-09-24.md` §2 and §5. Each has a named mechanism and `file:line` evidence. None leaks on the current production call paths, which the sweeps checked clean: 102,998 / 102,961 decisions compared)
+- Status: open (2026-09-25 — surfaced by BUILDER-2's T1/T2 leakage sweeps; see its report archive/BUILDER2_REPORT_2026-09-24.md §2 and §5. Each has a named mechanism and `file:line` evidence. None leaks on the current production call paths, which the sweeps checked clean: 102,998 / 102,961 decisions compared)
 - Area: core/optimizer/fitness.py (`trade_path` costs), core/optimizer/qiea.py (`fitness_window`), the NVMA session-median callback via `MarketStateFactory`, the per-regime fitness windows (ACIS-03 §6)
 - Description:
   1. **F1: the fitness fill pays the entry bar's CLOSING spread**, a datum from after the fill. It is a small cost look-ahead in selection.
@@ -182,11 +323,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **F3 [impl]:** make it structural via the T8 decision-time accessor.
 
   All four are built AFTER the three open branches merge, to avoid conflicts. F1 and F5 change fitness numbers, so they get an ACIS-03 amendment. The gene search space is unchanged, so no re-baseline is needed.
+- **Progress 2026-09-25 (merge 3):** F1's EXIT side is fixed (a gap exit pays the prior bar's closing spread, X2). The ENTRY side is BUILDER-2's R13, still open. Under PLAN_R1's A4, `fitness.py` is retired, so F1 and F5 become requirements on the research simulator's fill model ([[GAP-P12D-87]]) rather than ACIS-03 text.
 - Linked: [[GAP-P12D-65]], [[GAP-P12D-64]], [[GAP-P12D-83]]
 
 ## GAP-P12D-83: the dual audit of the BUILDER-2 branch (leakage suite, look register, T6)
 - Severity: medium · Likelihood: high
-- Status: open (2026-09-25 — the constitution's two lenses only, launched under the pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`. The branch `worktree-agent-a8937e82f9a7a5391` is at head `5d96570`, and BUILDER-2's own work sits on top of the BUILDER-branch merge `577d882`. Lead pre-checks: `report.py` gains only an informational `look` field and the `passed` gate is byte-identical; no guard, spec or ledger file is touched; the lead re-ran the full branch suite independently: 864 passed, 6 skipped, which matches the author)
+- Status: fixed (MERGED 2026-09-25 as merge 3 (`689a406`, the owner's explicit go). Every finding of both lenses was fixed on the branch. The lead verified the combined tree: 1002 passed, 6 skipped; the governance gate green. The auditors' own attacks were re-aimed at the fixed API (archive/r1_lead_probes/r_look_register_v2.py, r_fitness_gap_leak3_v2.py): L1–L4 and the race are refused, L5 is reported not raised, and the MEDIUM-2 gap-exit leak, re-planted, is caught by T1 or T2 on every seed where it changes a decision. The branch report moved to archive/BUILDER2_REPORT_2026-09-24.md)
 - Area: the BUILDER-2 branch — the leakage suite (T1/T2/T7), the look register and its `run_walk_forward` refusal, and T6 gap-through exits in `core/optimizer/fitness.py`
 - Description: BUILT, PENDING AUDIT.
   - **EXTERNAL lens IN (2026-09-25, archive/AUDIT_BUILDER2_BRANCH_EXTERNAL_2026-09-25.md)**, every finding reproduced by the auditor:
@@ -228,6 +370,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
       - the export gives 864 passed, 6 skipped.
   - **Status: BOTH LENSES IN; the fixes are not yet assigned.** Per the owner's 2026-09-25 rule, sending this list back to BUILDER-2 is a NEW launch and needs the owner's explicit go. The alternative is the lead fixing it in-session.
 - Justification: open until both lenses' findings are triaged and the branch merges on the owner's go. It merges AFTER the BUILDER branch, which it stacks on.
+- Proof: `test_a_real_data_look_outside_the_canonical_register_is_refused`, `test_the_tier_comes_from_the_source_object_never_a_caller_string`, `test_one_line_is_one_grade`, `test_forged_deleted_or_edited_lines_break_the_chain_and_the_register_fails_closed`, `test_a_torn_line_is_reported_and_counted_and_never_bricks_the_register`, `test_concurrent_first_looks_are_unambiguous`, `test_a_whole_file_statistic_memoised_on_the_source_name_is_caught`, `test_every_engine_variant_runs_in_a_fresh_spawned_process`, `test_a_gap_exit_that_reads_its_own_close_is_caught_by_t1_and_t2`, `test_evolution_that_peeks_past_its_train_end_is_caught_by_t2_alone`, `test_a_whole_tape_median_on_agons_channel_is_caught_by_t2`, `test_a_bar_that_opens_beyond_the_target_fills_there_at_the_open`, `test_the_grid_is_the_17h_new_york_decision_epochs_plus_the_fold_boundaries`.
+- Residual: GAP-P12D-86 — the register's durability limits (R8–R10); GAP-P12D-87 — one fill model for selection and grading (R11); GAP-P12D-88 — the two tooling tickets (R16/F4); GAP-P12D-65 — the leakage remainders (R12, R14, R15); GAP-P12D-82 — F1's entry side (R13).
 - Linked: [[GAP-P12D-64]], [[GAP-P12D-65]], [[GAP-P12D-82]], [[GAP-P12D-72]]
 
 ## GAP-P12D-81: lot-step rounding can orphan one leg of a pair group, leaving a naked directional position — on the BUILDER-3 branch, looser than main
@@ -552,7 +696,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-65: look-ahead leakage passes every statistical gate — only a structural future-scramble test over EVERY decision day catches it, and ACIS has no such test
 - Severity: critical · Likelihood: medium
-- Status: open (2026-09-24 — found by the VALIDATOR in [[GAP-P12D-52]]. The lead REPRODUCED it with an independent seed (777, 20 edge-free markets): a configuration that peeks one bar ahead on 5% of bars passed walk-forward + PSR in 75% of runs, CPCV + PBO in 100% and PBO ≤ 0.10 in 90%. A future-scramble test at 30 sampled decision times caught it in 19 of 20, with 0 false alarms on honest configurations. The VALIDATOR's figures were 80% / 100% / 87.5% and 40 of 40)
+- Status: open (2026-09-24 — found by the VALIDATOR in [[GAP-P12D-52]] and reproduced by the lead. **Progress 2026-09-25, merge 3:** T1 truncation, T2 future-perturbation at EVERY decision point, the T7 controls that bite, and T6 gap-through exits are MERGED, with the auditors' leak classes as standing controls. Still open: T3, T4 (config provenance), T5 and T8 (the decision-time accessor, the by-construction guard); R12 (AGON's code is certified only through its callbacks); R14 (in-process component sweeps can still share a memo keyed on something other than the name); R15 (no threshold-flip or re-stamp control beyond X2; non-price channels are constant on the synthetic tape; the labeller tape is too short for F3))
 - Area: tests/backtest/harness.py `refuse_lookahead`, tests/backtest/test_lookahead_canary.py, the whole grading path, and any future research simulator ([[GAP-P12D-68]] item 6)
 - Description: statistics cannot deflate a leak away. A leaky strategy's advantage is real in-sample and out-of-sample alike, so DSR, PBO and CPCV all pass it. Gençay (arXiv 2608.27734) reports the same: a leaky oracle with Sharpe 35 "survives Deflated Sharpe and probability-of-backtest-overfitting testing". Only STRUCTURAL tests catch it. The core one scrambles every price after time t and asserts that no decision at or before t changes, and it must cover every decision day: sampling a few catches only 15–67% (VALIDATOR), 19 of 20 at 30 samples (lead). ACIS's only look-ahead defence, `refuse_lookahead`, checks that evolution records cite no bar past the train end. It cannot see a leak inside a module, the labeller or the bar builder.
 - Justification: open. **[impl]:** build the VALIDATOR's structural leakage suite (eight tests listed in archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md) as a standing gate, run over every decision day. It needs no ratification, because it is a test that tightens only.
@@ -560,7 +704,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-64: re-scoring pipeline revisions on the same history is the real false-positive channel, and ACIS counts none of them
 - Severity: critical · Likelihood: high
-- Status: open (2026-09-24 — measured by the VALIDATOR in [[GAP-P12D-52]] on synthetic data. It agrees with the 2026-09-16 statistics report's untested warning about the "outer loop" ([[GAP-P12D-33]] secondary finding). Not re-run by the lead)
+- Status: mitigated (2026-09-25 — the [impl] half is MERGED with merge 3: the look register. Every real-data grade writes a hash-chained line first in ONE canonical register; the tier comes from the source object; one line is one grade; each outcome is recorded; `run_walk_forward` refuses without it)
 - Area: the research process itself; the attempt registry (specs/ACIS-11); tests/backtest/report.py; the owner's "iterate until we find the edge"
 - Description: every time the pipeline, gene ranges, regime definitions, fitness weights or cost model change and are re-scored against 2012–2023, that is another trial. Nothing counts it. On pure noise:
   - keeping the best of 5 uncounted revisions passes 9–19% of the time;
@@ -568,10 +712,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - at 24 years of data it is still 26%.
 
   The honest single-look tests (walk-forward + PSR, one pre-registered configuration, the 2-year holdout) stay at 2–6% false positives. It is the ITERATION that manufactures the false pass. The iteration the owner asked for is exactly what this entry guards. At our data length, also: no protocol reliably detects a Sharpe near 0.5 in 12 years (power 25% at a true 0.44), so "no pass" is the NORMAL outcome even when an edge exists. That is a limit of the data, not a verdict on the engine.
-- Justification: open.
-  - **[impl], no ratification needed:** a look register, written BEFORE every grade.
+- Justification: mitigated — the register counts every look, so an uncounted revision is now structurally impossible through `run_walk_forward`; turning the count into a verdict is owned by the residuals.
+  - **[impl], no ratification needed:** a look register, written BEFORE every grade (BUILT, merge 3).
   - **[spec]:** raise the gate's threshold for every recorded look. That is part of the VALIDATOR's option C in [[GAP-P12D-33]], the owner's decision.
   - **Until the register exists,** read any real-data pass after more than one revision as unproven.
+- Proof: `test_the_grade_refuses_before_any_compute_without_its_own_line`, `test_one_line_is_one_grade`, `test_forged_deleted_or_edited_lines_break_the_chain_and_the_register_fails_closed`.
+- Residual: GAP-P12D-89 — the verdict computed OVER the register (declared, hashed search spaces; fixed combinations); GAP-P12D-98 — the daily return vector per grade; GAP-P12D-86 — durability. The [spec] half is PLAN_R1's A2 (R1-D2), awaiting the owner.
 - Linked: [[GAP-P12D-52]], [[GAP-P12D-33]], [[GAP-P12D-67]], [[GAP-P12D-68]]
 
 ## GAP-P12D-63: MOMENTUM_SCALP can never fire on the synthetic falsification markets, so no falsification run has ever tested it

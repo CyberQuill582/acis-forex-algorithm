@@ -1,0 +1,12 @@
+$ 6,000 at 10% vol: never trades (needs |f|>20 cap): 15/23 ['EUR/USD', 'USD/JPY', 'GBP/USD', 'AUD/USD', 'USD/CAD', 'USD/CHF', 'EUR/GBP', 'EUR/JPY', 'GBP/JPY', 'AUD/JPY', 'EUR/CHF', 'EUR/AUD', 'CHF/JPY', 'XAU/USD', 'XAG/USD']
+          forecast needed for one min lot -> FX: |f|>= 21-51  IDX: |f|>= 1-12  MET: |f|>= 30-30  NRG: |f|>= 1-1
+$ 6,000 at 20% vol: never trades (needs |f|>20 cap):  3/23 ['EUR/JPY', 'GBP/JPY', 'CHF/JPY']
+          forecast needed for one min lot -> FX: |f|>= 11-25  IDX: |f|>= 0-6  MET: |f|>= 15-15  NRG: |f|>= 0-1
+$10,000 at 10% vol: never trades (needs |f|>20 cap):  6/23 ['USD/JPY', 'GBP/USD', 'EUR/JPY', 'GBP/JPY', 'EUR/AUD', 'CHF/JPY']
+          forecast needed for one min lot -> FX: |f|>= 13-30  IDX: |f|>= 0-7  MET: |f|>= 18-18  NRG: |f|>= 1-1
+$10,000 at 20% vol: never trades (needs |f|>20 cap):  0/23 []
+          forecast needed for one min lot -> FX: |f|>= 6-15  IDX: |f|>= 0-4  MET: |f|>= 9-9  NRG: |f|>= 0-0
+$25,000 at 10% vol: never trades (needs |f|>20 cap):  0/23 []
+          forecast needed for one min lot -> FX: |f|>= 5-12  IDX: |f|>= 0-3  MET: |f|>= 7-7  NRG: |f|>= 0-0
+$25,000 at 20% vol: never trades (needs |f|>20 cap):  0/23 []
+          forecast needed for one min lot -> FX: |f|>= 3-6  IDX: |f|>= 0-1  MET: |f|>= 4-4  NRG: |f|>= 0-0

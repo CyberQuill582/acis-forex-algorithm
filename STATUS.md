@@ -1,8 +1,18 @@
 # STATUS — ACIS current state (read first)
 
-**As of 2026-09-17.** One-screen digest. Authoritative sources: `TODO.md` (work queue), `CLAUDE.md` (rules), `KNOWN_GAPS.md` (live ledger). This file summarises them; if it ever disagrees with those, they win — update this.
+**As of 2026-09-25.** One-screen digest. Authoritative sources: `TODO.md` (work queue), `CLAUDE.md` (rules), `KNOWN_GAPS.md` (live ledger). This file summarises them; if it ever disagrees with those, they win — update this.
 
 ## Where we are
+
+> **2026-09-25 digest.** All three night-run branches are MERGED: the BUILDER branch (oracle control, plateau law), BUILDER-3 (prop-safety tightening, master v2.20) and BUILDER-2 (the structural leakage suite plus the look register, which every real-data grade must write first). **1002 passed, 6 skipped.** The owner RATIFIED the R-1 training direction:
+> - few pooled rules;
+> - breadth;
+> - an expanding window;
+> - every run registered;
+> - synthetic iteration for the machinery only;
+> - held-out and forward as the only clean tests.
+>
+> The cloud's R1 plan is imported (`CLOUD_AUDIT/reports/r1/PLAN_R1.md`) and reviewed in `R1_LEAD_REVIEW_2026-09-25.md`, whose seven disagreements include the minimum lot at the owner's account size (GAP-P12D-101) and the flagship family's power (GAP-P12D-102). Its spec amendments A1–A7 await the owner's rulings (TODO START HERE). The swap-regime decision (R1-D9) is ruled: it is taken at the first real-data look.
 
 > **2026-09-17 session digest (research + falsification).** The engine separates a planted edge (+1.11 Sharpe) from noise (-2.77), so it is not edge-blind; the earlier "all three markets within 0.4 Sharpe" result came from a harness that (a) graded against an unsatisfiable gate ([[GAP-P12D-37]] — planted needed annual Sharpe 76), (b) replayed 7 days backwards at every fold boundary ([[GAP-P12D-35]], FIXED) and (c) never charged the spread ([[GAP-P12D-36]], FIXED). Attribution now names the mechanism: TREND and BREAKOUT capture the edge (PF 2.21 / 2.48) and MEAN_REVERSION gives it back at a 6.3% win rate ([[GAP-P12D-40]]). Eight research reports in `archive/`. Six owner decisions are pending — see the START HERE block in `TODO.md`. Owner has chosen a ~$6k PROP-FIRM account, so the execution venue is the firm's platform, not OANDA.
 - **Spec:** master `ACIS_SPEC.md` **v2.20** (2026-09-25: v2.20 — BUILDER-3 prop-safety merge, ACIS-05/06/07 amended; 2026-09-24: v2.19 — §5.6 century-study figure corrected + LLM-contamination law, GAP-P12D-53/66, applied under the owner's delegation; 2026-09-15: v2.18 — QIEA fitness reads every target-regime bar in a recency span, not the last 500 bars, GAP-P12D-29; 2026-09-11: v2.13 — §13 cross-check source HistData replaces TrueFX, Dukascopy primary via its official S3 archive; v2.14 — every market time declared in LOCAL time and resolved per date, GAP-P12D-10; v2.15 — Sydney session closes the daily dead window, spot gold gets an OTC calendar, GAP-0023/P12D-11). Deep specs ACIS-01..12 LOCKED (ACIS-01 → v1.3, ACIS-03 → v1.4, ACIS-09 → v1.5); **ACIS-13 (venue adapters) is the only unwritten spec**. Governed by `../specs_constitution/SPEC_CONSTITUTION.md` **v0.5**.

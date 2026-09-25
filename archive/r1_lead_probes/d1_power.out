@@ -1,0 +1,6 @@
+test                                 bar        FTMO mid 0.08   swap-free low 0.32   swap-free mid 0.55  swap-free high 0.79
+Holm K=10, Y=10 (plan B2)           0.81                   1%                   6%                  21%                  47%
+Holm K=5,  Y=10                     0.74                   2%                   9%                  28%                  57%
+Holm K=3,  Y=10                     0.67                   3%                  13%                  35%                  64%
+fixed-sequence (primary), Y=10      0.52                   8%                  26%                  54%                  80%
+fixed-sequence (primary), Y=11      0.50                   9%                  28%                  58%                  84%

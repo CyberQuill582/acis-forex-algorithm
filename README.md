@@ -2,7 +2,7 @@
 
 A production-grade, **deterministic (no-LLM-in-the-fast-loop)** autonomous forex engine with an MCP monitoring/control plane. Separate project from AXIS and Phronesis — nothing here imports them.
 
-> **Status (2026-09-17): SPEC complete (master v2.20). Build phases 1–11 are ✅ — built, dual-audited, and triaged — with 814 tests green.** Phase 12 (live readiness) is in progress; six owner decisions are pending, listed in the START HERE block of `TODO.md`. The seven core layers, the MCP monitoring plane, and the backtest/§14-validation harness are implemented. **Phase 12 (LIVE readiness) is underway:** the VPS deployment-readiness gate is ✅ (CI merge gate, Docker, systemd supervision + §8.6 watchdog, §279 server-side-stop conformance — see `deploy/README.md`); next is real out-of-sample §14 validation. Everything runs in **paper mode**; enabling live requires the §14 minimums met **out-of-sample on real data** + explicit human sign-off. See `STATUS.md` for the current-state digest.
+> **Status (2026-09-25): SPEC complete (master v2.20). Build phases 1–11 are ✅ — built, dual-audited, and triaged — with 1002 tests passing.** Phase 12 (live readiness) is in progress. The R-1 training direction is ratified, and its spec amendments await the owner's rulings, listed in the START HERE block of `TODO.md`. The seven core layers, the MCP monitoring plane, and the backtest/§14-validation harness are implemented. **Phase 12 (LIVE readiness) is underway:** the VPS deployment-readiness gate is ✅ (CI merge gate, Docker, systemd supervision + §8.6 watchdog, §279 server-side-stop conformance — see `deploy/README.md`); next is real out-of-sample §14 validation. Everything runs in **paper mode**; enabling live requires the §14 minimums met **out-of-sample on real data** + explicit human sign-off. See `STATUS.md` for the current-state digest.
 
 ## Read in this order
 1. **`STATUS.md`** — one-screen current state: what's built, what's open, the pre-live gate. **Read this first.**
@@ -24,7 +24,7 @@ A production-grade, **deterministic (no-LLM-in-the-fast-loop)** autonomous forex
 core/{data,regime,optimizer,signals,governor,execution,risk}/  # 7 layers, downward-only data flow ✅
 monitoring/        # MCP monitoring/control plane (SPEC §12) ✅
 config/            # system_config.yaml, instruments.yaml, guardrail_limits.yaml (human-only)
-tests/{unit,integration,backtest}/                             # 814 green
+tests/{unit,integration,backtest}/                             # 1002 passed
 deploy/  Dockerfile  docker-compose.yml  .github/workflows/    # VPS deployment-readiness gate ✅
 scripts/  logs/  specs/
 ```
