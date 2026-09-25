@@ -1,3 +1,6 @@
+62163fe 2026-09-25 00:45:40 +0300 Leakage suite: --out, and short variant directories (Windows MAX_PATH)
+341115c 2026-09-25 00:43:20 +0300 T7: the leakage guard bites (GAP-P12D-65, stage 3)
+e6293c4 2026-09-25 00:41:33 +0300 Structural leakage suite T1 + T2 at every decision point (GAP-P12D-65, stages 1-2)
 577d882 2026-09-24 22:16:57 +0300 Merge branch 'worktree-agent-a128ab904780ce593' into worktree-agent-a8937e82f9a7a5391
 9b9ec80 2026-09-24 19:53:56 +0300 BUILDER report: five-agent edge pass, stages 1-5
 445198e 2026-09-24 19:43:49 +0300 Evaluation registry: pin that repeat draws are counted (falsification F12 survived)

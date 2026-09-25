@@ -1,7 +1,7 @@
 # SNAPSHOT — acis
 
-- **Built:** 2026-09-24T21:22:31Z (2026-09-25 00:22 EAST) by `cloud-handoff/cloud_sync.sh` on the owner's laptop.
-- **Code under review:** branch `main` at commit `bf3d6a1698087783f5cb702adc3b505874362bbe` — "Dual audit of the BUILDER branch triaged: GAP-P12D-71..73; oracle-DSR claim corrected".
+- **Built:** 2026-09-25T01:57:48Z (2026-09-25 04:57 EAST) by `cloud-handoff/cloud_sync.sh` on the owner's laptop.
+- **Code under review:** branch `main` at commit `6a58e89f93c5b66754e8b5a6f287e12cf25ad051` — "Governance gate green again on main; BUILDER-3 verified; GAP-P12D-74/75 filed".
   This branch's parent chain contains that commit; review the code *as of that commit*.
 - **The local side has NOT stopped.** Another Claude Code instance may keep committing after this
   moment. State the base commit in your reports; the owner reconciles later.

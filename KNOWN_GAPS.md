@@ -144,6 +144,39 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-75: a restart silently clears every explicit HALT — `halt_event` rows are written but never read back
+- Severity: critical · Likelihood: high
+- Status: open (2026-09-25 — found by BUILDER-3 (F2). The lead VERIFIED it on main: core/risk/store.py writes `halt_event` (`record_halt`) and clears it (`clear_halt`), but nothing in `core/`, `monitoring/` or `scripts/` ever reads the table back)
+- Area: core/risk/store.py, core/risk/monitor.py (restart restore), core/governor/capital_governor.py (halt state), the future three-loop runtime boot, master §8 ("halts are cheap; resumes are human-only")
+- Description:
+  - **What survives a restart and what doesn't.** Every HALT the engine issues is persisted, but the process that restarts starts with no halts at all.
+  - **Why that is dangerous.** A HALT that only a human token may clear (equity floor, platform drawdown breach, restart drift) is therefore cleared by any crash or restart. Under systemd supervision that is automatic.
+  - **It breaks the guard-integrity law** (a restart is never a relaxation; halts are human-only to resume). It is the HALT-state twin of [[GAP-P12D-55]] (drawdown anchors).
+- Justification: open and blocking for any runtime or demo attach.
+  - **The fix is tightening-only:** restore every uncleared `halt_event` at boot, before the first evaluate, re-applying it through the same upward edge. **DELEGATED:** it is sent to BUILDER-3's branch.
+  - **Proof:** regression tests in which a restart after a global HALT still refuses entries until a human resume, falsified per A16.
+- Linked: [[GAP-P12D-55]], [[GAP-0050]], [[GAP-P12D-74]]
+
+## GAP-P12D-74: a Governor "close" order ADDS to the position it means to close — close direction is unspecified between ACIS-05 and ACIS-06, and the execution freeze lets it through
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — found by BUILDER-3 (F1). Its reproduction used the real Governor and orchestrator against a whole-unit mock venue: pair legs went from −441 to −882 and from −486 to −972 after their "closes". The lead VERIFIED the mechanism in main's code: `check_group_exits` builds `SizedOrder(direction=leg.direction, action="close")`, the orchestrator sends `direction=order.direction` verbatim, and nothing inverts it)
+- Area: core/governor/capital_governor.py `check_group_exits` (GAP-0040), core/execution/orchestrator.py (submit; the freeze admits `action == "close"`), specs/ACIS-05 / ACIS-06 (the SizedOrder contract), tests/integration test coverage of the seam
+- Description:
+  - **The bug.** A close order carries the POSITION's direction, and execution treats every order as a trade in its direction. So executing a group exit doubles both legs instead of flattening them.
+  - **The freeze makes it worse.** The post-flatten execution freeze admits any `action == "close"`, so a group exit during a freeze would ADD exposure.
+  - **Why nothing caught it.** The seam has never run (no runtime exists), and the freeze test submits a close into a flat venue and checks only that it FILLED.
+  - **What it blocks:** the weekend flatten, and every Governor-originated close.
+- Justification: open.
+  - **DELEGATED DECISION (the lead's recommendation):** REDUCE-ONLY close semantics, enforced in execution next to the venue.
+    - A `close` identifies the position to close.
+    - The orchestrator converts it into the opposing trade, and REFUSES any close that would not reduce |position| at the venue: a closing trade against a flat or same-side venue is a REJECTED FillReport.
+    - The freeze admits only such reduce-only closes.
+    - This is tightening-only. The closes-allowed-under-freeze law survives, and adding exposure under a freeze becomes impossible.
+    - The Governor's current `direction = leg.direction` stays as the position identifier.
+    - ACIS-05/06 get the convention stated in a versioned amendment.
+  - **Proof:** a seam test that asserts the venue is FLAT after a group exit, and that the freeze refuses an exposure-increasing "close". The fix is sent to BUILDER-3's branch.
+- Linked: [[GAP-0040]], [[GAP-P12D-75]], [[GAP-P12D-58]], [[GAP-P12D-70]]
+
 ## GAP-P12D-73: the plateau law shrinks the Deflated-Sharpe trial set — a champion refused after the holdout gate drops out of the trials, which loosens a ratified gate
 - Severity: high · Likelihood: high
 - Status: open (2026-09-25 — found by AUDIT-INTERNAL, F3, in the constitutional dual audit of the BUILDER branch. The lead REPRODUCED it with the auditor's `trial_set.py` on 24 identical evolution runs: base 7695ed0 gives 24 champions and 23 trial Sharpes; branch head 9b9ec80 gives 18 champions and 18 trial Sharpes. The fix is sent back to the BUILDER on its branch)
@@ -1462,4 +1495,5 @@ dimensionally correct; the taper is exactly the ratified linear schedule.
 - Description: v0.9 discharged here before the pin moved from v0.5 (A14 requires that order — an undischarged pin bump reads as adoption and stops anyone looking). What changes for ACIS: **A12** adds a *comment-shape* check alongside the existing size ratchet — a comment cites an ID rather than quoting a rule (a verbatim twelve-word run shared with `ACIS_SPEC.md` is a finding), the mental-model header is one screen (<=20 lines), a later comment block over five lines is a finding, and no comment narrates history; today's 25 findings over 19 file/rule pairs are frozen in `code-shape.baseline.json`, the gate fails only on new ones, and a file a phase edits forfeits its allowance. SIZE stays with `tests/unit/test_module_budget.py`, which already ratchets it under GAP-P12M-01 — two mechanisms policing one rule would be the duplication A12 forbids. **A14** `python scripts/governance_gate.py --session` fails on a stale pin or a CLAUDE.md reference that no longer resolves. **A16** `falsify.cases.json` carries four cases over `core/risk/guardrails.py` — the taper asserted from both sides of its start and halt boundaries, the equity breaker flattening and halting, and the breaker being one-shot per armed cycle rather than per process — all four seen red for their stated reason on 2026-09-16, with every restore sha256-verified. **A3** the terminal milestone (the live-readiness gate) adds a practicality-and-code-efficiency lens run by Fable 5; if Fable is unavailable the lens still runs on the next superior tier and the report names what actually ran. This does not disturb the 2026-09-15 directive that ordinary audits run on Opus 5. **A13** per-phase cleanup is now audited rather than promised, and a spec's spent narrative retires under an "implemented is not spent" guard — the adoption-gate block still at the top of `CLAUDE.md` is a candidate once its step 2 is done. Minor: A1 ledgers an ambiguous requirement and proceeds, A6 gives wording-only corrections no ID, A9 names a subordinate agent's report as untrusted input, A15 requires a proof pointer to resolve to the *right* referent.
 - Justification: the baseline is frozen rather than fixed because a gate red on the day it lands gets disabled, which is worse than none (A16), and the burn-down follows the work rather than a quota. `scripts/governance_gate.py` composes the family checks in one command because ACIS has no npm; the checks themselves live once in `../specs_constitution/checks/` rather than being copied here (A14 — forks drift).
 - Residual: this entry owns the 19 frozen file/rule pairs. A15's closure check was already built (`scripts/ledger_check.py`, 166 entries green).
+- **2026-09-25: the session gate is RED on main.** BUILDER-3 found it (F3), and the lead verified it with `python scripts/governance_gate.py --session`, which exits 1. The comment-shape ratchet flags NEW violations in core/optimizer/costs.py (HEADER 1, BLOCK 1) and scripts/cost_stress_ladder.py (HEADER 1, BLOCK 1), none allowed by the baseline. Both come from the 2026-09-17 cost-stress-ladder work ([[GAP-P12D-46]]), not from any agent branch. The gate also reports that core/data/feeds.py burned down one HISTORY violation, so the baseline can be lowered. The fix is comment-only; costs.py is in the mutation-gate scope, so no code line changes.
 - Linked: TODO.md, [[GAP-P12M-01]], [[GAP-P12M-02]], ../specs_constitution/SPEC_CONSTITUTION.md A12/A14/A16

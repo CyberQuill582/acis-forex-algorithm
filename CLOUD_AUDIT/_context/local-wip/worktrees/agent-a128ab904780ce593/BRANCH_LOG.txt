@@ -1,3 +1,7 @@
+039a687 2026-09-25 00:48:27 +0300 Audit E9: the oracle sizes one NAV of USD notional per instrument
+bb18730 2026-09-25 00:42:50 +0300 Audit F5 + F9: a neighbour's actual direction; the registry records neighbours
+b842214 2026-09-25 00:38:40 +0300 Audit E6: the plateau step is 10% of each gene's RANGE, not of its value
+6c8bb50 2026-09-25 00:29:02 +0300 Audit F3: a plateau-refused candidate stays a Deflated Sharpe trial
 9b9ec80 2026-09-24 19:53:56 +0300 BUILDER report: five-agent edge pass, stages 1-5
 445198e 2026-09-24 19:43:49 +0300 Evaluation registry: pin that repeat draws are counted (falsification F12 survived)
 fbae9e1 2026-09-24 19:41:59 +0300 Record every QIEA evaluation, whichever gate ends the run (GAP-P12D-33 [impl])

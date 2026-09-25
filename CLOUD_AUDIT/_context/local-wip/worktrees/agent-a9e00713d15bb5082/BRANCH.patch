@@ -1,8 +1,563 @@
+diff --git a/BUILDER3_REPORT_2026-09-24.md b/BUILDER3_REPORT_2026-09-24.md
+new file mode 100644
+index 0000000..bc24820
+--- /dev/null
++++ b/BUILDER3_REPORT_2026-09-24.md
+@@ -0,0 +1,549 @@
++# BUILDER-3 report — prop-account tightening batch (2026-09-24/25)
++
++**Status: BUILT — PENDING AUDIT.** A builder is a finder, not a clearer. Nothing here is ✅ until the two audits
++have run and been triaged, and nothing here is merged: it lives on this branch only.
++
++- **Branch:** `worktree-agent-a9e00713d15bb5082`, at `C:\Users\USER\Documents\Private\ClaudeInsights\Knowledgevault\acis\.claude\worktrees\agent-a9e00713d15bb5082`.
++- **Base:** `main` at `bdd3a75`. The worktree was created at `7695ed0` and fast-forwarded to `bdd3a75` before any work.
++- **Authority:** the owner's in-chat delegation, relayed by the lead ("proceed with the recommendations"). Every
++  change is TIGHTENING-ONLY.
++- **Untouched:** every guardrail value, the equity floor, `config/platform_rules.yaml`, the DSR/`passed` gate, the
++  §14 targets, `ACIS_SPEC.md`, `specs/`, `KNOWN_GAPS.md`, `TODO.md`, the baseline tag and `data/`.
++- **Config:** `config/system_config.yaml` gains one key, `execution.max_venue_requests_per_day: 1000`, as the brief
++  directed. It is a new hard cap: a tightening.
++
++## Setup
++
++- The baseline run at `bdd3a75` was **808 passed, 6 skipped**. The read path's "814 green" counts passed plus skipped.
++- `scripts/ledger_check.py` passed: 204 entries, 0 violations. It still passes at the end of the batch.
++- Free memory stayed between 1.1 and 2.7 GB. It was checked before every full run.
++
++## Outcome by stage
++
++| Stage | Gap | Commit | New tests | A16 reverts caught | Full suite |
++|---|---|---|---|---|---|
++| 1. A restart never relaxes a drawdown limit | GAP-P12D-55 | `c54c0d1` | 6 | 3 of 3 | 814 passed, 6 skipped |
++| 2. Venue lot step, minimum lot, request cap | GAP-P12D-57 | `3c2aee9` | 14 | 4 of 4 | 828 passed, 6 skipped |
++| 3. Pre-close entry ban on every account | GAP-P12D-58 | `57fc40f` | 2 (+1 inverted) | 1 of 1 | 830 passed, 6 skipped |
++| 4. Daily-reset rules and a declared initial capital | GAP-P12D-54 / -59 | `713a84e` | 11 | 5 of 5 | 841 passed, 6 skipped |
++| 2b. The budget exemption checks the venue position | GAP-P12D-57 (+ F1 below) | `272e2f6` | 1 | 1 of 1 | **842 passed, 6 skipped** (final) |
++| 5. Weekend flatten | master §9.5 | not built: **design only**, see §5 | — | — | — |
++
++**How each revert was run:** each A16 revert used a scratch helper. It applied one text mutation that undoes one
++fix, ran the named tests, restored the file from its original bytes, and compared sha256 before and after. The
++output below is quoted from those runs; every restore printed `RESTORED <same hash>`.
++
++---
++
++## Stage 1: a restart never relaxes a drawdown limit (GAP-P12D-55, critical)
++
++### What changed
++
++**Persistence.** Every drawdown anchor is persisted after every evaluate, in one SQLite transaction, in the
++existing `restrictive_state` table under the key `anchor:<rule_key>`. No DDL changes. Three kinds of anchor are
++covered:
++- the static inception anchor;
++- the trailing high-water mark;
++- the engine's daily day-open anchor, with its day.
++
++The same transaction also writes `alpha_armed` and `taper_factor`, so a crash never pairs a taper from one
++evaluate with anchors from another. `core/risk/store.py` holds `save_restrictive_state(..., anchors=)`,
++`load_anchors()` and `restore_on_boot()`. `load_restrictive_state()` no longer returns the anchor rows.
++
++**Restore.** `restore_on_boot(store, monitor)` runs before the first evaluate. It restores the anchors and the
++alpha throttle, and it **re-pushes the persisted taper** to the fresh Governor. The taper had always been saved but
++never loaded, and ACIS-07 §7 already required it back. The new hook is `Guardrails.restore_state`.
++
++**Semantics after a restart:**
++- **Same trading day:** the daily anchor is restored exactly.
++- **Across a missed rollover:** the new day anchors on the LARGER of two samples: the last persisted observation and
++  the first new one. The engine never saw the rollover, so it keeps the stricter of the two observations that
++  bracket it. A loss taken while the engine was down is never forgotten.
++- **In-process rollover:** unchanged, and still ratified: the first observation of the day.
++
++**Duplicate keys.** Two rules may no longer share a rule key. They would share one anchor and one persisted record.
++`build_drawdown_series` now raises `DataQualityError` on a duplicate.
++
++**Legibility.** The drawdown series moved to `core/risk/drawdown_series.py`, which carries the mental model.
++`guardrails.py` re-exports the moved names. The quote→USD factor moved to `core/risk/usd_conversion.py`. As a result:
++- `guardrails.py` (236 lines) leaves the grandfather list;
++- `monitor.py`'s cap drops from 378 to 368;
++- the code-shape baseline loses the two BLOCK entries the move burned down.
++
++### Tests (`tests/unit/test_restart_anchors.py`)
++
++- `test_restart_at_a_drawdown_still_reads_it_on_every_rule` is the lead's case: 10,000 → 9,400, then everything is
++  rebuilt. Afterwards:
++  - `engine:daily`, `ftmo:trailing:intraday:equity` and `ftmo:static:eod:balance` all read 6.0%;
++  - the taper is 0.0, re-pushed before the first evaluate;
++  - the platform HALT and the session halt fire again.
++- `test_restart_across_a_trading_day_boundary_reanchors_the_daily_rule`: the daily rule reads 0% on the new day,
++  while the static and trailing rules still read 6%.
++- `test_a_loss_taken_while_the_engine_was_down_is_not_forgotten`: the rule reads (9,400 − 9,300)/9,400, and the
++  next in-process rollover re-anchors normally.
++- `test_store_keeps_anchors_apart_from_the_legacy_restrictive_keys`.
++- `test_restore_refuses_a_corrupt_anchor_and_skips_a_retired_rule`: NaN or a negative value is refused; a key the
++  rulebook no longer declares is ignored.
++- `test_two_rules_may_not_share_one_anchor`.
++
++### Falsification (A16)
++
++| Revert | Result |
++|---|---|
++| `restore_on_boot` restores only the alpha flag | 3 failed (restart at a drawdown: `IndexError` on the taper re-push; boundary and downtime: 0.0 ≠ 6.0 / 1.06) |
++| taper restored, anchors not (`anchors={}`) | 3 failed (`0.0 == 6.0` on every rule) |
++| no downtime bracket (`bracket = False`) | 1 failed: `test_a_loss_taken_while_the_engine_was_down_is_not_forgotten` (0.0 ≠ 1.0638) |
++
++### Residuals
++
++- **R1-1: nothing in production calls `restore_on_boot` yet.** The three-loop runtime has no boot sequence to call
++  it from; the tests call it. The runtime must call it before the first evaluate, beside `reconcile_on_restart`.
++  Owner: GAP-0091b / GAP-0075.
++- **R1-2: the downtime bracket is conservative, not exact.** It is never below either known sample, but the true
++  value at the rollover is unknowable without the broker's balance history (GAP-P12D-55's other candidate fix). The
++  ACIS-13 adapter can make it exact.
++- **R1-3 (new, F2 below): active halts are not re-applied at boot.** Restored anchors make every *measured* breach
++  fire again on the first evaluate, which the test proves. An explicit MCP/agent HALT and a latched session halt are
++  written to `halt_event` but never read back. ACIS-07 §7 lists "active halts" as restrictive state to restore.
++- **R1-4: the per-evaluate write cost is unmeasured.** It is one small transaction per evaluate (10 s cadence). The
++  backtest replay does not construct a `RiskStore`, so it pays nothing.
++
++**No guard loosened.** Every restored value is the dead process's own restriction, or stricter. The in-process
++rollover semantics are unchanged.
++
++---
++
++## Stage 2: the venue's quantity and request limits (GAP-P12D-57)
++
++### What changed
++
++The engine previously read only `max_order_lots` from the `CapabilityDescriptor`
++(`core/execution/orchestrator.py`, `core/execution/venue_limits.py`).
++
++**Lot step: round DOWN, never up.** Every quantity sent to a venue is rounded DOWN to a whole number of the venue's
++lot steps: the order, each fragment, a reroute and a partial-fill remainder. It is never rounded up, because the
++Governor clamps only downward. The unsent remainder becomes a `REJECTED` FillReport, logged as
++`EXEC_LOT_STEP_ROUNDED`; it is never a silent drop. The fragmenter plans in whole lot steps (`plan(..., quantum=)`,
++rounding down with the last fragment absorbing the rest), and C-EXE-1 still holds on what is sent.
++
++**Minimum lot: refuse.** A quantity below the venue's `min_lot` is refused: a `REJECTED` FillReport logged as
++`EXEC_MIN_LOT_REFUSED`. It never reaches the venue.
++
++**Request budget, rolling 24 hours.** A hard budget of trading requests per venue applies over **any rolling 24 hours**:
++- **What counts:** every `submit_order` attempt, including reconnect retries, reroutes and partial remainders.
++- **The limit:** `execution.max_venue_requests_per_day`, a required key (schema-fatal if missing), set to 1000,
++  half of FTMO's and E8's 2,000/day.
++- **Why rolling:** a rolling window is stricter than any calendar-day reading, whatever the firm's day boundary.
++  It allows ≤ 1,000 requests in any 24 h, and so ≤ 2,000 across a 25-hour DST day.
++- **When spent:** opens are refused (`EXEC_REQUEST_BUDGET_REFUSED`). A close that truly shrinks the venue position
++  still goes through, and the exception is logged (`EXEC_REQUEST_BUDGET_DERISK`).
++
++**Restart.** The budget is seeded from the persisted fill log (`FillReportStore.request_times`), so a restart cannot
++reset it.
++
++**Descriptor and legibility.** `CapabilityDescriptor` now refuses `lot_step <= 0` or `lot_step > min_lot`.
++`FillReportStore` moved to `core/execution/fill_store.py` (re-exported), which takes `venue.py` from 378 to 342 lines.
++
++**Hardening (2b).** In the first commit the budget exemption trusted the `close` label. Finding F1 below shows that
++label can lie: a Governor close currently ADDS to the position. The exemption now applies only when the venue
++holds one position on that instrument, in the opposite direction, at least as large as the close. Opens never
++trigger that position read, because reads may count against a firm's cap.
++
++### Test changes that encode the new, stricter contract
++
++- **`tests/integration/test_execution_pipeline.py`.** `test_signal_to_fill_full_audit_chain` and
++  `test_pair_group_executes_both_legs` asserted that a Governor order of ~691 units fills *exactly*, on a mock venue
++  that declares a 1,000-unit minimum. That is the GAP-P12D-57 defect itself. They now run on a whole-unit venue
++  (OANDA v20's granularity) and assert that filled equals whole units, and that filled plus the reported remainder
++  equals the sized quantity.
++- **Config fixtures.** Three `ExecutionConfig(...)` test fixtures gained the new required key.
++
++### New tests
++
++**Conformance** (`tests/integration/test_adapter_conformance.py`, run over every adapter through the real
++orchestrator):
++- `test_sub_minimum_order_is_refused_and_never_reaches_the_venue`;
++- `test_quantity_is_rounded_down_to_the_lot_step_never_up`;
++- `test_spent_request_budget_refuses_opens_but_never_a_close`;
++- `test_spent_budget_refuses_a_close_that_would_add_to_the_position`;
++- `test_request_budget_survives_a_restart` (spent 1 h later; open again after 25 h).
++
++**Unit** (`tests/unit/test_venue_limits.py`):
++- exact vectors: 332 → refused; 999.99 → refused; 1,926.40 → 1,000 plus 926.40 unsent;
++- a coarse minimum with a fine step;
++- descriptor validation;
++- the rolling window;
++- a close is counted even when admitted;
++- fragments are whole lot steps and still sum exactly.
++
++### Falsification (A16)
++
++| Revert | Result |
++|---|---|
++| `venue_quantity` sends everything | 6 failed (both conformance quantity tests, 4 unit vectors) |
++| the budget never refuses | 3 failed (conformance spent-budget, restart; unit rolling window) |
++| the budget also blocks closes | 2 failed (conformance close-goes-through; unit close admitted) |
++| no restart seed (`seed=()`) | 1 failed: `test_request_budget_survives_a_restart` |
++| 2b: trust the `close` label again | 1 failed: `test_spent_budget_refuses_a_close_that_would_add_to_the_position` |
++
++### Residuals
++
++- **R2-1: the budget counts only submits.** Reads (`open_positions`, `account_snapshot`) are not counted.
++  `ExecutionFace` has no modify method, and core never calls `cancel`. If FTMO counts reads (its wording is "server
++  requests"), the budget under-counts; ask FTMO in email Q. The ACIS-13 adapter must count its own cancels, modifies
++  and stop edits against this same budget.
++- **R2-2: a restart can under-count slightly.** The seed counts fill-log rows per venue. A double disconnect writes
++  one row for two attempts, so a restart can under-count by one per such event in the last 24 h. The margin is half
++  the cap.
++- **R2-3: most Governor orders are now refused, as intended.** Examples are the SCOUT's 332 units against a
++  1,000-unit minimum. Until NAV-relative prop sizing is ratified (owner, GAP-P12D-57 part 1 / GAP-P12D-61), **expect a
++  demo to refuse most orders loudly**. This is the honest outcome that replaces un-placeable orders.
++- **R2-4: other venue caps are still unenforced.** Open-order caps (FTMO 200, E8 100) and E8's 2,000 positions a day
++  are not enforced, and the §9.5 schema cannot express them (§5.3 item 4).
++- **R2-5: the exemption assumes a netting account.** On a hedging account (cTrader can be one), closing is by
++  position ID, which is the ACIS-13 adapter's job.
++
++**No guard loosened.** Every new path refuses or shrinks; none adds size or requests. The one exemption, for closes,
++is narrower than the brief's wording: only a position-verified de-risking close is exempt.
++
++---
++
++## Stage 3: the pre-close entry ban binds every account (GAP-P12D-58)
++
++### What changed and why
++
++The ~2-hour pre-weekly-close entry ban (`weekend_entry_buffer_s`, value unchanged) no longer depends on
++`weekend_holding_allowed` (`core/governor/capital_governor.py`, `core/governor/calendar_gates.py`).
++
++FTMO forbids opening a trade "two hours or less before a relevant financial market is closed for at least two
++hours" on every account type, Swing included. The ban is therefore now stricter everywhere, and looser nowhere.
++
++### Tests
++
++- **Inverted assertion.** `test_weekend_entry_buffer_blocks_no_weekend_accounts` asserted that a weekend-allowed
++  account IS sized at the Friday close, which is the defect. It now asserts `weekend_ban`, and a comment says so.
++- **New:** `test_swing_account_refuses_an_entry_an_hour_before_the_friday_close[7-21 | 1-22]`, covering EDT and EST.
++  It checks 1 h before the close (banned), exactly 2 h before (banned: the fence post) and 2 h 1 min before (sized).
++
++### Falsification (A16)
++
++Restoring the `not weekend_holding_allowed and …` coupling fails 3 tests: the inverted assertion
++(`'formula' == 'weekend_ban'`) and both parametrizations of the new test.
++
++### Residuals
++
++- **R3-1: only the Friday FX close is covered.** Other closes of two hours or more are not: exchange holidays, index
++  CFD or metals holiday closures, and non-FX calendars. The news half of "gap trading" (a scheduled-news entry
++  blackout on Swing) is still the [spec] part of GAP-P12D-58 plus GAP-P12D-03.
++- **R3-2: ACIS-05 still describes the old rule.** §5/§7 scope the buffer to no-weekend-holding accounts. The
++  amendment is drafted below.
++
++**No guard loosened.** A ban was widened; the buffer value is unchanged.
++
++---
++
++## Stage 4: daily-reset platform rules and a declared initial capital (GAP-P12D-54 / -59)
++
++### What changed
++
++**Schema** (`config/rulebook.py`, moved out of `config/schemas.py`, re-exported; `schemas.py` 617 → 581). The
++`DrawdownRule` changes:
++- it gains `type: daily`;
++- `reset` is a local `{zone, at}` (a `ZonedTime`, like every market time);
++- `reset_basis` is `balance | equity | max`;
++- `limit_of` is `anchor | initial`.
++
++Validation:
++- a daily rule must declare `reset` and `reset_basis`; a static or trailing rule must declare neither;
++- `limit_of` defaults to `anchor`, so every existing rule keeps its meaning.
++
++`AccountRulebook` gains an optional `initial_capital`. A rule with `limit_of: initial` is a schema error without it.
++
++**Risk series** (`core/risk/drawdown_series.py`):
++- **Measurement:** measured % = (anchor − basis) / denominator. The denominator is the initial capital for
++  `limit_of: initial`.
++- **Static rules** anchor on the declared initial capital.
++- **Trailing rules** seed their high-water mark there. That is only ever stricter than the first observed basis.
++- **Platform daily rules** anchor their `reset_basis` on the LARGER of the last observation before the reset and the
++  first after it. FTMO reads the balance AT 00:00; a stop that books a loss two seconds later must not lower the day.
++- **Restore:** a restored static or trailing anchor never sits below the declared capital.
++- **Anchors** are persisted through stage 1's path.
++
++**Clock.** `Europe/Prague` (CE(S)T) joins the modelled zones: standard offset +1 under the EU rule (`config/calendars.py`,
++`core/data/fx_clock.py`). Resolution by local date is an hour off at 00:00 on the two switch Sundays. Both the
++resolved and the true instant fall inside the FX weekend, and a test proves it.
++
++### Tests (`tests/unit/test_platform_daily_rules.py`)
++
++They follow FTMO's page (trading-objectives, modified 2026-05-13) exactly:
++- day 1 floor $95,000 on equity;
++- day 2 floor $97,000 after a day that closes at $102,000;
++- the static max loss at initial − 10% on equity, including for an account attached while in profit.
++
++**The lead's $6,000 case.** At the 17:00 New York rollover the balance is 6,000 with −240 floating. FTMO's line is
++5,700, from 00:00 CEST. The results:
++- at 5,701: no breach;
++- at 5,699: `PLATFORM_DD_BREACH` on the daily rule, while the engine's 2% sits at distance 0.53.
++
++The test also records `("all", "equity_floor")`: the absolute $9,000 floor halts any $6k account (GAP-P12D-56,
++owner-owned), and later halts coalesce under it.
++
++**Other tests:**
++- the loss just after the reset;
++- `reset_basis: max`;
++- initial-capital anchoring of static and trailing rules;
++- a restart that keeps the FTMO day anchor and refuses a tampered-low static anchor on disk;
++- schema explicitness;
++- the shipped rulebooks keep their meaning;
++- `test_central_european_midnight_follows_eu_summer_time` (in `tests/unit/test_fx_clock.py`).
++
++### Falsification (A16)
++
++| Revert | Result |
++|---|---|
++| platform rules never reset daily | 3 failed (day-2 floor, max basis, restart) |
++| the limit is always a % of the anchor | 2 failed (day-2 floor, restart) |
++| static rules ignore the declared capital | 2 failed (max loss, initial anchoring) |
++| no reset bracket for platform days | 1 failed (loss just after the reset) |
++| restore takes whatever is on disk | 1 failed (restart with the tampered anchor) |
++
++### Drafts for the owner to commit — `config/platform_rules.yaml` is NOT edited
++
++**Corrected `ftmo` entry.** It models FTMO Challenge 2-Step, **Swing**, $10,000 USD, cTrader Open API. Verify every
++value on purchase day.
++```yaml
++  ftmo:                             # FTMO Challenge 2-Step, SWING, $10,000 USD, cTrader Open API
++    platform: ctrader               # ftmo.com/en/trading-platforms/ (2026-08-31)
++    news:                           # Swing: no +-2 min rule, but "gap trading" forbids OPENING when
++      restricted: true              # major scheduled news may move the market, on every account.
++      window_before_s: 3600         # PLACEHOLDER pending FTMO email Q3 (the stricter side kept)
++      window_after_s: 120
++    min_hold_seconds: 0             # no hold-time rule published
++    weekend_holding_allowed: true   # Swing only; the 2 h pre-close entry ban now binds regardless (GAP-P12D-58)
++    initial_capital: 10000.0        # the "Initial Simulated Capital" both limits are sized on
++    drawdown_rules:
++      - type: daily                 # Maximum Daily Loss: equity may not drop below
++        anchor: intraday            #   balance at 00:00 CE(S)T − 5% of the initial capital
++        basis: equity
++        reset: {zone: Europe/Prague, at: "00:00"}
++        reset_basis: balance
++        limit_of: initial
++        limit_pct: 5.0
++      - type: static                # Maximum Loss: equity may not drop below initial − 10%
++        anchor: intraday
++        basis: equity
++        limit_of: initial
++        limit_pct: 10.0
++    min_trading_days: 4             # 2-Step (enforced nowhere yet: GAP-P12D-60)
++    # taper_start_fraction: 0.50    # OPTIONAL stricter override (SCOUT suggestion): a breach is terminal
++    # entry_halt_fraction: 0.70
++```
++On a **Standard** funded account, set `weekend_holding_allowed: false` and `news: {restricted: true,
++window_before_s: 120, window_after_s: 120}`. The SCOUT found Standard incompatible with §279 server-side stops
++(a stop inside ±2 min is a breach). FTMO 1-Step's end-of-day trailing max loss is **not expressible** yet (§5.3 item 3).
++
++**New `e8` entry.** It models E8 Markets "E8 Pro", $10,000, cTrader. **Do not commit until E8's server-time zone is
++verified** (email §9.2).
++```yaml
++  e8:                               # E8 Markets "E8 Pro", $10,000, cTrader (+$10 if the account costs < $100)
++    platform: ctrader               # help.e8markets.com 9799834 (2026-09-23)
++    news:
++      restricted: false             # E8 Pro: news trading allowed (13106558)
++    min_hold_seconds: 0             # E8's HFT rule is distributional (<= 50% of trades under 60 s): not expressible
++    max_lots: 50.0                  # "Max ticket size (most symbols): 50 lots" (XAUUSD 20: not expressible)
++    weekend_holding_allowed: true
++    initial_capital: 10000.0
++    drawdown_rules:                 # E8 fails the account if "equity OR balance" reaches a level: one rule per basis
++      - type: daily                 # 2.5% of initial below the day's starting balance, at 00:00 SERVER TIME
++        anchor: intraday
++        basis: equity
++        reset: {zone: America/New_York, at: "17:00"}   # PLACEHOLDER: assumes the NY-close-aligned server
++        reset_basis: balance                           # clock (00:00 server = 17:00 New York). VERIFY.
++        limit_of: initial
++        limit_pct: 2.5
++      - type: daily
++        anchor: intraday
++        basis: balance
++        reset: {zone: America/New_York, at: "17:00"}   # same PLACEHOLDER
++        reset_basis: balance
++        limit_of: initial
++        limit_pct: 2.5
++      - type: static                # 8% static of initial ("never moves, except when a first payout is
++        anchor: intraday            #   processed": the payout move is not expressible)
++        basis: equity
++        limit_of: initial
++        limit_pct: 8.0
++      - type: static
++        anchor: intraday
++        basis: balance
++        limit_of: initial
++        limit_pct: 8.0
++    consistency_max_day_profit_pct: null   # E8 Pro: "No consistency rules"
++```
++Also not expressible: the 2% daily profit cap for target counting, 2,000 positions a day, 100 open orders, 60-day
++inactivity, and E8 One's closed-balance trailing max loss that locks at the initial balance.
++
++### Residuals
++
++- **R4-1: a platform breach still HALTs without flattening.** Master §9.5 says "Open positions and their stops are
++  untouched", and under FTMO a breach is terminal. A pre-breach flatten is the owner's [spec] part of GAP-P12D-59.
++- **R4-2: the engine's own daily limit is unchanged.** It is still a session halt anchored at 17:00 New York (HALT
++  semantics: GAP-P12D-59 points 1–2).
++- **R4-3: until the owner commits the draft,** the shipped `ftmo` entry still carries the wrong semantics
++  (GAP-P12D-54 points 1–2). No backtest or demo on it is faithful to FTMO.
++- **R4-4: a rulebook's content hash now changes.** `rulebook_hash` covers `model_dump()`, which now includes the new
++  default fields, so every existing rulebook's hash changes. A human re-attests before live. No hash is pinned in the
++  repo.
++- **R4-5: GAP-P12D-56 is untouched.** The $9,000 absolute floor still halts any account under $9k; the $6k test shows
++  it.
++- **R4-6: the daily rule also tapers early, like every other limit.** With the default 0.60/0.80 fractions, the §9.5
++  pre-limit taper starts cutting entries at 3% and stops them at 4% of initial capital, on FTMO's 5% daily limit.
++  That is stricter than the firm, by design.
++
++**No guard loosened.** The rule type is new, and it HALTs at 1.0 exactly like existing platform rules. The initial
++capital only raises anchors. No shipped rulebook changes meaning, which a test proves.
++
++---
++
++## §5 — Weekend flatten (master §9.5): DESIGN ONLY, deliberately not built
++
++**Why not built.** The brief allows the design instead when the loop-owner seam is not ready, and it is not:
++- no production loop owner exists yet (the three-loop runtime is GAP-0091b / GAP-0075);
++- the flatten wiring (`HaltSink.flatten`) exists only test-side;
++- the existing Governor close path is **defective** (F1 below).
++
++A weekend flatten built on that path would, today, double the positions it means to close.
++
++### The design, precise enough to build once F1 is settled
++
++1. **Owner.** The Governor. §9.5 files weekend-holding bans among the downward, config-driven Governor overrides,
++   not the Risk Monitor's upward flatten edge.
++2. **Trigger.** Add a pure `weekend_flatten_due(now, week_close, week_open, lead_s) -> bool` in
++   `core/governor/calendar_gates.py`. It is true from `close − lead_s` through the closed window until the Sunday
++   open, in local `{zone, at}` terms.
++3. **Lead time.** Add a new required key `governor.weekend_flatten_lead_s` (suggested 1,800 s). The schema enforces
++   `0 < weekend_flatten_lead_s <= weekend_entry_buffer_s`, so no entry can open after the flatten starts.
++4. **Orders.** Add `CapitalGovernor.weekend_flatten(portfolio, now) -> tuple[SizedOrder, ...]`. It emits orders only
++   when `not rules.weekend_holding_allowed` and the flatten is due:
++   - one `action="close"` order per open position, carrying the full position size;
++   - both legs of a pair group, never one;
++   - `reason="weekend_flatten"`, logged as `WEEKEND_FLATTEN{instrument, units}`;
++   - emitted on every tick while positions remain, so a rejected close is retried. Retries are bounded by the stage-2
++     request budget, which never blocks a verified close.
++   `capital_governor.py` is at its cap (447), so the logic belongs in `calendar_gates.py` or a new module, with a
++   thin method.
++5. **Surfaced if impossible (§9.5).** If a position is still open 60 s before the close, or at the close, log
++   `WEEKEND_FLATTEN_INCOMPLETE{instruments}` and surface it on `acis://status` for the human. It changes no HALT
++   semantics.
++6. **Loop owner.** On each fast-loop tick, submit `governor.weekend_flatten(portfolio, now)` through
++   `ExecutionOrchestrator.submit`. Closes pass the execution freeze and the request budget.
++7. **Tests.** A no-weekend account with a position:
++   - at `close − lead − 1 s`: no orders;
++   - at `close − lead`: a close for each position;
++   - at the close with the position unfilled: INCOMPLETE is logged.
++   Also: a weekend-allowed account gets none; a pair group closes both legs; EDT and EST; a seam test that the
++   positions are **flat** at the venue after execution (this is what F1 breaks today).
++8. **Spec.** Master §9.5 already mandates the flatten. ACIS-05 §7 needs a step (draft below).
++
++---
++
++## Findings for the lead to file
++
++Chat is not a record, and this builder may not edit `KNOWN_GAPS.md`.
++
++### F1 (new, HIGH): Governor close orders ADD to the position when executed
++
++The close-direction contract is unspecified between ACIS-05 and ACIS-06.
++- `CapitalGovernor.check_group_exits` (GAP-0040) emits `action="close"` orders that carry each leg's **own**
++  direction.
++- `ExecutionOrchestrator.submit` sends `order.direction` verbatim.
++
++**Reproduction** (scratch script, real Governor and orchestrator, whole-unit mock venue): allocate a pair group, then
++execute the group-exit closes.
++
++| | EUR_USD | USD_JPY |
++|---|---|---|
++| after the opens | −441 | −486 |
++| after the closes | **−882** | **−972** |
++
++Both legs doubled instead of flattening. The same "close" also passes the post-flatten execution freeze, which
++allows `action == "close"`: a group exit during a freeze would add exposure. The seam has never run, because no
++runtime exists; `test_frozen_blocks_opens_allows_closes` submits a `close` with direction +1 into a flat venue and
++only checks that it FILLED.
++
++**Needed:**
++- an owner/spec ruling on the convention (a close carries the position's direction and execution inverts it, or it
++  carries the trade's direction and the Governor inverts it);
++- the fix;
++- a seam test asserting the venue is FLAT afterwards.
++
++Mitigated here only where this batch had reach: the stage-2b budget exemption checks the venue position. The freeze
++path was not changed (HALT-adjacent, human-owned).
++
++**Blocks:** the weekend flatten (§5 above) and any Governor-originated close.
++
++### F2 (new, MEDIUM): active halts are not restored at boot
++
++ACIS-07 §7 lists "active halts" among the restrictive state a restart must restore. Explicit HALTs are written to
++`halt_event` by `RiskStore.record_halt`, but nothing reads them back. After this batch, every *measured* breach
++re-fires on the first evaluate. An explicit MCP/agent HALT and a latched session halt do not come back, which fits
++GAP-0050's "a restart is never a relaxation" principle poorly.
++
++### F3 (pre-existing): the code-shape gate is red on `main`
++
++`core/optimizer/costs.py` (HEADER, BLOCK) and `scripts/cost_stress_ladder.py` (HEADER, BLOCK) are new violations
++against `code-shape.baseline.json` at `bdd3a75`. This batch did not touch those files.
++`core/data/feeds.py|HISTORY` can burn down 1→0 (left for its owner).
++
++### Ledger map for this batch's gaps
++
++- **GAP-P12D-55:** stage 1. Residuals R1-1 (GAP-0091b), R1-2 (ACIS-13), R1-3 (F2).
++- **GAP-P12D-57:** stage 2 [impl] parts. The [spec] NAV-relative sizing stays open (GAP-P12D-61). Residuals R2-1,
++  R2-2, R2-4, R2-5.
++- **GAP-P12D-58:** stage 3 [impl] part. The [spec] rulebook field, the news blackout and the weekend flatten stay
++  open (R3-1, §5).
++- **GAP-P12D-54:** the schema half (stage 4). The config half is the owner's commit of the draft (R4-3).
++- **GAP-P12D-59:** the per-account day boundary is expressible and enforced for platform daily rules (stage 4). The
++  pre-breach flatten and the engine daily-halt semantics stay owner-owned (R4-1, R4-2).
++
++---
++
++## Spec amendment drafts (owner-owned: nothing in `ACIS_SPEC.md` or `specs/` was edited)
++
++1. **Master §9, the `platform_rules.yaml` sentence.** In "drawdown limits with their exact measurement semantics
++   (static vs trailing, intraday vs end-of-day anchor, balance- vs equity-based)", add: *"… or daily-reset at a
++   declared local instant with the anchor's basis captured there; each limit a percentage of its anchor or of the
++   account's declared initial capital"*.
++2. **ACIS-07 §5 and §7:**
++   - (a) A platform `daily` rule anchors its `reset_basis` at each local reset, on the larger of the observations
++     that bracket it.
++   - (b) Restart: *"the drawdown anchors (static, trailing high-water, daily day-open with its day)"* join the
++     restored state. A rollover missed while down is bracketed the same way.
++   - (c) A declared `initial_capital` anchors static rules and seeds trailing ones.
++3. **ACIS-05 §5 and §7 step 1:**
++   - §5: `weekend_entry_buffer_s` becomes *"no new entries this close to the weekend close, on every account, weekend
++     holding allowed or not (GAP-P12D-58)"*.
++   - §7.1: the guard becomes *"any account within `weekend_entry_buffer_s` of the weekend close, or inside the closed
++     window → `(0,"weekend_ban")`"*.
++   - Add step 9 (the weekend flatten, §5 above) once F1 is ruled on.
++4. **ACIS-06:**
++   - §5 config gains `max_venue_requests_per_day` (required; per venue; rolling 24 h; every submit attempt).
++   - §7 gains: *"quantities are sent in whole venue lot steps, rounded down; a sub-step remainder and any quantity
++     below the venue's minimum lot are `REJECTED` FillReports; once the request budget is spent, opens are refused
++     and only a close that shrinks the venue position is exempt"*.
++   - C-EXE-6 becomes *"total filled ≤ sized; equal to sized less the reported sub-step remainder on a full fill"*.
++   - Master §7.5's "rejected loudly, never emulated silently" then reads as satisfied by the reported remainder.
++5. **ACIS-06 §7 / ACIS-05 §4:** define the close-direction convention (F1).
++
++## Governance notes
++
++- **The gate needs its sibling directory.** `python scripts/governance_gate.py` resolves its checks from
++  `../specs_constitution/checks/`, which is not inside a worktree. This batch ran the code-shape check directly by
++  absolute path; after every stage it shows only F3's pre-existing violations. Falsification was done by hand per
++  stage (evidence above), not by `falsify.mjs`.
++- **Module budget (a tightening of the ratchet):**
++  - `guardrails.py` leaves the grandfather list;
++  - caps are lowered: `monitor.py` 368, `venue.py` 342, `capital_governor.py` 447, `schemas.py` 581;
++  - new modules, all under 300 lines and each opening with its invariants: `drawdown_series.py`,
++    `usd_conversion.py`, `fill_store.py`, `venue_limits.py`, `config/rulebook.py`;
++  - `orchestrator.py` is at 299, near the 300-line budget.
 diff --git a/code-shape.baseline.json b/code-shape.baseline.json
-index 6e31b8a..a0472cd 100644
+index 6e31b8a..20bbb54 100644
 --- a/code-shape.baseline.json
 +++ b/code-shape.baseline.json
-@@ -1,14 +1,13 @@
+@@ -1,15 +1,12 @@
  {
    "core/data/feeds.py|HISTORY": 1,
    "core/execution/fragmenter.py|BLOCK": 1,
@@ -15,15 +570,123 @@ index 6e31b8a..a0472cd 100644
    "core/risk/alpha_decay.py|BLOCK": 1,
 -  "core/risk/guardrails.py|BLOCK": 1,
 -  "core/risk/monitor.py|BLOCK": 2,
-+  "core/risk/monitor.py|BLOCK": 1,
-   "core/risk/monitor.py|HISTORY": 1,
+-  "core/risk/monitor.py|HISTORY": 1,
    "core/risk/scenario_replay.py|BLOCK": 2,
    "core/risk/store.py|BLOCK": 1,
+   "core/signals/indicators.py|BLOCK": 1,
+diff --git a/config/calendars.py b/config/calendars.py
+index 02f5c17..a6851ec 100644
+--- a/config/calendars.py
++++ b/config/calendars.py
+@@ -16,7 +16,8 @@ from typing import Literal
+ from pydantic import BaseModel, ConfigDict, Field, model_validator
+ 
+ # The zones fx_clock models (parity-tested against its rule table).
+-Zone = Literal["UTC", "Asia/Tokyo", "Europe/London", "America/New_York", "America/Chicago"]
++Zone = Literal["UTC", "Asia/Tokyo", "Europe/London", "Europe/Prague", "America/New_York",
++               "America/Chicago"]
+ 
+ _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+ 
+diff --git a/config/rulebook.py b/config/rulebook.py
+new file mode 100644
+index 0000000..5888000
+--- /dev/null
++++ b/config/rulebook.py
+@@ -0,0 +1,79 @@
++"""platform_rules.yaml — the account doctrine (SPEC §9.5): one rulebook per account, every
++drawdown limit with its EXACT measurement semantics. Human-committed; nothing here writes
++config. Split out of config/schemas.py (GAP-P12M-01), which re-exports these names.
++
++Invariants:
++  * A `daily` rule (GAP-P12D-54) declares its local reset instant (`reset`, a {zone, at}
++    like every market time) and what is captured there (`reset_basis`: balance, equity or
++    the higher of the two). A static or trailing rule declares neither.
++  * `limit_of: initial` sizes a limit as a % of the rulebook's declared `initial_capital`
++    (FTMO: "5% of the Initial Simulated Capital"), so it is a schema error without one.
++    The default `anchor` keeps every existing rule's meaning: a % of its own anchor.
++  * A declared `initial_capital` anchors static rules and seeds trailing high-water marks;
++    it can only make a rule stricter than the first observed basis would.
++  * Per-account taper fractions may only be STRICTER than the ratified 0.60/0.80 floor.
++"""
++
++from __future__ import annotations
++
++from typing import Literal
++
++from pydantic import Field, model_validator
++
++from config.calendars import ZonedTime, _Strict
++
++
++class NewsRules(_Strict):
++    restricted: bool
++    window_before_s: int | None = Field(default=None, ge=0)
++    window_after_s: int | None = Field(default=None, ge=0)
++
++    @model_validator(mode="after")
++    def _windows_if_restricted(self) -> "NewsRules":
++        if self.restricted and (self.window_before_s is None or self.window_after_s is None):
++            raise ValueError("restricted account requires explicit blackout windows (SPEC §3.5)")
++        return self
++
++
++class DrawdownRule(_Strict):
++    type: Literal["static", "trailing", "daily"]
++    anchor: Literal["eod", "intraday"]
++    basis: Literal["balance", "equity"]            # what is measured against the anchor
++    limit_pct: float = Field(gt=0)
++    reset: ZonedTime | None = None                 # daily only: when the day rolls, local
++    reset_basis: Literal["balance", "equity", "max"] | None = None   # daily only: captured then
++    limit_of: Literal["anchor", "initial"] = "anchor"
++
++    @model_validator(mode="after")
++    def _daily_fields(self) -> "DrawdownRule":
++        daily = self.type == "daily"
++        if daily != (self.reset is not None) or daily != (self.reset_basis is not None):
++            raise ValueError("a daily rule declares `reset` and `reset_basis`; "
++                             "a static or trailing rule declares neither")
++        return self
++
++
++class AccountRulebook(_Strict):
++    platform: str
++    news: NewsRules
++    min_hold_seconds: int = Field(ge=0)
++    max_lots: float | None = Field(default=None, gt=0)
++    weekend_holding_allowed: bool
++    drawdown_rules: list[DrawdownRule]  # may be empty (personal account), but must be declared
++    consistency_max_day_profit_pct: float | None = Field(default=None, gt=0)
++    min_trading_days: int | None = Field(default=None, gt=0)
++    # Per-account override of the §9.5 taper — stricter-only (ratified floor).
++    taper_start_fraction: float | None = Field(default=None, gt=0, le=0.60)
++    entry_halt_fraction: float | None = Field(default=None, gt=0, le=0.80)
++    initial_capital: float | None = Field(default=None, gt=0)   # the account's starting capital
++
++    @model_validator(mode="after")
++    def _initial_declared(self) -> "AccountRulebook":
++        if self.initial_capital is None and any(r.limit_of == "initial"
++                                                for r in self.drawdown_rules):
++            raise ValueError("a rule sized on initial capital needs `initial_capital` declared")
++        return self
++
++
++class PlatformRules(_Strict):
++    accounts: dict[str, AccountRulebook] = Field(min_length=1)
 diff --git a/config/schemas.py b/config/schemas.py
-index 16c3ef3..1225262 100644
+index 16c3ef3..1cf7899 100644
 --- a/config/schemas.py
 +++ b/config/schemas.py
-@@ -194,6 +194,7 @@ class ExecutionConfig(_Strict):
+@@ -19,6 +19,8 @@ from pydantic import Field, model_validator
+ 
+ from config.calendars import (ExchangeCalendar, FxCalendar, Session, ZonedTime,  # noqa: F401
+                               _Strict, check_boundaries)
++from config.rulebook import (AccountRulebook, DrawdownRule, NewsRules,  # noqa: F401
++                             PlatformRules)
+ 
+ 
+ class ConfigError(Exception):
+@@ -194,6 +196,7 @@ class ExecutionConfig(_Strict):
      fast_decay_seconds: int = Field(gt=0)
      signature_lot_variance: float = Field(gt=0, lt=1)
      dispatch_budget_ms: int = Field(gt=0)
@@ -31,6 +694,55 @@ index 16c3ef3..1225262 100644
  
      @model_validator(mode="after")
      def _bounds(self) -> "ExecutionConfig":
+@@ -431,47 +434,9 @@ class GuardrailLimits(_Strict):
+ 
+ 
+ # --------------------------------------------------------------------------- #
+-# platform_rules.yaml — account doctrine (SPEC §9.5): one rulebook per account,
+-# drawdown limits with their EXACT measurement semantics.
++# platform_rules.yaml — the account doctrine (SPEC §9.5): config/rulebook.py
+ # --------------------------------------------------------------------------- #
+ 
+-class NewsRules(_Strict):
+-    restricted: bool
+-    window_before_s: int | None = Field(default=None, ge=0)
+-    window_after_s: int | None = Field(default=None, ge=0)
+-
+-    @model_validator(mode="after")
+-    def _windows_if_restricted(self) -> "NewsRules":
+-        if self.restricted and (self.window_before_s is None or self.window_after_s is None):
+-            raise ValueError("restricted account requires explicit blackout windows (SPEC §3.5)")
+-        return self
+-
+-
+-class DrawdownRule(_Strict):
+-    type: Literal["static", "trailing"]
+-    anchor: Literal["eod", "intraday"]
+-    basis: Literal["balance", "equity"]
+-    limit_pct: float = Field(gt=0)
+-
+-
+-class AccountRulebook(_Strict):
+-    platform: str
+-    news: NewsRules
+-    min_hold_seconds: int = Field(ge=0)
+-    max_lots: float | None = Field(default=None, gt=0)
+-    weekend_holding_allowed: bool
+-    drawdown_rules: list[DrawdownRule]  # may be empty (personal account), but must be declared
+-    consistency_max_day_profit_pct: float | None = Field(default=None, gt=0)
+-    min_trading_days: int | None = Field(default=None, gt=0)
+-    # Per-account override of the §9.5 taper — stricter-only (ratified floor).
+-    taper_start_fraction: float | None = Field(default=None, gt=0, le=0.60)
+-    entry_halt_fraction: float | None = Field(default=None, gt=0, le=0.80)
+-
+-
+-class PlatformRules(_Strict):
+-    accounts: dict[str, AccountRulebook] = Field(min_length=1)
+-
+-
+ # --------------------------------------------------------------------------- #
+ # event_sources.yaml — trusted channels + Tier-1/Tier-G taxonomy (SPEC §3.5–3.6)
+ # --------------------------------------------------------------------------- #
 diff --git a/config/system_config.yaml b/config/system_config.yaml
 index 41ad728..0e511d1 100644
 --- a/config/system_config.yaml
@@ -45,6 +757,34 @@ index 41ad728..0e511d1 100644
  monitoring:                      # ACIS-08 v1.1 (SPEC 12) - required block
    transport: stdio
    heartbeat_fast_s: 10           # SPEC 12 fast-loop SLA ceiling
+diff --git a/core/data/fx_clock.py b/core/data/fx_clock.py
+index 6c7bb23..bdf74db 100644
+--- a/core/data/fx_clock.py
++++ b/core/data/fx_clock.py
+@@ -8,9 +8,11 @@ constant is an hour wrong for half of every year.
+ Dependency-free and exact for the ACIS data window (2012 on): the US rule since 2007
+ (second Sunday of March → first Sunday of November, 02:00 local) for New York and
+ Chicago; the UK/EU rule since 1996 (last Sunday of March → last Sunday of October,
+-01:00 UTC) for London; no DST in Tokyo. Rules resolve by LOCAL DATE, which is exact
+-for every declared market time (all fall outside the 01:00–02:00 switch hour on the
+-switch Sunday). Earlier years raise rather than guess.
++01:00 UTC) for London and Central Europe (CE(S)T — FTMO's day, GAP-P12D-54); no DST in
++Tokyo. Rules resolve by LOCAL DATE, which is exact for every declared market time except
++00:00 CE(S)T on the two switch Sundays, which resolves an hour off; that instant lies
++inside the FX weekend, when no position can open or close, so no anchor can move across
++it (tested). Earlier years raise rather than guess.
+ """
+ 
+ from __future__ import annotations
+@@ -21,7 +23,7 @@ UTC = timezone.utc
+ ROLLOVER = ("America/New_York", "17:00")               # the FX day boundary
+ _ZONES = {                                             # zone -> (standard offset h, DST rule)
+     "UTC": (0, None), "Asia/Tokyo": (9, None), "Europe/London": (0, "uk"),
+-    "America/New_York": (-5, "us"), "America/Chicago": (-6, "us"),
++    "Europe/Prague": (1, "uk"), "America/New_York": (-5, "us"), "America/Chicago": (-6, "us"),
+ }
+ 
+ 
 diff --git a/core/execution/fill_store.py b/core/execution/fill_store.py
 new file mode 100644
 index 0000000..6df7da8
@@ -182,22 +922,30 @@ index 975157c..b201c25 100644
      # venues arrive best-quality-first; fragment 0 routes to the best venue,
      # later fragments rotate through the list (§6 signature randomisation —
 diff --git a/core/execution/orchestrator.py b/core/execution/orchestrator.py
-index 6e22a1a..76fe9ad 100644
+index 6e22a1a..da24fbf 100644
 --- a/core/execution/orchestrator.py
 +++ b/core/execution/orchestrator.py
-@@ -6,7 +6,10 @@ Governor sized to zero; the execution-freeze (Risk flatten path, phase 9)
- blocks opens while allowing closes; slippage is REPORTED, never acted on
- (F10 raised — there is deliberately no throttle knob here). Randomness and
- time are injected. The `dispatch_budget_ms` measurement is observability
+@@ -1,12 +1,13 @@
+ """Execution Orchestrator (ACIS-06 v1.1, master §7). How and where — never
+ how much.
+ 
+-Hard walls: never changes `size_units` (C-EXE-6); never opens what the
+-Governor sized to zero; the execution-freeze (Risk flatten path, phase 9)
+-blocks opens while allowing closes; slippage is REPORTED, never acted on
+-(F10 raised — there is deliberately no throttle knob here). Randomness and
+-time are injected. The `dispatch_budget_ms` measurement is observability
 -only (v2.10 item c): nothing gates on it.
-+only (v2.10 item c): nothing gates on it. The venue's own limits DO gate
-+(GAP-P12D-57, core/execution/venue_limits.py): quantities go out rounded DOWN
-+to its lot step, below its minimum lot they are refused, and a spent request
-+budget refuses opens but never a close — each outcome a FillReport.
++Hard walls: never sends more than `size_units` (C-EXE-6); never opens what the
++Governor sized to zero; the execution-freeze (Risk flatten path, phase 9) blocks
++opens while allowing closes; slippage is REPORTED, never acted on (F10: no throttle
++knob). Randomness and time are injected. `dispatch_budget_ms` is observability only
++(v2.10 item c). The venue's own limits DO gate (GAP-P12D-57, venue_limits.py): whole
++lot steps rounded DOWN, below the minimum lot refused, and a spent request budget
++refuses opens but never a close that truly shrinks the position — each a FillReport.
  """
  
  from __future__ import annotations
-@@ -26,6 +29,7 @@ from core.execution.venue import (
+@@ -26,6 +27,7 @@ from core.execution.venue import (
      UNITS_PER_LOT,
      VenueQuality,
  )
@@ -205,7 +953,7 @@ index 6e22a1a..76fe9ad 100644
  from core.governor.portfolio_types import SizedOrder
  
  # §7 steps 5–6: "bounded" remainder/reroute policy — the bounds, as constants.
-@@ -64,6 +68,10 @@ class ExecutionOrchestrator:
+@@ -64,6 +66,10 @@ class ExecutionOrchestrator:
          self._sleep = sleep_fn
          self._frozen: str | None = None
          self.budget_exceeded_count = 0      # §10 loop-health surface
@@ -216,7 +964,7 @@ index 6e22a1a..76fe9ad 100644
  
      # -- freeze (Risk flatten path lands here at phase 9) ---------------------- #
  
-@@ -106,9 +114,13 @@ class ExecutionOrchestrator:
+@@ -106,9 +112,13 @@ class ExecutionOrchestrator:
              self._record(report)
              return (report,)
  
@@ -233,7 +981,7 @@ index 6e22a1a..76fe9ad 100644
          self._log.event(          # logged BEFORE dispatch: crash-reconcilable (§9)
              "FRAGMENT_PLAN", order_id=order.order_id, path=fragment_plan.path,
              weighting=fragment_plan.weighting, n=len(fragment_plan.fragments),
-@@ -122,7 +134,6 @@ class ExecutionOrchestrator:
+@@ -122,7 +132,6 @@ class ExecutionOrchestrator:
                              elapsed_ms=round(elapsed_ms, 3),
                              budget_ms=self._cfg.dispatch_budget_ms)
  
@@ -241,7 +989,7 @@ index 6e22a1a..76fe9ad 100644
          for fragment in fragment_plan.fragments:
              reports.extend(await self._dispatch(order, fragment, fragment_plan))
          filled = sum((r.filled_units for r in reports), Decimal("0"))
-@@ -163,6 +174,10 @@ class ExecutionOrchestrator:
+@@ -163,6 +172,10 @@ class ExecutionOrchestrator:
          reroutes = 0
          retries = 0
          while True:
@@ -252,21 +1000,34 @@ index 6e22a1a..76fe9ad 100644
              report = await self._submit_once(order, fragment_id, venue, units,
                                               fragment_plan.path == "ioc")
              if report is None:                        # gave up mid-reconcile
-@@ -207,6 +222,10 @@ class ExecutionOrchestrator:
+@@ -205,8 +218,14 @@ class ExecutionOrchestrator:
+         reconcile against the broker (authoritative) BEFORE any resubmission;
+         idempotent fragment_ids make the retry double-fill-safe. Two failures
          ⇒ give up (None)."""
-         face = self._faces[venue]
+-        face = self._faces[venue]
++        face, budget = self._faces[venue], self._requests[venue]
          for attempt in (1, 2):
-+            if not self._requests[venue].admit(self._now(), closing=order.action == "close",
-+                                               order_id=order.order_id, log=self._log):
++            now = self._now()
++            derisk = (order.action == "close" and budget.used(now) >= budget.limit
++                      and await self._shrinks(face, order, units))       # no read for opens
++            if not budget.admit(now, closing=derisk, order_id=order.order_id, log=self._log):
 +                return self._synthetic_reject(order, "request_budget", units=units,
 +                                              fragment_id=f"{fragment_id}:budget")
              try:
                  return await face.submit_order(
                      fragment_id=fragment_id, order_id=order.order_id,
-@@ -223,6 +242,21 @@ class ExecutionOrchestrator:
+@@ -223,6 +242,29 @@ class ExecutionOrchestrator:
                  if attempt == 2:
                      return None
  
++    @staticmethod
++    async def _shrinks(face: ExecutionFace, order: SizedOrder, units: Decimal) -> bool:
++        """A spent budget exempts only a close that really shrinks the venue position:
++        the `close` label is no proof while the close-direction contract is open."""
++        held = [p for p in await face.open_positions() if p.instrument == order.instrument]
++        return (len(held) == 1 and held[0].direction == -order.direction
++                and units <= held[0].size_units)
++
 +    def _venue_quantity(self, order: SizedOrder, units: Decimal, venue: str,
 +                        tag: str) -> tuple[Decimal, list[FillReport]]:
 +        """GAP-P12D-57: `units` rounded DOWN to `venue`'s lot step, or 0 if that falls
@@ -285,7 +1046,7 @@ index 6e22a1a..76fe9ad 100644
      def _record(self, report: FillReport) -> None:
          self._quality.update(report)
          self._store.write(report)
-@@ -242,9 +276,10 @@ class ExecutionOrchestrator:
+@@ -242,9 +284,10 @@ class ExecutionOrchestrator:
                              slippage_bps=round(report.slippage_bps, 4),
                              alert_bps=self._alert_bps)
  
@@ -299,7 +1060,7 @@ index 6e22a1a..76fe9ad 100644
          return FillReport(
              fill_id=f"{order.order_id}:{fragment_id or 'cap'}:rej",
              order_id=order.order_id, fragment_id=fragment_id or "none",
-@@ -252,4 +287,5 @@ class ExecutionOrchestrator:
+@@ -252,4 +295,5 @@ class ExecutionOrchestrator:
              requested_price=order.entry_price, fill_price=0.0,
              filled_units=Decimal("0"), slippage_bps=0.0, fill_time=self._now(),
              venue=venue, status=FillStatus.REJECTED,
@@ -485,28 +1246,29 @@ index 3898096..2c909cb 100644
                  and signal.strategy_type is StrategyType.MOMENTUM_SCALP
 diff --git a/core/risk/drawdown_series.py b/core/risk/drawdown_series.py
 new file mode 100644
-index 0000000..700610f
+index 0000000..ff99d90
 --- /dev/null
 +++ b/core/risk/drawdown_series.py
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,169 @@
 +"""The §9.5 drawdown series: every drawdown limit measured under its OWN semantics.
 +Split out of core/risk/guardrails.py (GAP-P12M-01), which re-exports these names.
-+
 +  * One `_RuleAnchor` per rule key. Rules are never merged numerically, and two rules may
 +    never share a key (they would share one anchor, and one persisted record).
-+  * measured % = (anchor − basis) / anchor × 100, floored at 0.
-+  * static: the anchor is the first observed basis, and it never moves. trailing: the
-+    high-water mark since inception; it only ratchets up and never resets on a calendar
-+    boundary (GAP-P9E-01).
-+  * daily-reset (the engine's own limit, master §8): the day rolls at the real 17:00
-+    New York rollover and the new day anchors on its first observation (ratified).
-+  * A restart is never a relaxation (GAP-0050, GAP-P12D-55). `export()` is persisted after
-+    every evaluate and `restore()` puts it back before the first one, so a restarted engine
-+    measures from the same anchors as the one that died. A restored daily anchor is kept
-+    for the same day. If a day boundary passed while the engine was down, the new day
-+    anchors on the LARGER of the last persisted observation and the first new one: the
-+    engine did not watch the rollover, so it keeps the stricter of the two samples that
-+    bracket it, and a loss taken while it was down is never forgotten by the restart.
++  * measured % = (anchor − basis) / denominator × 100, floored at 0. The denominator is
++    the anchor, or the declared initial capital for a `limit_of: initial` rule.
++  * static: the anchor is the declared initial capital, else the first observed basis,
++    and never moves. trailing: the high-water mark since inception (seeded at the
++    declared initial capital); it only ratchets up, never resets on a calendar boundary.
++  * daily-reset: the engine's own limit (master §8; the day rolls at 17:00 New York) and
++    a platform `daily` rule (GAP-P12D-54; at its own local `reset`). The engine's day
++    anchors on its first observation (ratified). A platform day anchors its `reset_basis`
++    on the LARGER of the last observation before the reset and the first after it: the
++    firm reads its value AT the reset, and the engine keeps the stricter bracketing sample.
++  * A restart is never a relaxation (GAP-0050, GAP-P12D-55): `export()` is persisted after
++    every evaluate and `restore()` puts it back before the first one. A restored static or
++    trailing anchor never sits below the declared capital; a restored daily anchor is kept
++    for the same day, and a rollover missed while down brackets the downtime the same way
++    (the larger of the last persisted and the first new observation).
 +"""
 +
 +from __future__ import annotations
@@ -518,7 +1280,7 @@ index 0000000..700610f
 +
 +from config.schemas import DrawdownRule, GuardrailLimits
 +from core.data.errors import DataQualityError
-+from core.data.fx_clock import trading_day
++from core.data.fx_clock import last_local, trading_day
 +from core.risk.risk_types import PlatformDrawdownState
 +
 +
@@ -533,6 +1295,12 @@ index 0000000..700610f
 +    return (halt - distance) / (halt - start)
 +
 +
++def _value(kind: str, equity: float, balance: float) -> float:
++    if kind == "equity":
++        return equity
++    return balance if kind == "balance" else max(equity, balance)    # "max"
++
++
 +@dataclass
 +class _RuleAnchor:
 +    """Running anchor for one drawdown rule (semantics in the module docstring).
@@ -541,30 +1309,34 @@ index 0000000..700610f
 +    eod sampling is GAP-P9E-02). Halts are cheap, so erring strict is safe."""
 +
 +    anchor: float | None = None
-+    day: str | None = None           # the trading day (ISO) the daily anchor belongs to
-+    last: float | None = None        # the basis at the previous observation
-+    restored: bool = False           # put back from disk: a missed rollover brackets the downtime
++    day: str | None = None           # the reset instant / trading day (ISO) of the anchor
++    last: float | None = None        # the captured value at the previous observation
++    restored: bool = False           # put back from disk: a missed reset brackets the downtime
 +
 +    def update(self, rule: DrawdownRule, basis: float, now: datetime, *,
-+               resets_daily: bool) -> float:
++               resets_daily: bool, capture: float | None = None,
++               initial: float | None = None) -> float:
++        value = basis if capture is None else capture
 +        if resets_daily:
-+            # GAP-P9I-03: the daily limit's day starts at the FX rollover, NOT calendar
-+            # midnight; the rollover is the real 17:00 New York instant (GAP-P12D-10).
-+            today = trading_day(now).isoformat()
++            # the engine's day starts at the real 17:00 New York rollover (GAP-P9I-03,
++            # GAP-P12D-10); a platform daily rule's at its own local reset (GAP-P12D-54)
++            today = (last_local(now, rule.reset.zone, rule.reset.at) if rule.type == "daily"
++                     else trading_day(now)).isoformat()
 +            if self.anchor is None or self.day != today:
-+                bracket = self.restored and self.last is not None
-+                self.anchor = max(basis, self.last) if bracket else basis   # day-open
++                bracket = (rule.type == "daily" or self.restored) and self.last is not None
++                self.anchor = max(value, self.last) if bracket else value
 +                self.day = today
-+            self.last = basis
++            self.last = value
 +        else:
 +            if self.anchor is None:
-+                self.anchor = basis                   # inception reference
++                self.anchor = value if initial is None else initial   # inception reference
 +            if rule.type == "trailing":
-+                self.anchor = max(self.anchor, basis)  # high-water since inception
++                self.anchor = max(self.anchor, value)  # high-water since inception
 +        self.restored = False
-+        if self.anchor <= 0:
++        denominator = initial if rule.limit_of == "initial" else self.anchor
++        if denominator is None or denominator <= 0:
 +            return 0.0
-+        return max(0.0, (self.anchor - basis) / self.anchor * 100.0)
++        return max(0.0, (self.anchor - basis) / denominator * 100.0)
 +
 +
 +def _positive(key: str, name: str, raw) -> float | None:
@@ -584,15 +1356,18 @@ index 0000000..700610f
 +
 +    limits: GuardrailLimits
 +    rules: tuple[tuple[str, str, DrawdownRule, bool], ...]  # (key, origin, rule, resets_daily)
++    initial: float | None = None                             # the rulebook's declared capital
 +    _anchors: dict[str, _RuleAnchor] = field(default_factory=dict)
 +
 +    def measure(self, *, equity: float, balance: float, now: datetime,
 +                start: float, halt: float) -> list[PlatformDrawdownState]:
 +        out: list[PlatformDrawdownState] = []
-+        for key, _origin, rule, resets_daily in self.rules:
-+            basis = equity if rule.basis == "equity" else balance
-+            anchor = self._anchors.setdefault(key, _RuleAnchor())
-+            measured = anchor.update(rule, basis, now, resets_daily=resets_daily)
++        for key, origin, rule, resets_daily in self.rules:
++            capture = (_value(rule.reset_basis, equity, balance)
++                       if rule.reset_basis is not None else None)
++            measured = self._anchors.setdefault(key, _RuleAnchor()).update(
++                rule, _value(rule.basis, equity, balance), now, resets_daily=resets_daily,
++                capture=capture, initial=self.initial if origin == "platform" else None)
 +            distance = measured / rule.limit_pct if rule.limit_pct > 0 else 0.0
 +            out.append(PlatformDrawdownState(
 +                rule_key=key, measured_pct=measured, limit_pct=rule.limit_pct,
@@ -609,11 +1384,13 @@ index 0000000..700610f
 +        """Put persisted anchors back BEFORE the first measure (GAP-P12D-55). A key the
 +        rulebook no longer declares is not restored. Returns the restored keys."""
 +        restored = []
-+        for key, _origin, _rule, _resets_daily in self.rules:
++        for key, origin, _rule, resets_daily in self.rules:
 +            st = saved.get(key)
 +            anchor = None if st is None else _positive(key, "anchor", st.get("anchor"))
 +            if anchor is None:
 +                continue
++            if not resets_daily and origin == "platform" and self.initial is not None:
++                anchor = max(anchor, self.initial)     # never below the declared capital
 +            self._anchors[key] = _RuleAnchor(anchor=anchor, day=st.get("day"),
 +                                             last=_positive(key, "last", st.get("last")),
 +                                             restored=True)
@@ -621,14 +1398,12 @@ index 0000000..700610f
 +        return tuple(restored)
 +
 +
-+def build_drawdown_series(limits: GuardrailLimits,
-+                          platform_rules: list[DrawdownRule],
-+                          account_name: str) -> DrawdownSeries:
-+    """The engine daily loss limit (resets at the FX trading-day rollover,
-+    master §8) + every platform rule under its own semantics (trailing
-+    ratchets, static is a fixed inception reference — neither resets daily).
-+    Per-instrument drawdown is handled separately (it needs per-instrument
-+    PnL, not account state)."""
++def build_drawdown_series(limits: GuardrailLimits, platform_rules: list[DrawdownRule],
++                          account_name: str, *, initial_capital: float | None) -> DrawdownSeries:
++    """The engine daily loss limit (resets at the FX rollover, master §8) + every
++    platform rule under its own semantics: trailing ratchets, static is fixed, daily
++    resets at its declared local instant. `initial_capital` is the rulebook's declared
++    capital (None if undeclared). Per-instrument drawdown is handled separately."""
 +    rules: list[tuple[str, str, DrawdownRule, bool]] = [
 +        ("engine:daily", "engine",
 +         DrawdownRule(type="static", anchor="intraday", basis="equity",
@@ -636,13 +1411,16 @@ index 0000000..700610f
 +    ]
 +    for r in platform_rules:
 +        key = f"{account_name}:{r.type}:{r.anchor}:{r.basis}"
-+        rules.append((key, "platform", r, False))     # platform rules never reset daily
++        if r.limit_of == "initial" and initial_capital is None:
++            raise DataQualityError("initial_capital", None,
++                                   f"{key} is sized on initial capital, which is undeclared")
++        rules.append((key, "platform", r, r.type == "daily"))
 +    keys = [k for k, *_ in rules]
 +    if len(set(keys)) != len(keys):
 +        raise DataQualityError("drawdown_rules", keys, "two rules share a key (and an anchor)")
-+    return DrawdownSeries(limits=limits, rules=tuple(rules))
++    return DrawdownSeries(limits=limits, rules=tuple(rules), initial=initial_capital)
 diff --git a/core/risk/guardrails.py b/core/risk/guardrails.py
-index ea18c5c..ef73a90 100644
+index ea18c5c..6766c7b 100644
 --- a/core/risk/guardrails.py
 +++ b/core/risk/guardrails.py
 @@ -1,9 +1,12 @@
@@ -669,7 +1447,7 @@ index ea18c5c..ef73a90 100644
 +from dataclasses import dataclass
  from datetime import datetime
  from decimal import Decimal
-+from typing import Mapping
++from typing import Mapping, Sequence
  
 -from config.schemas import DrawdownRule, GuardrailLimits, RiskConfig
 -from core.data.fx_clock import trading_day
@@ -784,7 +1562,7 @@ index ea18c5c..ef73a90 100644
  @dataclass
  class GuardrailContext:
      now: datetime
-@@ -178,6 +82,25 @@ class Guardrails:
+@@ -178,6 +82,42 @@ class Guardrails:
          self._equity_flattened = False
          self._log.event("GUARDRAILS_REARMED")
  
@@ -794,14 +1572,31 @@ index ea18c5c..ef73a90 100644
 +    def series(self) -> DrawdownSeries:
 +        return self._series
 +
-+    def restore_state(self, *, anchors: Mapping[str, Mapping],
-+                      taper_factor: float | None) -> None:
-+        """Put the persisted drawdown anchors back and RE-PUSH the last delivered
-+        taper to the (fresh) Governor, before the first check. Restore-only: it can
-+        put back a restriction the dead process had; it cannot loosen one."""
++    def restore_state(self, *, anchors: Mapping[str, Mapping], taper_factor: float | None,
++                      halts: Sequence[tuple[str, str, str, datetime]] = ()) -> None:
++        """Put the persisted drawdown anchors back, RE-APPLY every uncleared halt through
++        the same edge with the same scope and reason (ACIS-07 §7), and RE-PUSH the last
++        taper to the (fresh) Governor, before the first check. Restore-only: it puts
++        back restrictions the dead process had; it cannot loosen one."""
 +        restored = self._series.restore(anchors)
 +        self._log.event("ANCHORS_RESTORED", rule_keys=list(restored),
 +                        ignored=sorted(set(anchors) - set(restored)))
++        for kind, scope, reason, at in halts:    # latches set: the first check coalesces
++            if kind == "session":
++                self._session_halted = True
++                self._sink.apply_session_halt(at, reason)     # lifts at ITS boundary
++            elif kind == "flatten":
++                self._flattened_scopes.add(scope)
++                self._sink.flatten(scope, reason)
++            else:
++                self._halted_scopes.add(scope)
++                self._sink.apply_halt(scope, reason)
++            if scope not in ("all", "session"):
++                self._instruments_halted.add(scope)
++            self._equity_flattened |= reason == "equity_floor"
++        if halts:
++            self._log.event("HALTS_RESTORED", halts=[[k, s, r, a.isoformat()]
++                                                     for k, s, r, a in halts])
 +        if taper_factor is not None:
 +            self._sink.apply_risk_state(taper_factor=taper_factor)
 +            self._last_taper = taper_factor
@@ -810,11 +1605,79 @@ index ea18c5c..ef73a90 100644
      # -- racing-HALT coalescing (C-RSK-4) ------------------------------------ #
      # Idempotent + serialized: a scope already covered by an equal-or-more-severe
      # active halt is a no-op. Severity: instrument < session < all < flatten.
+diff --git a/core/risk/halt_ledger.py b/core/risk/halt_ledger.py
+new file mode 100644
+index 0000000..c3433be
+--- /dev/null
++++ b/core/risk/halt_ledger.py
+@@ -0,0 +1,56 @@
++"""The persisted HALT ledger on the upward edge (ACIS-07 §7 "active halts", §10).
++
++A restart is never a relaxation (GAP-0050). Invariants:
++  * `PersistentHaltSink` wraps the single upward edge. Every halt, session halt and
++    flatten is written to `halt_event` BEFORE it is forwarded, so a crash between the
++    two can only leave a recorded halt not yet applied (restored at boot), never the
++    reverse. The MCP control target must route its halts and flattens through it too.
++  * Boot re-applies every uncleared row through the same edge, same scope and reason,
++    before the first evaluate (`Guardrails.restore_state`). A session halt is re-applied
++    with its ORIGINAL instant, so it lifts at the boundary it would have lifted at.
++  * Re-applying writes nothing new: an open row with the same kind, scope and reason
++    (and, for a session halt, instant) is not written twice.
++  * The sink has no clearing verb. Only a human resume clears rows
++    (`RiskMonitor.on_human_resume`), so an agent that reaches the sink can halt, never
++    unhalt, and never make a restart forget a halt.
++"""
++
++from __future__ import annotations
++
++from datetime import datetime
++from typing import Callable
++
++from core.risk.sink import HaltSink
++from core.risk.store import RiskStore
++
++
++class PersistentHaltSink(HaltSink):
++    def __init__(self, inner: HaltSink, store: RiskStore,
++                 now_fn: Callable[[], datetime]) -> None:
++        self._inner = inner
++        self._store = store
++        self._now = now_fn
++
++    def _record(self, kind: str, scope: str, reason: str, at: datetime) -> None:
++        for k, s, r, t in self._store.open_halts():
++            if (k, s, r) == (kind, scope, reason) and (kind != "session" or t == at):
++                return
++        self._store.record_halt(f"{kind}|{at.isoformat()}|{scope}|{reason}",
++                                at.isoformat(), scope, reason)
++
++    def apply_halt(self, scope: str, reason: str) -> None:
++        self._record("halt", scope, reason, self._now())
++        self._inner.apply_halt(scope, reason)
++
++    def apply_session_halt(self, now: datetime, reason: str) -> None:
++        self._record("session", "session", reason, now)
++        self._inner.apply_session_halt(now, reason)
++
++    def apply_risk_state(self, *, taper_factor: float | None = None,
++                         alpha_decay: bool | None = None) -> None:
++        # persisted with the restrictive state after every evaluate (GAP-P12D-55)
++        self._inner.apply_risk_state(taper_factor=taper_factor, alpha_decay=alpha_decay)
++
++    def flatten(self, scope: str, reason: str) -> None:
++        self._record("flatten", scope, reason, self._now())
++        self._inner.flatten(scope, reason)
 diff --git a/core/risk/monitor.py b/core/risk/monitor.py
-index 3afdfce..8da8ebe 100644
+index 3afdfce..d23299a 100644
 --- a/core/risk/monitor.py
 +++ b/core/risk/monitor.py
-@@ -31,6 +31,7 @@ from core.risk.alpha_decay import AlphaDecayDetector
+@@ -26,11 +26,13 @@ from pathlib import Path
+ from statistics import NormalDist, stdev
+ 
+ from config.schemas import RiskConfig, GuardrailLimits
++from core.data.errors import DataQualityError
+ from core.execution.venue import BrokerAccount, BrokerPosition, FillReport, FillStatus
+ from core.risk.alpha_decay import AlphaDecayDetector
  from core.risk.guardrails import GuardrailContext, Guardrails
  from core.risk.risk_types import RiskPosition, RiskSnapshot, Trade
  from core.risk.sink import HaltSink
@@ -822,7 +1685,7 @@ index 3afdfce..8da8ebe 100644
  
  _Z_99 = NormalDist().inv_cdf(0.99)      # ≈ 2.326 — 1% VaR z-score
  
-@@ -204,30 +205,17 @@ class RiskMonitor:
+@@ -204,30 +206,17 @@ class RiskMonitor:
              platform_drawdown=tuple(s for s in outcome.platform_drawdown
                                      if s.rule_key != "engine:daily"),
              taper_factor=outcome.taper_factor, session_id=self._session_id)
@@ -858,43 +1721,98 @@ index 3afdfce..8da8ebe 100644
          if factor is None:
              self._log.event("CONVERSION_UNAVAILABLE", instrument=instrument,
                              note="cross pair — quote-ccy used, phase-11 FX table owed")
-@@ -328,12 +316,14 @@ class RiskMonitor:
+@@ -269,15 +258,10 @@ class RiskMonitor:
+         return float(self._to_usd(inst, quote_notional, mark))
+ 
+     def _var_pct(self, marks, nav) -> float:
+-        """Delta-normal, UNDIVERSIFIED (no correlation credit — conservative
+-        sum of per-position VaR), scaled to a DECLARED holding-period horizon
+-        (GAP-P9E-03: a VaR without a stated horizon is meaningless — the raw
+-        per-mark σ is a ~`eval_cadence_s`-horizon VaR, ~93× smaller than the
+-        1-day VaR the 3% cap presumes). σ from the rolling log-return of marks,
+-        scaled by √(var_horizon_seconds / eval_cadence_s) to the declared
+-        horizon. (The 3% cap's re-confirmation against this horizon is RAISED
+-        to the owner — GAP-P9E-03 — as the horizon was previously undeclared;
+-        VaR is not yet wired in-loop, GAP-0091b, so nothing live changes.)"""
++        """Delta-normal, UNDIVERSIFIED (no correlation credit: a conservative sum of
++        per-position VaR). σ is the rolling log-return of marks scaled by
++        √(var_horizon_seconds / eval_cadence_s) to the DECLARED horizon (GAP-P9E-03);
++        the 3% cap is ratified against the 1-day horizon (GAP-0103); in-loop: GAP-0091b."""
+         horizon_scale = math.sqrt(self._cfg.var_horizon_seconds
+                                   / self._cfg.eval_cadence_s)
+         total = 0.0
+@@ -328,23 +312,29 @@ class RiskMonitor:
                  stop_loss=pos.stop_loss, take_profit=pos.take_profit))
          return tuple(out)
  
 -    def restore_restrictive_state(self, *, alpha_armed: bool) -> None:
-+    def restore_restrictive_state(self, *, alpha_armed: bool,
-+                                  taper_factor: float | None = None,
-+                                  anchors: dict | None = None) -> None:
++    def restore_restrictive_state(self, *, alpha_armed: bool, taper_factor: float | None = None,
++                                  anchors: dict | None = None, halts: list | None = None) -> None:
          """Persisted risk-restrictive state is restored BEFORE the first
          evaluate — a restart is never a relaxation (GAP-0050). GAP-P9I-05: the
-         restored throttle must be RE-PUSHED to the (fresh) Governor over the
+-        restored throttle must be RE-PUSHED to the (fresh) Governor over the
 -        upward edge — restoring the detector's flag alone leaves a rebooted
 -        Governor un-throttled."""
-+        upward edge. GAP-P12D-55: so are the drawdown anchors and the taper."""
-+        self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor)
++        restored throttle must be RE-PUSHED to the (fresh) Governor over the upward
++        edge; so are the anchors, the taper (GAP-P12D-55) and open halts (ACIS-07 §7)."""
++        self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor,
++                                   halts=halts or ())
          self._alpha.restore_armed(alpha_armed)
          self._alpha_armed_prev = alpha_armed
          if alpha_armed:
+             self._sink.apply_risk_state(alpha_decay=True)
+             self._log.event("ALPHA_DECAY_RESTORED", armed=True)
+ 
+-    def on_human_resume(self) -> None:
+-        """A human resume (via the MCP/Governor layer, phase 10) re-arms the
+-        guardrail latches so a later re-breach fires again — the equity breaker
+-        is a one-shot per armed cycle, never a process-lifetime suppressor
+-        (GAP-P9I-06). Human-only by construction (no agent path calls this)."""
++    def on_human_resume(self, human_token: str, now: datetime) -> None:
++        """A human resume (MCP/Governor, phase 10) re-arms the latches — the equity breaker
++        is one-shot per ARMED CYCLE, never per process (GAP-P9I-06) — and clears the
++        persisted halts so a restart does not re-apply them (ACIS-07 §7). Human-only by
++        construction; a blank token is refused before anything is cleared."""
++        if not isinstance(human_token, str) or not human_token.strip():
++            raise DataQualityError("human_token", human_token, "only a human resumes")
++        if self._store is not None:
++            self._store.clear_halts(now, human_token)
+         self._guards.rearm()
+ 
+     def reconcile_on_restart(self, broker_positions: tuple[BrokerPosition, ...],
 diff --git a/core/risk/store.py b/core/risk/store.py
-index 01774ae..c2aa1b4 100644
+index 01774ae..f88e36d 100644
 --- a/core/risk/store.py
 +++ b/core/risk/store.py
-@@ -2,6 +2,12 @@
+@@ -2,19 +2,42 @@
  risk-restrictive state a restart must restore before the first evaluate
  (GAP-0050 — a restart is never a relaxation).
  
+-`halt_event.cleared_by` is 'human:<token>' for equity/global scope — a machine
+-can never populate it (enforced at the MCP layer, ACIS-08 phase 10). Snapshot
+-writes are idempotent on the timestamp PK.
 +The restrictive state is the armed alpha-decay throttle, the last delivered taper
 +and every drawdown anchor (GAP-P12D-55), each drawdown rule under the key
 +`anchor:<rule_key>` in the existing `restrictive_state` table (no DDL change). All
 +of it is written in ONE transaction, so a crash never leaves a taper from one
 +evaluate beside anchors from another. `restore_on_boot` reads it back.
 +
- `halt_event.cleared_by` is 'human:<token>' for equity/global scope — a machine
- can never populate it (enforced at the MCP layer, ACIS-08 phase 10). Snapshot
- writes are idempotent on the timestamp PK.
-@@ -15,6 +21,17 @@ from pathlib import Path
++Every halt, session halt and flatten that crosses the upward edge is a `halt_event`
++row (core/risk/halt_ledger.py, ACIS-07 §7); its kind rides in the opaque `halt_id`
++as `<kind>|…` (the §10 DDL has no column for it). An uncleared row is re-applied at
++boot. Only a human resume clears rows, and `cleared_by` is `human:<sha256 prefix of
++the token>` — never the token itself. Snapshot writes are idempotent on the ts PK.
+ """
  
+ from __future__ import annotations
+ 
++import hashlib
+ import json
+ import sqlite3
++from datetime import datetime
+ from pathlib import Path
+ 
++from core.data.errors import DataQualityError
  from core.risk.risk_types import RiskSnapshot
  
 +_ANCHOR = "anchor:"
@@ -902,18 +1820,42 @@ index 01774ae..c2aa1b4 100644
 +
 +def restore_on_boot(store: "RiskStore", monitor) -> None:
 +    """Boot, before the first evaluate: put back everything the dead process had
-+    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55)."""
++    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55),
++    and every halt no human has cleared (ACIS-07 §7, GAP-0050)."""
 +    state = store.load_restrictive_state()
 +    monitor.restore_restrictive_state(alpha_armed=bool(state.get("alpha_armed", False)),
 +                                      taper_factor=state.get("taper_factor"),
-+                                      anchors=store.load_anchors())
++                                      anchors=store.load_anchors(), halts=store.open_halts())
 +
  
  class RiskStore:
      _DDL = """
-@@ -66,17 +83,25 @@ class RiskStore:
-             (cleared_at, cleared_by, halt_id))
+@@ -60,23 +83,44 @@ class RiskStore:
+             "VALUES (?,?,?,?)", (halt_id, ts, scope, reason))
          self._conn.commit()
+ 
+-    def clear_halt(self, halt_id: str, cleared_at: str, cleared_by: str) -> None:
+-        self._conn.execute(
+-            "UPDATE halt_event SET cleared_at=?, cleared_by=? WHERE halt_id=?",
+-            (cleared_at, cleared_by, halt_id))
++    def open_halts(self) -> list[tuple[str, str, str, datetime]]:
++        """(kind, scope, reason, ts) of every uncleared halt, oldest first."""
++        rows = self._conn.execute(
++            "SELECT halt_id, ts, scope, reason FROM halt_event WHERE cleared_at IS NULL "
++            "ORDER BY ts, halt_id").fetchall()
++        return [(hid.split("|", 1)[0] if "|" in hid else "halt", scope, reason,
++                 datetime.fromisoformat(ts)) for hid, ts, scope, reason in rows]
++
++    def clear_halts(self, cleared_at: datetime, human_token: str) -> int:
++        """A HUMAN resume clears every open halt, as the Governor's resume clears every
++        scope. A blank token is refused: no machine path can unhalt a restart."""
++        if not isinstance(human_token, str) or not human_token.strip():
++            raise DataQualityError("human_token", human_token, "only a human resume clears")
++        by = "human:" + hashlib.sha256(human_token.encode("utf-8")).hexdigest()[:12]
++        cur = self._conn.execute("UPDATE halt_event SET cleared_at=?, cleared_by=? "
++                                 "WHERE cleared_at IS NULL", (cleared_at.isoformat(), by))
+         self._conn.commit()
++        return cur.rowcount
  
 -    def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float) -> None:
 -        for k, v in (("alpha_armed", json.dumps(alpha_armed)),
@@ -972,10 +1914,10 @@ index 0000000..f418964
 +        return (1.0 / price) if price else 1.0
 +    return None
 diff --git a/tests/integration/test_adapter_conformance.py b/tests/integration/test_adapter_conformance.py
-index fd1893b..7c78a5e 100644
+index fd1893b..1c855b9 100644
 --- a/tests/integration/test_adapter_conformance.py
 +++ b/tests/integration/test_adapter_conformance.py
-@@ -188,3 +188,119 @@ def test_gap0013_feed_face_still_exposes_no_account_surface() -> None:
+@@ -188,3 +188,139 @@ def test_gap0013_feed_face_still_exposes_no_account_surface() -> None:
          for member in dir(cls):
              if not member.startswith("_"):
                  assert not forbidden.search(member)
@@ -1072,6 +2014,26 @@ index fd1893b..7c78a5e 100644
 +    assert [r.status for r in closed] == [FillStatus.FILLED]
 +    assert await face.open_positions() == ()
 +    assert log.events("EXEC_REQUEST_BUDGET_DERISK")
++
++
++async def test_spent_budget_refuses_a_close_that_would_add_to_the_position(adapter,
++                                                                         tmp_path) -> None:
++    # Only a close that truly shrinks the venue position is exempt. A `close` carrying
++    # the position's OWN direction (as the Governor's group exits do today) would add
++    # to it, so it is an open in all but name and is refused once the budget is spent.
++    face = adapter()
++    lot = _lot_units(face.descriptor.min_lot)
++    orch, log = _orchestrator(face, tmp_path, requests_per_day=1)
++    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)
++    adds = await orch.submit(_order(lot, action="close", direction=1, order_id="o-mislabel"),
++                             valid_for_seconds=300)
++    assert [r.status for r in adds] == [FillStatus.REJECTED]
++    (pos,) = await face.open_positions()
++    assert pos.size_units == lot                                  # not doubled
++    too_big = await orch.submit(_order(lot * 2, action="close", direction=-1,
++                                       order_id="o-flip"), valid_for_seconds=300)
++    assert [r.status for r in too_big] == [FillStatus.REJECTED]   # would flip, not close
++    assert log.events("EXEC_REQUEST_BUDGET_REFUSED")
 +
 +
 +async def test_request_budget_survives_a_restart(adapter, tmp_path) -> None:
@@ -1188,6 +2150,128 @@ index 6eece80..867c762 100644
      assert {p.instrument for p in await face.open_positions()} == {
          "EUR_USD", "USD_JPY"}
  
+diff --git a/tests/integration/test_halt_restore.py b/tests/integration/test_halt_restore.py
+new file mode 100644
+index 0000000..94a0181
+--- /dev/null
++++ b/tests/integration/test_halt_restore.py
+@@ -0,0 +1,116 @@
++"""Explicit HALTs survive a restart (ACIS-07 §7 "active halts"; GAP-0050).
++
++Every halt, session halt and flatten crossing the upward edge is persisted before it
++is forwarded, re-applied at boot through the same edge (same scope, same reason)
++before the first evaluate, and cleared only by a human resume. Each "process" below
++is a fresh Governor, orchestrator and Risk Monitor on the SAME risk store."""
++
++from __future__ import annotations
++
++import sqlite3
++from datetime import datetime, timedelta, timezone
++
++import pytest
++
++from core.data.errors import DataQualityError
++from core.risk.halt_ledger import PersistentHaltSink
++from core.risk.store import RiskStore, restore_on_boot
++from tests.integration.test_risk_pipeline import GovernorHaltSink, PaperBook, _mk_exec
++from tests.risk_fixtures import acct, build_monitor, load_cfg
++from tests.signals_fixtures import T0, mk_regime
++from tests.unit.test_governor import mk_governor, mk_portfolio
++from tests.unit.test_signal_types import mk_signal
++
++HUMAN = "owner-human-token"
++NOON = datetime(2026, 7, 6, 12, 0, tzinfo=timezone.utc)   # = 08:00 EDT, the next boundary
++
++
++def _process(tmp_path, store, clock=T0):
++    gov, glog = mk_governor()
++    orch = _mk_exec(tmp_path)
++    sink = PersistentHaltSink(GovernorHaltSink(gov, orch, PaperBook()), store, lambda: clock)
++    mon, _, _, rlog = build_monitor(load_cfg(), sink, store=store)
++    return gov, glog, orch, mon, rlog, sink
++
++
++def _entry(gov, at=T0, instrument="EUR_USD") -> str:
++    sig = mk_signal(generated_at=at, instrument=instrument)
++    return gov.allocate(sig, mk_portfolio(), mk_regime(), at).reason
++
++
++def test_equity_floor_halt_survives_a_restart_until_a_human_resumes(tmp_path) -> None:
++    store = RiskStore(tmp_path / "risk.db")
++    gov, _, _, mon, _, _ = _process(tmp_path, store)
++    mon.evaluate(acct(8_900.0), T0)                       # under the $9,000 floor
++    assert _entry(gov) == "halt"
++
++    gov2, _, orch2, mon2, rlog2, _ = _process(tmp_path, store)      # the restart
++    assert _entry(gov2) == "formula"                      # a fresh Governor knows nothing...
++    restore_on_boot(store, mon2)                          # ...until boot, BEFORE any evaluate
++    assert _entry(gov2) == "halt"
++    assert orch2.frozen                                   # the flatten is re-applied too
++    assert [h[:3] for h in rlog2.events("HALTS_RESTORED")[0]["data"]["halts"]] == [
++        ["flatten", "all", "equity_floor"], ["halt", "all", "equity_floor"]]
++    mon2.evaluate(acct(9_500.0), T0 + timedelta(minutes=1))   # recovered: still halted
++    assert _entry(gov2) == "halt"
++
++    with pytest.raises(DataQualityError):                 # no machine path unhalts
++        mon2.on_human_resume("  ", T0)
++    assert len(store.open_halts()) == 2
++    gov2.resume(HUMAN)                                    # the human resume, as today
++    mon2.on_human_resume(HUMAN, T0 + timedelta(minutes=2))
++    assert _entry(gov2) == "formula"
++    assert store.open_halts() == []
++
++    gov3, _, _, mon3, _, _ = _process(tmp_path, store)    # a restart after the resume
++    restore_on_boot(store, mon3)
++    assert _entry(gov3) == "formula"                      # nothing left to re-apply
++    store.close()
++
++
++def test_an_agent_halt_is_reapplied_with_its_own_scope_and_reason(tmp_path) -> None:
++    store = RiskStore(tmp_path / "risk.db")
++    _, _, _, _, _, sink = _process(tmp_path, store)
++    sink.apply_halt("EUR_USD", "mcp_halt")                # the MCP control target's route
++    gov2, glog2, _, mon2, _, _ = _process(tmp_path, store)
++    restore_on_boot(store, mon2)
++    applied = glog2.events("HALT_APPLIED")
++    assert [(e["data"]["scope"], e["data"]["reason"]) for e in applied] == [
++        ("EUR_USD", "mcp_halt")]
++    assert _entry(gov2) == "halt"
++    store.close()
++
++
++def test_a_session_halt_lifts_at_its_own_boundary_after_a_restart(tmp_path) -> None:
++    store = RiskStore(tmp_path / "risk.db")
++    _, _, _, _, _, sink = _process(tmp_path, store)
++    sink.apply_session_halt(T0, "daily_drawdown")        # 10:00 UTC: halted until 12:00
++    gov2, _, _, mon2, _, _ = _process(tmp_path, store)
++    restore_on_boot(store, mon2)
++    assert _entry(gov2, T0 + timedelta(minutes=5)) == "drawdown_halt"
++    assert _entry(gov2, NOON + timedelta(minutes=1)) == "formula"   # not a day-long halt
++    store.close()
++
++
++def test_restoring_writes_nothing_twice_and_keeps_distinct_reasons(tmp_path) -> None:
++    store = RiskStore(tmp_path / "risk.db")
++    _, _, _, _, _, sink = _process(tmp_path, store)
++    sink.apply_halt("all", "var_cap")                     # two halts, one scope, one instant
++    sink.apply_halt("all", "cluster_cap")
++    assert len(store.open_halts()) == 2
++    for hours in (1, 2):                                  # two restarts, each at a later clock
++        _, _, _, mon, _, _ = _process(tmp_path, store, T0 + timedelta(hours=hours))
++        restore_on_boot(store, mon)
++    assert sorted(r for _, _, r, _ in store.open_halts()) == ["cluster_cap", "var_cap"]
++    store.close()
++
++
++def test_the_ledger_is_signed_by_a_token_fingerprint_never_the_token(tmp_path) -> None:
++    store = RiskStore(tmp_path / "risk.db")
++    _, _, _, mon, _, sink = _process(tmp_path, store)
++    sink.apply_halt("all", "mcp_halt")
++    mon.on_human_resume(HUMAN, T0)
++    store.close()
++    (by,) = sqlite3.connect(tmp_path / "risk.db").execute(
++        "SELECT cleared_by FROM halt_event").fetchone()
++    assert by.startswith("human:") and HUMAN not in by
 diff --git a/tests/integration/test_risk_pipeline.py b/tests/integration/test_risk_pipeline.py
 index b8cfc38..81e5cbf 100644
 --- a/tests/integration/test_risk_pipeline.py
@@ -1202,6 +2286,20 @@ index b8cfc38..81e5cbf 100644
          {"mock": MockExecutionFace()}, VenueQuality(),
          FillReportStore(tmp_path / "fills.db"), slippage_alert_bps=8.0, rng=Random(7),
          logger=CapturingLogger(), session_id="r9", now_fn=lambda: T0, sleep_fn=instant)
+diff --git a/tests/risk_fixtures.py b/tests/risk_fixtures.py
+index ee298a2..cea2146 100644
+--- a/tests/risk_fixtures.py
++++ b/tests/risk_fixtures.py
+@@ -96,7 +96,8 @@ def build_monitor(cfg, sink, *, account: str = "dev_paper",
+     rb = cfg.platform_rules.accounts[account]
+     from config.account_doctrine import compose
+     doctrine = compose(cfg.guardrails, rb)
+-    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, account)
++    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, account,
++                                   initial_capital=rb.initial_capital)
+     g = Guardrails(
+         cfg.guardrails, cfg.system.risk, series, sink, log,
+         taper_start=taper_start if taper_start is not None else doctrine.taper_start_fraction,
 diff --git a/tests/unit/test_execution.py b/tests/unit/test_execution.py
 index 509061b..16be466 100644
 --- a/tests/unit/test_execution.py
@@ -1216,6 +2314,31 @@ index 509061b..16be466 100644
      base.update(overrides)
      return ExecutionConfig(**base)
  
+diff --git a/tests/unit/test_fx_clock.py b/tests/unit/test_fx_clock.py
+index 2282b12..be181e3 100644
+--- a/tests/unit/test_fx_clock.py
++++ b/tests/unit/test_fx_clock.py
+@@ -104,6 +104,20 @@ def test_trading_day_starts_at_the_real_rollover() -> None:
+     assert trading_day(datetime(2026, 1, 13, 22, 0, tzinfo=UTC)) == date(2026, 1, 13)
+ 
+ 
++def test_central_european_midnight_follows_eu_summer_time() -> None:
++    # FTMO's day starts at 00:00 CE(S)T (GAP-P12D-54): 23:00 UTC in winter, 22:00 in summer
++    assert local_to_utc(date(2026, 1, 15), "00:00", "Europe/Prague") == \
++        datetime(2026, 1, 14, 23, tzinfo=UTC)
++    assert local_to_utc(date(2026, 7, 15), "00:00", "Europe/Prague") == \
++        datetime(2026, 7, 14, 22, tzinfo=UTC)
++    # the local-date rule is an hour off at 00:00 on the two switch Sundays — both the
++    # resolved and the true instant sit inside the FX weekend, so no anchor can move
++    for switch, true_utc in ((date(2026, 3, 29), datetime(2026, 3, 28, 23, tzinfo=UTC)),
++                             (date(2026, 10, 25), datetime(2026, 10, 24, 22, tzinfo=UTC))):
++        assert in_weekend(local_to_utc(switch, "00:00", "Europe/Prague"))
++        assert in_weekend(true_utc)
++
++
+ def test_config_zones_are_exactly_the_modelled_zones() -> None:
+     # config/calendars.py's Zone literal must never name a zone fx_clock cannot resolve
+     from typing import get_args
 diff --git a/tests/unit/test_governor.py b/tests/unit/test_governor.py
 index 780e3b4..724c26e 100644
 --- a/tests/unit/test_governor.py
@@ -1257,12 +2380,15 @@ index 780e3b4..724c26e 100644
      no_weekend = mk_rulebook(weekend_holding_allowed=False)
      gov, _ = mk_governor(rulebook=no_weekend)
 diff --git a/tests/unit/test_module_budget.py b/tests/unit/test_module_budget.py
-index a4cb9e9..86f1e60 100644
+index a4cb9e9..372ec18 100644
 --- a/tests/unit/test_module_budget.py
 +++ b/tests/unit/test_module_budget.py
-@@ -24,13 +24,12 @@ PRODUCTION = ["core", "monitoring", "config", "scripts", "tests/backtest"]
+@@ -22,15 +22,14 @@ PRODUCTION = ["core", "monitoring", "config", "scripts", "tests/backtest"]
+ 
+ # path -> line count on 2026-09-11 (the ceiling), all owned by GAP-P12M-01
  GRANDFATHERED = {
-     "config/schemas.py": 622,                   # 702 → 622: calendars → config/calendars.py (P12D-10)
+-    "config/schemas.py": 622,                   # 702 → 622: calendars → config/calendars.py (P12D-10)
++    "config/schemas.py": 581,                   # 702 → 622: calendars → config/calendars.py (P12D-10); → 581: rulebook → config/rulebook.py (P12D-54)
      "core/signals/agon.py": 506,
 -    "core/governor/capital_governor.py": 448,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22)
 +    "core/governor/capital_governor.py": 447,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22); 447 (P12D-58)
@@ -1277,12 +2403,213 @@ index a4cb9e9..86f1e60 100644
  }
  
  
+diff --git a/tests/unit/test_platform_daily_rules.py b/tests/unit/test_platform_daily_rules.py
+new file mode 100644
+index 0000000..4843c59
+--- /dev/null
++++ b/tests/unit/test_platform_daily_rules.py
+@@ -0,0 +1,195 @@
++"""Daily-reset platform rules and a declared initial capital (GAP-P12D-54 / -59; §9.5).
++
++FTMO's own rules (ftmo.com/en/trading-objectives/, modified 2026-05-13), 2-Step:
++  * Maximum Daily Loss — "recalculated daily at 00:00 CE(S)T as the difference between:
++    the account balance recorded at 00:00 CE(S)T of the current day and the Maximum Daily
++    Loss Amount, which is 5% of the Initial Simulated Capital", tested on "account equity
++    (i.e., Balance + Open Positions P/L ± Swaps – Commissions)";
++  * Maximum Loss — "a static limit ... below which your account equity ... cannot drop",
++    at 10% of the initial capital.
++The page's worked example on $100,000: the day-1 limit is $95,000; after a day that
++closes at a $102,000 balance, the day-2 limit is $97,000.
++"""
++
++from __future__ import annotations
++
++from datetime import datetime, timedelta, timezone
++
++import pytest
++
++from config.schemas import (AccountRulebook, DrawdownRule, NewsRules, PlatformRules,
++                            ZonedTime)
++from core.risk.guardrails import GuardrailContext
++from core.risk.store import RiskStore, restore_on_boot
++from tests.risk_fixtures import RecordingSink, acct, build_monitor, load_cfg
++
++UTC = timezone.utc
++PRAGUE_MIDNIGHT = ZonedTime(zone="Europe/Prague", at="00:00")
++DAILY = "ftmo_2step:daily:intraday:equity"
++MAX_LOSS = "ftmo_2step:static:intraday:equity"
++
++
++def ftmo_rulebook(initial: float) -> AccountRulebook:
++    return AccountRulebook(
++        platform="ctrader", news=NewsRules(restricted=False), min_hold_seconds=0,
++        weekend_holding_allowed=True, initial_capital=initial, drawdown_rules=[
++            DrawdownRule(type="daily", anchor="intraday", basis="equity",
++                         reset=PRAGUE_MIDNIGHT, reset_basis="balance",
++                         limit_of="initial", limit_pct=5.0),
++            DrawdownRule(type="static", anchor="intraday", basis="equity",
++                         limit_of="initial", limit_pct=10.0)])
++
++
++def _monitor(rulebook: AccountRulebook, sink, store=None):
++    cfg = load_cfg()
++    accounts = {**cfg.platform_rules.accounts, "ftmo_2step": rulebook}
++    cfg = cfg.model_copy(update={"platform_rules": PlatformRules(accounts=accounts)})
++    return build_monitor(cfg, sink, account="ftmo_2step", store=store)
++
++
++def _check(guards, *, equity, balance, at):
++    out = guards.check(GuardrailContext(
++        now=at, equity=_d(equity), balance=_d(balance), nav=_d(equity),
++        per_instrument_drawdown_pct={}, var_pct=0.0, max_cluster_pct=0.0,
++        slippage_slope_bps=0.0, tierg_flatten={}))
++    return {s.rule_key: s for s in out.platform_drawdown}
++
++
++def _d(x):
++    from decimal import Decimal
++    return Decimal(str(x))
++
++
++# FTMO's day 1 is Tue 14 July 2026: 00:00 CEST = 13 July 22:00 UTC.
++DAY1 = datetime(2026, 7, 14, 6, 0, tzinfo=UTC)
++DAY2_RESET = datetime(2026, 7, 14, 22, 0, tzinfo=UTC)          # 00:00 CEST, 15 July
++
++
++def test_ftmo_day1_floor_is_95000_on_equity() -> None:
++    sink = RecordingSink()
++    _, g, _, _ = _monitor(ftmo_rulebook(100_000.0), sink)
++    s = _check(g, equity=95_000.01, balance=100_000.0, at=DAY1)
++    assert s[DAILY].measured_pct == pytest.approx(4.99999, abs=1e-4)      # just inside
++    assert not sink.halts
++    s = _check(g, equity=94_999.0, balance=100_000.0, at=DAY1 + timedelta(hours=1))
++    assert s[DAILY].distance_fraction >= 1.0                               # through $95,000
++    assert ("all", f"platform_dd:{DAILY}") in sink.halts
++
++
++def test_ftmo_day2_floor_is_97000_after_a_102000_close() -> None:
++    sink = RecordingSink()
++    _, g, _, _ = _monitor(ftmo_rulebook(100_000.0), sink)
++    _check(g, equity=100_000.0, balance=100_000.0, at=DAY1)
++    _check(g, equity=102_000.0, balance=102_000.0, at=DAY2_RESET - timedelta(minutes=5))
++    s = _check(g, equity=97_000.01, balance=102_000.0, at=DAY2_RESET + timedelta(hours=8))
++    assert s[DAILY].measured_pct == pytest.approx(4.99999, abs=1e-4)      # floor 102k − 5k
++    assert s[MAX_LOSS].measured_pct == pytest.approx(2.99999, abs=1e-4)   # static: 100k − 10%
++    assert not sink.halts
++    _check(g, equity=96_999.0, balance=102_000.0, at=DAY2_RESET + timedelta(hours=9))
++    assert ("all", f"platform_dd:{DAILY}") in sink.halts
++
++
++def test_ftmo_max_loss_is_static_on_equity_at_initial_minus_10pct() -> None:
++    sink = RecordingSink()
++    _, g, _, _ = _monitor(ftmo_rulebook(100_000.0), sink)
++    # an account attached while already in profit: the line is still initial − 10%
++    s = _check(g, equity=110_000.0, balance=110_000.0, at=DAY1)
++    assert s[MAX_LOSS].measured_pct == 0.0
++    s = _check(g, equity=90_000.5, balance=110_000.0, at=DAY1 + timedelta(minutes=1))
++    assert s[MAX_LOSS].measured_pct == pytest.approx(9.9995, abs=1e-4)    # floating, on equity
++    assert s[MAX_LOSS].distance_fraction < 1.0
++
++
++def test_floating_loss_at_the_engine_rollover_does_not_hide_ftmos_floor() -> None:
++    # The lead's case: $6,000, balance 6,000 with −240 floating at the 17:00 New York
++    # rollover (21:00 UTC in July). The engine's 2% daily anchors on equity 5,760 and
++    # halts at 5,644.80; FTMO's floor is 6,000 − 300 = 5,700 from 00:00 CEST (22:00 UTC).
++    # GAP-P12D-56: the absolute $9,000 equity floor also halts any $6k account at its
++    # first check (owner-owned); every later halt coalesces under it, so the breach is
++    # read from the rule's own measurement and its PLATFORM_DD_BREACH record.
++    sink = RecordingSink()
++    _, g, _, log = _monitor(ftmo_rulebook(6_000.0), sink)
++
++    def breached() -> bool:
++        return any(e["data"]["rule_key"] == DAILY for e in log.events("PLATFORM_DD_BREACH"))
++
++    roll = datetime(2026, 7, 14, 21, 0, tzinfo=UTC)
++    _check(g, equity=6_000.0, balance=6_000.0, at=roll - timedelta(minutes=1))
++    _check(g, equity=5_760.0, balance=6_000.0, at=roll)                      # engine day opens
++    s = _check(g, equity=5_701.0, balance=6_000.0, at=roll + timedelta(hours=1, minutes=1))
++    assert s[DAILY].distance_fraction < 1.0 and not breached()
++    s = _check(g, equity=5_699.0, balance=6_000.0, at=roll + timedelta(hours=2))
++    assert s[DAILY].distance_fraction >= 1.0 and breached()                  # FTMO's line holds
++    assert s["engine:daily"].distance_fraction < 0.6     # the engine's own 2% is nowhere near
++    assert ("all", "equity_floor") in sink.halts         # GAP-P12D-56, recorded as it is
++
++
++def test_a_loss_booked_just_after_the_reset_still_counts_against_the_day() -> None:
++    # FTMO reads the balance AT 00:00. A stop that closes at a loss two seconds later
++    # must not lower the day's anchor: the engine keeps the larger bracketing sample.
++    sink = RecordingSink()
++    _, g, _, _ = _monitor(ftmo_rulebook(6_000.0), sink)
++    _check(g, equity=6_000.0, balance=6_000.0, at=DAY2_RESET - timedelta(seconds=5))
++    s = _check(g, equity=5_900.0, balance=5_900.0, at=DAY2_RESET + timedelta(seconds=5))
++    assert s[DAILY].measured_pct == pytest.approx(100 / 6_000 * 100)       # not 0%
++
++
++def test_max_reset_basis_takes_the_higher_of_balance_and_equity() -> None:
++    rb = ftmo_rulebook(10_000.0).model_copy(update={"drawdown_rules": [DrawdownRule(
++        type="daily", anchor="intraday", basis="equity", reset=PRAGUE_MIDNIGHT,
++        reset_basis="max", limit_pct=5.0)]})
++    sink = RecordingSink()
++    _, g, _, _ = _monitor(rb, sink)
++    s = _check(g, equity=10_400.0, balance=10_000.0, at=DAY1)   # floating profit at the reset
++    s = _check(g, equity=10_000.0, balance=10_000.0, at=DAY1 + timedelta(hours=1))
++    assert s[DAILY].measured_pct == pytest.approx(400 / 10_400 * 100)    # anchored on 10,400
++
++
++def test_declared_initial_capital_anchors_a_static_rule_and_seeds_a_trailing_one() -> None:
++    rb = ftmo_rulebook(10_000.0).model_copy(update={"drawdown_rules": [
++        DrawdownRule(type="static", anchor="eod", basis="balance", limit_pct=10.0),
++        DrawdownRule(type="trailing", anchor="intraday", basis="equity", limit_pct=5.0)]})
++    sink = RecordingSink()
++    _, g, _, _ = _monitor(rb, sink)
++    s = _check(g, equity=9_800.0, balance=9_800.0, at=DAY1)     # attached 2% under water
++    assert s["ftmo_2step:static:eod:balance"].measured_pct == pytest.approx(2.0)
++    assert s["ftmo_2step:trailing:intraday:equity"].measured_pct == pytest.approx(2.0)
++
++
++def test_restart_keeps_the_ftmo_day_anchor_and_never_restores_below_initial(tmp_path) -> None:
++    store = RiskStore(tmp_path / "risk.db")
++    sink = RecordingSink()
++    mon, _, _, _ = _monitor(ftmo_rulebook(100_000.0), sink, store=store)
++    mon.evaluate(acct(100_000.0), DAY1)
++    mon.evaluate(acct(102_000.0), DAY2_RESET - timedelta(minutes=5))
++    mon.evaluate(acct(98_000.0, balance=102_000.0), DAY2_RESET + timedelta(hours=1))
++    # the static anchor on disk is tampered low: the restore still reads initial capital
++    anchors = store.load_anchors()
++    anchors[MAX_LOSS]["anchor"] = 50_000.0
++    store.save_restrictive_state(alpha_armed=False, taper_factor=1.0, anchors=anchors)
++    sink2 = RecordingSink()
++    mon2, _, _, _ = _monitor(ftmo_rulebook(100_000.0), sink2, store=store)
++    restore_on_boot(store, mon2)
++    snap = mon2.evaluate(acct(98_000.0, balance=102_000.0), DAY2_RESET + timedelta(hours=2))
++    rules = {s.rule_key: s.measured_pct for s in snap.platform_drawdown}
++    assert rules[DAILY] == pytest.approx(4.0)          # 102,000 day anchor, 5% of 100k
++    assert rules[MAX_LOSS] == pytest.approx(2.0)       # initial 100,000, not the tampered 50,000
++    store.close()
++
++
++def test_daily_rule_schema_is_explicit() -> None:
++    with pytest.raises(ValueError):
++        DrawdownRule(type="daily", anchor="intraday", basis="equity", limit_pct=5.0)
++    with pytest.raises(ValueError):
++        DrawdownRule(type="static", anchor="eod", basis="balance", limit_pct=10.0,
++                     reset=PRAGUE_MIDNIGHT, reset_basis="balance")
++    with pytest.raises(ValueError):                    # % of initial, but none declared
++        AccountRulebook(**{**ftmo_rulebook(10_000.0).model_dump(), "initial_capital": None})
++    assert ftmo_rulebook(10_000.0).drawdown_rules[0].reset.zone == "Europe/Prague"
++
++
++def test_the_shipped_rulebooks_keep_their_meaning() -> None:
++    cfg = load_cfg()
++    for rb in cfg.platform_rules.accounts.values():
++        assert rb.initial_capital is None
++        assert all(r.type != "daily" and r.limit_of == "anchor" for r in rb.drawdown_rules)
 diff --git a/tests/unit/test_restart_anchors.py b/tests/unit/test_restart_anchors.py
 new file mode 100644
-index 0000000..28842a5
+index 0000000..eea2c77
 --- /dev/null
 +++ b/tests/unit/test_restart_anchors.py
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,135 @@
 +"""A restart never relaxes a drawdown limit (GAP-P12D-55; GAP-0050; ACIS-07 §7).
 +
 +The anchors of every drawdown rule — the static inception anchor, the trailing
@@ -1400,7 +2727,8 @@ index 0000000..28842a5
 +def test_restore_refuses_a_corrupt_anchor_and_skips_a_retired_rule() -> None:
 +    cfg = load_cfg()
 +    rb = cfg.platform_rules.accounts["ftmo"]
-+    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "ftmo")
++    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "ftmo",
++                                   initial_capital=rb.initial_capital)
 +    with pytest.raises(DataQualityError):
 +        series.restore({FTMO_STATIC: {"anchor": float("nan"), "day": None, "last": None}})
 +    with pytest.raises(DataQualityError):
@@ -1415,7 +2743,8 @@ index 0000000..28842a5
 +    cfg = load_cfg()
 +    twin = DrawdownRule(type="static", anchor="eod", basis="balance", limit_pct=10.0)
 +    with pytest.raises(DataQualityError):
-+        build_drawdown_series(cfg.guardrails, [twin, twin.model_copy()], "x")
++        build_drawdown_series(cfg.guardrails, [twin, twin.model_copy()], "x",
++                              initial_capital=None)
 diff --git a/tests/unit/test_venue_limits.py b/tests/unit/test_venue_limits.py
 new file mode 100644
 index 0000000..40f29eb
@@ -1495,3 +2824,17 @@ index 0000000..40f29eb
 +                  venues=["mock"], now=T0, rng=Random(seed), quantum=step)
 +        assert sum(f.units for f in fp.fragments) == Decimal("437000")
 +        assert all(f.units % step == 0 and f.units >= step for f in fp.fragments)
+diff --git a/tests/unit/test_watchdog.py b/tests/unit/test_watchdog.py
+index c1af526..1ef1382 100644
+--- a/tests/unit/test_watchdog.py
++++ b/tests/unit/test_watchdog.py
+@@ -184,7 +184,8 @@ def test_heartbeat_writer_atomic_and_readable(tmp_path) -> None:
+     from core.risk.alpha_decay import AlphaDecayDetector
+     log = CapturingLogger()
+     rb = cfg.platform_rules.accounts["dev_paper"]
+-    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "dev_paper")
++    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "dev_paper",
++                                   initial_capital=rb.initial_capital)
+     g = Guardrails(cfg.guardrails, risk_cfg, series, _NullSink(), log,
+                    taper_start=0.60, entry_halt=0.80)
+     alpha = AlphaDecayDetector(recent_window=50, min_trades=30,

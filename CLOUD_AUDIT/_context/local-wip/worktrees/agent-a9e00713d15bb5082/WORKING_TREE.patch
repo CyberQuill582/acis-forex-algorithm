@@ -1,376 +1,377 @@
-diff --git a/config/calendars.py b/config/calendars.py
-index 02f5c17..a6851ec 100644
---- a/config/calendars.py
-+++ b/config/calendars.py
-@@ -16,7 +16,8 @@ from typing import Literal
- from pydantic import BaseModel, ConfigDict, Field, model_validator
+diff --git a/core/execution/orchestrator.py b/core/execution/orchestrator.py
+index da24fbf..1d8a4e6 100644
+--- a/core/execution/orchestrator.py
++++ b/core/execution/orchestrator.py
+@@ -3,11 +3,13 @@ how much.
  
- # The zones fx_clock models (parity-tested against its rule table).
--Zone = Literal["UTC", "Asia/Tokyo", "Europe/London", "America/New_York", "America/Chicago"]
-+Zone = Literal["UTC", "Asia/Tokyo", "Europe/London", "Europe/Prague", "America/New_York",
-+               "America/Chicago"]
- 
- _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
- 
-diff --git a/config/schemas.py b/config/schemas.py
-index 1225262..1cf7899 100644
---- a/config/schemas.py
-+++ b/config/schemas.py
-@@ -19,6 +19,8 @@ from pydantic import Field, model_validator
- 
- from config.calendars import (ExchangeCalendar, FxCalendar, Session, ZonedTime,  # noqa: F401
-                               _Strict, check_boundaries)
-+from config.rulebook import (AccountRulebook, DrawdownRule, NewsRules,  # noqa: F401
-+                             PlatformRules)
- 
- 
- class ConfigError(Exception):
-@@ -432,47 +434,9 @@ class GuardrailLimits(_Strict):
- 
- 
- # --------------------------------------------------------------------------- #
--# platform_rules.yaml — account doctrine (SPEC §9.5): one rulebook per account,
--# drawdown limits with their EXACT measurement semantics.
-+# platform_rules.yaml — the account doctrine (SPEC §9.5): config/rulebook.py
- # --------------------------------------------------------------------------- #
- 
--class NewsRules(_Strict):
--    restricted: bool
--    window_before_s: int | None = Field(default=None, ge=0)
--    window_after_s: int | None = Field(default=None, ge=0)
--
--    @model_validator(mode="after")
--    def _windows_if_restricted(self) -> "NewsRules":
--        if self.restricted and (self.window_before_s is None or self.window_after_s is None):
--            raise ValueError("restricted account requires explicit blackout windows (SPEC §3.5)")
--        return self
--
--
--class DrawdownRule(_Strict):
--    type: Literal["static", "trailing"]
--    anchor: Literal["eod", "intraday"]
--    basis: Literal["balance", "equity"]
--    limit_pct: float = Field(gt=0)
--
--
--class AccountRulebook(_Strict):
--    platform: str
--    news: NewsRules
--    min_hold_seconds: int = Field(ge=0)
--    max_lots: float | None = Field(default=None, gt=0)
--    weekend_holding_allowed: bool
--    drawdown_rules: list[DrawdownRule]  # may be empty (personal account), but must be declared
--    consistency_max_day_profit_pct: float | None = Field(default=None, gt=0)
--    min_trading_days: int | None = Field(default=None, gt=0)
--    # Per-account override of the §9.5 taper — stricter-only (ratified floor).
--    taper_start_fraction: float | None = Field(default=None, gt=0, le=0.60)
--    entry_halt_fraction: float | None = Field(default=None, gt=0, le=0.80)
--
--
--class PlatformRules(_Strict):
--    accounts: dict[str, AccountRulebook] = Field(min_length=1)
--
--
- # --------------------------------------------------------------------------- #
- # event_sources.yaml — trusted channels + Tier-1/Tier-G taxonomy (SPEC §3.5–3.6)
- # --------------------------------------------------------------------------- #
-diff --git a/core/data/fx_clock.py b/core/data/fx_clock.py
-index 6c7bb23..bdf74db 100644
---- a/core/data/fx_clock.py
-+++ b/core/data/fx_clock.py
-@@ -8,9 +8,11 @@ constant is an hour wrong for half of every year.
- Dependency-free and exact for the ACIS data window (2012 on): the US rule since 2007
- (second Sunday of March → first Sunday of November, 02:00 local) for New York and
- Chicago; the UK/EU rule since 1996 (last Sunday of March → last Sunday of October,
--01:00 UTC) for London; no DST in Tokyo. Rules resolve by LOCAL DATE, which is exact
--for every declared market time (all fall outside the 01:00–02:00 switch hour on the
--switch Sunday). Earlier years raise rather than guess.
-+01:00 UTC) for London and Central Europe (CE(S)T — FTMO's day, GAP-P12D-54); no DST in
-+Tokyo. Rules resolve by LOCAL DATE, which is exact for every declared market time except
-+00:00 CE(S)T on the two switch Sundays, which resolves an hour off; that instant lies
-+inside the FX weekend, when no position can open or close, so no anchor can move across
-+it (tested). Earlier years raise rather than guess.
+ Hard walls: never sends more than `size_units` (C-EXE-6); never opens what the
+ Governor sized to zero; the execution-freeze (Risk flatten path, phase 9) blocks
+-opens while allowing closes; slippage is REPORTED, never acted on (F10: no throttle
+-knob). Randomness and time are injected. `dispatch_budget_ms` is observability only
+-(v2.10 item c). The venue's own limits DO gate (GAP-P12D-57, venue_limits.py): whole
+-lot steps rounded DOWN, below the minimum lot refused, and a spent request budget
+-refuses opens but never a close that truly shrinks the position — each a FillReport.
++opens while allowing reduce-only closes; slippage is REPORTED, never acted on (F10:
++no throttle knob). Randomness and time are injected. `dispatch_budget_ms` is
++observability only (v2.10 item c). The venue's own limits DO gate (GAP-P12D-57,
++venue_limits.py): whole lot steps rounded DOWN, below the minimum lot refused, a spent
++request budget refuses opens. A close is REDUCE-ONLY (GAP-0040 exits, ACIS-06 §7): it
++names its position's side, trades the opposite side, and is capped at — or refused
++without — the venue's holding on that side. Every refusal is a FillReport.
  """
  
  from __future__ import annotations
-@@ -21,7 +23,7 @@ UTC = timezone.utc
- ROLLOVER = ("America/New_York", "17:00")               # the FX day boundary
- _ZONES = {                                             # zone -> (standard offset h, DST rule)
-     "UTC": (0, None), "Asia/Tokyo": (9, None), "Europe/London": (0, "uk"),
--    "America/New_York": (-5, "us"), "America/Chicago": (-6, "us"),
-+    "Europe/Prague": (1, "uk"), "America/New_York": (-5, "us"), "America/Chicago": (-6, "us"),
- }
+@@ -27,7 +29,8 @@ from core.execution.venue import (
+     UNITS_PER_LOT,
+     VenueQuality,
+ )
+-from core.execution.venue_limits import WINDOW, RequestBudget, lot_units, venue_quantity
++from core.execution.venue_limits import (WINDOW, RequestBudget, capable_venues, lot_units,
++                                         reducible, venue_quantity)
+ from core.governor.portfolio_types import SizedOrder
+ 
+ # §7 steps 5–6: "bounded" remainder/reroute policy — the bounds, as constants.
+@@ -35,6 +38,11 @@ MAX_REMAINDER_RETRIES = 2      # partial-fill remainder resubmissions per fragme
+ MAX_REROUTES = 1               # venue reroutes after a rejection per fragment
  
  
-diff --git a/core/risk/drawdown_series.py b/core/risk/drawdown_series.py
-index 700610f..ff99d90 100644
---- a/core/risk/drawdown_series.py
-+++ b/core/risk/drawdown_series.py
-@@ -1,21 +1,22 @@
- """The §9.5 drawdown series: every drawdown limit measured under its OWN semantics.
- Split out of core/risk/guardrails.py (GAP-P12M-01), which re-exports these names.
++def _side(order: SizedOrder) -> int:
++    """The side traded: a close names its position's side and trades the opposite."""
++    return -order.direction if order.action == "close" else order.direction
++
++
+ class ExecutionOrchestrator:
+     def __init__(
+         self,
+@@ -103,7 +111,8 @@ class ExecutionOrchestrator:
+ 
+         fast_decay = valid_for_seconds < self._cfg.fast_decay_seconds
+         total_lots = float(order.size_units / UNITS_PER_LOT)
+-        venues = self._capable_venues(order, total_lots, need_ioc=fast_decay)
++        venues = capable_venues(self._faces, self._quality, order, total_lots,
++                                need_ioc=fast_decay)
+         if not venues:
+             self._log.event("EXEC_CAPABILITY_REJECT", order_id=order.order_id,
+                             instrument=order.instrument, lots=total_lots,
+@@ -142,24 +151,6 @@ class ExecutionOrchestrator:
+ 
+     # -- internals --------------------------------------------------------------- #
+ 
+-    def _capable_venues(self, order: SizedOrder, total_lots: float,
+-                        *, need_ioc: bool) -> list[str]:
+-        """Venues whose descriptor covers this order, best quality first.
+-        A missing capability excludes the venue — never silent emulation."""
+-        capable = []
+-        for name, face in self._faces.items():
+-            d = face.descriptor
+-            if order.instrument not in d.symbol_map:
+-                continue
+-            if total_lots > d.max_order_lots:
+-                continue
+-            if need_ioc and not d.supports_ioc:
+-                continue
+-            capable.append(name)
+-        capable.sort(key=lambda n: self._quality.score(n, order.instrument),
+-                     reverse=True)
+-        return capable
 -
-   * One `_RuleAnchor` per rule key. Rules are never merged numerically, and two rules may
-     never share a key (they would share one anchor, and one persisted record).
--  * measured % = (anchor − basis) / anchor × 100, floored at 0.
--  * static: the anchor is the first observed basis, and it never moves. trailing: the
--    high-water mark since inception; it only ratchets up and never resets on a calendar
--    boundary (GAP-P9E-01).
--  * daily-reset (the engine's own limit, master §8): the day rolls at the real 17:00
--    New York rollover and the new day anchors on its first observation (ratified).
--  * A restart is never a relaxation (GAP-0050, GAP-P12D-55). `export()` is persisted after
--    every evaluate and `restore()` puts it back before the first one, so a restarted engine
--    measures from the same anchors as the one that died. A restored daily anchor is kept
--    for the same day. If a day boundary passed while the engine was down, the new day
--    anchors on the LARGER of the last persisted observation and the first new one: the
--    engine did not watch the rollover, so it keeps the stricter of the two samples that
--    bracket it, and a loss taken while it was down is never forgotten by the restart.
-+  * measured % = (anchor − basis) / denominator × 100, floored at 0. The denominator is
-+    the anchor, or the declared initial capital for a `limit_of: initial` rule.
-+  * static: the anchor is the declared initial capital, else the first observed basis,
-+    and never moves. trailing: the high-water mark since inception (seeded at the
-+    declared initial capital); it only ratchets up, never resets on a calendar boundary.
-+  * daily-reset: the engine's own limit (master §8; the day rolls at 17:00 New York) and
-+    a platform `daily` rule (GAP-P12D-54; at its own local `reset`). The engine's day
-+    anchors on its first observation (ratified). A platform day anchors its `reset_basis`
-+    on the LARGER of the last observation before the reset and the first after it: the
-+    firm reads its value AT the reset, and the engine keeps the stricter bracketing sample.
-+  * A restart is never a relaxation (GAP-0050, GAP-P12D-55): `export()` is persisted after
-+    every evaluate and `restore()` puts it back before the first one. A restored static or
-+    trailing anchor never sits below the declared capital; a restored daily anchor is kept
-+    for the same day, and a rollover missed while down brackets the downtime the same way
-+    (the larger of the last persisted and the first new observation).
+     async def _dispatch(self, order: SizedOrder, fragment: Fragment,
+                         fragment_plan: FragmentPlan) -> list[FillReport]:
+         delay = (fragment.scheduled_at - self._now()).total_seconds()
+@@ -172,6 +163,11 @@ class ExecutionOrchestrator:
+         reroutes = 0
+         retries = 0
+         while True:
++            if order.action == "close":               # reduce-only, at THIS venue
++                units, refused = await self._reduce_only(order, units, venue, fragment_id)
++                reports.extend(refused)
++                if units == 0:
++                    return reports
+             units, boundary = self._venue_quantity(order, units, venue, fragment_id)
+             reports.extend(boundary)
+             if units == 0:
+@@ -187,8 +183,8 @@ class ExecutionOrchestrator:
+             self._record(report)
+             reports.append(report)
+             if report.status is FillStatus.REJECTED:
+-                nxt = [v for v in self._capable_venues(
+-                    order, float(units / UNITS_PER_LOT),
++                nxt = [v for v in capable_venues(
++                    self._faces, self._quality, order, float(units / UNITS_PER_LOT),
+                     need_ioc=fragment_plan.path == "ioc") if v != venue]
+                 if reroutes < MAX_REROUTES and nxt:
+                     reroutes += 1
+@@ -219,17 +215,15 @@ class ExecutionOrchestrator:
+         idempotent fragment_ids make the retry double-fill-safe. Two failures
+         ⇒ give up (None)."""
+         face, budget = self._faces[venue], self._requests[venue]
+-        for attempt in (1, 2):
+-            now = self._now()
+-            derisk = (order.action == "close" and budget.used(now) >= budget.limit
+-                      and await self._shrinks(face, order, units))       # no read for opens
+-            if not budget.admit(now, closing=derisk, order_id=order.order_id, log=self._log):
++        for attempt in (1, 2):      # a close here was checked reduce-only at this venue
++            if not budget.admit(self._now(), closing=order.action == "close",
++                                order_id=order.order_id, log=self._log):
+                 return self._synthetic_reject(order, "request_budget", units=units,
+                                               fragment_id=f"{fragment_id}:budget")
+             try:
+                 return await face.submit_order(
+                     fragment_id=fragment_id, order_id=order.order_id,
+-                    instrument=order.instrument, direction=order.direction,
++                    instrument=order.instrument, direction=_side(order),
+                     units=units, requested_price=order.entry_price,
+                     ioc=ioc, now=self._now(), session_id=self._session)
+             except ConnectionError:
+@@ -242,13 +236,20 @@ class ExecutionOrchestrator:
+                 if attempt == 2:
+                     return None
+ 
+-    @staticmethod
+-    async def _shrinks(face: ExecutionFace, order: SizedOrder, units: Decimal) -> bool:
+-        """A spent budget exempts only a close that really shrinks the venue position:
+-        the `close` label is no proof while the close-direction contract is open."""
+-        held = [p for p in await face.open_positions() if p.instrument == order.instrument]
+-        return (len(held) == 1 and held[0].direction == -order.direction
+-                and units <= held[0].size_units)
++    async def _reduce_only(self, order: SizedOrder, units: Decimal, venue: str,
++                           tag: str) -> tuple[Decimal, list[FillReport]]:
++        """A close trades only what `venue` holds on the side it names: capped at that
++        holding, refused without one. What is not sent is a REJECTED report."""
++        held = reducible(await self._faces[venue].open_positions(), order)
++        if held >= units:
++            return units, []
++        kind = "EXEC_CLOSE_REFUSED" if held == 0 else "EXEC_CLOSE_CAPPED"
++        self._log.event(kind, order_id=order.order_id, venue=venue, units=str(units),
++                        held=str(held))
++        report = self._synthetic_reject(order, kind, units=units - held,
++                                        fragment_id=f"{tag}:reduce")
++        self._record(report)
++        return held, [report]
+ 
+     def _venue_quantity(self, order: SizedOrder, units: Decimal, venue: str,
+                         tag: str) -> tuple[Decimal, list[FillReport]]:
+@@ -291,7 +292,7 @@ class ExecutionOrchestrator:
+         return FillReport(
+             fill_id=f"{order.order_id}:{fragment_id or 'cap'}:rej",
+             order_id=order.order_id, fragment_id=fragment_id or "none",
+-            instrument=order.instrument, direction=order.direction,
++            instrument=order.instrument, direction=_side(order),
+             requested_price=order.entry_price, fill_price=0.0,
+             filled_units=Decimal("0"), slippage_bps=0.0, fill_time=self._now(),
+             venue=venue, status=FillStatus.REJECTED,
+diff --git a/core/execution/venue_limits.py b/core/execution/venue_limits.py
+index e392055..463dfa7 100644
+--- a/core/execution/venue_limits.py
++++ b/core/execution/venue_limits.py
+@@ -6,10 +6,12 @@ Invariants:
+     Execution never rounds up: that would add size the Governor did not size (it only
+     ever clamps downward). The unsendable remainder is reported, never dropped.
+   * A quantity below the venue's `min_lot` is refused with a REJECTED FillReport.
++  * A close is REDUCE-ONLY: it names its position (its direction is the position's side),
++    trades the opposite side, and never exceeds the venue's holding on that side — so it
++    can shrink |position| but never open, add to, or flip one.
+   * Each venue has a hard budget of trading requests (every submit attempt) over ANY
+-    rolling 24 hours, which is stricter than a firm's "per day" cap whatever its day
+-    boundary. Once spent, opens are refused; a close is never blocked (de-risking is
+-    never throttled) and every such exception is logged.
++    rolling 24 hours, stricter than a firm's "per day" cap whatever its day boundary.
++    Once spent, opens are refused; a reduce-only close never is (logged as such).
+   * A restart does not reset the budget: it is seeded from the persisted fill log.
  """
  
- from __future__ import annotations
-@@ -27,7 +28,7 @@ from typing import Mapping
+@@ -18,9 +20,11 @@ from __future__ import annotations
+ from collections import deque
+ from datetime import datetime, timedelta
+ from decimal import ROUND_FLOOR, Decimal
+-from typing import Iterable
++from typing import Iterable, Mapping
  
- from config.schemas import DrawdownRule, GuardrailLimits
- from core.data.errors import DataQualityError
--from core.data.fx_clock import trading_day
-+from core.data.fx_clock import last_local, trading_day
- from core.risk.risk_types import PlatformDrawdownState
+-from core.execution.venue import UNITS_PER_LOT, CapabilityDescriptor
++from core.execution.venue import (UNITS_PER_LOT, BrokerPosition, CapabilityDescriptor,
++                                  ExecutionFace, VenueQuality)
++from core.governor.portfolio_types import SizedOrder
+ 
+ WINDOW = timedelta(hours=24)
+ 
+@@ -29,6 +33,25 @@ def lot_units(lots: float) -> Decimal:
+     return Decimal(str(lots)) * UNITS_PER_LOT
  
  
-@@ -42,6 +43,12 @@ def taper_factor(distance: float, start: float, halt: float) -> float:
-     return (halt - distance) / (halt - start)
- 
- 
-+def _value(kind: str, equity: float, balance: float) -> float:
-+    if kind == "equity":
-+        return equity
-+    return balance if kind == "balance" else max(equity, balance)    # "max"
++def capable_venues(faces: Mapping[str, ExecutionFace], quality: VenueQuality,
++                   order: SizedOrder, total_lots: float, *, need_ioc: bool) -> list[str]:
++    """Venues whose descriptor covers this order, best quality first. A missing
++    capability excludes the venue — never silent emulation."""
++    capable = [name for name, face in faces.items()
++               if order.instrument in face.descriptor.symbol_map
++               and total_lots <= face.descriptor.max_order_lots
++               and (face.descriptor.supports_ioc or not need_ioc)]
++    return sorted(capable, key=lambda n: quality.score(n, order.instrument), reverse=True)
 +
 +
- @dataclass
- class _RuleAnchor:
-     """Running anchor for one drawdown rule (semantics in the module docstring).
-@@ -50,30 +57,34 @@ class _RuleAnchor:
-     eod sampling is GAP-P9E-02). Halts are cheap, so erring strict is safe."""
- 
-     anchor: float | None = None
--    day: str | None = None           # the trading day (ISO) the daily anchor belongs to
--    last: float | None = None        # the basis at the previous observation
--    restored: bool = False           # put back from disk: a missed rollover brackets the downtime
-+    day: str | None = None           # the reset instant / trading day (ISO) of the anchor
-+    last: float | None = None        # the captured value at the previous observation
-+    restored: bool = False           # put back from disk: a missed reset brackets the downtime
- 
-     def update(self, rule: DrawdownRule, basis: float, now: datetime, *,
--               resets_daily: bool) -> float:
-+               resets_daily: bool, capture: float | None = None,
-+               initial: float | None = None) -> float:
-+        value = basis if capture is None else capture
-         if resets_daily:
--            # GAP-P9I-03: the daily limit's day starts at the FX rollover, NOT calendar
--            # midnight; the rollover is the real 17:00 New York instant (GAP-P12D-10).
--            today = trading_day(now).isoformat()
-+            # the engine's day starts at the real 17:00 New York rollover (GAP-P9I-03,
-+            # GAP-P12D-10); a platform daily rule's at its own local reset (GAP-P12D-54)
-+            today = (last_local(now, rule.reset.zone, rule.reset.at) if rule.type == "daily"
-+                     else trading_day(now)).isoformat()
-             if self.anchor is None or self.day != today:
--                bracket = self.restored and self.last is not None
--                self.anchor = max(basis, self.last) if bracket else basis   # day-open
-+                bracket = (rule.type == "daily" or self.restored) and self.last is not None
-+                self.anchor = max(value, self.last) if bracket else value
-                 self.day = today
--            self.last = basis
-+            self.last = value
-         else:
-             if self.anchor is None:
--                self.anchor = basis                   # inception reference
-+                self.anchor = value if initial is None else initial   # inception reference
-             if rule.type == "trailing":
--                self.anchor = max(self.anchor, basis)  # high-water since inception
-+                self.anchor = max(self.anchor, value)  # high-water since inception
-         self.restored = False
--        if self.anchor <= 0:
-+        denominator = initial if rule.limit_of == "initial" else self.anchor
-+        if denominator is None or denominator <= 0:
-             return 0.0
--        return max(0.0, (self.anchor - basis) / self.anchor * 100.0)
-+        return max(0.0, (self.anchor - basis) / denominator * 100.0)
- 
- 
- def _positive(key: str, name: str, raw) -> float | None:
-@@ -93,15 +104,18 @@ class DrawdownSeries:
- 
-     limits: GuardrailLimits
-     rules: tuple[tuple[str, str, DrawdownRule, bool], ...]  # (key, origin, rule, resets_daily)
-+    initial: float | None = None                             # the rulebook's declared capital
-     _anchors: dict[str, _RuleAnchor] = field(default_factory=dict)
- 
-     def measure(self, *, equity: float, balance: float, now: datetime,
-                 start: float, halt: float) -> list[PlatformDrawdownState]:
-         out: list[PlatformDrawdownState] = []
--        for key, _origin, rule, resets_daily in self.rules:
--            basis = equity if rule.basis == "equity" else balance
--            anchor = self._anchors.setdefault(key, _RuleAnchor())
--            measured = anchor.update(rule, basis, now, resets_daily=resets_daily)
-+        for key, origin, rule, resets_daily in self.rules:
-+            capture = (_value(rule.reset_basis, equity, balance)
-+                       if rule.reset_basis is not None else None)
-+            measured = self._anchors.setdefault(key, _RuleAnchor()).update(
-+                rule, _value(rule.basis, equity, balance), now, resets_daily=resets_daily,
-+                capture=capture, initial=self.initial if origin == "platform" else None)
-             distance = measured / rule.limit_pct if rule.limit_pct > 0 else 0.0
-             out.append(PlatformDrawdownState(
-                 rule_key=key, measured_pct=measured, limit_pct=rule.limit_pct,
-@@ -118,11 +132,13 @@ class DrawdownSeries:
-         """Put persisted anchors back BEFORE the first measure (GAP-P12D-55). A key the
-         rulebook no longer declares is not restored. Returns the restored keys."""
-         restored = []
--        for key, _origin, _rule, _resets_daily in self.rules:
-+        for key, origin, _rule, resets_daily in self.rules:
-             st = saved.get(key)
-             anchor = None if st is None else _positive(key, "anchor", st.get("anchor"))
-             if anchor is None:
-                 continue
-+            if not resets_daily and origin == "platform" and self.initial is not None:
-+                anchor = max(anchor, self.initial)     # never below the declared capital
-             self._anchors[key] = _RuleAnchor(anchor=anchor, day=st.get("day"),
-                                              last=_positive(key, "last", st.get("last")),
-                                              restored=True)
-@@ -130,14 +146,12 @@ class DrawdownSeries:
-         return tuple(restored)
- 
- 
--def build_drawdown_series(limits: GuardrailLimits,
--                          platform_rules: list[DrawdownRule],
--                          account_name: str) -> DrawdownSeries:
--    """The engine daily loss limit (resets at the FX trading-day rollover,
--    master §8) + every platform rule under its own semantics (trailing
--    ratchets, static is a fixed inception reference — neither resets daily).
--    Per-instrument drawdown is handled separately (it needs per-instrument
--    PnL, not account state)."""
-+def build_drawdown_series(limits: GuardrailLimits, platform_rules: list[DrawdownRule],
-+                          account_name: str, *, initial_capital: float | None) -> DrawdownSeries:
-+    """The engine daily loss limit (resets at the FX rollover, master §8) + every
-+    platform rule under its own semantics: trailing ratchets, static is fixed, daily
-+    resets at its declared local instant. `initial_capital` is the rulebook's declared
-+    capital (None if undeclared). Per-instrument drawdown is handled separately."""
-     rules: list[tuple[str, str, DrawdownRule, bool]] = [
-         ("engine:daily", "engine",
-          DrawdownRule(type="static", anchor="intraday", basis="equity",
-@@ -145,8 +159,11 @@ def build_drawdown_series(limits: GuardrailLimits,
-     ]
-     for r in platform_rules:
-         key = f"{account_name}:{r.type}:{r.anchor}:{r.basis}"
--        rules.append((key, "platform", r, False))     # platform rules never reset daily
-+        if r.limit_of == "initial" and initial_capital is None:
-+            raise DataQualityError("initial_capital", None,
-+                                   f"{key} is sized on initial capital, which is undeclared")
-+        rules.append((key, "platform", r, r.type == "daily"))
-     keys = [k for k, *_ in rules]
-     if len(set(keys)) != len(keys):
-         raise DataQualityError("drawdown_rules", keys, "two rules share a key (and an anchor)")
--    return DrawdownSeries(limits=limits, rules=tuple(rules))
-+    return DrawdownSeries(limits=limits, rules=tuple(rules), initial=initial_capital)
-diff --git a/tests/risk_fixtures.py b/tests/risk_fixtures.py
-index ee298a2..cea2146 100644
---- a/tests/risk_fixtures.py
-+++ b/tests/risk_fixtures.py
-@@ -96,7 +96,8 @@ def build_monitor(cfg, sink, *, account: str = "dev_paper",
-     rb = cfg.platform_rules.accounts[account]
-     from config.account_doctrine import compose
-     doctrine = compose(cfg.guardrails, rb)
--    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, account)
-+    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, account,
-+                                   initial_capital=rb.initial_capital)
-     g = Guardrails(
-         cfg.guardrails, cfg.system.risk, series, sink, log,
-         taper_start=taper_start if taper_start is not None else doctrine.taper_start_fraction,
-diff --git a/tests/unit/test_fx_clock.py b/tests/unit/test_fx_clock.py
-index 2282b12..be181e3 100644
---- a/tests/unit/test_fx_clock.py
-+++ b/tests/unit/test_fx_clock.py
-@@ -104,6 +104,20 @@ def test_trading_day_starts_at_the_real_rollover() -> None:
-     assert trading_day(datetime(2026, 1, 13, 22, 0, tzinfo=UTC)) == date(2026, 1, 13)
- 
- 
-+def test_central_european_midnight_follows_eu_summer_time() -> None:
-+    # FTMO's day starts at 00:00 CE(S)T (GAP-P12D-54): 23:00 UTC in winter, 22:00 in summer
-+    assert local_to_utc(date(2026, 1, 15), "00:00", "Europe/Prague") == \
-+        datetime(2026, 1, 14, 23, tzinfo=UTC)
-+    assert local_to_utc(date(2026, 7, 15), "00:00", "Europe/Prague") == \
-+        datetime(2026, 7, 14, 22, tzinfo=UTC)
-+    # the local-date rule is an hour off at 00:00 on the two switch Sundays — both the
-+    # resolved and the true instant sit inside the FX weekend, so no anchor can move
-+    for switch, true_utc in ((date(2026, 3, 29), datetime(2026, 3, 28, 23, tzinfo=UTC)),
-+                             (date(2026, 10, 25), datetime(2026, 10, 24, 22, tzinfo=UTC))):
-+        assert in_weekend(local_to_utc(switch, "00:00", "Europe/Prague"))
-+        assert in_weekend(true_utc)
++def reducible(positions: Iterable[BrokerPosition], order: SizedOrder) -> Decimal:
++    """What a close may trade: the venue's holding on the side the close names —
++    0 when the venue is flat on the instrument or holds the other side."""
++    return sum((p.size_units for p in positions
++                if p.instrument == order.instrument and p.direction == order.direction),
++               Decimal("0"))
 +
 +
- def test_config_zones_are_exactly_the_modelled_zones() -> None:
-     # config/calendars.py's Zone literal must never name a zone fx_clock cannot resolve
-     from typing import get_args
-diff --git a/tests/unit/test_module_budget.py b/tests/unit/test_module_budget.py
-index 86f1e60..372ec18 100644
---- a/tests/unit/test_module_budget.py
-+++ b/tests/unit/test_module_budget.py
-@@ -22,7 +22,7 @@ PRODUCTION = ["core", "monitoring", "config", "scripts", "tests/backtest"]
+ def venue_quantity(units: Decimal, d: CapabilityDescriptor) -> tuple[Decimal, Decimal]:
+     """(sendable, remainder): `units` rounded DOWN to whole lot steps. The sendable part
+     is 0 when it would fall below the venue's minimum lot — the whole quantity is refused."""
+diff --git a/tests/integration/test_adapter_conformance.py b/tests/integration/test_adapter_conformance.py
+index 1c855b9..7bbc6af 100644
+--- a/tests/integration/test_adapter_conformance.py
++++ b/tests/integration/test_adapter_conformance.py
+@@ -275,32 +275,55 @@ async def test_spent_request_budget_refuses_opens_but_never_a_close(adapter, tmp
+     (pos,) = await face.open_positions()
+     assert pos.size_units == lot * 2                              # the refused open never got there
+     assert log.events("EXEC_REQUEST_BUDGET_REFUSED")
+-    # de-risking is never throttled: the close goes through, and the exception is logged
+-    closed = await orch.submit(_order(lot * 2, action="close", direction=-1,
++    # de-risking is never throttled: the close (naming the long) goes through, logged
++    closed = await orch.submit(_order(lot * 2, action="close", direction=1,
+                                       order_id="o-close"), valid_for_seconds=300)
+     assert [r.status for r in closed] == [FillStatus.FILLED]
+     assert await face.open_positions() == ()
+     assert log.events("EXEC_REQUEST_BUDGET_DERISK")
  
- # path -> line count on 2026-09-11 (the ceiling), all owned by GAP-P12M-01
- GRANDFATHERED = {
--    "config/schemas.py": 622,                   # 702 → 622: calendars → config/calendars.py (P12D-10)
-+    "config/schemas.py": 581,                   # 702 → 622: calendars → config/calendars.py (P12D-10); → 581: rulebook → config/rulebook.py (P12D-54)
-     "core/signals/agon.py": 506,
-     "core/governor/capital_governor.py": 447,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22); 447 (P12D-58)
-     "scripts/download_histdata.py": 400,        # 456 → 400 after scripts/dl_common.py extraction
-diff --git a/tests/unit/test_restart_anchors.py b/tests/unit/test_restart_anchors.py
-index 28842a5..eea2c77 100644
---- a/tests/unit/test_restart_anchors.py
-+++ b/tests/unit/test_restart_anchors.py
-@@ -115,7 +115,8 @@ def test_store_keeps_anchors_apart_from_the_legacy_restrictive_keys(tmp_path) ->
- def test_restore_refuses_a_corrupt_anchor_and_skips_a_retired_rule() -> None:
-     cfg = load_cfg()
-     rb = cfg.platform_rules.accounts["ftmo"]
--    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "ftmo")
-+    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "ftmo",
-+                                   initial_capital=rb.initial_capital)
-     with pytest.raises(DataQualityError):
-         series.restore({FTMO_STATIC: {"anchor": float("nan"), "day": None, "last": None}})
-     with pytest.raises(DataQualityError):
-@@ -130,4 +131,5 @@ def test_two_rules_may_not_share_one_anchor() -> None:
-     cfg = load_cfg()
-     twin = DrawdownRule(type="static", anchor="eod", basis="balance", limit_pct=10.0)
-     with pytest.raises(DataQualityError):
--        build_drawdown_series(cfg.guardrails, [twin, twin.model_copy()], "x")
-+        build_drawdown_series(cfg.guardrails, [twin, twin.model_copy()], "x",
-+                              initial_capital=None)
-diff --git a/tests/unit/test_watchdog.py b/tests/unit/test_watchdog.py
-index c1af526..1ef1382 100644
---- a/tests/unit/test_watchdog.py
-+++ b/tests/unit/test_watchdog.py
-@@ -184,7 +184,8 @@ def test_heartbeat_writer_atomic_and_readable(tmp_path) -> None:
-     from core.risk.alpha_decay import AlphaDecayDetector
-     log = CapturingLogger()
-     rb = cfg.platform_rules.accounts["dev_paper"]
--    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "dev_paper")
-+    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "dev_paper",
-+                                   initial_capital=rb.initial_capital)
-     g = Guardrails(cfg.guardrails, risk_cfg, series, _NullSink(), log,
-                    taper_start=0.60, entry_halt=0.80)
-     alpha = AlphaDecayDetector(recent_window=50, min_trades=30,
+ 
+-async def test_spent_budget_refuses_a_close_that_would_add_to_the_position(adapter,
+-                                                                         tmp_path) -> None:
+-    # Only a close that truly shrinks the venue position is exempt. A `close` carrying
+-    # the position's OWN direction (as the Governor's group exits do today) would add
+-    # to it, so it is an open in all but name and is refused once the budget is spent.
++# Reduce-only closes (builder F1): a close NAMES its position — its direction is the
++# position's side — and the engine trades the opposite side. It may shrink |position| at
++# the venue, never open, add to, or flip one, and the freeze and a spent budget admit only it.
++
++async def test_a_close_into_a_flat_venue_is_refused(adapter, tmp_path) -> None:
++    face = adapter()
++    orch, log = _orchestrator(face, tmp_path)
++    reports = await orch.submit(_order(_lot_units(face.descriptor.min_lot), action="close"),
++                                valid_for_seconds=300)
++    assert [r.status for r in reports] == [FillStatus.REJECTED]
++    assert await face.open_positions() == ()                      # nothing opened
++    assert log.events("EXEC_CLOSE_REFUSED")
++
++
++async def test_a_close_naming_the_other_side_is_refused_not_added(adapter, tmp_path) -> None:
+     face = adapter()
+     lot = _lot_units(face.descriptor.min_lot)
+     orch, log = _orchestrator(face, tmp_path, requests_per_day=1)
+-    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)
+-    adds = await orch.submit(_order(lot, action="close", direction=1, order_id="o-mislabel"),
+-                             valid_for_seconds=300)
+-    assert [r.status for r in adds] == [FillStatus.REJECTED]
++    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)   # budget now spent
++    wrong = await orch.submit(_order(lot, action="close", direction=-1, order_id="c-short"),
++                              valid_for_seconds=300)
++    assert [r.status for r in wrong] == [FillStatus.REJECTED]     # the venue holds no short
+     (pos,) = await face.open_positions()
+-    assert pos.size_units == lot                                  # not doubled
+-    too_big = await orch.submit(_order(lot * 2, action="close", direction=-1,
+-                                       order_id="o-flip"), valid_for_seconds=300)
+-    assert [r.status for r in too_big] == [FillStatus.REJECTED]   # would flip, not close
+-    assert log.events("EXEC_REQUEST_BUDGET_REFUSED")
++    assert (pos.direction, pos.size_units) == (1, lot)            # neither doubled nor flipped
++    assert not log.events("EXEC_REQUEST_BUDGET_DERISK")           # never reached the venue
++
++
++async def test_a_close_larger_than_the_position_is_capped_never_flips(adapter, tmp_path) -> None:
++    face = adapter()
++    lot = _lot_units(face.descriptor.min_lot)
++    orch, log = _orchestrator(face, tmp_path)
++    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)
++    reports = await orch.submit(_order(lot * 3, action="close", order_id="c-big"),
++                                valid_for_seconds=300)
++    filled = sum((r.filled_units for r in reports), Decimal("0"))
++    unsent = sum((r.remaining_units for r in reports if r.status is FillStatus.REJECTED),
++                 Decimal("0"))
++    assert filled == lot and unsent == lot * 2                    # capped at the holding
++    assert all(r.direction == -1 for r in reports)                # traded the opposite side
++    assert await face.open_positions() == ()                      # flat, not short
++    assert log.events("EXEC_CLOSE_CAPPED")
+ 
+ 
+ async def test_request_budget_survives_a_restart(adapter, tmp_path) -> None:
+diff --git a/tests/integration/test_execution_pipeline.py b/tests/integration/test_execution_pipeline.py
+index 867c762..fdd7d7a 100644
+--- a/tests/integration/test_execution_pipeline.py
++++ b/tests/integration/test_execution_pipeline.py
+@@ -122,6 +122,28 @@ async def test_pair_group_executes_both_legs(tmp_path) -> None:
+         "EUR_USD", "USD_JPY"}
+ 
+ 
++async def test_governor_pair_exit_leaves_the_venue_flat(tmp_path) -> None:
++    """Reduce-only closes (builder F1): the Governor's group-exit closes carry each
++    leg's OWN direction (they name the position). Executed, they must FLATTEN both
++    legs. Before the convention was enforced they were sent verbatim and DOUBLED them
++    (EUR_USD −441 → −882, USD_JPY −486 → −972)."""
++    from tests.unit.test_governor import _pair_signals
++    gov, _ = mk_governor()
++    legs = gov.allocate_group(_pair_signals(), mk_portfolio(), mk_regime(), T0)
++    orch, face, _ = mk_exec(tmp_path, unit_venue())
++    for leg in legs:
++        await orch.submit(leg, valid_for_seconds=300)
++    opened = {p.instrument: (p.direction, p.size_units) for p in await face.open_positions()}
++    assert set(opened) == {"EUR_USD", "USD_JPY"}
++    closes = gov.check_group_exits({legs[0].group_id: "coupling_break"}, T0)
++    assert [(c.action, c.direction) for c in closes] == [("close", leg.direction) for leg in legs]
++    for close in closes:
++        reports = await orch.submit(close, valid_for_seconds=300)
++        traded = [r for r in reports if r.status is FillStatus.FILLED]
++        assert traded and all(r.direction == -close.direction for r in traded)
++    assert await face.open_positions() == ()                 # FLAT, not doubled
++
++
+ async def test_zero_sized_order_never_reaches_a_venue(tmp_path) -> None:
+     """The Governor's zero IS the veto — execution must not resurrect it."""
+     agon, _, _ = make_agon(tmp_path)
+diff --git a/tests/unit/test_execution.py b/tests/unit/test_execution.py
+index 16be466..41c8d7e 100644
+--- a/tests/unit/test_execution.py
++++ b/tests/unit/test_execution.py
+@@ -45,9 +45,9 @@ def exec_cfg(**overrides) -> ExecutionConfig:
+ 
+ 
+ def mk_order(units="250000", action="open", instrument="EUR_USD",
+-             order_id="ord-1") -> SizedOrder:
++             order_id="ord-1", direction=1) -> SizedOrder:
+     return SizedOrder(
+-        order_id=order_id, signal_id="sig-1", instrument=instrument, direction=1,
++        order_id=order_id, signal_id="sig-1", instrument=instrument, direction=direction,
+         size_units=Decimal(units), entry_price=1.10, stop_loss=1.09,
+         take_profit=1.12, reason="formula",
+         factors_snapshot=MappingProxyType({}), sized_at=T0,
+@@ -181,13 +181,26 @@ async def test_full_fill_lifecycle_and_store(tmp_path) -> None:
+ 
+ 
+ async def test_frozen_blocks_opens_allows_closes(tmp_path) -> None:
+-    orch, log, _, _ = mk_orchestrator(tmp_path)
++    # Reduce-only closes (builder F1) made this STRICTER: the freeze admits only them. A
++    # "close" into a flat venue used to FILL (opening a position during a flatten);
++    # it is now REJECTED, and only a close of a position the venue holds goes through.
++    face = MockExecutionFace()
++    orch, log, _, _ = mk_orchestrator(tmp_path, faces={"mock": face})
+     orch.set_freeze(True, "risk_flatten")
+     assert await orch.submit(mk_order("100000"), valid_for_seconds=300) == ()
+     assert log.events("EXEC_FROZEN_REJECT")
+-    closes = await orch.submit(mk_order("100000", action="close"),
++    flat = await orch.submit(mk_order("100000", action="close", order_id="c-flat"),
++                             valid_for_seconds=300)
++    assert [r.status for r in flat] == [FillStatus.REJECTED]        # nothing to close
++    assert await face.open_positions() == () and log.events("EXEC_CLOSE_REFUSED")
++    orch.set_freeze(False, "test")
++    await orch.submit(mk_order("100000", order_id="o-long"), valid_for_seconds=300)
++    orch.set_freeze(True, "risk_flatten")
++    closes = await orch.submit(mk_order("100000", action="close", order_id="c-long"),
+                                valid_for_seconds=300)
+-    assert closes and closes[0].status is FillStatus.FILLED   # a flatten can close
++    assert [r.status for r in closes] == [FillStatus.FILLED]         # a flatten can close
++    assert closes[0].direction == -1                                 # by trading the other side
++    assert await face.open_positions() == ()                         # and the venue is FLAT
+ 
+ 
+ async def test_capability_reject_unknown_instrument(tmp_path) -> None:

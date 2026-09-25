@@ -568,23 +568,26 @@ index 55252d9..87a025e 100644
      ema_fast: int
 diff --git a/core/optimizer/plateau.py b/core/optimizer/plateau.py
 new file mode 100644
-index 0000000..a527b91
+index 0000000..363b9bb
 --- /dev/null
 +++ b/core/optimizer/plateau.py
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,80 @@
 +"""The §5.6 parameter-plateau law (master §5.6, GAP-P12D-34): "Parameter plateaus required — a
 +strategy that dies at ±10% on any parameter fails."
 +
 +Mental model (the operationalisation interprets spec prose; it is flagged for owner ratification
 +in BUILDER_REPORT_2026-09-24.md and drafted as an ACIS-03 amendment there):
-+  * A NEIGHBOUR is the champion with ONE gene moved by ±`PLATEAU_STEP` (10%) of its own value,
-+    made valid exactly as QIEA makes a decoded gene valid: an integer gene is rounded as
-+    `decode_gene` rounds it, the value is clamped into its GENE_SPECS range, and the cross-field
-+    invariants (ema_slow > ema_fast, tp > sl) are repaired by `repair_invariants`. A neighbour
-+    is therefore never invalid, and a repair may move a second gene.
-+  * A move that lands back on the champion (the gene sits on its range bound, 10% is below an
-+    integer gene's resolution, or the repair undoes it) is not a neighbour: that side has nothing
-+    to test.
++  * A NEIGHBOUR is the champion with ONE gene moved by ±`PLATEAU_STEP` (10%) of that gene's
++    declared GENE_SPECS RANGE (hi − lo), so the step means the same thing on every gene (the lead's
++    delegated ruling on audit E6; a step of 10% of the VALUE moved rsi_overbought ~45% of its range
++    and ema_fast ~7%). It is made valid exactly as QIEA makes a decoded gene valid: an integer gene
++    is rounded as `decode_gene` rounds it, the value is clamped into its range, and the cross-field
++    invariants (ema_slow > ema_fast, tp > sl) are repaired by `repair_invariants`. A neighbour is
++    therefore never invalid, and a repair may move a second gene.
++  * A move that lands back on the champion (the gene sits on its range bound, or the repair undoes
++    it) is not a neighbour: that side has nothing to test. A repair can also carry a move PAST the
++    champion (tp − step ≤ sl repairs to sl + 0.1 > tp): `direction` is the ACTUAL signed move of
++    the perturbed gene after repair, never the intended one (audit F5).
 +  * A neighbour DIES when it fails the C9 gate on the champion's own TRAIN window: the fitness
 +    function scores it WORST_FITNESS (fewer than `fitness_min_trades` closed trades, or E_R <=
 +    `expectancy_min_r`). ANY dead neighbour fails the champion ("on any parameter").
@@ -601,7 +604,7 @@ index 0000000..a527b91
 +from core.optimizer.fitness import WORST_FITNESS
 +from core.optimizer.param_types import GENE_SPECS, repair_invariants
 +
-+PLATEAU_STEP = 0.10                      # master §5.6: "±10% on any parameter"
++PLATEAU_STEP = 0.10                      # master §5.6 "±10%", as a share of each gene's RANGE (E6)
 +
 +Genes = Mapping[str, "float | int"]
 +
@@ -609,7 +612,7 @@ index 0000000..a527b91
 +@dataclass(frozen=True)
 +class Neighbour:
 +    gene: str
-+    direction: int                       # +1: the gene moved up 10%, -1: down
++    direction: int                       # +1 / -1: the ACTUAL move of `gene` after repair (F5)
 +    genes: Mapping[str, "float | int"]   # the complete, valid neighbour
 +
 +
@@ -632,13 +635,14 @@ index 0000000..a527b91
 +
 +
 +def neighbours(genes: Genes) -> tuple[Neighbour, ...]:
-+    """Every distinct one-gene ±10% neighbour of `genes`, in GENE_SPECS order, down before up."""
-+    out = []
-+    for name in GENE_SPECS:
-+        for direction in (-1, 1):
-+            moved = repair_invariants({**genes, name: _moved(name, genes[name] * (1 + direction * PLATEAU_STEP))})
-+            if moved != dict(genes):
-+                out.append(Neighbour(name, direction, moved))
++    """Every distinct one-gene ±10%-of-range neighbour of `genes`, in GENE_SPECS order, the
++    intended down-move before the up-move; `direction` is the actual move after repair."""
++    out: list[Neighbour] = []
++    for name, (lo, hi, _) in GENE_SPECS.items():
++        for intended in (-1, 1):
++            moved = repair_invariants({**genes, name: _moved(name, genes[name] + intended * PLATEAU_STEP * (hi - lo))})
++            if moved != dict(genes) and all(moved != n.genes for n in out):
++                out.append(Neighbour(name, 1 if moved[name] > genes[name] else -1, moved))
 +    return tuple(out)
 +
 +
@@ -649,7 +653,7 @@ index 0000000..a527b91
 +    return PlateauVerdict(tested=len(hood),
 +                          dead=tuple(n for n in hood if fitness(n.genes) <= WORST_FITNESS))
 diff --git a/core/optimizer/qiea.py b/core/optimizer/qiea.py
-index 0f03d10..6446a0c 100644
+index 0f03d10..8793a1d 100644
 --- a/core/optimizer/qiea.py
 +++ b/core/optimizer/qiea.py
 @@ -28,7 +28,14 @@ from core.optimizer.fitness import (
@@ -688,7 +692,58 @@ index 0f03d10..6446a0c 100644
  def fitness_window(history: RegimeLabelledHistory, cfg: OptimizerConfig,
                     now: datetime) -> tuple[LabelledBar, ...]:
      """The bars evolution reads (master §5 v2.18, GAP-P12D-29): every target-regime bar that
-@@ -161,12 +155,14 @@ class QIEA:
+@@ -83,8 +77,19 @@ class _Individual:
+     fitness: float
+ 
+ 
++@dataclass(frozen=True)
++class EvolutionResult:
++    """`champion` is what may be STAGED (every gate passed). `candidate` is the champion that
++    consulted and passed the §6.3 holdout, whether the §5.6 plateau law then staged it or refused
++    it: it was evaluated and selected, so it stays a Deflated Sharpe trial (GAP-P12D-25; the audit
++    of GAP-P12D-34, finding F3 — dropping refused candidates would shrink N and loosen the gate)."""
++    champion: ParamSet | None
++    candidate: ParamSet | None
++
++
+ class QIEA:
+-    """Per-regime evolution. `evolve()` returns a ParamSet or None (§6.3 gates)."""
++    """Per-regime evolution. `evolve()` returns the stageable ParamSet or None (§6.3 gates);
++    `evolve_outcome()` also returns the holdout-passed candidate."""
+ 
+     def __init__(self, cfg: OptimizerConfig, costs: CostModel, logger, *,
+                  signal_bar_seconds: int, atr_period: int) -> None:
+@@ -127,14 +132,18 @@ class QIEA:
+ 
+     # -- evolution --------------------------------------------------------- #
+ 
+-    def evolve(
++    def evolve(self, regime: RegimeType, history: RegimeLabelledHistory, *, seed: int,
++               now: datetime | None = None) -> ParamSet | None:
++        return self.evolve_outcome(regime, history, seed=seed, now=now).champion
++
++    def evolve_outcome(
+         self,
+         regime: RegimeType,
+         history: RegimeLabelledHistory,
+         *,
+         seed: int,
+         now: datetime | None = None,
+-    ) -> ParamSet | None:
++    ) -> EvolutionResult:
+         cfg = self._cfg
+         if history.bar_seconds != self._bar_seconds:
+             raise DataQualityError(
+@@ -152,7 +161,7 @@ class QIEA:
+                 regime=regime.value, bars=len(bars), required=cfg.fitness_min_bars,
+                 span_days=cfg.fitness_span_days,
+             )
+-            return None
++            return EvolutionResult(None, None)
+ 
+         n_hold = max(1, round(len(bars) * cfg.holdout_fraction))
+         train, holdout = bars[:-n_hold], bars[-n_hold:]
+@@ -161,12 +170,14 @@ class QIEA:
          n_bits = len(_GENE_ORDER) * cfg.qbit_resolution
          thetas = [math.pi / 4] * n_bits  # sin^2(pi/4) = 0.5: unbiased superposition
          best: _Individual | None = None
@@ -703,24 +758,34 @@ index 0f03d10..6446a0c 100644
                  if best is None or fit > best.fitness:
                      best = _Individual(bits, genes, fit)
              thetas = self.rotate_toward(thetas, best.bits, cfg.rotation_angle_rad)
-@@ -179,6 +175,7 @@ class QIEA:
+@@ -179,7 +190,8 @@ class QIEA:
                  "EVOLUTION_REJECTED_TRAIN",
                  regime=regime.value, generations=cfg.generations, seed=seed,
              )
+-            return None
 +            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_TRAIN", evaluated)
-             return None
++            return EvolutionResult(None, None)
  
          champion = self._build_paramset(best.genes, regime, best.fitness, seed, evolved_at)
-@@ -195,6 +192,20 @@ class QIEA:
+ 
+@@ -195,7 +207,28 @@ class QIEA:
                  regime=regime.value, holdout_trades=hold_res.n_trades,
                  holdout_e_r=None if hold_res.e_r != hold_res.e_r else round(hold_res.e_r, 4),
              )
+-            return None
 +            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_OOS", evaluated, hold_res)
-+            return None
++            return EvolutionResult(None, None)
 +
 +        # §5.6 plateau law (GAP-P12D-34): a champion whose ±10% neighbourhood dies on the SAME
 +        # train window is a peak, not a strategy — refused, with every dead neighbour named.
-+        plateau = check_plateau(best.genes, lambda g: self._train_fitness(g, regime, train, evolved_at))
++        probed: list[list] = []               # [*genome, train fitness] per neighbour (audit F9)
++
++        def probe(genes: dict[str, float | int]) -> float:
++            fit = self._train_fitness(genes, regime, train, evolved_at)
++            probed.append([*(genes[g] for g in _GENE_ORDER), fit])
++            return fit
++
++        plateau = check_plateau(best.genes, probe)
 +        if not plateau.holds:
 +            self._log.event(
 +                "EVOLUTION_REJECTED_PLATEAU",
@@ -728,32 +793,36 @@ index 0f03d10..6446a0c 100644
 +                dead=[{"gene": n.gene, "direction": n.direction, "value": n.genes[n.gene]}
 +                      for n in plateau.dead],
 +            )
-+            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_PLATEAU", evaluated, hold_res)
-             return None
++            self._log_evaluations(regime, seed, "EVOLUTION_REJECTED_PLATEAU", evaluated, hold_res, probed)
++            return EvolutionResult(None, champion)   # refused, yet a DSR trial (F3)
  
          self._log.event(
-@@ -203,8 +214,21 @@ class QIEA:
+             "EVOLUTION_RUN",
+@@ -203,7 +236,23 @@ class QIEA:
              generations=cfg.generations, seed=seed,
              train_bars=len(train), holdout_bars=len(holdout),
          )
-+        self._log_evaluations(regime, seed, "EVOLUTION_RUN", evaluated, hold_res)
-         return champion
- 
+-        return champion
++        self._log_evaluations(regime, seed, "EVOLUTION_RUN", evaluated, hold_res, probed)
++        return EvolutionResult(champion, champion)
++
 +    def _log_evaluations(self, regime: RegimeType, seed: int, outcome: str,
-+                         evaluated: dict[tuple, list], hold_res=None) -> None:
-+        """GAP-P12D-33 [impl], logging only: EVERY genome this run evaluated (its train fitness and
-+        how often it was drawn), whichever gate ended the run, so PBO/CSCV and an honest attempt
-+        count can be computed later by re-simulating the recorded genomes. No gate reads it."""
++                         evaluated: dict[tuple, list], hold_res=None, probed=()) -> None:
++        """GAP-P12D-33 [impl], logging only: every genome this run evaluated, whichever gate ended
++        it — `evaluated` holds the evolution draws (train fitness + draw count), `neighbours` the
++        §5.6 plateau neighbours (genome + train fitness; empty when no plateau check ran) — so
++        PBO/CSCV and an honest attempt count can be computed later by re-simulating them. No gate
++        reads it."""
 +        self._log.event(
 +            "EVOLUTION_EVALUATIONS", regime=regime.value, seed=seed, outcome=outcome,
 +            genes=_GENE_ORDER, evaluated=[[*k, fit, n] for k, (fit, n) in evaluated.items()],
++            neighbours=list(probed),
 +            holdout_trades=None if hold_res is None else hold_res.n_trades,
 +            holdout_e_r=None if hold_res is None or hold_res.e_r != hold_res.e_r else hold_res.e_r,
 +        )
-+
+ 
      def _train_fitness(
          self,
-         genes: dict[str, float | int],
 diff --git a/scripts/falsify_engine.py b/scripts/falsify_engine.py
 index 93c7da6..9101e0b 100644
 --- a/scripts/falsify_engine.py
@@ -838,6 +907,56 @@ index 93c7da6..9101e0b 100644
      if a.quick:
          print("quick run: a shape check only — under two graded years nothing can pass, so no verdict")
          return 3
+diff --git a/tests/backtest/evolve_step.py b/tests/backtest/evolve_step.py
+index 6d887c6..4b34a38 100644
+--- a/tests/backtest/evolve_step.py
++++ b/tests/backtest/evolve_step.py
+@@ -14,8 +14,10 @@ Invariants:
+   * Seeds derive from (fold, regime, instrument), so a rerun reproduces every champion
+     (ACIS-03 §3).
+   * The returned record is the fold's in-sample transparency record. `trial_sharpes` holds
+-    the holdout per-trade Sharpe of EVERY candidate champion (every instrument × regime that
+-    produced one): the selection set the Deflated Sharpe deflates by (owner ruling GAP-P12D-25).
++    the holdout per-trade Sharpe of EVERY candidate champion (every instrument × regime whose
++    champion passed the holdout): the selection set the Deflated Sharpe deflates by (owner
++    ruling GAP-P12D-25). A candidate the §5.6 plateau law refuses is still a trial — it was
++    evaluated and selected — and is marked `plateau_refused`; only a staged one is a champion.
+ """
+ 
+ from __future__ import annotations
+@@ -87,22 +89,24 @@ def evolve_fold(loop, fd, *, cfg: AcisConfig, costs: Mapping[str, CostModel],
+             history = cache.history(instrument, regime, window_start, train_end, None)
+             qiea = QIEA(opt, cost, logger, signal_bar_seconds=sig.signal_bar_seconds,
+                         atr_period=sig.atr_period)
+-            champion = qiea.evolve(regime, history, seed=seed_for(fd.fold.index, regime, instrument),
+-                                   now=train_end)
++            result = qiea.evolve_outcome(regime, history, now=train_end,
++                                         seed=seed_for(fd.fold.index, regime, instrument))
++            champion, candidate = result.champion, result.candidate
+             entry = {"instrument": instrument, "bars": len(history.bars), "champion": champion is not None,
+                      "first_bar": history.bars[0].ts.isoformat() if history.bars else None,
+                      "last_bar": history.bars[-1].ts.isoformat() if history.bars else None}
+-            if champion is not None:
+-                champions += 1
+-                pnls = holdout_pnls(champion, history, opt, cost, sig.atr_period, train_end)
++            if candidate is not None:        # passed the holdout: a trial even if the plateau refused it
++                pnls = holdout_pnls(candidate, history, opt, cost, sig.atr_period, train_end)
+                 res, m = expectancy_r(pnls), moments(pnls)
+                 sharpe = m.sharpe if m is not None else None
+                 if sharpe is not None:
+                     trial_sharpes.append(sharpe)
+-                entry.update(fitness=champion.fitness_score, holdout_e_r=res.e_r,
++                entry.update(fitness=candidate.fitness_score, holdout_e_r=res.e_r,
+                              holdout_trades=res.n_trades, holdout_trade_sharpe=sharpe,
+-                             param_set_id=champion.param_set_id)
+-                if best is None or res.e_r > best["holdout_e_r"]:
++                             param_set_id=candidate.param_set_id, plateau_refused=champion is None)
++            if champion is not None:
++                champions += 1
++                if best is None or entry["holdout_e_r"] > best["holdout_e_r"]:
+                     best, best_params = entry, champion
+             candidates.append(entry)
+         if best_params is not None:
 diff --git a/tests/backtest/harness.py b/tests/backtest/harness.py
 index 111db76..412b56a 100644
 --- a/tests/backtest/harness.py
@@ -902,16 +1021,16 @@ index 9fb0483..57cabd3 100644
  
 diff --git a/tests/backtest/oracle.py b/tests/backtest/oracle.py
 new file mode 100644
-index 0000000..65fd1d3
+index 0000000..3f8f284
 --- /dev/null
 +++ b/tests/backtest/oracle.py
-@@ -0,0 +1,188 @@
+@@ -0,0 +1,198 @@
 +"""The oracle positive control (GAP-P12D-37): a strategy KNOWN to be good, graded by the SAME
 +harness, book, C8 cost map, metrics and §14 report as the engine.
 +
 +The oracle knows the planted episode state perfectly (`SyntheticMarket.episode_sign`): on every
-+graded tick it holds `ORACLE_UNITS` in the direction of the episode in force and reverses the
-+moment the state changes. It never sees the noise and never sees the NEXT episode, so its edge
++graded tick it holds one NAV of USD notional (`NOTIONAL_FRACTION`) per instrument in the direction
++of the episode in force and reverses the moment the state changes. It never sees the noise and never sees the NEXT episode, so its edge
 +is exactly the planted edge. On null and permuted it holds the SAME signs, which move no price
 +there: knowing the sign of a zero drift is worthless.
 +
@@ -949,11 +1068,12 @@ index 0000000..65fd1d3
 +from tests.backtest.data_loader import BacktestDataLoader
 +from tests.backtest.evolve_step import cost_model
 +from tests.backtest.harness import Backtest, FoldData, per_trade_returns
++from tests.backtest.money import quote_to_account
 +from tests.backtest.report import _MIN_FOLDS, _MIN_TRADES, _MIN_YEARS, ValidationReport
 +from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, synthetic_spx
 +from tests.backtest.walk_forward import Fold
 +
-+ORACLE_UNITS = Decimal("10000")        # 0.1 standard lot per instrument
++NOTIONAL_FRACTION = Decimal("1")       # USD notional per instrument, as a fraction of NAV (E9)
 +STRATEGY = "ORACLE"                    # graded inside the §14 duration band (no carve-out)
 +CAVEAT = ("ORACLE positive control: the decision layers are replaced by perfect knowledge of "
 +          "the planted episode state; it selects nothing, so its trial record is empty and the "
@@ -1001,17 +1121,26 @@ index 0000000..65fd1d3
 +class OracleLoop:
 +    """The loop surface `Backtest` drives: `on_state`, `observe_only`, `book`, `params`."""
 +
-+    def __init__(self, market: SyntheticMarket, units: Decimal = ORACLE_UNITS) -> None:
++    def __init__(self, market: SyntheticMarket, nav: Decimal) -> None:
 +        self.book = _Orders()
 +        self.params = _NoParams()
 +        self._market = market
-+        self._units = units
++        self._notional = nav * NOTIONAL_FRACTION
++        self._last: dict[str, float] = {}                   # every instrument's last mid (crosses)
 +        self._held: dict[str, tuple[int, object]] = {}      # instrument -> (sign, UTC day)
 +
++    def units(self, instrument: str, mid: float) -> Decimal:
++        """Whole units whose USD notional is `NOTIONAL_FRACTION` of NAV (audit E9: a fixed unit
++        count made gold 10,000 oz = $18M on a $10k account), converted exactly as the book books
++        PnL (`money.quote_to_account`)."""
++        usd_per_unit = Decimal(str(mid)) * quote_to_account(instrument, mid, self._last)
++        return Decimal(int(self._notional / usd_per_unit))
++
 +    def observe_only(self, st: OracleTick) -> None:
-+        return None                                         # warm-up decides nothing
++        self._last[st.instrument] = st.mid                  # warm-up decides nothing
 +
 +    def on_state(self, st: OracleTick) -> None:
++        self._last[st.instrument] = st.mid
 +        sign = int(self._market.episode_sign(st.instrument, st.timestamp))
 +        key = (sign, st.timestamp.date())
 +        if self._held.get(st.instrument) == key:
@@ -1020,7 +1149,7 @@ index 0000000..65fd1d3
 +        oid = f"oracle-{len(self.book.orders)}"
 +        self.book.orders.append(SizedOrder(
 +            order_id=oid, signal_id=oid, instrument=st.instrument, direction=sign,
-+            size_units=self._units, entry_price=st.mid,
++            size_units=self.units(st.instrument, st.mid), entry_price=st.mid,
 +            # a stop no planted episode reaches: the oracle exits by reversing, never by stop
 +            stop_loss=st.mid * (0.5 if sign > 0 else 2.0), take_profit=None,
 +            reason="oracle: the planted episode in force",
@@ -1053,7 +1182,7 @@ index 0000000..65fd1d3
 +
 +    limits = guardrail_hash(cfg.guardrails)
 +    report = bt.run(
-+        loop=OracleLoop(market),
++        loop=OracleLoop(market, nav=bt.portfolio_state().nav),
 +        folds=[FoldData(f, stream(f.test_start, f.test_end), warmup_states=stream(f.train_end, f.test_start))
 +               for f in folds],
 +        evolve_fn=lambda lp, fd: {"fold": fd.fold.index, "champions": 0, "trial_sharpes": [], "regimes": {}},
@@ -1271,10 +1400,19 @@ index 564e225..a43265e 100644
  
      def _path(self, instrument: str) -> array:
 diff --git a/tests/backtest/test_evolve_step.py b/tests/backtest/test_evolve_step.py
-index 86a10b1..1c64779 100644
+index 86a10b1..41057e6 100644
 --- a/tests/backtest/test_evolve_step.py
 +++ b/tests/backtest/test_evolve_step.py
-@@ -42,7 +42,9 @@ def _run(tmp_path, acis_config, n_bars: int):
+@@ -7,6 +7,8 @@ import random
+ from datetime import timedelta
+ from types import SimpleNamespace
+ 
++from core.optimizer.plateau import PlateauVerdict
++from core.optimizer.qiea import EvolutionResult
+ from tests.backtest.evolve_step import cost_model, evolve_fold
+ 
+ 
+@@ -42,7 +44,9 @@ def _run(tmp_path, acis_config, n_bars: int):
      for instrument in ("EUR_USD", "USD_JPY"):
          cache.write(instrument, T0.year, bars)
      loop = SimpleNamespace(params=_Stager())
@@ -1285,6 +1423,49 @@ index 86a10b1..1c64779 100644
                  TRAIN_END + timedelta(days=365))
      cfg = _cfg(acis_config)
      record = evolve_fold(loop, FoldData(fold, ()), cfg=cfg, costs=_costs(cfg), cache=cache,
+@@ -101,8 +105,9 @@ class _FixedQIEA:
+     def __init__(self, *args, **kwargs) -> None:
+         pass
+ 
+-    def evolve(self, regime, history, *, seed, now):
+-        return make_paramset(regime=regime) if history.bars else None
++    def evolve_outcome(self, regime, history, *, seed, now):
++        p = make_paramset(regime=regime) if history.bars else None
++        return EvolutionResult(p, p)
+ 
+ 
+ def test_every_candidate_champion_with_a_sharpe_is_a_trial(tmp_path, acis_config, monkeypatch) -> None:
+@@ -124,3 +129,30 @@ def test_every_candidate_champion_with_a_sharpe_is_a_trial(tmp_path, acis_config
+     # both candidates are trials, even though only one of them is staged
+     assert record["trial_sharpes"] == [eur["holdout_trade_sharpe"], jpy["holdout_trade_sharpe"]]
+     assert len(loop.params.staged) == 1
++
++
++def test_a_plateau_refused_candidate_stays_a_deflated_sharpe_trial(tmp_path, acis_config, monkeypatch) -> None:
++    """Audit F3: the §5.6 plateau law runs AFTER the holdout gate, so a candidate it refuses has
++    already been scored on the holdout. It must stay in the DSR selection set (GAP-P12D-25), or the
++    law shrinks N and loosens the ratified gate. Fold 0 of this noisy zigzag stages a champion with
++    the law off ("base") and refuses it with the law on ("head"): both must count the same trials."""
++    rng = random.Random(3)
++    closes = [c + rng.gauss(0, 0.00015) for c in zigzag_closes(600)]
++    cfg = _cfg(acis_config)
++
++    def run(root):
++        cache = LabelledBarCache(root, SPEC)
++        for instrument in ("EUR_USD", "USD_JPY"):
++            cache.write(instrument, T0.year, bars_from_closes(closes))
++        fold = Fold(0, T0, TRAIN_END, TRAIN_END + timedelta(days=7), TRAIN_END + timedelta(days=365))
++        return evolve_fold(SimpleNamespace(params=_Stager()), FoldData(fold, ()), cfg=cfg, costs=_costs(cfg),
++                           cache=cache, instruments=["EUR_USD", "USD_JPY"], logger=CapturingLogger())
++
++    head = run(tmp_path / "head")
++    monkeypatch.setattr("core.optimizer.qiea.check_plateau", lambda genes, fitness: PlateauVerdict(0, ()))
++    base = run(tmp_path / "base")
++    assert (head["champions"], base["champions"]) == (0, 1)            # the fixture exercises a refusal
++    assert head["trial_sharpes"] == base["trial_sharpes"] and len(head["trial_sharpes"]) == 1
++    refused = [c for r in head["regimes"].values() for c in r["candidates"] if c.get("plateau_refused")]
++    assert len(refused) == 1 and not refused[0]["champion"]
++    assert refused[0]["holdout_trade_sharpe"] == head["trial_sharpes"][0]
 diff --git a/tests/backtest/test_metrics_exact.py b/tests/backtest/test_metrics_exact.py
 index 523082f..a6886b4 100644
 --- a/tests/backtest/test_metrics_exact.py
@@ -1301,10 +1482,10 @@ index 523082f..a6886b4 100644
  def test_rolling_var_breach_rate_second_breach_and_divisors() -> None:
 diff --git a/tests/backtest/test_oracle_control.py b/tests/backtest/test_oracle_control.py
 new file mode 100644
-index 0000000..442b761
+index 0000000..af10a52
 --- /dev/null
 +++ b/tests/backtest/test_oracle_control.py
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,195 @@
 +"""The oracle positive control (GAP-P12D-37): the harness must RECOGNISE a strategy known to be
 +good, and must REFUSE the same logic where its knowledge is worthless.
 +
@@ -1323,6 +1504,7 @@ index 0000000..442b761
 +import sys
 +from concurrent.futures import ThreadPoolExecutor
 +from datetime import timedelta
++from decimal import Decimal
 +from pathlib import Path
 +
 +import pytest
@@ -1330,7 +1512,9 @@ index 0000000..442b761
 +from config.account_doctrine import guardrail_hash
 +from config.schemas import load_config
 +from tests.backtest.data_loader import BacktestDataLoader
-+from tests.backtest.oracle import STRATEGY, grade_oracle, non_dsr_failures, oracle_ticks, void_reasons
++from tests.backtest.money import quote_to_account
++from tests.backtest.oracle import (NOTIONAL_FRACTION, STRATEGY, OracleLoop, OracleTick, grade_oracle,
++                                   non_dsr_failures, oracle_ticks, void_reasons)
 +from tests.backtest.synthetic_grade import FIRST_MID, START, plan
 +from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, episodes
 +from tests.backtest.test_metrics_and_grader import GH, _block, _report
@@ -1391,6 +1575,20 @@ index 0000000..442b761
 +        instruments=insts, start=start, end=end)]
 +    assert ours == theirs and len(ours) > 500                            # and the weekend cut applied
 +    assert max(t[0] for t in ours) < START + timedelta(days=4, hours=22)
++
++
++def test_the_oracle_sizes_one_nav_of_notional_on_every_instrument() -> None:
++    """Audit E9: a fixed 10,000 units was $11k of EUR/USD but $18M of gold on a $10k account.
++    Each order's USD notional is NAV x NOTIONAL_FRACTION, to within one unit's value."""
++    prices = (("EUR_USD", 1.10), ("USD_JPY", 110.0), ("XAU_USD", 1800.0))
++    loop = OracleLoop(SyntheticMarket(MarketSpec("planted", START, 7, prices)), nav=Decimal("10000"))
++    for inst, px in prices:
++        loop.on_state(OracleTick(START, inst, px - 1e-4, px + 1e-4, 2e-4, px))
++    target = Decimal("10000") * NOTIONAL_FRACTION
++    for order, (inst, px) in zip(loop.book.orders, prices):
++        usd_per_unit = Decimal(str(px)) * quote_to_account(inst, px, {})
++        assert target - usd_per_unit < order.size_units * usd_per_unit <= target, (inst, order.size_units)
++    assert [o.size_units for o in loop.book.orders] == [Decimal(9090), Decimal(10000), Decimal(5)]
 +
 +
 +def test_non_dsr_failures_is_every_clause_of_passed_but_the_trials() -> None:
@@ -1588,12 +1786,25 @@ index 0000000..2f99168
 +    assert zero.scalp_avg_duration_s == 0.0                      # a REAL zero is still visible
 +    empty_band = _metrics([_trade(30, "TSMOM")])
 +    assert math.isnan(empty_band.avg_trade_duration_s)
+diff --git a/tests/integration/test_qiea_promotion_cycle.py b/tests/integration/test_qiea_promotion_cycle.py
+index 3cfa015..8cbc4bf 100644
+--- a/tests/integration/test_qiea_promotion_cycle.py
++++ b/tests/integration/test_qiea_promotion_cycle.py
+@@ -56,7 +56,7 @@ def test_full_promotion_cycle_with_stall_restart_and_nvma_gate(tmp_path, acis_co
+ 
+     # 2. QIEA evolves offline and stages — active stays empty (write-only-to-pending).
+     qiea = QIEA(opt_cfg(), TEST_COSTS, log, signal_bar_seconds=60, atr_period=14)
+-    champion = qiea.evolve(RegimeType.STRONG_TREND_UP, zigzag_history(500), seed=42, now=T0)
++    champion = qiea.evolve(RegimeType.STRONG_TREND_UP, zigzag_history(500), seed=5, now=T0)   # seed 42: plateau-refused (§5.6, GAP-P12D-34)
+     assert champion is not None
+     lib.stage(champion, now=BOUNDARY_0 - timedelta(hours=2))
+     assert lib.get_active(RegimeType.STRONG_TREND_UP) is None
 diff --git a/tests/unit/test_evaluation_registry.py b/tests/unit/test_evaluation_registry.py
 new file mode 100644
-index 0000000..a64f799
+index 0000000..dfd444f
 --- /dev/null
 +++ b/tests/unit/test_evaluation_registry.py
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,110 @@
 +"""Every QIEA evaluation is recorded, whichever gate ends the run (GAP-P12D-33 [impl], logging only).
 +
 +Before this, only champions were recorded: a run the train, holdout or plateau gate refused left no
@@ -1630,9 +1841,9 @@ index 0000000..a64f799
 +
 +def test_a_staged_run_records_every_draw_and_the_rows_re_simulate() -> None:
 +    history = zigzag_history(500)
-+    qiea, champ, log = _evolve(history, 42)
++    qiea, champ, log = _evolve(history, 5)
 +    reg = _registry(log)
-+    assert champ is not None and reg["outcome"] == "EVOLUTION_RUN" and reg["seed"] == 42
++    assert champ is not None and reg["outcome"] == "EVOLUTION_RUN" and reg["seed"] == 5
 +    assert reg["genes"] == list(GENE_SPECS)
 +    assert sum(row[-1] for row in reg["evaluated"]) == DRAWS                 # every draw counted
 +    assert len({tuple(row[:-2]) for row in reg["evaluated"]}) == len(reg["evaluated"])   # distinct
@@ -1681,15 +1892,35 @@ index 0000000..a64f799
 +    assert sum(row[-1] for row in reg["evaluated"]) == 600               # and every draw is counted
 +
 +
++def test_the_plateau_neighbours_are_recorded_too() -> None:
++    """Audit F9: a run that reaches the §5.6 plateau check evaluates each neighbour on train; those
++    evaluations are recorded under `neighbours` and re-simulate to their logged fitness. Seed 7's
++    two dead neighbours are exactly the WORST rows; a gate-ended run records none."""
++    history = zigzag_history(500)
++    qiea, champ, log = _evolve(history, 7)
++    reg, (refusal,) = _registry(log), log.events("EVOLUTION_REJECTED_PLATEAU")
++    assert champ is None and len(reg["neighbours"]) == refusal["data"]["neighbours"] == 22
++    assert sum(row[-1] == WORST_FITNESS for row in reg["neighbours"]) == len(refusal["data"]["dead"]) == 2
++    bars = fitness_window(history, CFG, T0)
++    train = bars[:-max(1, round(len(bars) * CFG.holdout_fraction))]
++    for row in reg["neighbours"][:4]:
++        assert qiea._train_fitness(dict(zip(reg["genes"], row[:-1])), REGIME, train, T0) == row[-1]
++    _, staged, log = _evolve(history, 5)
++    assert staged is not None and len(_registry(log)["neighbours"]) > 0
++    closes = [1.1] * 400 + zigzag_closes(100, base=1.1)                  # gated on train: no plateau
++    _, _, log = _evolve(RegimeLabelledHistory("EUR_USD", bars_from_closes(closes, REGIME), 60), 42)
++    assert _registry(log)["neighbours"] == []
++
++
 +def test_nothing_evaluated_nothing_recorded() -> None:
 +    _, champ, log = _evolve(zigzag_history(80), 1)                       # under fitness_min_bars
 +    assert champ is None and log.events("EVOLUTION_EVALUATIONS") == []
 diff --git a/tests/unit/test_plateau_law.py b/tests/unit/test_plateau_law.py
 new file mode 100644
-index 0000000..0d0253e
+index 0000000..465e0ca
 --- /dev/null
 +++ b/tests/unit/test_plateau_law.py
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,128 @@
 +"""The §5.6 parameter-plateau law (master §5.6, GAP-P12D-34), hand-worked.
 +
 +"Parameter plateaus required — a strategy that dies at ±10% on any parameter fails." Before
@@ -1719,40 +1950,53 @@ index 0000000..0d0253e
 +    return {(n.gene, n.direction): n.genes[n.gene] for n in neighbours(genes)}
 +
 +
-+def test_every_gene_moves_ten_percent_each_way_and_nothing_else_moves() -> None:
++def test_every_gene_moves_ten_percent_of_its_range_each_way_and_nothing_else_moves() -> None:
++    """The step is 10% of each gene's declared RANGE (audit E6, the lead's delegated ruling):
++    ema_fast 45 x 0.1 = 4.5, ema_slow 18, rsi_period 1.4, rsi thresholds 1.5, sl 0.25, tp 0.35,
++    momentum 4.5, breakout 0.15, zscore 0.1, max_holding 4.7 — then decode_gene's rounding."""
 +    assert PLATEAU_STEP == 0.10
 +    moves = _moves(CHAMPION)
 +    assert moves == pytest.approx({
-+        ("ema_fast", -1): 9, ("ema_fast", 1): 11, ("ema_slow", -1): 90, ("ema_slow", 1): 110,
-+        ("rsi_period", -1): 9, ("rsi_period", 1): 11,
-+        ("rsi_overbought", -1): 65.0, ("rsi_overbought", 1): 77.0,        # 63 clamps to the 65 floor
-+        ("rsi_oversold", -1): 27.0, ("rsi_oversold", 1): 33.0,
-+        ("atr_multiplier_sl", -1): 1.8, ("atr_multiplier_sl", 1): 2.2,
-+        ("atr_multiplier_tp", -1): 2.7, ("atr_multiplier_tp", 1): 3.3,
-+        ("momentum_lookback", -1): 18, ("momentum_lookback", 1): 22,
-+        ("breakout_atr_threshold", -1): 0.9, ("breakout_atr_threshold", 1): 1.1,
-+        ("mean_rev_zscore_entry", -1): 1.8, ("mean_rev_zscore_entry", 1): 2.2,
-+        ("max_holding_periods", -1): 9, ("max_holding_periods", 1): 11})
++        ("ema_fast", -1): 6, ("ema_fast", 1): 14,                        # 5.5 -> 6, 14.5 -> 14 (half-even)
++        ("ema_slow", -1): 82, ("ema_slow", 1): 118,
++        ("rsi_period", -1): 9, ("rsi_period", 1): 11,                    # 8.6 -> 9, 11.4 -> 11
++        ("rsi_overbought", -1): 68.5, ("rsi_overbought", 1): 71.5,
++        ("rsi_oversold", -1): 28.5, ("rsi_oversold", 1): 31.5,
++        ("atr_multiplier_sl", -1): 1.75, ("atr_multiplier_sl", 1): 2.25,
++        ("atr_multiplier_tp", -1): 2.65, ("atr_multiplier_tp", 1): 3.35,
++        ("momentum_lookback", -1): 16, ("momentum_lookback", 1): 24,     # 15.5 -> 16, 24.5 -> 24
++        ("breakout_atr_threshold", -1): 0.85, ("breakout_atr_threshold", 1): 1.15,
++        ("mean_rev_zscore_entry", -1): 1.9, ("mean_rev_zscore_entry", 1): 2.1,
++        ("max_holding_periods", -1): 5, ("max_holding_periods", 1): 15})  # 5.3 -> 5, 14.7 -> 15
 +    for n in neighbours(CHAMPION):                                      # ONE gene moves
 +        assert {k for k in GENE_SPECS if n.genes[k] != CHAMPION[k]} == {n.gene}
 +        lo, hi, is_int = GENE_SPECS[n.gene]
 +        assert lo <= n.genes[n.gene] <= hi and isinstance(n.genes[n.gene], int) is is_int
 +
 +
-+def test_bounds_resolution_and_invariants_are_respected() -> None:
++def test_bounds_and_invariants_are_respected() -> None:
 +    edge = dict(CHAMPION, rsi_overbought=65.0, max_holding_periods=3, ema_fast=25,
 +                ema_slow=26, atr_multiplier_sl=2.9)
 +    moves = _moves(edge)
-+    assert ("rsi_overbought", -1) not in moves and moves[("rsi_overbought", 1)] == pytest.approx(71.5)
-+    # 3 -> 2.7 and 3.3 both round back to 3: below the gene's resolution, no neighbour either side
-+    assert ("max_holding_periods", -1) not in moves and ("max_holding_periods", 1) not in moves
-+    # decode_gene's rounding: 22.5 -> 22 (half to even), 27.5 -> 28
-+    assert moves[("ema_fast", -1)] == 22 and moves[("ema_fast", 1)] == 28
++    assert ("rsi_overbought", -1) not in moves and moves[("rsi_overbought", 1)] == pytest.approx(66.5)
++    # 3 - 4.7 rounds to -2 and clamps to the floor 1; 3 + 4.7 = 7.7 -> 8
++    assert moves[("max_holding_periods", -1)] == 1 and moves[("max_holding_periods", 1)] == 8
++    # decode_gene's rounding: 20.5 -> 20, 29.5 -> 30 (half to even)
++    assert moves[("ema_fast", -1)] == 20 and moves[("ema_fast", 1)] == 30
 +    hood = {(n.gene, n.direction): n.genes for n in neighbours(edge)}
-+    assert hood[("ema_fast", 1)]["ema_slow"] == 29                      # 28 >= 26: slow repaired to 29
-+    assert hood[("atr_multiplier_sl", 1)]["atr_multiplier_tp"] == pytest.approx(3.29)   # 3.19 >= 3.0
-+    # tp 3.0 -> 2.7 <= sl 2.9 repairs straight back to 3.0: that side has no neighbour
-+    assert ("atr_multiplier_tp", -1) not in moves
++    assert hood[("ema_fast", 1)]["ema_slow"] == 31                      # 30 >= 26: slow repaired to 31
++    assert hood[("atr_multiplier_sl", 1)]["atr_multiplier_tp"] == pytest.approx(3.25)   # 3.15 >= 3.0
++    # ema_slow 26 - 18 clamps to 20 <= fast 25 and repairs back to 26; tp 3.0 - 0.35 <= sl 2.9
++    # repairs back to 3.0: neither side exists
++    assert ("ema_slow", -1) not in moves and ("atr_multiplier_tp", -1) not in moves
++
++
++def test_a_repair_that_carries_the_move_past_the_champion_is_logged_as_it_happened() -> None:
++    """Audit F5: tp 2.05 over sl 2.0 — the down-move 2.05 - 0.35 = 1.70 <= sl repairs to
++    sl + 0.1 = 2.10, ABOVE the champion. It is a neighbour, and its direction is the actual +1."""
++    tight = dict(CHAMPION, atr_multiplier_sl=2.0, atr_multiplier_tp=2.05)
++    tp = [(n.direction, n.genes["atr_multiplier_tp"]) for n in neighbours(tight) if n.gene == "atr_multiplier_tp"]
++    assert tp == [(1, pytest.approx(2.10)), (1, pytest.approx(2.40))]
 +
 +
 +def test_a_single_dead_neighbour_fails_the_champion_and_is_named() -> None:
@@ -1760,8 +2004,8 @@ index 0000000..0d0253e
 +        return 0.5 if genes["ema_fast"] <= 10 else WORST_FITNESS
 +    verdict = check_plateau(CHAMPION, cliff)
 +    assert verdict.tested == 22 and not verdict.holds
-+    assert [(n.gene, n.direction, n.genes["ema_fast"]) for n in verdict.dead] == [("ema_fast", 1, 11)]
-+    assert check_plateau(dict(CHAMPION, ema_fast=8), cliff).holds        # 8 -> 7 and 9: a plateau
++    assert [(n.gene, n.direction, n.genes["ema_fast"]) for n in verdict.dead] == [("ema_fast", 1, 14)]
++    assert check_plateau(dict(CHAMPION, ema_fast=5), cliff).holds        # 5 -> floor and 9.5 -> 10: a plateau
 +
 +
 +def _qiea(cls=QIEA) -> tuple[QIEA, CapturingLogger]:
@@ -1770,15 +2014,16 @@ index 0000000..0d0253e
 +
 +
 +def test_qiea_refuses_the_same_champion_once_its_neighbourhood_dies() -> None:
-+    """Seed 42 stages a champion on a plateau. Dig a trench at exactly its two ±10%
-+    max_holding_periods neighbours (real fitness everywhere else): QIEA reaches the SAME champion,
-+    clears C9 on train and holdout, and the plateau law alone refuses it, naming both."""
++    """Seed 5 stages a champion on a plateau. Dig a trench at exactly its two ±10%-of-range
++    max_holding_periods neighbours (m ± 4.7, rounded, clamped to 1..48; real fitness everywhere
++    else): QIEA reaches the SAME champion, clears C9 on train and holdout, and the plateau law
++    alone refuses it, naming both."""
 +    qiea, log = _qiea()
-+    champ = qiea.evolve(REGIME, zigzag_history(500), seed=42, now=T0)
++    champ = qiea.evolve(REGIME, zigzag_history(500), seed=5, now=T0)
 +    assert champ is not None and log.events("EVOLUTION_REJECTED_PLATEAU") == []
 +    assert len(log.events("EVOLUTION_RUN")) == 1
 +    m = champ.max_holding_periods
-+    trench = {int(round(m * 0.9)), int(round(m * 1.1))} - {m}
++    trench = {max(1, int(round(m - 4.7))), min(48, int(round(m + 4.7)))} - {m}
 +    assert len(trench) == 2, m                                          # fixture precondition
 +
 +    class _Trench(QIEA):
@@ -1788,7 +2033,7 @@ index 0000000..0d0253e
 +            return super()._train_fitness(genes, regime, train, evolved_at)
 +
 +    trenched, log = _qiea(_Trench)
-+    assert trenched.evolve(REGIME, zigzag_history(500), seed=42, now=T0) is None
++    assert trenched.evolve(REGIME, zigzag_history(500), seed=5, now=T0) is None
 +    (event,) = log.events("EVOLUTION_REJECTED_PLATEAU")
 +    assert event["data"]["champion"] == champ.gene_values()             # the SAME champion
 +    assert {(d["gene"], d["direction"], d["value"]) for d in event["data"]["dead"]} == {
@@ -1797,31 +2042,55 @@ index 0000000..0d0253e
 +
 +
 +def test_a_knife_edge_champion_on_the_real_landscape_is_refused() -> None:
-+    """Seed 7's zigzag champion (staged before the law) dies when rsi_period moves 10%."""
++    """Seed 7's zigzag champion (staged before the law) dies when ema_fast or rsi_period moves
++    10% of its range."""
 +    qiea, log = _qiea()
 +    assert qiea.evolve(REGIME, zigzag_history(500), seed=7, now=T0) is None
 +    (event,) = log.events("EVOLUTION_REJECTED_PLATEAU")
-+    assert [d["gene"] for d in event["data"]["dead"]] == ["rsi_period"]
++    assert sorted(d["gene"] for d in event["data"]["dead"]) == ["ema_fast", "rsi_period"]
 +    assert event["data"]["neighbours"] == 22
 diff --git a/tests/unit/test_qiea.py b/tests/unit/test_qiea.py
-index cd0d5ce..8c85bb6 100644
+index cd0d5ce..ec6b61e 100644
 --- a/tests/unit/test_qiea.py
 +++ b/tests/unit/test_qiea.py
-@@ -70,9 +70,10 @@ def test_evolve_returns_valid_paramset_and_logs_run() -> None:
+@@ -59,20 +59,22 @@ def test_repair_tp_sl_invariant() -> None:
+ # ---------------------------- evolution gates -------------------------------- #
+ 
+ def test_evolve_returns_valid_paramset_and_logs_run() -> None:
++    # seed 5: seed 42's zigzag champion (ema_fast 6) dies at ema_fast +10% of range (§5.6, GAP-P12D-34)
+     qiea, log = make_qiea()
+-    ps = qiea.evolve(REGIME, zigzag_history(500), seed=42, now=T0)
++    ps = qiea.evolve(REGIME, zigzag_history(500), seed=5, now=T0)
+     assert ps is not None
+     assert ps.regime is REGIME  # ParamSet construction already proved ranges+invariants
+     runs = log.events("EVOLUTION_RUN")
+     assert len(runs) == 1
+-    assert runs[0]["data"]["seed"] == 42
++    assert runs[0]["data"]["seed"] == 5
+     assert runs[0]["data"]["train_bars"] == 400 and runs[0]["data"]["holdout_bars"] == 100
  
  
  def test_same_seed_same_history_identical_champion() -> None:
 -    """Â§3 determinism scope: reproducibility is the binding requirement."""
 -    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=7, now=T0)
 -    b = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=7, now=T0)
-+    """Â§3 determinism scope: reproducibility is the binding requirement. (Seed 9: seed 7's
++    """Â§3 determinism scope: reproducibility is the binding requirement. (Seed 5: seed 7's
 +    champion is a knife-edge the §5.6 plateau law now refuses — pinned in test_plateau_law.py.)"""
-+    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=9, now=T0)
-+    b = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=9, now=T0)
++    a = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=5, now=T0)
++    b = make_qiea()[0].evolve(REGIME, zigzag_history(500), seed=5, now=T0)
      assert a is not None and b is not None
      assert a.gene_values() == b.gene_values()
      assert a.param_set_id == b.param_set_id
-@@ -122,11 +123,12 @@ def test_evolves_on_every_bar_inside_the_span_not_a_bar_count() -> None:
+@@ -113,7 +115,7 @@ def test_evolves_on_every_bar_inside_the_span_not_a_bar_count() -> None:
+     window = fitness_window(history, cfg, now)
+     assert len(window) == 1440 and window[0].ts == now - timedelta(days=1)
+     qiea, log = make_qiea(cfg)
+-    assert qiea.evolve(REGIME, history, seed=42, now=now) is not None
++    assert qiea.evolve(REGIME, history, seed=5, now=now) is not None
+     run = log.events("EVOLUTION_RUN")[0]["data"]
+     assert run["train_bars"] + run["holdout_bars"] == 1440
+ 
+@@ -122,11 +124,12 @@ def test_evolves_on_every_bar_inside_the_span_not_a_bar_count() -> None:
  
  def test_gap0036_same_seed_different_params_get_different_ids() -> None:
      """The audit-link id is content-derived: same seed, different history/regime

@@ -1,26 +1,18 @@
 """C8 shared cost model (ACIS-03 §5/§6.1, master §5 C8).
 
-This is THE cost model: the fitness mini-backtest applies it, and the ACIS-09
-backtest harness must import this same module — never re-implement it. That is
-how "unit-tested identical in both places" is achieved: one module, one
-pinned-semantics test (tests/unit/test_fitness.py::test_cost_model_semantics).
-Phase 11 calibrates the per-instrument parameters against OANDA practice-feed
-spreads (master §13, v2.9).
+THE cost model: QIEA's fitness and the ACIS-09 harness both import this one module and
+never re-implement it (pinned by tests/unit/test_fitness.py::test_cost_model_semantics).
 
 Invariants:
-  * `per_side_cost` is the ONLY place friction is priced. Both callers (QIEA's
-    selection fitness and the harness's graded book) must hold the SAME instance
-    per instrument, or selection is scored against a different world than grading
-    — the GAP-P12D-36 defect class.
-  * The stress knob (GAP-P12D-46) can only make friction WORSE than declared:
-    `stress >= 1.0`, `spread_floor >= 0`. A knob that could cheapen the world
-    would let a run be flattered into a §14 pass, so the asymmetry is enforced in
-    `__post_init__`, not in the caller's discipline.
-  * Stress multiplies the WHOLE per-side cost (half-spread + commission +
-    slippage), because the destination's cost is what is being stressed, not one
-    of its components. It is a stress ladder, never a calibration: the hybrid
-    overlay GAP-P12D-46 describes is additive-and-floored per session and state,
-    and a flat multiplier must never be mistaken for it.
+  * `per_side_cost` is the ONLY place friction is priced. Selection and grading hold the
+    SAME instance per instrument, or selection scores a different world than grading
+    (the GAP-P12D-36 defect class).
+  * The stress knob (GAP-P12D-46) can only make friction WORSE: `stress >= 1.0` and
+    `spread_floor >= 0`, enforced in `__post_init__`, never left to the caller, so no run
+    can be flattered into a §14 pass.
+  * Stress multiplies the WHOLE per-side cost (half-spread + commission + slippage). It is
+    a stress ladder, never a calibration: GAP-P12D-46's overlay is additive and floored per
+    session and state, and a flat multiplier must never pose as it.
 """
 
 from __future__ import annotations
@@ -33,12 +25,9 @@ from core.data.errors import DataQualityError
 
 @dataclass(frozen=True)
 class CostModel:
-    """Per-instrument friction in price units, declared in instruments.yaml.
-
-    `stress` and `spread_floor` are RUN properties, not instrument properties: they
-    are never read from instruments.yaml, and a run that carries either non-default
-    must say so in its report (GAP-P12D-46).
-    """
+    """Per-instrument friction in price units, declared in instruments.yaml. `stress` and
+    `spread_floor` are RUN properties, never read from instruments.yaml; a run carrying either
+    non-default must say so in its report (GAP-P12D-46)."""
 
     commission_per_side: float
     slippage_per_side: float

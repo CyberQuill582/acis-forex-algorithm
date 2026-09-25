@@ -1,3 +1,7 @@
+34d3f77 2026-09-25 00:52:43 +0300 Risk: explicit HALTs survive a restart until a human resumes (GAP-P12D-75, stage 6)
+786b748 2026-09-25 00:29:59 +0300 BUILDER-3 report: prop-account tightening batch, stages 1-4 built, stage 5 designed
+272e2f6 2026-09-25 00:29:45 +0300 Execution: only a close that truly shrinks the position passes a spent budget (GAP-P12D-57, stage 2b)
+713a84e 2026-09-25 00:24:36 +0300 Risk: daily-reset platform rules and a declared initial capital (GAP-P12D-54/-59, stage 4)
 57fc40f 2026-09-25 00:18:00 +0300 Governor: the pre-close entry ban binds every account (GAP-P12D-58, stage 3)
 3c2aee9 2026-09-25 00:14:02 +0300 Execution: the venue's lot step, minimum lot and request cap now bind (GAP-P12D-57, stage 2)
 c54c0d1 2026-09-25 00:03:12 +0300 Risk: a restart no longer relaxes a drawdown limit (GAP-P12D-55, stage 1)

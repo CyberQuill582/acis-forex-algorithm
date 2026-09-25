@@ -58,6 +58,19 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 - (2) **Audits are ONLY the constitution's two per phase.** No extra audit agents unless the owner asks. It is recorded in CLAUDE.md's audit section and in memory.
 - (3) **After a session-limit reset, RESUME the running agents with `SendMessage`; NEVER relaunch them.** Their handles are listed above.
 
+**BUILDER-3 IS IN (2026-09-25):** branch `worktree-agent-a9e00713d15bb5082`, BUILT, PENDING AUDIT. The lead re-ran the suite on it: **842 passed, 6 skipped**.
+- [x] Stage 1: drawdown anchors and the taper persist across restarts ([[GAP-P12D-55]]).
+- [x] Stage 2: lot-step round-down and a minimum-lot refusal, plus a rolling 24-hour venue request budget of 1,000 that survives a restart, with an exemption for verified reducing closes ([[GAP-P12D-57]]).
+- [x] Stage 3: the 2-hour pre-close entry ban applies on every account ([[GAP-P12D-58]]).
+- [x] Stage 4: a daily-reset rule type anchored on the balance at a local reset instant, plus a declared `initial_capital`. FTMO's own worked examples are reproduced ([[GAP-P12D-54]]/[[GAP-P12D-59]]). The `platform_rules.yaml` drafts for `ftmo` and `e8` are in its report; do NOT commit the `e8` entry until E8's server time zone is verified.
+- [ ] Stage 5, the weekend flatten, is designed but not built; it is blocked by [[GAP-P12D-74]].
+- **New findings, verified by the lead and filed:**
+  - [[GAP-P12D-74]]: a Governor "close" ADDS to the position.
+  - [[GAP-P12D-75]]: a restart silently clears every explicit HALT. Critical.
+  - The governance gate was RED on main from comment shape; that is FIXED by the lead (comment-only, proven code-identical by AST).
+- [ ] **DELEGATED:** BUILDER-3 fixes [[GAP-P12D-75]] (restore halts at boot) and [[GAP-P12D-74]] (reduce-only close semantics) on its branch.
+- [ ] Then the constitution's TWO audits of the BUILDER-3 branch, then a merge on the owner's go.
+
 **ACIS-13 DRAFTED (2026-09-25, SPEC-AUTHOR): `specs/ACIS-13-VENUE_ADAPTERS.md` v0.1, a DRAFT, NOT LOCKED.**
 - **What it covers.** The cTrader Open API adapter comes first. It has an 11-step attach protocol with re-attach when an account churns, and 16 invariants (C-VEN-1..16). There are 42 quoted facts in Appendix A and 18 open questions in Appendix B.
 - **The lead verified the most load-bearing fact:** in the official proto, `stopLoss` reads "Not supported for MARKET orders". So stops go in as a distance, and the existing server-side-stop conformance test must change for this venue.
