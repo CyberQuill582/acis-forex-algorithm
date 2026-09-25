@@ -26,3 +26,5 @@
 | 08:05 | **Metered** `cost_usd` = **$11.31** at a turn boundary. It evidently includes the lanes' usage: 21.7 M cached reads, 0.71 M cache writes and 135 k output tokens. R1-B and R1-D have posted their first PARTIALs | 4 lanes + lead | **$11.31 metered** |
 | 08:14 | **Metered $24.03** (51.9 M cached reads, 1.07 M cache writes, 342 k output). The slope since 08:05 is ~$1.4/min, so $65 is reached around 08:43. All four lanes have posted draft 'For PLAN_R1' sections; the lead writes v1 now | 4 lanes + lead | **$24.03 metered** |
 | 08:18 | **PLAN_R1 v1 pushed** (all six sections, plus disagreements and P3 status). Ledger check with the reports copied into the review tree: 221 / 0. The meter can't be read mid-turn; see the next row | 4 lanes + lead | see next row |
+| 08:19 | PLAN_R1 v1 pushed (`a12c6cf`); P3 (8 claims confirmed) pushed at 08:21 (`ffc4b25`). **Metered at v1 ≈ $35–38**, interpolated between the 08:14 reading ($24.03) and the 08:23 reading below | lead | ≈ $35–38 |
+| 08:23 | **Metered $38.83.** R1-D (finished 08:21, 290 k tokens) and R1-B (finished ~08:23, 329 k tokens) are done; R1-A and R1-C are finishing | 2 lanes + lead | **$38.83 metered** |

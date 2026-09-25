@@ -18,8 +18,10 @@
 | 6 | R1-C | The lab's null centres at zero (−0.013, se 0.025; false-detect 4.0%), and a planted pooled trend is detected at 96% against a theory power of 0.915 | **Re-run** of `probe_calibration.py 100` (46 s): byte-identical | **CONFIRMED** (reproduced, not independent) |
 | 7 | R1-C | The fix is "demean nothing", plus a random ±1 sign per shuffled return for the permuted kind | **Lead reasoning.** Given the shuffled multiset, an independent symmetric sign makes each return a martingale difference with respect to any non-anticipating rule's past, so its expected gross P&L is exactly zero. "Demean only the planted drift" subtracts a path-dependent constant, which re-creates a bridge on the drift component | **CONFIRMED** (argument) |
 | 8 | R1-D | Kill-list line counts at BASE | **Independent `wc -l`:** qiea 291, evolve_step 117, fitness 256, param_library 268, param_types 143, plateau 74, nvma 395, stability 44, regime_labels 197, marginal_alpha 73, fragmenter 120. All match. `core/` + `monitoring/` = 7,645 lines at this BASE, not the 7,519 of C4's older BASE | **CONFIRMED** |
+| 9 | R1-B | The 7 held-out instruments come from a salted SHA-256 draw that nobody chooses: AUD/NZD, NZD/USD, CAD/JPY, XCU/USD, GER40, US100 and USOIL. The 8 on-disk instruments are forced into the explored set | **Re-run** of `probe_holdout_draw.py`: byte-identical. **Independent re-computation** of the FX draw from the stated salt and rule: the same three | **CONFIRMED** |
+| 10 | R1-B | The breadth formula reproduces a published anchor; N_eff for the 23 explored is 4.0–10.2 across within-class ρ 0.50–0.07 | **Re-run** of `probe_effective_breadth.py`: Babu et al.'s diversified SR 1.17 is reproduced as 1.16 (s = 0.34, N = 58, ρ = 0.07). The within-FX ρ of trend P&L is an assumption R1-B could not source | **CONFIRMED** (formula); ρ is an assumption |
+| 11 | R1-D | RSIM timing: 30 instruments × 14 years in ~0.1 s (daily) and ~1.5–2 s (hourly), with a scalar `CostModel` per fill. The §14 rows fail on a planted SR 0.87 rule: win 0.18, hold 53.5 d, positive months 52% | **Re-run** of `sim_rsim_daily.py` against the BASE review tree: the hourly planted run took 1.48 s (R1-D: 1.6–2.1 s), with trade-shape rows as reported | **CONFIRMED** (reproduced) |
 
 **Still to verify, as the finals land:**
 - R1-A: the register-verdict FPR under adaptive iteration;
-- R1-B: its universe draw and data plan;
-- R1-D: the RSIM timing (a receipt re-run).
+- R1-B: its data plan (hourly candle layout and size; the owner measures one file first);
