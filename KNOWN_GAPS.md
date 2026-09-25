@@ -1242,6 +1242,15 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Justification: open. It does not block any current work (every labelling and ladder run since has read the laptop copy), but it converts a recorded two-copy guarantee in the read path into a false claim, and the read path has been corrected accordingly. A replacement second copy is an owner spending decision (S3 Glacier Deep Archive for ~12 GB is cents per month; an external disk is a one-off), so it is not taken unilaterally.
 - Proof: `server/manifest.jsonl` in the bucket is the surviving provenance record of the original download and should NOT be deleted in any cost cleanup; the laptop-side count is reproducible with `find data/dukascopy -name "*.bi5" | wc -l` (35,008).
 - Residual: GAP-P12D-50 — this entry owns (a) the owner's choice of a replacement second copy, and (b) correcting every read-path claim that asserts two copies.
+- **Finding 2026-09-25 — the second copy may SURVIVE, in a snapshot.** A read-only inventory found `snap-0b6cc0700013b7ab1` in **eu-west-1**:
+  - 60 GB, of volume `vol-01679d26401152fd4`, taken 2026-09-21 16:53 UTC;
+  - described as "AWS EBS triggered volume snapshot" (AWS took it itself during the account hold);
+  - standard tier, unencrypted, completed.
+
+  It is very likely the data server's kept disk, which held the sha256-proven tick set. The 2026-09-24 inventory reported 0 snapshots and missed it.
+  - **DO NOT DELETE IT.**
+  - Its cost is at most ~$3 a month in the standard tier; the archive tier is about 75% less, with a 90-day minimum.
+  - **To verify** (owner decision; a small cost): create a volume from it in eu-west-1, attach it to a temporary instance, and check the files against `server/manifest.jsonl` in the S3 bucket.
 - Linked: [[GAP-P12D-14]], [[GAP-P12D-12]], [[GAP-0001]], tests/backtest/OOS_VALIDATION.md
 
 ## GAP-P12D-51: the development laptop's clock is ~16 minutes slow and the Windows Time service is not running

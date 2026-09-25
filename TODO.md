@@ -469,6 +469,14 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
   - **Credits:** the account is on AWS's **FREE plan** with **$197.97 remaining credits**, expiring **2027-03-11** (the `freetier:GetAccountPlanState` API).
   - **Not visible to `acis-data`:** Lightsail (AccessDenied) and Cost Explorer (AccessDenied). A Lightsail VPS, or resources in another account, cannot be seen from here; the root console can.
   - **The laptop clock** is +2 s now, but `w32time` is still stopped ([[GAP-P12D-51]]).
+  - **Credit-drain check (the owner asked; read-only, 2026-09-25 ~18:00 EAT):**
+    - Credits held at **$197.97** across ~30 minutes; about $2 has been used since the plan began ~2026-09-11.
+    - Visible usage is tiny: KMS 15 requests, Glue 27, SQS 8, SNS 7, Lambda 2 invocations, all within the free tier.
+    - The only visible billable resource is the 60 GB snapshot, which is VALUABLE ([[GAP-P12D-50]]; do not delete).
+    - **`acis-data` CANNOT see** RDS, Lambda, load balancers, ECS/EKS, SageMaker, DynamoDB, EFS, OpenSearch, ElastiCache, Route 53, CloudFront, Secrets Manager, Bedrock, IAM, CloudTrail, Cost Explorer or Lightsail. A drain there is invisible from here. The prime suspect is the `db.t4g.micro` RDS instance from the owner's cost list.
+    - Chrome was not signed in to AWS; the agent does not sign in.
+    - **OWNER:** open the AWS console as root → Billing → Bills (this month, by service), plus the RDS and Lightsail consoles in every region.
+    - On this laptop, the only ACIS job is the HistData download every 30 min (histdata.com, not AWS; it uses internet data).
 - [ ] **RDS is unverifiable with the current IAM user.** `rds:DescribeDBInstances` is `AccessDenied` for `acis-data` in every region, so the `db.t4g.micro` MySQL instance named in the owner's cost list can neither be confirmed nor deleted from here. **Only the root user in the console can check and remove it** — Billing → Bills, or RDS console with "any region" selected. This is the one item on that cost list that may still be billing.
 
 ## Standing rules (owner-directed)
