@@ -1,0 +1,337 @@
+{
+ "world": "idio",
+ "mu": 0.08,
+ "R": 300,
+ "K20": {
+  "naive_best": {
+   "pct": 99.7,
+   "wilson95": [
+    98.1,
+    99.9
+   ]
+  },
+  "bonf_K": {
+   "pct": 94.7,
+   "wilson95": [
+    91.5,
+    96.7
+   ]
+  },
+  "maxt_tried": {
+   "pct": 95.0,
+   "wilson95": [
+    91.9,
+    96.9
+   ]
+  },
+  "maxt_declared_grid": {
+   "pct": 99.0,
+   "wilson95": [
+    97.1,
+    99.7
+   ]
+  },
+  "famcombo_holm": {
+   "pct": 100.0,
+   "wilson95": [
+    98.7,
+    100.0
+   ]
+  },
+  "e_bonf_K": {
+   "pct": 26.0,
+   "wilson95": [
+    21.4,
+    31.2
+   ]
+  },
+  "fwd_once_best": {
+   "pct": 44.7,
+   "wilson95": [
+    39.1,
+    50.3
+   ]
+  },
+  "fwd_once_famcombo": {
+   "pct": 80.3,
+   "wilson95": [
+    75.5,
+    84.4
+   ]
+  },
+  "heldout_raw_samewindow": {
+   "pct": 87.7,
+   "wilson95": [
+    83.5,
+    90.9
+   ]
+  },
+  "heldout_resid_samewindow": {
+   "pct": 59.7,
+   "wilson95": [
+    54.0,
+    65.1
+   ]
+  },
+  "heldout_forward": {
+   "pct": 34.3,
+   "wilson95": [
+    29.2,
+    39.9
+   ]
+  },
+  "mean_n_fams": 6.243333333333333,
+  "mean_best_dev_annSR": 1.4316205082055051,
+  "mean_best_fwd_annSR": 1.1001534905164334
+ },
+ "K50": {
+  "naive_best": {
+   "pct": 100.0,
+   "wilson95": [
+    98.7,
+    100.0
+   ]
+  },
+  "bonf_K": {
+   "pct": 98.3,
+   "wilson95": [
+    96.2,
+    99.3
+   ]
+  },
+  "maxt_tried": {
+   "pct": 99.0,
+   "wilson95": [
+    97.1,
+    99.7
+   ]
+  },
+  "maxt_declared_grid": {
+   "pct": 100.0,
+   "wilson95": [
+    98.7,
+    100.0
+   ]
+  },
+  "famcombo_holm": {
+   "pct": 100.0,
+   "wilson95": [
+    98.7,
+    100.0
+   ]
+  },
+  "e_bonf_K": {
+   "pct": 25.0,
+   "wilson95": [
+    20.4,
+    30.2
+   ]
+  },
+  "fwd_once_best": {
+   "pct": 63.3,
+   "wilson95": [
+    57.7,
+    68.6
+   ]
+  },
+  "fwd_once_famcombo": {
+   "pct": 85.3,
+   "wilson95": [
+    80.9,
+    88.9
+   ]
+  },
+  "heldout_raw_samewindow": {
+   "pct": 93.0,
+   "wilson95": [
+    89.5,
+    95.4
+   ]
+  },
+  "heldout_resid_samewindow": {
+   "pct": 77.7,
+   "wilson95": [
+    72.6,
+    82.0
+   ]
+  },
+  "heldout_forward": {
+   "pct": 38.0,
+   "wilson95": [
+    32.7,
+    43.6
+   ]
+  },
+  "mean_n_fams": 7.0,
+  "mean_best_dev_annSR": 1.7585194975787795,
+  "mean_best_fwd_annSR": 1.439072160173442
+ },
+ "K100": {
+  "naive_best": {
+   "pct": 100.0,
+   "wilson95": [
+    98.7,
+    100.0
+   ]
+  },
+  "bonf_K": {
+   "pct": 99.3,
+   "wilson95": [
+    97.6,
+    99.8
+   ]
+  },
+  "maxt_tried": {
+   "pct": 99.3,
+   "wilson95": [
+    97.6,
+    99.8
+   ]
+  },
+  "maxt_declared_grid": {
+   "pct": 100.0,
+   "wilson95": [
+    98.7,
+    100.0
+   ]
+  },
+  "famcombo_holm": {
+   "pct": 100.0,
+   "wilson95": [
+    98.7,
+    100.0
+   ]
+  },
+  "e_bonf_K": {
+   "pct": 21.0,
+   "wilson95": [
+    16.8,
+    26.0
+   ]
+  },
+  "fwd_once_best": {
+   "pct": 73.3,
+   "wilson95": [
+    68.1,
+    78.0
+   ]
+  },
+  "fwd_once_famcombo": {
+   "pct": 85.3,
+   "wilson95": [
+    80.9,
+    88.9
+   ]
+  },
+  "heldout_raw_samewindow": {
+   "pct": 96.3,
+   "wilson95": [
+    93.6,
+    97.9
+   ]
+  },
+  "heldout_resid_samewindow": {
+   "pct": 89.7,
+   "wilson95": [
+    85.7,
+    92.6
+   ]
+  },
+  "heldout_forward": {
+   "pct": 41.3,
+   "wilson95": [
+    35.9,
+    47.0
+   ]
+  },
+  "mean_n_fams": 7.0,
+  "mean_best_dev_annSR": 1.9034618127131262,
+  "mean_best_fwd_annSR": 1.639881245818577
+ },
+ "K200": {
+  "naive_best": {
+   "pct": 100.0,
+   "wilson95": [
+    98.7,
+    100.0
+   ]
+  },
+  "bonf_K": {
+   "pct": 99.7,
+   "wilson95": [
+    98.1,
+    99.9
+   ]
+  },
+  "maxt_tried": {
+   "pct": 99.7,
+   "wilson95": [
+    98.1,
+    99.9
+   ]
+  },
+  "maxt_declared_grid": {
+   "pct": 100.0,
+   "wilson95": [
+    98.7,
+    100.0
+   ]
+  },
+  "famcombo_holm": {
+   "pct": 100.0,
+   "wilson95": [
+    98.7,
+    100.0
+   ]
+  },
+  "e_bonf_K": {
+   "pct": 15.0,
+   "wilson95": [
+    11.4,
+    19.5
+   ]
+  },
+  "fwd_once_best": {
+   "pct": 78.7,
+   "wilson95": [
+    73.7,
+    82.9
+   ]
+  },
+  "fwd_once_famcombo": {
+   "pct": 85.3,
+   "wilson95": [
+    80.9,
+    88.9
+   ]
+  },
+  "heldout_raw_samewindow": {
+   "pct": 98.0,
+   "wilson95": [
+    95.7,
+    99.1
+   ]
+  },
+  "heldout_resid_samewindow": {
+   "pct": 96.3,
+   "wilson95": [
+    93.6,
+    97.9
+   ]
+  },
+  "heldout_forward": {
+   "pct": 43.0,
+   "wilson95": [
+    37.5,
+    48.7
+   ]
+  },
+  "mean_n_fams": 7.0,
+  "mean_best_dev_annSR": 1.996285602906161,
+  "mean_best_fwd_annSR": 1.769486842997931
+ },
+ "ref_fwd_annSR": 0.8656131434528301,
+ "ref_dev_annSR": 0.8544055895317213,
+ "ewmac_combo_dev_annSR": 0.9139685072877972,
+ "oracle_best_dev_annSR": 2.0139507689698837
+}

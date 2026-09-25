@@ -1,7 +1,7 @@
 """R1-A receipt: register-level verdict rules under an ADAPTIVE researcher, and held-out instruments.
 
 LLM-originated design (Opus 5.5, lane R1-A). Synthetic only. Run:
-  OMP_NUM_THREADS=1 python sim_register_verdict.py <world> <R>     world in null | idio | factor | idio_strong
+  OMP_NUM_THREADS=1 python sim_register_verdict.py <world> <R>     world in null | idio | idio_weak | factor | idio_strong  [mu]
 World: 28 instruments (20 development + 8 held out), factor-correlated daily returns (price corr 0.3),
 260-day burn-in, 12 development years, 2 forward years.  Planted: 'idio' = per-instrument persistent
 Markov drift (mean spell 60 d); 'factor' = the same drift on the common factor (all instruments trend together).
@@ -37,7 +37,7 @@ def gen(world, rng, mu):
     f = rng.standard_normal(T)
     e = rng.standard_normal((NI, T))
     r = math.sqrt(RHO) * f[None, :] + math.sqrt(1 - RHO) * e
-    if world in ("idio", "idio_strong"):
+    if world.startswith("idio"):
         s = np.empty((NI, T))
         st = rng.choice([-1.0, 1.0], NI)
         flips = rng.random((NI, T)) < 1 / 60
@@ -246,6 +246,9 @@ def one_rep(args):
         o["heldout_raw_samewindow"] = bool(tstat(h_dev) > 1.645)
         o["heldout_resid_samewindow"] = bool(tstat(h_dev - beta * d) > 1.645)
         o["heldout_forward"] = bool(tstat(h_fwd) > 1.645)
+        o["KILL_heldout_resid_lt0"] = bool(tstat(h_dev - beta * d) < 0)
+        o["KILL_heldout_raw_lt0"] = bool(tstat(h_dev) < 0)
+        o["KILL_fwd2y_best_lt0"] = bool(tstat(fwd[best]) < 0)
         o["n_fams"] = len(fams)
         o["best_dev_annSR"] = float(tb / math.sqrt(DEV) * math.sqrt(YEAR))
         o["best_fwd_annSR"] = float(fwd[best].mean() / fwd[best].std() * math.sqrt(YEAR))
@@ -273,7 +276,7 @@ def wilson(k, n):
 if __name__ == "__main__":
     world = sys.argv[1]
     R = int(sys.argv[2])
-    mu = {"null": 0.0, "idio": 0.03, "idio_strong": 0.045, "factor": 0.03}[world]
+    mu = {"null": 0.0, "idio": 0.08, "idio_weak": 0.05, "idio_strong": 0.10, "factor": 0.08}[world]
     if len(sys.argv) > 3:
         mu = float(sys.argv[3])
     with Pool(2) as p:
@@ -291,6 +294,7 @@ if __name__ == "__main__":
         summ[f"K{K}"] = row
     for k in ("ref_fwd_annSR", "ref_dev_annSR", "ewmac_combo_dev_annSR", "oracle_best_dev_annSR"):
         summ[k] = float(np.mean([rp[k] for rp in reps]))
-    with open(f"sim_out_register_{world}.json", "w") as fh:
+    tag = world if len(sys.argv) <= 3 else f"{world}_mu{sys.argv[3].replace('.', '')}"
+    with open(f"sim_out_register_{tag}.json", "w") as fh:
         json.dump(summ, fh, indent=1)
     print(json.dumps(summ, indent=1))

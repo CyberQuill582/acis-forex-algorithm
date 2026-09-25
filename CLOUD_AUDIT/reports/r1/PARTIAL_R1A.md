@@ -1,7 +1,7 @@
-# PARTIAL R1-A — VALIDATION SCIENCE (checkpoint 1b, 08:25 UTC, with a DRAFT "For PLAN_R1")
+# PARTIAL R1-A — VALIDATION SCIENCE (checkpoint 2, 08:38 UTC, with a DRAFT "For PLAN_R1")
 
 - **Lane:** R1-A VALIDATION SCIENCE (mission R1). **Model as observed:** the system names `claude-opus-5-5`; effort not observable.
-- **Fresh context:** yes; no subagents. **BASE:** `974dbda`. **Date:** 2026-09-25. **Web:** 23 of 30 used so far.
+- **Fresh context:** yes; no subagents. **BASE:** `974dbda`. **Date:** 2026-09-25. **Web:** 25 of 30 used so far.
 - **Data:** synthetic only. Receipts: `evidence/R1A/sim_eprocess_demo.py` → `sim_out_eprocess.json`; `sim_breadth.py` → `sim_out_breadth.json`.
 - Everything below is **LLM-originated** procedure (no strategy claims). **DRAFT** numbers; the final report may revise them.
 
@@ -45,6 +45,16 @@
 
    - C1's 2.7–7% for the union test was measured with non-adaptive draws. Under hill-climbing the register over-samples the high-noise corner. **The count must run over the declared reachable space (the grid), fixed before the first look.**
 7. **Correction to C1's frontier.** C1's 9.3 years at SR 1, K = 1, carries Lo's (1 + S²/2) factor with S in *annual* units. With daily observations the factor is ≈ 1 (S_daily ≈ 0.063), giving **6.2 years**, which is VAL §5.1's number. C1's own sim found its frontier "slightly conservative". [derived]
+
+9. **NEW, register power (R = 300 per world)** [sim]:
+   - **Common-factor trend world** (fixed EWMAC16 truth 0.58): **Holm over fixed family combinations 69%** against **max-t over the declared grid 57–58%**. The invalid rules (Bonferroni over runs, the tried union) show 61–72%.
+   - **Idiosyncratic trend world** (truth 0.87): every valid rule reaches 99–100%.
+   - e-values on development history: 12–26% only. Use e-values forward, not in development.
+   - **Held-out, residualised:** 60–96% power for an idiosyncratic edge, but only **12–17% for a common-factor edge**: residualising removes the edge itself. The held-out gate must be kill-only; a factor-borne edge can be tested only forward.
+   - The recommended stack is therefore: **declare the family-version, trade and grade its fixed pooled combination, Holm over K family-versions on the development history, and residualised held-out as kill-only.** CPCV/PBO is dropped from the R-1 path.
+10. **Demo e-process default = `E_MIX`** (the mean of fixed stakes λ ∈ {0.05, 0.1, 0.2, 0.4, 0.8}). It has no prior, and its median path rises steadily: W ≈ 1.3 / 1.9 / 2.4 at 1 / 2 / 3 y for SR 1.0. The plug-in bettor's median path dips to 0.85 in year 1. Median to W ≥ 20 over both bettors: 1.4–1.7 y (SR 2), 2.4–3.0 y (SR 1.5), 5.8–6.8 y (SR 1.0).
+11. **End to end** (A at K = 10, then C, then E): a true portfolio SR of 1.0 shows "edge shown" within 3 years of demo only **14–18%** of the time; SR 1.5, 49–57%; the null, ≤ 0.1%.
+12. **The final report is being written:** `R1A_VALIDATION_SCIENCE.md` (a draft is already pushed).
 
 ## DRAFT "For PLAN_R1" (numbered; each: value · complexity · grade · falsifier · verdict)
 
