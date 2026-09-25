@@ -4,7 +4,7 @@ instruments, graded on the NULL and on a planted TREND of known theoretical Shar
 Checks: (a) the null's pooled Sharpe distribution is centred on zero (no bridge tilt); (b) the planted
 trend is detected at the rate its theoretical Sharpe predicts; (c) the same with the BASE whole-path
 demeaning re-applied, to show the tilt and the lost power. Synthetic only.
-Usage: OMP_NUM_THREADS=1 python probe_calibration.py [paths] [target_rule_sr_per_inst] [halflife]
+Usage: OMP_NUM_THREADS=1 python probe_calibration.py [paths] [target_rule_sr_per_inst] [halflife] [weekdays]
 """
 import math
 import sys
@@ -13,7 +13,7 @@ import numpy as np
 from scipy import stats
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from gen_lab import (Effect, LabSpec, _phi, generate, other_var, theory_ewmac,   # noqa: E402
+from gen_lab import (Effect, LabSpec, _phi, generate, other_var, theory_ewmac, permuted,   # noqa: E402
                      theory_oracle_trend, _ewmac_weights, SQ2PI, YEAR)
 from scipy.optimize import brentq  # noqa: E402
 
@@ -21,7 +21,8 @@ PATHS = int(sys.argv[1]) if len(sys.argv) > 1 else 100
 TARGET = float(sys.argv[2]) if len(sys.argv) > 2 else 0.25
 HL = float(sys.argv[3]) if len(sys.argv) > 3 else 60.0
 FAST, SLOW, VOLSPAN = 16, 64, 36
-DAYS, N, BURN = 3640, 20, 300
+DAYS = int(sys.argv[4]) if len(sys.argv) > 4 else 3640
+N, BURN = 20, 300
 
 
 def rule_pnl(x, demean=False):
@@ -75,7 +76,7 @@ def main():
     print(f"rule EWMAC {FAST}/{SLOW} sign, vol-targeted; N={N}; {yrs:.1f} graded years; halflife {HL:.0f} d")
     print(f"planted trend: oracle SR/inst {oracle:.3f}; rule theory SR/inst {s1:.3f}; pooled theory SR {sN:.3f} "
           f"(rho_pnl {rpnl:.4f}); theory one-sided 5% power {power_th:.3f}")
-    rows = {k: [] for k in ("null", "planted", "null_demeaned", "planted_demeaned")}
+    rows = {k: [] for k in ("null", "planted", "permuted", "null_demeaned", "planted_demeaned", "permuted_demeaned")}
     for seed in range(1, PATHS + 1):
         pn = generate(LabSpec(n_inst=N, days=DAYS, seed=seed))
         pp = generate(LabSpec(n_inst=N, days=DAYS, seed=seed,
@@ -84,6 +85,9 @@ def main():
         rows["planted"].append(ann_sr(rule_pnl(pp.x)))
         rows["null_demeaned"].append(ann_sr(rule_pnl(pn.x, demean=True)))
         rows["planted_demeaned"].append(ann_sr(rule_pnl(pp.x, demean=True)))
+        pq = permuted(pp, seed)
+        rows["permuted"].append(ann_sr(rule_pnl(pq.x)))
+        rows["permuted_demeaned"].append(ann_sr(rule_pnl(pq.x, demean=True)))
     for k, v in rows.items():
         v = np.array(v)
         tstat = v * math.sqrt(yrs)

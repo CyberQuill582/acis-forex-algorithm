@@ -35,11 +35,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import numpy as np
 from scipy.optimize import brentq
 
 YEAR = 252
+NY = ZoneInfo("America/New_York")
 SQ2PI = math.sqrt(2.0 / math.pi)
 
 
@@ -179,6 +182,11 @@ class LabPath:
     tom: np.ndarray          # (T,) turn-of-month flag
     season_dir: np.ndarray   # (N,)
     loadings: np.ndarray     # (N,)
+    fac: np.ndarray          # (T,)   common-factor diffusive shock z_f sqrt(w_f)   (intraday: ONE shared bridge)
+    idio: np.ndarray         # (T, N) idiosyncratic diffusive shock z_e sqrt(w_e)
+    wf: np.ndarray           # (T,)   conditional variance of fac
+    we: np.ndarray           # (T, N) conditional variance of idio
+    diff_scale: float        # diffusive = diff_scale * (b fac + sqrt(1-b^2) idio)
 
 
 def generate(spec: LabSpec) -> LabPath:
@@ -258,7 +266,7 @@ def generate(spec: LabSpec) -> LabPath:
 
     y = m + diffusive + jsize + gap
 
-    # 3-component GARCH on the normalised squared excess return; sigma[t] is known at the start of day t
+    # GARCH components on the normalised squared excess return; sigma[t] is known at the start of day t
     comps = np.array(spec.garch)
     w, a, bb = comps[:, 0], comps[:, 1], comps[:, 2]
     h = np.ones((len(w), N))
@@ -283,7 +291,25 @@ def generate(spec: LabSpec) -> LabPath:
     x = sigma * y
     spot = x - accrual
     return LabPath(spec, dates, sigma, y, x, spot, accrual, rate, m, diffusive, jsize, gap, mixvar,
-                   tom, season_dir, b)
+                   tom, season_dir, b, zf * np.sqrt(wf), ze * np.sqrt(we), wf, we, diff_scale)
+
+
+def permuted(path: LabPath, seed: int = 0) -> LabPath:
+    """The permuted control (FIX-C at day scale): days shuffled (all instruments together, so the
+    cross-section is kept), then ONE random sign per day. Given the pool of days, the excess return is a
+    martingale-difference sequence: every non-anticipating rule has exactly zero expected gross P&L.
+    Rates/financing keep their own path (the grader charges them); dates and the calendar stay in order.
+    Never demeaned: shuffle-then-demean is a bridge (fixed sum), which is the BASE defect."""
+    rng = np.random.default_rng([path.spec.seed, 31337, seed])
+    T = path.x.shape[0]
+    k = rng.permutation(T)
+    e = rng.choice((-1.0, 1.0), size=T)
+    sg = lambda a: a[k] * (e if a.ndim == 1 else e[:, None])       # re-index and flip a signed array
+    x = sg(path.x)
+    return LabPath(path.spec, path.dates, path.sigma[k], sg(path.y), x, x - path.accrual, path.accrual,
+                   path.rate, sg(path.m), sg(path.diffusive), sg(path.jumps), sg(path.gap), path.mixvar[k],
+                   path.tom, path.season_dir, path.loadings, sg(path.fac), sg(path.idio), path.wf[k],
+                   path.we[k], path.diff_scale)
 
 
 # ---------------------------------------------------------------- intraday on demand
@@ -292,37 +318,64 @@ def generate(spec: LabSpec) -> LabPath:
 HOUR_VAR = np.array([0.6, 0.6, 0.7, 0.7, 0.6, 0.6, 0.8, 1.4, 1.8, 1.6, 1.4, 1.3,
                      1.6, 2.0, 2.2, 1.9, 1.5, 1.1, 0.8, 0.6, 0.5, 0.35, 0.4, 0.5])
 HOUR_SPREAD = np.array([1.8, 1.8, 1.6, 1.5, 1.5, 1.4, 1.2, 1.0, 0.9, 0.9, 0.9, 0.9,
-                        0.9, 0.85, 0.85, 0.9, 1.0, 1.1, 1.2, 1.4, 1.6, 2.2, 1.9, 1.8])
+                        0.9, 0.85, 0.85, 0.9, 1.0, 1.1, 1.2, 1.4, 1.6, 1.8, 1.9, 1.8])
 
 
-def intraday(path: LabPath, i: int, t: int, tick_seconds: int = 60, rollover_hour: int = 21,
-             base_spread: float = 1e-4, spike_prob: float = 0.002, spike_mult: float = 8.0,
-             rng: np.random.Generator | None = None):
-    """Ticks for instrument i on weekday t (a 24 h UTC day, approx; the lab's own clock), whose sum is
-    EXACTLY that day's excess log return x[t, i]. Conditionally-exact refinement: the diffusive part is
-    Gaussian given (sigma, mixing draws), so a Brownian bridge on the session time-change, pinned at the
-    day's diffusive endpoint, has the same law as generating the ticks forward. Planted drift is spread
-    in proportion to the session variance; jumps land at one random tick; the Monday gap lands on the
-    first tick. Returns (seconds, log_mid_increment, spread_frac)."""
-    rng = rng or np.random.default_rng([path.spec.seed, 104729, i, t])
+def _bridge(rng, wv, var, endpoint, shape):
+    """Brownian bridge increments on a time-changed clock (weights wv, sum 1), total variance `var`,
+    pinned to `endpoint`. Exact: a Gaussian walk conditioned on its sum."""
+    inc = rng.standard_normal(shape) * np.sqrt(wv * var)
+    return inc - wv * (inc.sum(axis=-1, keepdims=True) - endpoint)
+
+
+def session_start_utc(day: np.datetime64) -> datetime:
+    """The lab's trading day for weekday `day` runs [17:00 New York of the previous calendar day,
+    17:00 New York of `day`): the FX convention (Monday's day opens Sunday 17:00 NY). DST-correct."""
+    d = day.astype("datetime64[D]").astype(object) - timedelta(days=1)
+    return datetime(d.year, d.month, d.day, 17, tzinfo=NY).astimezone(timezone.utc)
+
+
+def intraday_panel(path: LabPath, t: int, tick_seconds: int = 60, joint: bool = True,
+                   base_spread: np.ndarray | float = 1e-4, roll_minutes: int = 10, roll_mult: float = 8.0,
+                   spike_prob: float = 0.002, spike_mult: float = 8.0, tick_rate: float = 0.5,
+                   rng: np.random.Generator | None = None) -> dict:
+    """All N instruments' ticks for weekday t, whose per-instrument sums are EXACTLY x[t, :].
+    joint=True (the design): ONE bridge for the common factor, one per idiosyncratic shock, each pinned
+    to its own daily endpoint, so intraday co-movement is a correlated Brownian motion and no instrument's
+    past predicts another's rest-of-day. joint=False (kept only for the probe) bridges each instrument's
+    combined shock independently, which PLANTS a spurious lead-lag/pairs edge. Planted drift is spread
+    in proportion to session variance; a jump lands on one random tick; Monday's gap on the first tick.
+    Spread: base x session profile x (roll_mult for `roll_minutes` after the 17:00 New York open of the
+    day) x random spikes. `emit` thins quotes with a session-shaped Poisson-like intensity (the price
+    path is unchanged; an adapter yields a RawTick only where emit is True)."""
+    p = path
+    N = p.x.shape[1]
+    rng = rng or np.random.default_rng([p.spec.seed, 104729, t])
     n = 86400 // tick_seconds
-    hours = (np.arange(n) * tick_seconds) // 3600
-    wv = HOUR_VAR[hours]; wv = wv / wv.sum()                    # variance share per tick
-    sd = path.sigma[t, i]
-    tot_var = path.mixvar[t, i]
-    inc = rng.standard_normal(n) * np.sqrt(wv * tot_var)
-    endpoint = path.diffusive[t, i]
-    tau = np.cumsum(wv)
-    inc = inc - wv * (inc.sum() - endpoint)                    # bridge pin on the time-changed clock
-    inc = inc + wv * path.m[t, i]                               # planted drift, spread with activity
-    if path.jumps[t, i] != 0.0:
-        inc[rng.integers(n)] += path.jumps[t, i]
-    inc[0] += path.gap[t, i]
-    spread = base_spread * HOUR_SPREAD[hours]
-    spread = np.where((hours == rollover_hour), spread * 4.0, spread)
-    spike = rng.random(n) < spike_prob
-    spread = np.where(spike, spread * spike_mult, spread)
-    return np.arange(n) * tick_seconds, sd * inc, spread, tau
+    t0 = session_start_utc(p.dates[t])
+    secs = np.arange(n) * tick_seconds
+    hours = ((t0.hour * 3600 + t0.minute * 60 + secs) // 3600) % 24
+    wv = HOUR_VAR[hours]; wv = wv / wv.sum()
+    if joint:
+        f = _bridge(rng, wv, p.wf[t], p.fac[t], (n,))
+        e = _bridge(rng, wv[None, :], p.we[t][:, None], p.idio[t][:, None], (N, n))
+        b = p.loadings[:, None]
+        inc = p.diff_scale * (b * f[None, :] + np.sqrt(1 - b * b) * e)
+    else:
+        inc = _bridge(rng, wv[None, :], p.mixvar[t][:, None], p.diffusive[t][:, None], (N, n))
+    inc = inc + wv[None, :] * p.m[t][:, None]
+    for i in np.flatnonzero(p.jumps[t]):
+        inc[i, rng.integers(n)] += p.jumps[t, i]
+    inc[:, 0] += p.gap[t]
+    logret = p.sigma[t][:, None] * inc                                   # (N, n): sums to x[t]
+    spread = np.broadcast_to(np.asarray(base_spread, float).reshape(-1, 1), (N, 1)) * HOUR_SPREAD[hours][None, :]
+    spread = np.where(secs[None, :] < roll_minutes * 60, spread * roll_mult, spread)
+    spread = np.where(rng.random((N, n)) < spike_prob, spread * spike_mult, spread)
+    intensity = np.clip(tick_rate * HOUR_VAR[hours] / HOUR_VAR.mean(), 0.0, 1.0)
+    emit = rng.random((N, n)) < intensity[None, :]
+    emit[:, 0] = True
+    times = np.datetime64(t0.replace(tzinfo=None), "s") + secs.astype("timedelta64[s]")
+    return {"times_utc": times, "logret": logret, "spread_frac": spread, "emit": emit, "hours": hours}
 
 
 if __name__ == "__main__":
@@ -336,5 +389,6 @@ if __name__ == "__main__":
         ph = _phi(hl); vm = v_m_for(0.6, ph, ov)
         print(f"trend oracle SR 0.60 hl {hl}d: v_m {vm:.5f}; EWMAC SR "
               + " ".join(f"{f}/{4 * f}:{theory_ewmac(vm, ph, ov, f, 4 * f):.3f}" for f in (4, 8, 16, 32, 64)))
-    sec, inc, spr, _ = intraday(p, 0, 10)
-    print(f"intraday day 10 inst 0: {len(sec)} ticks, sum {inc.sum():+.6e} vs x {p.x[10, 0]:+.6e}")
+    d = intraday_panel(p, 10)
+    print(f"intraday day 10: {d['logret'].shape} grid, starts {d['times_utc'][0]} UTC; max |sum - x| "
+          f"{np.abs(d['logret'].sum(axis=1) - p.x[10]).max():.2e}; emitted {d['emit'].mean():.2f} of grid")

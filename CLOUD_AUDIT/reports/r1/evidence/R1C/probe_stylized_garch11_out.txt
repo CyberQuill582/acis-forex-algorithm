@@ -8,6 +8,6 @@ variant=garch11  seeds=4  instruments=20  weekdays=3640 per seed  (null lab, no 
   [FAIL] 8 slow decay of |r| acf (power law)    beta 0.330; R2 power 0.776 vs exp 0.978          tolerance: Cont: beta in [0.2, 0.4]; power fits better
   [info] mean |pairwise corr| 0.239 (spec rho 0.30);  Monday/weekday var ratio 1.245 (spec 1.25)
   [n/a ] 5 intermittency, 9 leverage (equity), 10 volume, 11 time-scale asymmetry: not modelled / not asserted
-  [PASS] S intraday vol seasonality (self-cons.) corr(mean|r| by hour, sqrt(profile)) 0.993       tolerance: > 0.9; shape is a lab knob
-  [PASS] S spread peaks at the rollover hour    argmax hour 21                                   tolerance: == 21 UTC (lab rollover hour)
+  [PASS] S intraday vol seasonality (self-cons.) corr(mean|r| by UTC hour, sqrt(profile)) 1.000   tolerance: > 0.9; shape is a lab knob
+  [PASS] S rollover spread spike at 17:00 New York spread first 5 min / one hour off 8.3x           tolerance: > 3x (knob 8x; ACIS_SPEC.md:407 records 6-13x)
 SUMMARY variant=garch11: 8/9 PASS

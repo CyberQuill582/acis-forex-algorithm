@@ -1,0 +1,12 @@
+days 3600, 20 instruments, rho 0.5; pair (0,5) corr sign +
+(1) exactness: max |sum(ticks) - x| = 3.47e-17
+(2) day-so-far momentum to close, lab null: mean +0.0064 (t +2.2); zero-pinned day (BASE-style): mean -0.3997 (t -355.8)
+(3) pairs catch-up 'long i when j led': JOINT bridges mean +0.0209 (t +1.6); INDEPENDENT bridges mean +0.1094 (t +8.2)
+days 3600, 20 instruments, rho 0.5; pair (0,1) corr sign +
+(1) exactness: max |sum(ticks) - x| = 3.47e-17
+(2) day-so-far momentum to close, lab null: mean -0.0102 (t -3.5); zero-pinned day (BASE-style): mean -0.3997 (t -355.8)
+(3) pairs catch-up 'long i when j led': JOINT bridges mean -0.0044 (t -0.3); INDEPENDENT bridges mean +0.1172 (t +8.6)
+days 3600, 20 instruments, rho 0.5; pair (0,3) corr sign +
+(1) exactness: max |sum(ticks) - x| = 2.78e-17
+(2) day-so-far momentum to close, lab null: mean +0.0001 (t +0.0); zero-pinned day (BASE-style): mean -0.3997 (t -355.8)
+(3) pairs catch-up 'long i when j led': JOINT bridges mean -0.0236 (t -1.7); INDEPENDENT bridges mean +0.0845 (t +6.3)

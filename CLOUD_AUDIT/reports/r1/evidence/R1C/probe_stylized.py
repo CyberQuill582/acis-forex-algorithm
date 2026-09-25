@@ -12,7 +12,7 @@ import numpy as np
 from scipy import stats
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from gen_lab import LabSpec, generate, intraday, HOUR_VAR, HOUR_SPREAD   # noqa: E402
+from gen_lab import LabSpec, generate, intraday_panel, HOUR_VAR   # noqa: E402
 
 SEEDS = int(sys.argv[1]) if len(sys.argv) > 1 else 4
 VARIANT = sys.argv[2] if len(sys.argv) > 2 else "lab"
@@ -103,18 +103,19 @@ def main():
     print("  [n/a ] 5 intermittency, 9 leverage (equity), 10 volume, 11 time-scale asymmetry: not modelled / not asserted")
     # intraday seasonality: self-consistency with the lab's declared session shape (NOT a literature calibration)
     p = generate(LabSpec(seed=1, **kw))
-    rng = np.random.default_rng(5)
-    byhour = np.zeros(24); sp = np.zeros(24)
-    for t in range(0, 600):
-        sec, inc, spr, _ = intraday(p, 3, t, tick_seconds=300, rng=rng)
-        h = sec // 3600
-        byhour += np.bincount(h, weights=np.abs(inc) / p.sigma[t, 3], minlength=24)
-        sp += np.bincount(h, weights=spr, minlength=24)
+    byhour = np.zeros(24); roll = []; hour_off = []
+    for t in range(0, 400):
+        d = intraday_panel(p, t, tick_seconds=60)
+        h = d["hours"]
+        byhour += np.bincount(h, weights=(np.abs(d["logret"]) / p.sigma[t][:, None]).mean(axis=0), minlength=24)
+        sp = d["spread_frac"].mean(axis=0)
+        roll.append(sp[:5].mean()); hour_off.append(0.5 * (sp[60:65].mean() + sp[-60:-55].mean()))
     cr = np.corrcoef(byhour, np.sqrt(HOUR_VAR))[0, 1]
+    ratio = float(np.mean(roll) / np.mean(hour_off))
     out.append(report("S intraday vol seasonality (self-cons.)", cr > 0.9,
-                      f"corr(mean|r| by hour, sqrt(profile)) {cr:.3f}", "> 0.9; shape is a lab knob"))
-    out.append(report("S spread peaks at the rollover hour", int(np.argmax(sp)) == 21,
-                      f"argmax hour {int(np.argmax(sp))}", "== 21 UTC (lab rollover hour)"))
+                      f"corr(mean|r| by UTC hour, sqrt(profile)) {cr:.3f}", "> 0.9; shape is a lab knob"))
+    out.append(report("S rollover spread spike at 17:00 New York", ratio > 3.0,
+                      f"spread first 5 min / one hour off {ratio:.1f}x", "> 3x (knob 8x; ACIS_SPEC.md:407 records 6-13x)"))
     print(f"SUMMARY variant={VARIANT}: {sum(out)}/{len(out)} PASS")
 
 

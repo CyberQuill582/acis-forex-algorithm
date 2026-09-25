@@ -3,8 +3,8 @@
 - **Lane:** R1-C. **Model/effort as observed:** Claude Opus 5.5 (`claude-opus-5-5`), effort not shown to me.
 - **Fresh context:** yes. I read only BRIEF_R1, FLEET_PLAN §1/§6, C3 §2.5 + §5, P3 § C3, C2 §2.7, the LEAD bridge
   probe, and the BASE files named below.
-- **BASE:** `974dbda` (read-only at `/tmp/review-acis`). **Date:** 2026-09-25. **Web used:** 4 of 25.
-- **Status:** PARTIAL, ~08:25 UTC. Numbers are **DRAFT** unless marked final. Everything is synthetic.
+- **BASE:** `974dbda` (read-only at `/tmp/review-acis`). **Date:** 2026-09-25. **Web used:** 21 of 25.
+- **Status:** PARTIAL, updated 08:25 UTC (first commit 08:14). Numbers are **DRAFT** unless marked final. Everything is synthetic.
 
 ## First findings
 
@@ -64,6 +64,36 @@
      vol-targeted rule the tilt is small, which matches the closed form's 1/n scaling.
    - **The bias is a short-path problem, and the fold/ladder spans (0.2–2.8 years) are where it bites.**
 
+5. **NEW: the BASE planted tick market is ~3.3× more volatile per day than its null.** (grade: own measurement on
+   the PRODUCTION generator, read-only; `evidence/R1C/probe_planted_vol.py`)
+   - Daily sd: null 0.0053, planted 0.0176, permuted 0.0046. The analytic ratio is 3.51, from
+     √(1 + drift_sigma²·E[len²]/E[len]).
+   - The planted 1–4 h episodes carry ~92% of planted's daily variance. The frictionless oracle's annual Sharpe
+     is ~drift_sigma·√(252·4320) ≈ 157.
+   - So "planted passes, null fails" also compares an 8%-vol market against a 28%-vol one: the cost/move ratio,
+     ATR and NVMA inputs, stop distances and VaR all differ.
+   - A daily lab must plant **variance-matched** effects. Mine does, by construction: the drift is in vol units,
+     with var(m) ≈ 0.0024 of the total.
+6. **NEW: intraday refinement must bridge the common factor JOINTLY, or it plants a pairs edge.**
+   (`probe_intraday.py`, 3,600 days × 3 seeds)
+   - Per-instrument bridges pinned at correlated daily endpoints make j's day-so-far predict i's rest-of-day:
+     a "catch-up" rule earns +0.08 to +0.12 vol units a day (t 6.3–8.6).
+   - One shared factor bridge plus idiosyncratic bridges gives +0.02 / −0.004 / −0.02 (|t| ≤ 1.7). Ticks sum to
+     the daily bar to 1e-17.
+   - A day pinned to zero (the BASE defect at day scale) pays day-so-far momentum −0.40 (t −356), against ≈0 on
+     the lab.
+7. **Effects deliver their declared Sharpe.** (`probe_effects.py`, 20 seeds × 20 instruments, target 0.5 per
+   instrument, vol units)
+   - Delivered: carry rule 0.500, trend oracle 0.501, XS oracle 0.514, season oracle 0.500. EWMAC 16/64 on the
+     trend gives 0.135 against a closed form of 0.115 (se 0.021). Null rows are within 2 se of 0.
+   - The effects are NOT orthogonal to other families' rules. A planted carry (persistent rates) pays
+     EWMAC 16/64 +0.16 and XS-rank +0.17, and a planted XS drift pays EWMAC +0.12. Power must be stated per
+     (effect, rule) pair, never per family label.
+8. **Short paths (2.8 graded years, 400 seeds):**
+   - null −0.020 ± 0.031, detect 4.3%;
+   - planted +0.806 against theory 0.828, detect **40.3% against theory 39.8%**;
+   - with the BASE demeaning: null **−0.199** (6 se), planted 0.442, and power **halves to 18.8%**.
+
 ## Draft "For PLAN_R1" (DRAFT, for the lead's v1)
 
 | # | Recommendation | Value | Complexity | Grade | Falsifier | Verdict |
@@ -73,6 +103,7 @@
 | C-3 | **The null is null only in the P&L the grader books.** If grading books no financing (`financing=None`, as in the synthetic harness today), the lab must set rate differentials to 0: under UIP the spot drifts by −(rate diff), and a spot-only grader would score that as an edge. With financing on, build the lab's rates as a synthetic `RateTable` (`tests/backtest/financing.py:52`), fed through `make_financing` (`:90`), so there is no second financing model. | Stops carry-null false positives. | ~20 lines (a synthetic `RateTable` builder). | own reasoning; code refs | A spot-only grade on a financing-on lab null shows a carry "edge" → the guard is missing. | **adopt** |
 | C-4 | **No second cost model.** The lab sets only the *quoted* bid/ask in the tape (session spread profile, rollover ×4, random spikes). Commission and slippage stay in `CostModel` (`core/optimizer/costs.py:27`), built by `evolve_step.cost_model(cfg, i)` from `instruments.yaml`. RSIM prices daily bars with the same `CostModel.per_side_cost(spread)` instance. Synthetic instruments map onto declared cost classes in a test-only `AcisConfig`, never in production config. | One friction path (the GAP-P12D-36 class excluded). | ~30 lines of config shim. | code refs | Any lab-only friction constant found outside `CostModel`. | **adopt** |
 | C-5 | **Stylized-facts probe set as the lab's own gate.** Cont's 1, 2, 3 (FX: symmetry), 4, 6, 7 and 8, with a *shape* test for 8 (power vs exponential), a heteroskedasticity-robust ACF band for 1, and intraday seasonality as self-consistency only. | Catches a lab that is too easy (Gaussian iid, like BASE: C2 §2.7). | ~150 lines. | Cont 2001 (a) | — | **adopt** |
+| C-7 | **Variance-matched planting and a common factor bridge.** The planted drift is set by a target Sharpe (vol units), and the noise is scaled so that planted and null have equal variance. Intraday ticks come from one factor bridge plus idiosyncratic bridges. Permuted = shuffled days plus one random sign per day (the cross-section is kept). | Planted vs null differ ONLY by the edge. No spurious pairs edge. | ~10 lines in the lab. For the BASE tick generator, a `drift_sigma` default change needs owner ratification (it moves every recorded run). | own measurement / sim | The planted/null variance ratio is outside 1 ± 0.05, or the joint-bridge catch-up rule has \|t\| > 3 over 3 seeds. | **adopt** |
 | C-6 | **Machinery-lab family choice: parametric wins** (draft; sources pending). GANs and diffusion need real data to train, which is a look under §0.4, and give no plantable ground truth. Agent-based simulators give ground truth only at the agent-rule level, not at the Sharpe level. | Known Sharpe, so power is computable. | — | pending (web) | — | draft: **adopt parametric; reject GAN/diffusion for the machinery lab; adapt ABM only for microstructure tests** |
 
 ## Not yet done
