@@ -19,7 +19,8 @@
 ## 1. Verdict (≤ 10 lines)
 
 1. **ACIS has no demonstrated edge, and its grader cannot yet say yes or no honestly.**
-   - `passed` can pass nothing, true or false (C1; confirmed by the lead).
+   - `passed` can pass nothing, true or false (C1; the lead confirmed the FPR side and the closed-form
+     hurdle).
    - The graded book fills gapped and mid-triggered stops at the stop price (C2; confirmed).
    - The outer loop of pipeline revisions is uncounted (C1).
 2. **The positive-control loss (GAP-P12D-49) is mostly structure, not a verdict on strategy.**
