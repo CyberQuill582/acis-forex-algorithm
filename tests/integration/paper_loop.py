@@ -263,6 +263,7 @@ def build_paper_loop(
         session_boundaries=cfg.system.session_boundaries,
         week_close=fx.week_close,
         week_open=fx.week_open,
+        holidays=fx.holidays,
         scalp_horizon_s=(signals_cfg.momentum_scalp_horizon_bars[1]
                          * signals_cfg.momentum_scalp_bar_seconds),
         atr_period=signals_cfg.atr_period,

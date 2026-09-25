@@ -5,6 +5,9 @@ Moved unchanged out of capital_governor.py (module legibility, GAP-P12M-01). Inv
     window through the Sunday open — there is no post-close bypass. It binds EVERY
     account, weekend holding allowed or not (GAP-P12D-58: FTMO forbids opening a trade
     two hours or less before a market closes for two hours or more, on every account).
+  * The same ban and window apply before, and during, EVERY closure of two hours or
+    more, not only the Friday close: a declared FX holiday D closes from the close on the
+    day before D to the close on D (audit X5; FTMO's "gap trading" names any such closure).
   * The weekend FLATTEN (master §9.5, no-weekend-holding accounts) starts with that same
     window, so no entry can open after it starts: every open position gets a reduce-only
     close naming it — its own side and size (the close convention, venue_limits.py).
@@ -15,9 +18,9 @@ Moved unchanged out of capital_governor.py (module legibility, GAP-P12M-01). Inv
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from types import MappingProxyType
-from typing import Sequence
+from typing import Collection, Sequence
 
 from config.schemas import ZonedTime
 from core.data.fx_clock import local_to_utc, next_local, to_local
@@ -38,14 +41,28 @@ def within_weekend_buffer(now: datetime, week_close: ZonedTime, week_open: Zoned
     return gap <= buffer_s                            # buffer window OR past close
 
 
+def within_closure_buffer(now: datetime, week_close: ZonedTime, week_open: ZonedTime,
+                          holidays: Collection[date], buffer_s: float) -> bool:
+    """Inside `buffer_s` before, or inside, the weekend or a declared holiday closure."""
+    if within_weekend_buffer(now, week_close, week_open, buffer_s):
+        return True
+    for day in holidays:
+        start = local_to_utc(day - timedelta(days=1), week_close.at, week_close.zone)
+        end = local_to_utc(day, week_close.at, week_close.zone)
+        if start - timedelta(seconds=buffer_s) <= now < end:
+            return True
+    return False
+
+
 def next_boundary(now: datetime, boundaries: Sequence[ZonedTime]) -> datetime:
     return min(next_local(now, b.zone, b.at) for b in boundaries)
 
 
 def weekend_flatten_orders(portfolio: PortfolioState, now: datetime, week_close: ZonedTime,
-                           week_open: ZonedTime, buffer_s: float) -> tuple[SizedOrder, ...]:
-    """A close for every open position once the weekend window has begun, else ()."""
-    if not within_weekend_buffer(now, week_close, week_open, buffer_s):
+                           week_open: ZonedTime, holidays: Collection[date],
+                           buffer_s: float) -> tuple[SizedOrder, ...]:
+    """A close for every open position once a closure's window has begun, else ()."""
+    if not within_closure_buffer(now, week_close, week_open, holidays, buffer_s):
         return ()
     return tuple(SizedOrder(
         order_id=str(uuid.uuid4()), signal_id=f"weekend_flatten:{p.instrument}",

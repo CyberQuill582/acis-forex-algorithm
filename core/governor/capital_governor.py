@@ -12,15 +12,15 @@ import json
 import math
 import uuid
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from types import MappingProxyType
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Sequence
 
 from config.schemas import AccountRulebook, GovernorConfig, GuardrailLimits, ZonedTime
 from core.data.errors import DataQualityError
 from core.governor.calendar_gates import (next_boundary, weekend_flatten_orders,
-                                          within_weekend_buffer)
+                                          within_closure_buffer)
 from core.governor.exposure import delta_contributions, exposure_breach
 from core.governor.factors import correlation_factor, liquidity_factor, vol_norm
 from core.governor.units import usd_per_base_unit
@@ -48,6 +48,7 @@ class CapitalGovernor:
         session_boundaries: list[ZonedTime],
         week_close: ZonedTime,
         week_open: ZonedTime,
+        holidays: Sequence[date],        # declared whole-day FX closures (audit X5)
         scalp_horizon_s: int,
         atr_period: int,
         blackout: Callable[[str, datetime], bool],
@@ -61,8 +62,7 @@ class CapitalGovernor:
         self._vol_targets = vol_targets
         self._confidence_veto = confidence_veto
         self._boundaries = session_boundaries
-        self._week_close = week_close
-        self._week_open = week_open
+        self._closure = (week_close, week_open, tuple(holidays))   # every >= 2 h closure
         self._scalp_horizon_s = scalp_horizon_s
         self._atr = AtrMemo(atr_period)   # GAP-P12D-15: recomputed only when a window changes
         self._blackout = blackout
@@ -229,13 +229,13 @@ class CapitalGovernor:
         market has closed is surfaced (WEEKEND_FLATTEN_INCOMPLETE), never ignored."""
         if self._rules.weekend_holding_allowed:
             return ()
-        closes = weekend_flatten_orders(portfolio, now, self._week_close, self._week_open,
+        closes = weekend_flatten_orders(portfolio, now, *self._closure,
                                         self._cfg.weekend_entry_buffer_s)
         for close in closes:
             self._open_groups.pop(close.group_id, None)
             self._log_order(close)
         if closes:
-            closed = within_weekend_buffer(now, self._week_close, self._week_open, 0)
+            closed = within_closure_buffer(now, *self._closure, 0)
             self._log.event("WEEKEND_FLATTEN_INCOMPLETE" if closed else "WEEKEND_FLATTEN",
                             instruments=sorted({c.instrument for c in closes}))
         return closes
@@ -371,8 +371,8 @@ class CapitalGovernor:
                             instrument=signal.instrument,
                             account=self._rules.platform)
             return "blackout"
-        if within_weekend_buffer(now, self._week_close, self._week_open,   # EVERY account,
-                                 self._cfg.weekend_entry_buffer_s):         # GAP-P12D-58
+        if within_closure_buffer(now, *self._closure,             # EVERY account and every
+                                 self._cfg.weekend_entry_buffer_s):  # closure (P12D-58, X5)
             return "weekend_ban"
         if (self._cfg.scalp_min_hold_conflict
                 and signal.strategy_type is StrategyType.MOMENTUM_SCALP

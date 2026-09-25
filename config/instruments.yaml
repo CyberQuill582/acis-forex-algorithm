@@ -13,6 +13,10 @@ calendars:
       new_york: {zone: America/New_York, open: "08:00", close: "17:00"}
     week_close: {zone: America/New_York, at: "17:00"}   # Friday = the rollover
     week_open: {zone: America/New_York, at: "17:00"}    # Sunday
+    # Audit X5: whole-day FX closures (interbank convention; FTMO's 2025 holiday table,
+    # "Forex & Exotics ... Closed" on Dec 25 and Jan 1). Each closes the trading day that
+    # ends at 17:00 New York on that date. RE-VERIFY against the firm's table each December.
+    holidays: ["2025-12-25", "2026-01-01", "2026-12-25", "2027-01-01"]
   spot_metals:                   # GAP-P12D-11: OTC spot gold — 24/5 with a daily hour off
     type: fx
     sessions:

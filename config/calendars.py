@@ -69,12 +69,15 @@ class Session(_Strict):
 class FxCalendar(_Strict):
     """A 24/5 over-the-counter market (spot FX, spot metals): open from the Sunday
     `week_open` to the Friday `week_close`, tagged by the centre sessions, closed
-    inside an optional `daily_break` (spot gold's daily hour — master §3.7)."""
+    inside an optional `daily_break` (spot gold's daily hour — master §3.7). A declared
+    holiday D is closed from the `week_close` time on the day before D to that time on D
+    (the firm's server day D; audit X5: FTMO closes FX all day on Dec 25 and Jan 1)."""
     type: Literal["fx"]
     sessions: dict[str, Session] = Field(min_length=1)
     week_close: ZonedTime   # Friday, local
     week_open: ZonedTime    # Sunday, local
     daily_break: Session | None = None
+    holidays: list[date] = Field(default_factory=list)
 
 
 class ExchangeCalendar(_Strict):

@@ -41,7 +41,7 @@ def mk_portfolio(**overrides) -> PortfolioState:
     return PortfolioState(**base)
 
 
-def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0,
+def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0, holidays=(),
                 **cfg_overrides) -> tuple[CapitalGovernor, CapturingLogger]:
     log = CapturingLogger()
     cfg = dict(marginal_alpha_window=50, marginal_alpha_min_trades=20,
@@ -66,6 +66,7 @@ def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0,
                             ZonedTime(zone="America/New_York", at="08:00")],
         week_close=_NY_ROLL,
         week_open=_NY_ROLL,
+        holidays=holidays,
         scalp_horizon_s=900,
         atr_period=14,
         blackout=blackout or (lambda instrument, now: False),
