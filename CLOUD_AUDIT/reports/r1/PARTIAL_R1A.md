@@ -92,7 +92,7 @@
 
 **P4. Demo duration, stated honestly.** DRAFT; the rates are an LLM estimate, still to be sourced from Carver's turnover numbers.
 - A pooled daily rule set on 20–40 instruments at slow–medium trend speeds is roughly 4–12 round trips per instrument per year. That is ≈ 2–9 round trips a week, or ≈ 10–40 fills a week with buffered adjustments.
-- **Plumbing and cost certified: ~3–17 weeks.**
+- **Plumbing and cost certified: ~3–28 weeks** (≈ 5–8 at 20 fills a week).
 - **Sign of edge:** only if the portfolio SR is ≥ 1.5, at a median of 2.4–3 years.
 - **Magnitude:** not within 5 years at any realistic SR.
 - The demo verdict at 6–12 months is therefore "plumbing and cost certified; edge not contradicted", never "edge proven".
