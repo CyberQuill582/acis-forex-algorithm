@@ -20,7 +20,8 @@ from decimal import Decimal
 
 from config.schemas import ExecutionConfig
 from core.data.errors import DataQualityError
-from core.execution.boundary import quantity_at, reduce_only_at, side
+from core.execution.boundary import paced_at, quantity_at, reduce_only_at, side
+from core.execution.close_pacing import ClosePacer
 from core.execution.fragmenter import Fragment, FragmentPlan, plan
 from core.execution.reports import ReportBook
 from core.execution.venue import (
@@ -75,6 +76,7 @@ class ExecutionOrchestrator:
         self._requests = {name: RequestBudget(name, cfg.max_venue_requests_per_day,
                                               store.request_times(name, since))
                           for name in faces}
+        self._pacer = ClosePacer(store, self._now())   # re-read at boot, like the budget
 
     # -- freeze (Risk flatten path lands here at phase 9) ---------------------- #
 
@@ -205,7 +207,11 @@ class ExecutionOrchestrator:
         reroutes = 0
         retries = 0
         while True:
-            if order.action == "close":               # reduce-only, at THIS venue
+            if order.action == "close":               # paced, then reduce-only, at THIS venue
+                refused = paced_at(self._pacer, venue, order, units, fragment_id,
+                                   self._reports, self._log, self._now())
+                if refused:
+                    return reports + refused
                 units, refused = await reduce_only_at(self._faces[venue], venue, order, units,
                                                       fragment_id, self._reports, self._log)
                 reports.extend(refused)
@@ -218,6 +224,9 @@ class ExecutionOrchestrator:
                 return reports
             report = await self._submit_once(order, fragment_id, venue, units,
                                              fragment_plan.path == "ioc")
+            if order.action == "close":
+                self._pacer.record(venue, order.instrument, self._now(),
+                                   report is not None and report.filled_units > 0)
             if report is None:                        # gave up mid-reconcile
                 report = self._reports.reject(order, side(order),
                                               fragment_id=fragment_id, venue=venue)

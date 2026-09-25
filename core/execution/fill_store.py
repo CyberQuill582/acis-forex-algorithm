@@ -8,6 +8,9 @@ Invariants:
     reached a venue are written under venue "none". So the rows under a venue's name
     are a restart-proof lower bound on the requests sent to it (`request_times`,
     GAP-P12D-57) — a restart cannot hand the engine a fresh request budget.
+  * Every close sent to a venue leaves a `close_attempt` row (filled or not), kept for
+    24 h, so the close pace (close_pacing.py, audit X6/F5) survives a restart too. The
+    table is additive: `fill_report` is unchanged.
 """
 
 from __future__ import annotations
@@ -33,7 +36,10 @@ class FillReportStore:
         venue TEXT NOT NULL, status TEXT NOT NULL,
         remaining_units TEXT NOT NULL, session_id TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS ix_fill_order ON fill_report (order_id);"""
+    CREATE INDEX IF NOT EXISTS ix_fill_order ON fill_report (order_id);
+    CREATE TABLE IF NOT EXISTS close_attempt (
+        venue TEXT NOT NULL, instrument TEXT NOT NULL, at TEXT NOT NULL, ok INTEGER NOT NULL
+    );"""
 
     def __init__(self, db_path: str | Path) -> None:
         self._conn = open_store(db_path)     # WAL + synchronous=FULL: power-loss durable (X4)
@@ -55,6 +61,18 @@ class FillReportStore:
                                   (venue,)).fetchall()
         stamps = (datetime.fromisoformat(ts) for (ts,) in rows)
         return sorted(t for t in stamps if t >= since)
+
+    def record_close_attempt(self, venue: str, instrument: str, at: datetime, ok: bool,
+                             keep_since: datetime) -> None:
+        self._conn.execute("DELETE FROM close_attempt WHERE at < ?", (keep_since.isoformat(),))
+        self._conn.execute("INSERT INTO close_attempt VALUES (?,?,?,?)",
+                           (venue, instrument, at.isoformat(), int(ok)))
+        self._conn.commit()
+
+    def close_attempts(self, since: datetime) -> list[tuple[str, str, datetime, bool]]:
+        rows = self._conn.execute("SELECT venue, instrument, at, ok FROM close_attempt "
+                                  "WHERE at >= ? ORDER BY at", (since.isoformat(),)).fetchall()
+        return [(v, i, datetime.fromisoformat(at), bool(ok)) for v, i, at, ok in rows]
 
     def row_count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM fill_report").fetchone()[0]

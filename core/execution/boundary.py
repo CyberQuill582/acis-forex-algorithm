@@ -5,12 +5,15 @@ master §7.5). Moved out of orchestrator.py (legibility budget, GAP-P12M-01). In
   * Reduce-only (the close convention): a close names its position's side and may trade
     at most what THIS venue holds on that side — capped at it, refused without it. It is
     the engine's second line; the venue's own atomic close is the first (`close_position`).
+  * Pacing (audit X6/F5): a close the venue keeps refusing is paced before it is sent.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 
+from core.execution.close_pacing import ClosePacer
 from core.execution.reports import ReportBook
 from core.execution.venue import ExecutionFace, FillReport
 from core.execution.venue_limits import reducible, venue_quantity
@@ -39,6 +42,17 @@ def quantity_at(face: ExecutionFace, venue: str, order: SizedOrder, units: Decim
               units=str(units), sent=str(sendable), unsent=str(rest))
     return sendable, _refuse(reports, order, rest,
                              f"{tag}:{'minlot' if sendable == 0 else 'step'}")
+
+
+def paced_at(pacer: ClosePacer, venue: str, order: SizedOrder, units: Decimal, tag: str,
+             reports: ReportBook, log, now: datetime) -> list[FillReport]:
+    """A close the venue keeps refusing waits its turn (close_pacing.py): [] when it may
+    go now, else one REJECTED report and an EXEC_CLOSE_PACED event."""
+    wait = pacer.wait_s(venue, order.instrument, now)
+    if wait <= 0:
+        return []
+    log.event("EXEC_CLOSE_PACED", order_id=order.order_id, venue=venue, wait_s=round(wait, 3))
+    return _refuse(reports, order, units, f"{tag}:paced")
 
 
 async def reduce_only_at(face: ExecutionFace, venue: str, order: SizedOrder, units: Decimal,
