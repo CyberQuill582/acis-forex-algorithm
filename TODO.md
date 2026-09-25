@@ -57,7 +57,7 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 - **Why:** credits.
 - **New work counts as a launch.** Sending an existing agent new work needs the owner's go.
 - **Resuming is allowed.** Resuming an approved agent's interrupted, in-flight task is permitted.
-- **Due audits and builds** are listed here as ASKS, never launched.
+- **Due audits and builds** are listed here as ASKS, never launched. **The session must ASK the owner explicitly** (one standalone question: what, why, how big, and the cheaper alternative), because the owner cannot track when a launch is due.
 
 **OWNER DIRECTIVES (2026-09-24, before sleeping):**
 - (1) "let them continue". The night run goes on.
