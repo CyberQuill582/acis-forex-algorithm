@@ -1,0 +1,6 @@
+paths=2000 weekdays=705 holding steps=222
+vote_dm   mean -0.03839  se 0.00216  t  -17.8  frac<0 0.653
+vote_raw  mean -0.00262  se 0.00230  t   -1.1  frac<0 0.513
+L126_dm   mean -0.03088  se 0.00218  t  -14.2  frac<0 0.623
+L126_raw  mean -0.00196  se 0.00235  t   -0.8  frac<0 0.516
+closed form, single 126-day lookback, demeaned: -0.03112

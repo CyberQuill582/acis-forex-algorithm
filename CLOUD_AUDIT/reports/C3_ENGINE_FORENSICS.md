@@ -1,5 +1,24 @@
 # C3 — ENGINE FORENSICS AT SCALE (ACIS cloud review, run 2)
 
+> **LEAD STATUS NOTE (2026-09-25, finishing session; added by the lead, not by the lane)**
+> - **What happened.** The lane's last commit is `c046186`, at 2026-09-24 19:42 UTC. The session hit its
+>   usage limit at 19:52 UTC, before the lane finished its report. The container was then reclaimed, and
+>   `/tmp/c3/runs` was lost with it.
+> - **Runs that never reached this report:**
+>   1. `h7_on`, the as-built arm of the horizon test (a multi-day market with TSMOM live). The lead
+>      **re-ran it once** on 2026-09-25: synthetic only, seed 7, the same driver and arguments, 15 GB free
+>      before launch. Its row is filled below and marked [lead-filled].
+>   2. `p7_off_scr*`, the scrambled-invisible-gene runs for §2.6 (GAP-0035). **Not re-run**: they need
+>      several ~22-minute engine runs, which is more than one bounded re-run. **§2.6 is UNVERIFIED.**
+> - **Unfilled placeholders.** The lane left `__EXEC__`, `__NULLROW__`, `__NULLSHORT__`, `__H7ON_ROW__`,
+>   `__H7ON_OCC__`, `__GENES__` and `__RUNS__` in the report. The lead filled each one from committed
+>   evidence (`evidence/C3/runs_summary.csv`, `probe_ci_out.txt`) or from the re-run, and marked it
+>   [lead-filled]. No lane claim was edited.
+> - **Lead verification.** Verdicts are in `P3_LEAD_VERIFICATION.md` § C3, and one correction applies.
+>   §2.5 item 3 and §5 item 4 say the spot-for-excess substitution is undeclared. **That is REFUTED:** it
+>   is declared at `core/signals/canonical.py:101-102`, citing GAP-0073, as "immaterial at 3-12m FX
+>   horizons". What is questionable is the premise that it is immaterial, not whether it was declared.
+
 - **Lane:** C3 ENGINE FORENSICS AT SCALE.
 - **Model / effort as observed:** Opus 5.5 (`claude-opus-5-5`); effort not observable from inside the session.
 - **Fresh context:** attested. No subagents were launched.
@@ -18,7 +37,9 @@ against §14.
 
 ## 1. Executive summary
 
-__EXEC__
+[lead-filled] The lane never wrote its executive summary. Its conclusions stand in §2 and in its own
+§5 (proposed ledger items). The lead's reading of them, with verdicts, is in `P3_LEAD_VERIFICATION.md`
+§ C3 and `SYNTHESIS.md`.
 
 ---
 
@@ -89,7 +110,9 @@ in GAP-P12D-49's pre-TSMOM folds.* 95% CIs are t-based over n seeds (`probe_ci.p
 | PAIR_DIVERGENCE | 0 trades | +0.07 (4) | −0.00 (6) | ≈ 0 | — | — |
 | **all** | +6.55 | +4.53 | +9.83 | **+6.97** | **[+0.32, +13.62]** | — |
 
-*Null controls (the same arena, no edge):* __NULLROW__
+*Null controls (the same arena, no edge):* [lead-filled from `runs_summary.csv` row `n7_off`] **one seed
+only (7)**: 725 trades, net **−6.18** (TREND −5.32, BREAKOUT −0.96, MEAN_REVERSION +0.10), gross −0.52,
+friction 5.66. There is no null CI; the null arm has n = 1.
 
 So on this synthetic control:
 - TREND and BREAKOUT separate a planted 1–4 h edge from noise, net of 1× cost, across seeds.
@@ -126,7 +149,7 @@ stable across 3 seeds; the magnitudes are not.
 
 **TSMOM disabled (config `modules_enabled.TSMOM: false`).** Across 3 planted seeds, the engine captures
 the planted edge net of costs: mean **+6.97** [+0.32, +13.62], with TREND +12.71 and BREAKOUT +0.72
-(§2.2 table). The same arena loses on null (__NULLSHORT__). **Net capture is positive but thin:**
+(§2.2 table). The same arena loses on null ([lead-filled] −6.18 on null seed 7, one seed only). **Net capture is positive but thin:**
 - friction is 4.9–8.8 per run against gross 11.4–18.7, so 43–66% of gross;
 - MEAN_REVERSION subtracts 1.6–11.2.
 
@@ -284,7 +307,10 @@ episodes, and at least 5 years so the 252-day lookback has room.
 
 ### 2.6 The invisible genes (GAP-0035)
 
-__GENES__
+[lead-filled] **UNVERIFIED: not measured.** The driver supports it (`sim_c3_run.py --scramble-invisible
+<salt>` re-draws only `momentum_lookback`, `breakout_atr_threshold` and `mean_rev_zscore_entry` after
+evolution). The `p7_off_scr*` runs were lost with the container, and the finishing session did not re-run
+them (see the status note). GAP-0035's share of per-module variance remains unmeasured.
 
 ### 2.7 Other mechanisms observed
 
