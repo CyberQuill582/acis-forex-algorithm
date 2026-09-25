@@ -1,0 +1,37 @@
+production core/+monitoring/ .py lines: 7645
+KILL whole    291  core/optimizer/qiea.py
+KILL whole    256  core/optimizer/fitness.py
+KILL whole     44  core/regime/stability.py
+KILL whole     73  core/governor/marginal_alpha.py
+KILL whole    120  core/execution/fragmenter.py
+KILL whole    117  tests/backtest/evolve_step.py
+KILL whole    197  tests/backtest/regime_labels.py
+KILL range     92  core/optimizer/param_library.py:112-203  (param_library staging/promotion)
+KILL range     28  core/execution/venue.py:315-342  (VenueQuality)
+KILL range     30  core/signals/agon.py:140-169  (AGON pair sampling)
+KILL range     75  core/signals/agon.py:407-481  (AGON MR/SCALP/PAIR modules)
+KILL range     92  core/signals/agon.py:267-358  (AGON conviction/discard pipeline)
+KILL subtotal (measured): 1415
+REHOME/KEEP    74  core/optimizer/plateau.py
+REHOME/KEEP   143  core/optimizer/param_types.py
+REHOME/KEEP   395  core/regime/nvma.py
+REHOME/KEEP   391  core/signals/provenance.py
+REHOME/KEEP    99  tests/backtest/deflated_sharpe.py
+REHOME/KEEP   131  tests/backtest/report.py
+REHOME/KEEP    79  tests/backtest/oos_plan.py
+REHOME/KEEP    61  core/optimizer/costs.py
+TEST whole    157  tests/unit/test_qiea.py
+TEST whole    158  tests/backtest/test_evolve_step.py
+TEST whole     92  tests/integration/test_qiea_promotion_cycle.py
+TEST whole    110  tests/unit/test_evaluation_registry.py
+TEST whole    178  tests/unit/test_fitness.py
+TEST whole    111  tests/unit/test_fitness_components.py
+TEST whole    118  tests/unit/test_fitness_entries.py
+TEST whole    116  tests/unit/test_fitness_exits.py
+TEST whole     70  tests/unit/test_fitness_indicators.py
+TEST whole    128  tests/unit/test_plateau_law.py
+TEST whole    159  tests/backtest/test_regime_labels.py
+TEST whole     92  tests/unit/test_marginal_alpha.py
+TEST part     207  tests/unit/test_param_library.py
+TEST part     275  tests/unit/test_nvma.py
+TEST whole subtotal: 1489; partial files: 482

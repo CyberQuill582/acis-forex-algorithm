@@ -1,0 +1,47 @@
+{
+ "per_side_cost_us_per_call": 0.455,
+ "daily_null": {
+  "bars": 3640,
+  "instruments": 30,
+  "fills": 57529,
+  "seconds": 0.13,
+  "trades": 2291,
+  "win_rate": 0.141,
+  "avg_duration_days": 46.9,
+  "positive_months_pct": 37.6,
+  "portfolio_annual_sr": -0.51
+ },
+ "daily_planted": {
+  "bars": 3640,
+  "instruments": 30,
+  "fills": 55766,
+  "seconds": 0.11,
+  "trades": 2006,
+  "win_rate": 0.177,
+  "avg_duration_days": 53.5,
+  "positive_months_pct": 52.0,
+  "portfolio_annual_sr": 0.87
+ },
+ "hourly_null": {
+  "bars": 87360,
+  "instruments": 30,
+  "fills": 132962,
+  "seconds": 2.1,
+  "trades": 2198,
+  "win_rate": 0.152,
+  "avg_duration_days": 48.8,
+  "positive_months_pct": 43.9,
+  "portfolio_annual_sr": -0.22
+ },
+ "hourly_planted": {
+  "bars": 87360,
+  "instruments": 30,
+  "fills": 124641,
+  "seconds": 1.59,
+  "trades": 2061,
+  "win_rate": 0.167,
+  "avg_duration_days": 52.0,
+  "positive_months_pct": 53.2,
+  "portfolio_annual_sr": 0.42
+ }
+}

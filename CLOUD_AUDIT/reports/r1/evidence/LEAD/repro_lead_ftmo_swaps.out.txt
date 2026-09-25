@@ -1,0 +1,6 @@
+EUR/USD {'swapLong': -9.49, 'swapShort': 0.36, 'swapType': 'points', 'commission': 5, 'commissionType': 'flat_USD', 'leverageSwing': 30}
+USD/JPY {'swapLong': 2.54, 'swapShort': -17.35, 'swapType': 'points', 'commission': 5, 'commissionType': 'flat_USD', 'leverageSwing': 30}
+XAU/USD {'swapLong': -83, 'swapShort': -8.3, 'swapType': 'points', 'commission': 0.0014, 'commissionType': 'percent', 'leverageSwing': 15}
+US500.cash {'swapLong': -163.19, 'swapShort': -2.58, 'swapType': 'points', 'commission': 0, 'commissionType': 'percent', 'leverageSwing': 15}
+GER40.cash {'swapLong': -453.25, 'swapShort': -4.58, 'swapType': 'points', 'commission': 0, 'commissionType': 'percent', 'leverageSwing': 15}
+active 166 G10 FX 28 median keep 0.21 no positive side 6 ['AUD/USD', 'GBP/AUD', 'GBP/USD', 'EUR/CAD', 'EUR/NZD', 'NZD/CAD']

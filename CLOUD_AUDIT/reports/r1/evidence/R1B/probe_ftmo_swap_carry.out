@@ -1,0 +1,80 @@
+class      symbol           swapL    swapS   fair d markup m  carry side  kept
+Forex      AUD/CAD           1.50    -8.31     4.91     3.41  long         31%
+Forex      AUD/JPY           3.13   -12.18     7.65     4.53  long         41%
+Forex      AUD/NZD           1.74    -9.49     5.62     3.88  long         31%
+Forex      AUD/CHF           2.11    -9.65     5.88     3.77  long         36%
+Forex      AUD/USD          -3.46    -5.59     1.06     4.53  long       -325%
+Forex      GBP/AUD          -9.18    -3.42    -2.88     6.30  short      -119%
+Forex      GBP/CAD           1.02   -14.74     7.88     6.86  long         13%
+Forex      GBP/JPY           4.11   -21.44    12.78     8.67  long         32%
+Forex      GBP/NZD           0.62   -16.73     8.68     8.05  long          7%
+Forex      GBP/CHF           2.32   -19.43    10.88     8.55  long         21%
+Forex      GBP/USD          -5.37    -4.40    -0.48     4.88  short      -907%
+Forex      CAD/JPY           0.58    -5.87     3.23     2.65  long         18%
+Forex      CAD/CHF           0.78    -6.74     3.76     2.98  long         21%
+Forex      EUR/AUD         -13.12     2.32    -7.72     5.40  short        30%
+Forex      EUR/GBP          -7.02     0.02    -3.52     3.50  short         1%
+Forex      EUR/CAD          -1.95    -4.78     1.42     3.37  long       -138%
+Forex      EUR/JPY           1.63   -10.05     5.84     4.21  long         28%
+Forex      EUR/CHF           1.44   -11.13     6.29     4.85  long         23%
+Forex      EUR/USD          -9.49     0.36    -4.92     4.57  short         7%
+Forex      EUR/NZD          -4.58    -3.78    -0.40     4.18  short      -945%
+Forex      NZD/CAD          -1.12    -2.84     0.86     1.98  long       -130%
+Forex      NZD/CHF           0.76    -5.60     3.18     2.42  long         24%
+Forex      NZD/JPY           0.79    -5.42     3.10     2.31  long         25%
+Forex      NZD/USD          -4.99     0.06    -2.52     2.47  short         2%
+Forex      CHF/JPY         -11.67     1.73    -6.70     4.97  short        26%
+Forex      USD/CAD           0.90   -11.53     6.21     5.31  long         14%
+Forex      USD/CHF           1.93   -13.42     7.67     5.75  long         25%
+Forex      USD/JPY           2.54   -17.35     9.95     7.41  long         26%
+Exotics    EUR/CZK         -19.08    -0.94    -9.07    10.01  short       -10%
+Exotics    EUR/HUF         -42.92    11.26   -27.09    15.83  short        42%
+Exotics    EUR/NOK         -91.47    18.90   -55.19    36.28  short        34%
+Exotics    EUR/PLN         -26.60     2.43   -14.52    12.09  short        17%
+Exotics    USD/CNH           8.49   -75.57    42.03    33.54  long         20%
+Exotics    USD/CZK          -6.94   -10.35     1.70     8.64  long       -407%
+Exotics    USD/HKD           4.69   -51.92    28.30    23.62  long         17%
+Exotics    USD/HUF         -24.10     3.45   -13.78    10.33  short        25%
+Exotics    USD/ILS           1.12   -21.60    11.36    10.24  long         10%
+Exotics    USD/MXN        -287.79    17.31  -152.55   135.24  short        11%
+Exotics    USD/NOK         -37.87    -5.23   -16.32    21.55  short       -32%
+Exotics    USD/PLN          -5.35   -12.22     3.44     8.79  long       -156%
+Exotics    USD/SGD           1.01   -12.86     6.93     5.92  long         15%
+Exotics    USD/ZAR        -242.63    25.65  -134.14   108.49  short        19%
+Exotics    USD/SEK          12.02   -84.77    48.39    36.38  long         25%
+Metals CFD XAG/USD         -15.14     0.42    -7.78     7.36  short         5%
+Metals CFD XAG/EUR          -5.62     1.49    -3.56     2.06  short        42%
+Metals CFD XAG/AUD         -13.84     5.21    -9.53     4.31  short        55%
+Metals CFD XAU/USD         -83.00    -8.30   -37.35    45.65  short       -22%
+Metals CFD XAU/EUR         -38.42   -19.58    -9.42    29.00  short      -208%
+Metals CFD XAU/AUD         -94.02   -28.33   -32.84    61.17  short       -86%
+Metals CFD XPD/USD         -42.48   -19.81   -11.33    31.14  short      -175%
+Metals CFD XPT/USD         -57.57   -24.00   -16.79    40.78  short      -143%
+Cash CFD   AUS200.cash    -217.38    14.08  -115.73   101.65  short        12%
+Cash CFD   US30.cash     -1164.80    57.15  -610.98   553.82  short         9%
+Cash CFD   SPN35.cash     -350.15    -3.54  -173.30   176.84  short        -2%
+Cash CFD   EU50.cash      -112.48    -1.14   -55.67    56.81  short        -2%
+Cash CFD   FRA40.cash     -144.97    -1.46   -71.75    73.22  short        -2%
+Cash CFD   GER40.cash     -453.25    -4.58  -224.34   228.91  short        -2%
+Cash CFD   HK50.cash      -299.88  -166.97   -66.45   233.43  short      -251%
+Cash CFD   JP225.cash     -835.56  -358.10  -238.73   596.83  short      -150%
+Cash CFD   N25.cash        -10.70     1.13    -5.91     4.79  short        19%
+Cash CFD   US100.cash     -689.33    33.82  -361.58   327.75  short         9%
+Cash CFD   US500.cash     -163.19    -2.58   -80.30    82.89  short        -3%
+Cash CFD   UK100.cash     -241.20    11.13  -126.16   115.03  short         9%
+Cash CFD   UKOIL.cash       14.70   -74.76    44.73    30.03  long         33%
+Cash CFD   USOIL.cash       49.65  -225.45   137.55    87.90  long         36%
+Cash CFD   NATGAS.cash      -5.84     1.27    -3.55     2.29  short        36%
+Cash CFD   DXY.cash        -22.87     1.12   -12.00    10.88  short         9%
+Cash CFD   US2000.cash     -54.69    -6.38   -24.15    30.54  short       -26%
+Cash CFD   COCOA.c         -18.08     2.82   -10.45     7.63  short        27%
+Cash CFD   COFFEE.c          4.59   -22.90    13.74     9.15  long         33%
+Cash CFD   CORN.c          -37.71     7.44   -22.57    15.13  short        33%
+Cash CFD   SOYBEAN.c       -26.64     2.91   -14.78    11.87  short        20%
+Cash CFD   WHEAT.c         -23.11     3.61   -13.36     9.75  short        27%
+Metals CFD XCU/USD         -18.12     2.53   -10.33     7.80  short        25%
+Cash CFD   HEATOIL.c         2.18    -9.96     6.07     3.89  long         36%
+Cash CFD   COTTON.c         -4.09     0.74    -2.42     1.67  short        31%
+Cash CFD   SUGAR.c          -0.86     0.16    -0.51     0.35  short        31%
+
+G10 Forex (n=28): median share of fair carry kept by the positive-carry side = 21%; share with no positive carry left at all (kept <= 0) = 21%

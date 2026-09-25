@@ -1,0 +1,54 @@
+target per-instrument SR 0.5: trend oracle 0.5 -> EWMAC16/64 theory 0.115; carry rule 0.5; xsmom oracle 0.5; season oracle 0.5
+/home/user/acis-forex-algorithm/CLOUD_AUDIT/reports/r1/evidence/R1C/probe_effects.py:22: RuntimeWarning: invalid value encountered in divide
+  return p.mean(axis=0) / p.std(axis=0, ddof=1) * math.sqrt(YEAR)
+market  rule                         grading    mean SR/inst      se
+null    trend EWMAC16/64             vol-units        +0.017   0.018
+null    trend EWMAC16/64             est-vol x        +0.016   0.017
+null    trend oracle sign(m[t-1])    vol-units          +nan     nan
+null    trend oracle sign(m[t-1])    est-vol x          +nan     nan
+null    carry sign(rate[t-1])        vol-units        -0.003   0.013
+null    carry sign(rate[t-1])        est-vol x        -0.007   0.013
+null    xsmom rank EWMA60            vol-units        +0.029   0.014
+null    xsmom rank EWMA60            est-vol x        +0.026   0.014
+null    season oracle tom*dir        vol-units        +0.001   0.018
+null    season oracle tom*dir        est-vol x        +0.003   0.019
+trend   trend EWMAC16/64             vol-units        +0.135   0.021
+trend   trend EWMAC16/64             est-vol x        +0.129   0.019
+trend   trend oracle sign(m[t-1])    vol-units        +0.501   0.013
+trend   trend oracle sign(m[t-1])    est-vol x        +0.481   0.013
+trend   carry sign(rate[t-1])        vol-units        -0.002   0.017
+trend   carry sign(rate[t-1])        est-vol x        -0.006   0.017
+trend   xsmom rank EWMA60            vol-units        +0.143   0.018
+trend   xsmom rank EWMA60            est-vol x        +0.137   0.017
+trend   season oracle tom*dir        vol-units        +0.004   0.019
+trend   season oracle tom*dir        est-vol x        +0.006   0.020
+carry   trend EWMAC16/64             vol-units        +0.164   0.018
+carry   trend EWMAC16/64             est-vol x        +0.158   0.017
+carry   trend oracle sign(m[t-1])    vol-units        +0.500   0.014
+carry   trend oracle sign(m[t-1])    est-vol x        +0.472   0.014
+carry   carry sign(rate[t-1])        vol-units        +0.500   0.014
+carry   carry sign(rate[t-1])        est-vol x        +0.472   0.014
+carry   xsmom rank EWMA60            vol-units        +0.166   0.019
+carry   xsmom rank EWMA60            est-vol x        +0.157   0.019
+carry   season oracle tom*dir        vol-units        -0.000   0.021
+carry   season oracle tom*dir        est-vol x        +0.002   0.021
+xsmom   trend EWMAC16/64             vol-units        +0.117   0.016
+xsmom   trend EWMAC16/64             est-vol x        +0.112   0.016
+xsmom   trend oracle sign(m[t-1])    vol-units        +0.514   0.016
+xsmom   trend oracle sign(m[t-1])    est-vol x        +0.487   0.016
+xsmom   carry sign(rate[t-1])        vol-units        -0.011   0.014
+xsmom   carry sign(rate[t-1])        est-vol x        -0.013   0.014
+xsmom   xsmom rank EWMA60            vol-units        +0.140   0.013
+xsmom   xsmom rank EWMA60            est-vol x        +0.133   0.013
+xsmom   season oracle tom*dir        vol-units        -0.000   0.019
+xsmom   season oracle tom*dir        est-vol x        +0.002   0.020
+season  trend EWMAC16/64             vol-units        +0.035   0.016
+season  trend EWMAC16/64             est-vol x        +0.034   0.016
+season  trend oracle sign(m[t-1])    vol-units        +0.382   0.016
+season  trend oracle sign(m[t-1])    est-vol x        +0.363   0.017
+season  carry sign(rate[t-1])        vol-units        -0.002   0.015
+season  carry sign(rate[t-1])        est-vol x        -0.006   0.015
+season  xsmom rank EWMA60            vol-units        +0.041   0.013
+season  xsmom rank EWMA60            est-vol x        +0.037   0.014
+season  season oracle tom*dir        vol-units        +0.500   0.018
+season  season oracle tom*dir        est-vol x        +0.479   0.018

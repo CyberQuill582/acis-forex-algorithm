@@ -1,0 +1,28 @@
+check: uniform rho 0.07, N=58 -> SR_p = 1.16 (paper 1.17)
+
+N_eff of the 23 explored instruments (blocks FX13/metal2/index6/energy2), across-class rho 0.05:
+  within-class rho 0.07: N_eff =  10.2; SR_p at s=0.34 -> 1.08; at s=0.15 -> 0.48
+  within-class rho 0.15: N_eff =   7.9; SR_p at s=0.34 -> 0.95; at s=0.15 -> 0.42
+  within-class rho 0.25: N_eff =   6.1; SR_p at s=0.34 -> 0.84; at s=0.15 -> 0.37
+  within-class rho 0.35: N_eff =   5.0; SR_p at s=0.34 -> 0.76; at s=0.15 -> 0.34
+  within-class rho 0.50: N_eff =   4.0; SR_p at s=0.34 -> 0.68; at s=0.15 -> 0.30
+
+Same for the 8 declared instruments at BASE (FX7 + XAU):
+  within-class rho 0.07: N_eff =   5.5
+  within-class rho 0.25: N_eff =   3.3
+  within-class rho 0.50: N_eff =   2.2
+
+FX-only 16 vs FX16 + 14 non-FX, within-class rho 0.35, across 0.05:
+  FX16 alone: N_eff = 2.6; 30 mixed: N_eff = 5.5
+
+IDM, class-equal weights over the 23 explored (FX13/metal2/index6/energy2), across rho 0.05:
+  within rho 0.15: IDM = 2.66 (Carver caps IDM at 2.5)
+  within rho 0.25: IDM = 2.51 (Carver caps IDM at 2.5)
+  within rho 0.35: IDM = 2.39 (Carver caps IDM at 2.5)
+FDM for EWMAC 16/64, 32/128, 64/256 equal-weighted (null correlations): 1.09
+
+Net SR_p ~= (s - c) * sqrt(N_eff), N_eff = 6.1 (within 0.25, across 0.05):
+  s (gross per-instrument SR) \ c (cost SR/yr):  0.02 swap-free   0.10 low-markup   0.21 FTMO median
+  s = 0.15                                              +0.32            +0.12            -0.15
+  s = 0.25                                              +0.57            +0.37            +0.10
+  s = 0.34                                              +0.79            +0.59            +0.32

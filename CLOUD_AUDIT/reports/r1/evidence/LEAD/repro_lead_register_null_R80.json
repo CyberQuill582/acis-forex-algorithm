@@ -1,0 +1,157 @@
+{
+ "cmd": "OMP_NUM_THREADS=1 python3 sim_register_verdict.py null 80  (R1-A receipt, re-run by the lead 2026-09-25 ~09:10 UTC)",
+ "R": 80,
+ "K20": {
+  "naive_best": {
+   "pct": 76.2,
+   "wilson95": [
+    65.9,
+    84.2
+   ]
+  },
+  "bonf_K": {
+   "pct": 17.5,
+   "wilson95": [
+    10.7,
+    27.3
+   ]
+  },
+  "maxt_tried": {
+   "pct": 15.0,
+   "wilson95": [
+    8.8,
+    24.4
+   ]
+  },
+  "maxt_declared_grid": {
+   "pct": 7.5,
+   "wilson95": [
+    3.5,
+    15.4
+   ]
+  },
+  "famcombo_holm": {
+   "pct": 0.0,
+   "wilson95": [
+    -0.0,
+    4.6
+   ]
+  },
+  "heldout_raw_samewindow": {
+   "pct": 15.0,
+   "wilson95": [
+    8.8,
+    24.4
+   ]
+  },
+  "heldout_resid_samewindow": {
+   "pct": 2.5,
+   "wilson95": [
+    0.7,
+    8.7
+   ]
+  }
+ },
+ "K50": {
+  "naive_best": {
+   "pct": 93.8,
+   "wilson95": [
+    86.2,
+    97.3
+   ]
+  },
+  "bonf_K": {
+   "pct": 10.0,
+   "wilson95": [
+    5.2,
+    18.5
+   ]
+  },
+  "maxt_tried": {
+   "pct": 15.0,
+   "wilson95": [
+    8.8,
+    24.4
+   ]
+  },
+  "maxt_declared_grid": {
+   "pct": 7.5,
+   "wilson95": [
+    3.5,
+    15.4
+   ]
+  },
+  "famcombo_holm": {
+   "pct": 0.0,
+   "wilson95": [
+    -0.0,
+    4.6
+   ]
+  },
+  "heldout_raw_samewindow": {
+   "pct": 21.2,
+   "wilson95": [
+    13.7,
+    31.4
+   ]
+  },
+  "heldout_resid_samewindow": {
+   "pct": 2.5,
+   "wilson95": [
+    0.7,
+    8.7
+   ]
+  }
+ },
+ "K200": {
+  "naive_best": {
+   "pct": 98.8,
+   "wilson95": [
+    93.3,
+    99.8
+   ]
+  },
+  "bonf_K": {
+   "pct": 6.2,
+   "wilson95": [
+    2.7,
+    13.8
+   ]
+  },
+  "maxt_tried": {
+   "pct": 8.8,
+   "wilson95": [
+    4.3,
+    17.0
+   ]
+  },
+  "maxt_declared_grid": {
+   "pct": 7.5,
+   "wilson95": [
+    3.5,
+    15.4
+   ]
+  },
+  "famcombo_holm": {
+   "pct": 0.0,
+   "wilson95": [
+    -0.0,
+    4.6
+   ]
+  },
+  "heldout_raw_samewindow": {
+   "pct": 22.5,
+   "wilson95": [
+    14.7,
+    32.8
+   ]
+  },
+  "heldout_resid_samewindow": {
+   "pct": 5.0,
+   "wilson95": [
+    2.0,
+    12.2
+   ]
+  }
+ }
+}

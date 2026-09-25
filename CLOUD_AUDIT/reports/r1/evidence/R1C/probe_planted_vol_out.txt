@@ -1,0 +1,5 @@
+null      weekdays 50  daily sd 0.00530 (spec daily_vol 0.005)  hourly sd 0.001030  per-tick sd 7.608e-05
+planted   weekdays 50  daily sd 0.01759 (spec daily_vol 0.005)  hourly sd 0.002156  per-tick sd 7.691e-05
+permuted  weekdays 50  daily sd 0.00463 (spec daily_vol 0.005)  hourly sd 0.001019  per-tick sd 7.691e-05
+analytic planted/null daily sd ratio ~ 3.51; measured 3.32
+frictionless oracle annual Sharpe ~ drift_sigma * sqrt(252 * ticks_per_day) = 157

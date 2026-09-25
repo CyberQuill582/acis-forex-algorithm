@@ -1,0 +1,58 @@
+[
+ {
+  "N": 30,
+  "Y": 12,
+  "tau": 0.0,
+  "rho": 0.1,
+  "oracle": 0.3,
+  "fixed_middle": 0.3,
+  "pooled_argmax": 0.2852,
+  "per_inst_argmax": 0.2564,
+  "eb_shrunk_argmax": 0.2843,
+  "equal_weight_all_speeds": 0.2417,
+  "P(EB allows deviation: shrink weight on own estimate > 0.5)": 0.0,
+  "power_single_instrument_SR0.30": 0.272
+ },
+ {
+  "N": 30,
+  "Y": 12,
+  "tau": 0.1,
+  "rho": 0.1,
+  "oracle": 0.3301,
+  "fixed_middle": 0.2998,
+  "pooled_argmax": 0.2849,
+  "per_inst_argmax": 0.2731,
+  "eb_shrunk_argmax": 0.2881,
+  "equal_weight_all_speeds": 0.2417,
+  "P(EB allows deviation: shrink weight on own estimate > 0.5)": 0.001,
+  "power_single_instrument_SR0.30": 0.272
+ },
+ {
+  "N": 30,
+  "Y": 12,
+  "tau": 0.2,
+  "rho": 0.1,
+  "oracle": 0.375,
+  "fixed_middle": 0.2999,
+  "pooled_argmax": 0.288,
+  "per_inst_argmax": 0.3166,
+  "eb_shrunk_argmax": 0.3173,
+  "equal_weight_all_speeds": 0.2419,
+  "P(EB allows deviation: shrink weight on own estimate > 0.5)": 0.081,
+  "power_single_instrument_SR0.30": 0.272
+ },
+ {
+  "N": 30,
+  "Y": 12,
+  "tau": 0.3,
+  "rho": 0.1,
+  "oracle": 0.4277,
+  "fixed_middle": 0.3008,
+  "pooled_argmax": 0.2962,
+  "per_inst_argmax": 0.3717,
+  "eb_shrunk_argmax": 0.3716,
+  "equal_weight_all_speeds": 0.2431,
+  "P(EB allows deviation: shrink weight on own estimate > 0.5)": 0.634,
+  "power_single_instrument_SR0.30": 0.272
+ }
+]
