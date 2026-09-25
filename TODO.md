@@ -78,6 +78,11 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - AUDIT-EXTERNAL `a137391bac5f1cb52`: FTMO/E8 rules, reduce-only semantics in real venue APIs, crash-safe persistence.
 
   Reports: AUDIT_BUILDER3_BRANCH_{INTERNAL,EXTERNAL}_2026-09-25.md in archive/. Then triage, then merge on the owner's go.
+- **EXTERNAL audit IN (2026-09-25).** It found two BLOCKING defects, both reproduced by the lead:
+  - [[GAP-P12D-78]]: a stale restored session halt means a restart makes the next day's breach NOT halt. Looser than main.
+  - [[GAP-P12D-79]]: one failed ledger write loses the equity breaker.
+
+  The rest is in [[GAP-P12D-77]]. The INTERNAL audit is still running. Then one fix list goes back to BUILDER-3.
 - [ ] **Not wired yet:** production must route halts and MCP controls through the new halt-recording layer, call the resume-clear, and call the weekend flatten each tick. All three wait on the three-loop runtime ([[GAP-0091b]]).
 
 **ACIS-13 DRAFTED (2026-09-25, SPEC-AUTHOR): `specs/ACIS-13-VENUE_ADAPTERS.md` v0.1, a DRAFT, NOT LOCKED.**

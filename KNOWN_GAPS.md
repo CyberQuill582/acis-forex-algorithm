@@ -144,6 +144,64 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-79: on the BUILDER-3 branch, one failed halt-ledger write during an equity-floor breach loses the equity breaker entirely — no halt, no freeze, never re-issued
+- Severity: critical · Likelihood: low
+- Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X2) in the dual audit of the BUILDER-3 branch. The lead REPRODUCED it on the branch export with the auditor's `r2_store_failure.py`. A `database is locked` error on the `halt_event` write during the equity-floor breach makes `evaluate` raise. Afterwards entries are allowed (`formula`), the orchestrator is not frozen, no halt row exists, and two further evaluates below the floor re-issue nothing. On main the equity breaker has no store dependency)
+- Area: the BUILDER-3 branch (the persistent halt sink and restore_on_boot); core/risk/guardrails.py (latch set before the sink call); master §8 (the equity breaker is unthrottleable and first)
+- Description:
+  - **Two ordering choices combine.** The Guardrails latch `_equity_flattened` is set BEFORE the sink call. The new persistent sink writes the ledger BEFORE it forwards to the Governor or execution. So any store failure (a lock from a second process such as the MCP plane, a full disk, an I/O error) swallows the flatten and the HALT, and the latch prevents any retry.
+  - **Why it is critical.** It is a NEW failure mode relative to main, on the single most important guard. The likelihood is low; the severity is that the guard silently does not fire.
+- Justification: open and BLOCKING for the merge.
+  - **The fix principle: the guard acts first, and recording can never gate it.** Forward the halt or flatten to the Governor and execution FIRST, then persist. If persisting fails, retry and alarm, and keep the halt in force in memory; never swallow it. Set the latch only after the action succeeded.
+  - **Proof:** regression tests that inject a store failure at each write and assert the halt and flatten still take effect, falsified per A16.
+- Linked: [[GAP-P12D-75]], [[GAP-P12D-77]], [[GAP-P12D-78]]
+
+## GAP-P12D-78: on the BUILDER-3 branch, a stale restored session-halt row latches the breaker, so after a restart the next day's 2% breach no longer halts — LOOSER than main
+- Severity: high · Likelihood: medium
+- Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X1). The lead REPRODUCED it on exports of base `bdd3a75` and branch head `d8361a7` with the auditor's `r1_stale_session_latch.py`:
+  - **base:** day-2 fresh 2% breach → `drawdown_halt`; still `drawdown_halt` after an in-session recovery.
+  - **branch:** → `formula_zero`, then `formula` (TRADING) after the recovery; the day-1 session row is still open)
+- Area: the BUILDER-3 branch (restore_on_boot, the persistent halt sink); core/risk/guardrails.py `_session_halted`; master §8 (the daily loss is session-scoped and auto-clears at the boundary)
+- Description:
+  - **The mechanism.** A SESSION halt auto-clears at the next session boundary in the Governor, but the branch's halt ledger keeps its row "uncleared", because only a human resume clears rows. At boot the row is restored, and Guardrails' `_session_halted` latch is set again. A NEW breach on a later day then finds the latch already set and issues no session halt.
+  - **The effect.** After a restart, a fresh daily-loss breach does not halt, and entries resume as soon as the taper allows.
+  - **Why it matters.** It breaks the tightening-only claim. The branch is looser than main in exactly the "restart" case it was built to harden.
+- Justification: open and BLOCKING for the merge.
+  - **The fix:** session-scoped halts must be restored WITH their expiry. A row whose session boundary has passed is closed as auto-expired, never re-latched. The restore must re-arm the Guardrails latches consistently with the restored state.
+  - **Proof:** a regression test mirroring the reproduction (restart the next trading day; a fresh breach halts; the halt survives an in-session recovery), falsified.
+- Linked: [[GAP-P12D-75]], [[GAP-P12D-77]], [[GAP-P12D-79]], [[GAP-P12D-59]]
+
+## GAP-P12D-77: the dual audit of the BUILDER-3 branch — findings and triage
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — the constitution's two lenses only. EXTERNAL is in (archive/AUDIT_BUILDER3_BRANCH_EXTERNAL_2026-09-25.md), and INTERNAL is running. Lead verification: the full branch suite re-run gives 856 passed, 6 skipped; X1 and X2 were reproduced)
+- Area: the BUILDER-3 branch `worktree-agent-a9e00713d15bb5082` (head `d8361a7`)
+- Description: triage of the EXTERNAL findings.
+  - **Each has its own entry:**
+    - X1 → [[GAP-P12D-78]], looser than main, blocking;
+    - X2 → [[GAP-P12D-79]], the equity breaker lost on a store failure, blocking.
+  - **X3 (HIGH; not looser than main, which doubled):** "reduce-only" is check-then-act in the engine, and the venue receives a plain opposite-side order. A stop filling in between, or two racing closes, leaves an unprotected opposite position. Real venues close atomically:
+    - cTrader `ProtoOAClosePositionReq` ("The unique ID of the position to close");
+    - OANDA `REDUCE_ONLY`;
+    - FIX PositionEffect(77)=C.
+
+    FIX: carry the close intent across the face boundary. The `ExecutionFace` contract gains a close-position operation (or a reduce-only flag) that the adapter maps to the venue's atomic close. That is an ACIS-06 amendment; fold it into the ACIS-13 review with [[GAP-P12D-70]]. The mock face must implement it atomically.
+  - **X4 (MED-HIGH):** the risk and fill stores run in the default rollback journal with `synchronous=FULL`, which SQLite documents as "not necessarily durable across a power loss". FIX: WAL + FULL via the existing `core/data/sqlite_wal.py` helper. It is live because of [[GAP-P12D-76]].
+  - **X5 (MEDIUM, reproduced by the auditor):** the pre-close ban and weekend flatten key only on the Friday close. FTMO binds at ANY closure of two hours or more (it closed FX on Dec 25 and Jan 1 in 2025). FIX: key on the calendar's next ≥2 h closure, holidays included ([[GAP-P12D-58]]).
+  - **Lower findings:**
+    - X6: failing closes are re-sent every tick with no backoff, though FTMO counts closes toward its request cap. FIX: backoff plus a close ceiling.
+    - X7: FTMO 1-Step's end-of-day trailing max loss has no safe encoding. RECORD: the rule type is owed before any 1-Step account.
+    - X8: stale FTMO page date. FIX the citation.
+    - X9: the resume fingerprint is 48 bits of unsalted SHA-256, an offline guessing oracle for a human-chosen token. FIX: HMAC or salted, and never a weaker form than the existing verifier ([[GAP-P10E-03]]).
+  - **Honest negatives, from the auditor:**
+    - FTMO 2-Step reproduces exactly (95k, 97k, 96k; static 90k);
+    - the Prague DST day boundaries fall while FX is closed (2025–27);
+    - the rolling 24-hour budget is at least as strict as a calendar cap;
+    - lot rounding is down-only;
+    - no guard, rulebook, spec or ledger file is touched.
+  - **Unconfirmed:** E8's rules (its help centre returned 403).
+- Justification: open. The INTERNAL lens's findings are appended when they land, and then one consolidated fix list goes back to BUILDER-3. The merge needs [[GAP-P12D-78]] and [[GAP-P12D-79]] fixed and verified by the lead, plus the owner's go.
+- Linked: [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-74]], [[GAP-P12D-75]], [[GAP-P12D-58]], [[GAP-P12D-76]], [[GAP-P12D-70]]
+
 ## GAP-P12D-76: the development laptop keeps losing power abruptly — four hard power-offs in 13 days — so it cannot host the demo engine
 - Severity: high · Likelihood: high
 - Status: open (2026-09-25 — measured by the lead from the Windows System log, read-only. The latest: an "unexpected" shutdown at 00:40:22 on 2026-09-25 (event 6008) and a reboot at 04:48 (Kernel-Power 41). Every event-41 record reads `BugcheckCode=0`, `PowerButtonTimestamp=0`, `LongPowerButtonPressDetected=false`: no crash, no button, a straight loss of power. Earlier ones: 2026-09-23 08:20, 2026-09-23 16:28 (during sleep), and 2026-09-12 23:51 (recorded in TODO.md). The battery now reads 100% on AC, which suggests mains drops that the battery cannot carry)
