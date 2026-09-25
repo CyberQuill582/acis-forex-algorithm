@@ -49,7 +49,7 @@ The specifics need explicit OLD/NEW amendments for: the 2-year window, the DSR �
   - **R1-D14, NEW: account size and vol target against the minimum lot** ([[GAP-P12D-101]]), decided WITH D9 at the first real-data look.
 
   The R1-D* numbers do not collide with the local D1–D9 below. R1-D2 supersedes local D1 (C+D) for fixed families; R1-D1 is local D4; R1-D3/D4/D8 carry local D5.
-- [ ] **ASK OWED: the dual audit (A3's two lenses) of the R1 spec amendments.** The session asks the owner when it runs (CLAUDE.md). The lead's recommendation: after the owner rules, on the final text, so no draft is audited twice.
+- [ ] **ASKED 2026-09-25, and the owner answered: "After you rule".** The dual audit (A3's two lenses) of the R1 spec amendments runs AFTER the owner rules on R1-D1..D14, on the final applied text. At that point the session ASKS again for the launch itself. Nothing launches before that.
 - [ ] **The R1 build order** (PLAN_R1 §2), once the rulings land:
   - R1.0 preconditions (merge 3 DONE);
   - R1.1 the lab;
