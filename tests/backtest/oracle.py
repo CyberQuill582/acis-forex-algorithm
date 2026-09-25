@@ -36,7 +36,7 @@ from config.account_doctrine import guardrail_hash
 from config.schemas import AcisConfig
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.evolve_step import cost_model
-from tests.backtest.harness import Backtest, FoldData, per_trade_returns
+from tests.backtest.harness import Backtest, FoldData
 from tests.backtest.oracle_loop import OracleLoop, OracleTick
 from tests.backtest.report import _MIN_FOLDS, _MIN_TRADES, _MIN_YEARS, ValidationReport
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, synthetic_spx
@@ -64,7 +64,6 @@ def oracle_ticks(cfg: AcisConfig, loader: BacktestDataLoader, source: str,
 class OracleGrade:
     kind: str
     report: ValidationReport
-    trade_returns: tuple[float, ...]        # pnl / USD notional, the Deflated Sharpe's series
     net_pnl: Decimal
 
 
@@ -94,7 +93,7 @@ def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequenc
         spx_closes=synthetic_spx(spec.start, spec.days), guardrail_hash=limits,
         expected_guardrail_hash=limits, extra_caveats=(CAVEAT,))
     trades = bt.graded_trades()
-    return OracleGrade(kind=spec.kind, report=report, trade_returns=tuple(per_trade_returns(trades)),
+    return OracleGrade(kind=spec.kind, report=report,
                        net_pnl=sum((t.pnl for t in trades), Decimal("0")))
 
 

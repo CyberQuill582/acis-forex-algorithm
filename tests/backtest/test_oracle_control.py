@@ -11,7 +11,6 @@ map, metrics and report.
 from __future__ import annotations
 
 import importlib.util
-import json
 import math
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -142,7 +141,7 @@ def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: li
         calls.append(("oracle", kind))
         fails = oracle_failures[kind] if kind in oracle_failures else rung_defaults[kind]
         return {"kind": kind, "trades": 40, "net_pnl": "1", "sharpe": 9.0, "psr": 1.0,
-                "non_dsr_failures": fails, "trade_returns": [0.01, 0.02, 0.015], "seconds": 0}
+                "non_dsr_failures": fails, "seconds": 0}
 
     def label_year(s, instrument, year, out, root):
         calls.append(("label", s.kind))
@@ -153,7 +152,7 @@ def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: li
         passed, non_dsr = (engine or {}).get(s.kind, (s.kind == "planted", [] if s.kind == "planted"
                                                                              else ["section-14 win_rate"]))
         return {"kind": s.kind, "passed": passed, "trades": 40, "sharpe": 0.0, "dsr": 0.0,
-                "trials": 4, "trial_sharpes": [0.1, 0.2, 0.3, 0.4], "champions": [], "failed": [],
+                "trials": 4, "sr0_hurdle": 0.345, "champions": [], "failed": [],
                 "non_dsr_failed": non_dsr, "seconds": 0}
 
     monkeypatch.setattr(mod, "ROOT", tmp_path)
@@ -227,15 +226,21 @@ def test_a_planted_refusal_only_by_the_dsr_gate_is_gate_limited_not_an_engine_fa
         assert mod.main() == 1 and "FALSIFICATION FAILED" in capsys.readouterr().out
 
 
-def test_a_recognised_oracle_hands_over_to_the_unchanged_engine_stage(monkeypatch, tmp_path, cfg) -> None:
+def test_a_recognised_oracle_hands_over_to_the_unchanged_engine_stage(monkeypatch, tmp_path, cfg, capsys) -> None:
+    """Audit E4: the run reports each engine run's per-trade SR0 HURDLE, labelled as one; it no
+    longer writes `oracle_deflation.json`, which was not a faithful Deflated Sharpe (the oracle is
+    not in the trial set, and ~5-trade holdout Sharpes are not commensurate with its record)."""
     calls: list = []
     mod = _falsify_script(monkeypatch, tmp_path, cfg,
                           {"planted": [], "null": ["section-14 win_rate"]}, calls)
     assert mod.main() == 0                                                 # planted passed, null did not
     assert {c for c in calls if c[0] == "grade"} == {("grade", "planted"), ("grade", "null")}
     run = next((tmp_path / "data" / "validation" / "falsification").iterdir())
-    deflation = json.loads((run / "oracle_deflation.json").read_text(encoding="utf-8"))
-    assert set(deflation) == {"planted", "null"} and all(0.0 <= v <= 1.0 for v in deflation.values())
+    assert not (run / "oracle_deflation.json").exists()
+    out = capsys.readouterr().out
+    assert "oracle deflated" not in out and "DSR=" not in out
+    hurdles = [line for line in out.splitlines() if "SR0 hurdle" in line]
+    assert len(hurdles) == 2 and all("= 0.345 (a hurdle" in line for line in hurdles)
 
 
 def test_the_harness_recognises_the_oracle_on_planted_and_refuses_it_on_null(cfg) -> None:

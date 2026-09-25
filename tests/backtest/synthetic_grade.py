@@ -29,6 +29,7 @@ from config.account_doctrine import guardrail_hash
 from config.schemas import AcisConfig, load_config
 from core.data.jsonl_logging import JsonlEventLogger
 from tests.backtest.data_loader import BacktestDataLoader
+from tests.backtest.deflated_sharpe import sharpe_threshold
 from tests.backtest.oos_plan import EMBARGO
 from tests.backtest.oos_runner import RunInputs, report_json, run_walk_forward
 from tests.backtest.oracle import grade_oracle, non_dsr_failures
@@ -99,7 +100,7 @@ def oracle_row(spec: MarketSpec, out: Path, account: str, folds: list[Fold], roo
     return {"kind": tag, "sign_error": sign_error, "trades": oos.n_trades, "net_pnl": str(g.net_pnl),
             "sharpe": oos.annual_sharpe, "psr": g.report.deflated_sharpe,
             "non_dsr_failures": list(non_dsr_failures(g.report, guardrail_hash(cfg.guardrails))),
-            "trade_returns": list(g.trade_returns), "seconds": time.perf_counter() - t0}
+            "seconds": time.perf_counter() - t0}
 
 
 def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Path, *,
@@ -127,9 +128,11 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
             # their net PnLs sum to the run's net PnL exactly (Decimal, no re-derivation)
             "net_pnl": str(sum((v.net_pnl for v in report.per_strategy.values()), Decimal("0"))),
             "dsr": report.deflated_sharpe, "trials": report.trial_count,
-            # the selection set the DSR deflated by: stage 1 re-deflates the oracle against it
-            "trial_sharpes": [s for r in report.in_sample_evolution
-                              for s in r.get("trial_sharpes", ()) if s is not None],
+            # the per-trade SR0 the ratified gate demands of this run's selection (audit E4: a
+            # HURDLE; the DSR's own trial filter and N, deflated_sharpe.sharpe_threshold)
+            "sr0_hurdle": sharpe_threshold([s for r in report.in_sample_evolution
+                                            for s in r.get("trial_sharpes", ()) if s is not None],
+                                           report.trial_count),
             "champions": [r["champions"] for r in report.in_sample_evolution],
             "per_strategy": {k: {"n_trades": v.n_trades, "net_pnl": str(v.net_pnl),
                                  "win_rate": v.win_rate, "profit_factor": v.profit_factor}

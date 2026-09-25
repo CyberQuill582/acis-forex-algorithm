@@ -14,9 +14,10 @@ prints this stage: its graded span is too short for any verdict.
 Stage 2: each market (tests/backtest/synthetic_market.py) is labelled, then graded by the real
 walk-forward (`run_walk_forward`: production config, account, costs and gates). The expected
 answers: null and permuted must NOT pass; planted MUST pass. Writes
-data/validation/falsification/<run id>/<kind>.json (and oracle_<kind>.json,
-oracle_deflation.json: the Deflated Sharpe the ratified gate gives the oracle under each engine
-run's own selection set).
+data/validation/falsification/<run id>/<kind>.json (and oracle_<kind>.json). For each engine
+run it prints the per-trade SR0 HURDLE the ratified gate demands of that run's selected strategy
+(audit E4: a hurdle, never "the oracle's Deflated Sharpe" — the oracle is not in the trial set,
+and ~5-trade holdout Sharpes are not commensurate with a 2,600-trade record).
 
 Exit codes:
   0  held: planted passed and every graded control did not (only the markets graded are named)
@@ -33,7 +34,6 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -43,10 +43,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from config.schemas import load_config  # noqa: E402
-from tests.backtest.deflated_sharpe import deflated_sharpe  # noqa: E402
 from tests.backtest.oos_runner import train_years  # noqa: E402
 from tests.backtest.oracle import RUNGS, void_reasons  # noqa: E402
-from tests.backtest.report import DSR_MIN  # noqa: E402
 from tests.backtest.synthetic_grade import FIRST_MID, START, grade, label_year, oracle_row, plan  # noqa: E402
 from tests.backtest.synthetic_market import KINDS, MarketSpec  # noqa: E402
 
@@ -116,13 +114,10 @@ def main() -> int:
                   f"sharpe={r['sharpe']:.2f} dsr={r['dsr']} trials={r['trials']} "
                   f"champions={r['champions']} failed={r['failed']} ({r['seconds']:,.0f} s)", flush=True)
 
-    # what the ratified gate says about the oracle had it been the strategy each run selected
-    deflation = {k: deflated_sharpe(oracle[k]["trade_returns"], r["trial_sharpes"], r["trials"])
-                 for k, r in results.items()}
-    for k, dsr in sorted(deflation.items()):
-        print(f"  oracle deflated by the {k} run's {results[k]['trials']} trials: DSR={dsr:.4f} "
-              f"(the gate needs {DSR_MIN})")
-    (out / "oracle_deflation.json").write_text(json.dumps(deflation, indent=1), encoding="utf-8")
+    for k, r in sorted(results.items()):
+        print(f"  {k}: the ratified gate's per-trade SR0 hurdle over this run's {r['trials']} trials "
+              f"= {r['sr0_hurdle']:.3f} (a hurdle the selected strategy's per-trade Sharpe must clear; "
+              "not a Deflated Sharpe of anything)")
 
     if a.quick:
         print("quick run: a shape check only — under two graded years nothing can pass, so no verdict")
