@@ -31,7 +31,7 @@ def _all_rules(snap) -> dict[str, float]:
 def _run_down_to_9400(cfg, store):
     """The first process: a $10k ftmo account falls to 9,400 (−6%) on one day."""
     sink = RecordingSink()
-    mon, _, _, _ = build_monitor(cfg, sink, account="ftmo", store=store)
+    mon, _, _, _ = build_monitor(cfg, sink, account="ftmo", store=store, boot=T0)
     mon.evaluate(acct(10000.0), T0)
     snap = mon.evaluate(acct(9400.0), T0 + timedelta(minutes=30))
     return snap, sink

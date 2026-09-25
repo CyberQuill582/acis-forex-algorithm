@@ -25,14 +25,14 @@ HUMAN = "owner-human-token"
 NOON = datetime(2026, 7, 6, 12, 0, tzinfo=timezone.utc)   # = 08:00 EDT, the next boundary
 
 
-def _process(tmp_path, store, clock=T0):
+def _process(tmp_path, store, clock=T0, boot=None):
     from tests.optimizer_fixtures import CapturingLogger
     gov, glog = mk_governor()
     orch = _mk_exec(tmp_path)
     rlog = CapturingLogger()
     sink = PersistentHaltSink(GovernorHaltSink(gov, orch, PaperBook()), store, lambda: clock,
                               rlog)
-    mon, _, _, _ = build_monitor(load_cfg(), sink, store=store, logger=rlog)
+    mon, _, _, _ = build_monitor(load_cfg(), sink, store=store, logger=rlog, boot=boot)
     return gov, glog, orch, mon, rlog, sink
 
 
@@ -43,7 +43,7 @@ def _entry(gov, at=T0, instrument="EUR_USD") -> str:
 
 def test_equity_floor_halt_survives_a_restart_until_a_human_resumes(tmp_path) -> None:
     store = RiskStore(tmp_path / "risk.db")
-    gov, _, _, mon, _, _ = _process(tmp_path, store)
+    gov, _, _, mon, _, _ = _process(tmp_path, store, boot=T0)
     mon.evaluate(acct(8_900.0), T0)                       # under the $9,000 floor
     assert _entry(gov) == "halt"
 

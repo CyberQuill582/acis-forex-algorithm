@@ -40,11 +40,11 @@ def ftmo_rulebook(initial: float) -> AccountRulebook:
                          limit_of="initial", limit_pct=10.0)])
 
 
-def _monitor(rulebook: AccountRulebook, sink, store=None):
+def _monitor(rulebook: AccountRulebook, sink, store=None, boot=None):
     cfg = load_cfg()
     accounts = {**cfg.platform_rules.accounts, "ftmo_2step": rulebook}
     cfg = cfg.model_copy(update={"platform_rules": PlatformRules(accounts=accounts)})
-    return build_monitor(cfg, sink, account="ftmo_2step", store=store)
+    return build_monitor(cfg, sink, account="ftmo_2step", store=store, boot=boot)
 
 
 def _check(guards, *, equity, balance, at):
@@ -159,7 +159,7 @@ def test_declared_initial_capital_anchors_a_static_rule_and_seeds_a_trailing_one
 def test_restart_keeps_the_ftmo_day_anchor_and_never_restores_below_initial(tmp_path) -> None:
     store = RiskStore(tmp_path / "risk.db")
     sink = RecordingSink()
-    mon, _, _, _ = _monitor(ftmo_rulebook(100_000.0), sink, store=store)
+    mon, _, _, _ = _monitor(ftmo_rulebook(100_000.0), sink, store=store, boot=DAY1)
     mon.evaluate(acct(100_000.0), DAY1)
     mon.evaluate(acct(102_000.0), DAY2_RESET - timedelta(minutes=5))
     mon.evaluate(acct(98_000.0, balance=102_000.0), DAY2_RESET + timedelta(hours=1))

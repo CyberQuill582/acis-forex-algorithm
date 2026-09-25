@@ -90,7 +90,9 @@ def mk_fill(*, order_id: str, instrument: str, direction: int, units: float,
 
 def build_monitor(cfg, sink, *, account: str = "dev_paper",
                   taper_start: float | None = None,
-                  entry_halt: float | None = None, logger=None, store=None):
+                  entry_halt: float | None = None, logger=None, store=None, boot=None):
+    """A monitor as a process boots it: with a store and a `boot` instant, the persisted
+    state is restored before anything evaluates (ACIS-07 §7; the monitor enforces it)."""
     from tests.optimizer_fixtures import CapturingLogger
     log = logger or CapturingLogger()
     rb = cfg.platform_rules.accounts[account]
@@ -106,4 +108,7 @@ def build_monitor(cfg, sink, *, account: str = "dev_paper",
     alpha = mk_alpha(cfg.system.risk)
     mon = RiskMonitor(cfg.system.risk, cfg.guardrails, g, alpha, sink,
                       cfg.instruments.clusters, "s1", log, store=store)
+    if store is not None and boot is not None:
+        from core.risk.store import restore_on_boot
+        restore_on_boot(store, mon, boot)
     return mon, g, alpha, log

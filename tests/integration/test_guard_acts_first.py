@@ -54,12 +54,12 @@ class LockedStore(RiskStore):
         return super().save_restrictive_state(*a, **k)
 
 
-def _process(tmp_path, store, inner_cls=GovernorHaltSink):
+def _process(tmp_path, store, inner_cls=GovernorHaltSink, boot=None):
     gov, _ = mk_governor()
     orch = _mk_exec(tmp_path)
     log = CapturingLogger()
     sink = PersistentHaltSink(inner_cls(gov, orch, PaperBook()), store, lambda: T0, log)
-    mon, _, _, _ = build_monitor(load_cfg(), sink, store=store, logger=log)
+    mon, _, _, _ = build_monitor(load_cfg(), sink, store=store, logger=log, boot=boot)
     return gov, orch, mon, log
 
 
@@ -71,7 +71,7 @@ def _entry(gov, at) -> str:
                                          "save_restrictive_state"])
 def test_the_equity_breaker_holds_when_any_store_write_fails(tmp_path, write_point) -> None:
     store = LockedStore(tmp_path / "risk.db", write_point)
-    gov, orch, mon, log = _process(tmp_path, store)
+    gov, orch, mon, log = _process(tmp_path, store, boot=T0)
     mon.evaluate(acct(9_050.0), T0)
     store.locked = True
     mon.evaluate(acct(8_990.0), T0 + timedelta(seconds=1))   # under the floor; no raise
@@ -104,7 +104,7 @@ class FlakyEdge(GovernorHaltSink):
 def test_an_edge_call_that_fails_is_reissued_not_latched(tmp_path) -> None:
     FlakyEdge.failed = False
     store = RiskStore(tmp_path / "risk.db")
-    gov, orch, mon, _ = _process(tmp_path, store, FlakyEdge)
+    gov, orch, mon, _ = _process(tmp_path, store, FlakyEdge, boot=T0)
     with pytest.raises(ConnectionError):
         mon.evaluate(acct(8_990.0), T0)                      # the edge itself failed
     mon.evaluate(acct(8_990.0), T0 + timedelta(seconds=1))   # so the breaker fires again

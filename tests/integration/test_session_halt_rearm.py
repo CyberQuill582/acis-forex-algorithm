@@ -27,12 +27,12 @@ D1 = datetime(2026, 7, 14, 14, 0, tzinfo=timezone.utc)   # Tue; the session ends
 MIN = timedelta(minutes=1)
 
 
-def _process(tmp_path, store=None, clock=D1):
+def _process(tmp_path, store=None, clock=D1, boot=None):
     gov, _ = mk_governor()
     inner = GovernorHaltSink(gov, _mk_exec(tmp_path), PaperBook())
     log = CapturingLogger()
     sink = inner if store is None else PersistentHaltSink(inner, store, lambda: clock, log)
-    mon, _, _, _ = build_monitor(load_cfg(), sink, store=store, logger=log)
+    mon, _, _, _ = build_monitor(load_cfg(), sink, store=store, logger=log, boot=boot)
     return gov, mon, log
 
 
@@ -58,7 +58,7 @@ def test_a_breach_on_a_later_day_halts_again_in_one_process(tmp_path) -> None:
 
 def test_after_a_restart_the_next_day_a_fresh_breach_halts(tmp_path) -> None:
     store = RiskStore(tmp_path / "risk.db")
-    _, mon, _ = _process(tmp_path, store)
+    _, mon, _ = _process(tmp_path, store, boot=D1)
     _breach_and_recover(mon, D1)                             # day 1: a session row is written
     day2 = D1 + timedelta(days=1)
     gov2, mon2, log2 = _process(tmp_path, store, day2)       # restart on day 2
@@ -75,7 +75,7 @@ def test_after_a_restart_the_next_day_a_fresh_breach_halts(tmp_path) -> None:
 
 def test_a_restart_inside_the_session_keeps_the_halt_until_its_boundary(tmp_path) -> None:
     store = RiskStore(tmp_path / "risk.db")
-    _, mon, _ = _process(tmp_path, store)
+    _, mon, _ = _process(tmp_path, store, boot=D1)
     _breach_and_recover(mon, D1)
     gov2, mon2, _ = _process(tmp_path, store, D1 + timedelta(minutes=30))
     restore_on_boot(store, mon2, D1 + timedelta(minutes=30))

@@ -5,12 +5,9 @@ Consumes `FillReport`s (position/trade/PnL accounting, F17 Decimal) and broker
 account truth; computes the `RiskSnapshot`; drives the equity breaker, drawdown
 HALTs, the ratified taper, alpha-decay throttle, and Tier-G flatten through the
 single upward `HaltSink`. Owns the §8.6 heartbeat and restart reconciliation.
-
-Accounting note (recorded as GAP at phase 9): realised PnL is booked in the
-instrument's QUOTE currency and treated as account currency — exact for
-USD-quoted pairs (EUR_USD, XAU_USD); multi-quote FX→USD conversion is the
-phase-11 cost-calibration / adapter concern (master §13). Broker `equity` is
-always authoritative for the breaker and drawdown series (§9.5).
+Quote-currency PnL is converted to USD where the pair has a USD leg (GAP-P9E-04);
+broker `equity` is authoritative for the breaker and drawdown series (§9.5). A store-backed
+monitor refuses to evaluate until `restore_on_boot` ran (ACIS-07 §7, audit F7).
 """
 
 from __future__ import annotations
@@ -59,6 +56,7 @@ class RiskMonitor:
         self._session_id = session_id
         self._log = logger
         self._store = store
+        self._restored = store is None           # ACIS-07 §7: restore before the first evaluate
         self._positions: dict[str, _Pos] = {}
         self._order_meta: dict[str, dict] = {}   # order_id -> metadata for enrichment
         self._trades: list[Trade] = []
@@ -150,6 +148,8 @@ class RiskMonitor:
     def evaluate(self, account: BrokerAccount, now: datetime, *,
                  marks: dict[str, float] | None = None,
                  tierg_flatten: dict | None = None) -> RiskSnapshot:
+        if not self._restored:                   # audit F7: enforced, not a convention
+            raise DataQualityError("boot", None, "store-backed: run restore_on_boot first")
         now = now.astimezone(timezone.utc)
         marks = marks or {}
         for inst, px in marks.items():
@@ -286,15 +286,15 @@ class RiskMonitor:
     def restore_restrictive_state(self, *, alpha_armed: bool, taper_factor: float | None = None,
                                   anchors: dict | None = None, halts: list | None = None,
                                   now: datetime | None = None) -> None:
-        """Persisted risk-restrictive state is restored BEFORE the first
-        evaluate — a restart is never a relaxation (GAP-0050). GAP-P9I-05: the
-        restored throttle must be RE-PUSHED to the (fresh) Governor over the upward
-        edge; so are the anchors, the taper (GAP-P12D-55) and open halts (ACIS-07 §7).
-        A session halt that lapsed while the engine was down is closed, not re-applied."""
+        """Restored BEFORE the first evaluate — a restart is never a relaxation (GAP-0050).
+        GAP-P9I-05: the throttle is RE-PUSHED to the (fresh) Governor over the upward edge;
+        so are the anchors, the taper (GAP-P12D-55) and open halts (ACIS-07 §7). A session
+        halt that lapsed while the engine was down is closed, not re-applied."""
         expired = self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor,
                                              halts=halts or (), now=now)
         if expired and self._store is not None:
             self._store.expire_halts([h.halt_id for h in expired], now)
+        self._restored = True
         self._alpha.restore_armed(alpha_armed)
         self._alpha_armed_prev = alpha_armed
         if alpha_armed:
