@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-BT-009` |
-| **Version** | 1.7 (**LOCKED** 2026-09-25 — R-1: expanding walk-forward, the register-aware verdict C-BT-11 v2, the synthetic-lab law C-BT-12; master v2.21) · 1.6 (**LOCKED** 2026-07-18, phase-11 start; v1.2 2026-09-11 owner-ratified: cross-check source HistData replaces TrueFX — master v2.13; v1.3 2026-09-13 owner-approved: independent validation set — master v2.17; v1.4 2026-09-15: walk-forward honesty C-BT-11 — embargo, Deflated Sharpe gate ≥ 0.95, date-joined SPX; v1.5 2026-09-15: mutation-gate targets; v1.6 2026-09-16: per-regime + per-strategy attribution, GAP-P12D-31) |
+| **Version** | 1.8 (**LOCKED** 2026-09-25 — the R1 audit triage: `passed` keeps its gates, B0, serial gatekeeping with α-spending, a raw stage C, consistent stage-D units, C-BT-12 corrected; master v2.22) · 1.7 (**LOCKED** 2026-09-25 — R-1: expanding walk-forward, the register-aware verdict C-BT-11 v2, the synthetic-lab law C-BT-12; master v2.21) · 1.6 (**LOCKED** 2026-07-18, phase-11 start; v1.2 2026-09-11 owner-ratified: cross-check source HistData replaces TrueFX — master v2.13; v1.3 2026-09-13 owner-approved: independent validation set — master v2.17; v1.4 2026-09-15: walk-forward honesty C-BT-11 — embargo, Deflated Sharpe gate ≥ 0.95, date-joined SPX; v1.5 2026-09-15: mutation-gate targets; v1.6 2026-09-16: per-regime + per-strategy attribution, GAP-P12D-31) |
 | **Layer / DIR** | Validation · `[DIR:tests/backtest]` (+ `scripts/`) |
 | **Consumes** | the full engine (ACIS-01…07) run in backtest mode over historical data |
 | **Emits** | a per-account validation report vs `../ACIS_SPEC.md` §14 targets (out-of-sample) |
@@ -66,8 +66,8 @@ class ValidationReport:
 ## 5. Data & split schemas
 
 - **Tick dataset (§13 provenance):** per-instrument historical ticks (≥2 yr) from a **declared, reproducible source named in config** — **Dukascopy** primary (institutional tick, bid/ask; acquired via its official S3 archive), **HistData** cross-check (validator, not primary; v1.2 — replaces TrueFX, whose free history was withdrawn). Ingested data passes the SAME §3 validation as live ticks (NaN/gap/weekend filtering, bad-tick rejection logged); OANDA is NOT a backtest tick source (its historical API is candle-grade) but its practice-feed spreads calibrate the C8 cost model so backtest friction matches the paper/live venue. `data_loader.py` owns the loader + a **cross-source sanity check** (Dukascopy vs HistData drift on overlapping windows ⇒ investigate/flag, NEVER average silently). Ticks are regime-labelled offline (replay NVMA over history) for QIEA fitness and per-regime reporting.
-- **Split:** `train` (in-sample — QIEA may evolve here) vs `test` (out-of-sample — evolution frozen, params only promoted at simulated session boundaries as in production). Walk-forward (v1.7, A1): **EXPANDING** train / 1-yr test / 1-yr step. Each fold trains on every validated day from the instrument's first validated day (never before `DATA_START`) up to the test year. A family with a training step needs ≥ 2 years first; a fixed family has none, so its first test year opens once its longest lookback is warm. *(Legacy text:* rolling `(train_window, test_window)` folds;*)* test folds are concatenated for the out-of-sample block. **Cross-regime OOS (GAP-0008):** the concatenated test folds must span multiple regimes; a promoted param set is graded across regimes it did not evolve in. **Embargo (v1.4, GAP-SP12E-03):** each test window starts `embargo` after its training window ends, and the harness refuses a fold whose real train→test data gap is shorter than the maximum hold.
-- **Config (`backtest:`):** `data_years:2`, `train_window`, `test_window`, `walk_forward_step`, `accel_clock`, `spx_series_ref`, `tick_source` (declared provenance), `cross_source_drift_bps` (threshold), `slippage_model`, `spread_model`. Required (schema-fatal if missing).
+- **Split:** `train` (in-sample — legacy QIEA may evolve here until it retires; nothing is fitted for a fixed family) vs `test` (out-of-sample — evolution frozen, params only promoted at simulated session boundaries as in production). Walk-forward (v1.7, A1): **EXPANDING** train / 1-yr test / 1-yr step. Each fold trains on every validated day from the instrument's first validated day (never before `DATA_START`) up to the test year. A family with a training step needs ≥ 2 years first; a fixed family has none, so its first test year opens once its longest lookback is warm. *(Legacy text:* rolling `(train_window, test_window)` folds;*)* test folds are concatenated for the out-of-sample block. **Cross-regime OOS (GAP-0008):** the concatenated test folds must span multiple regimes; a promoted param set is graded across regimes it did not evolve in. **Embargo (v1.4, GAP-SP12E-03):** each test window starts `embargo` after its training window ends, and the harness refuses a fold whose real train→test data gap is shorter than the maximum hold.
+- **Config (`backtest:`):** *(v1.8: `train_window` applies to explored families only; a fixed family's plan is expanding with its lookback warm-up, GAP-P12D-123)* `data_years:2`, `train_window`, `test_window`, `walk_forward_step`, `accel_clock`, `spx_series_ref`, `tick_source` (declared provenance), `cross_source_drift_bps` (threshold), `slippage_model`, `spread_model`. Required (schema-fatal if missing).
 
 ## 6. Methodology & config
 
@@ -145,41 +145,73 @@ CREATE TABLE validation_report (
 - **C-BT-5 (fidelity honesty, GAP-0001):** `fidelity_caveats` surfaced in the report; slippage/spread models documented; live still requires paper + practice account.
 - **C-BT-6 (Decimal PnL):** metrics computed on Decimal PnL at accounting boundaries (F17); no float drift in the equity curve.
 - **C-BT-7 (per-account + rules-active, §9.5/§14):** grading is per account on its enabled universe with its §9.5 rules active during the run; a rule breach forces `passed=False`; test asserts a rule-violating "passing" run does not pass.
-- **C-BT-8 (duration carve-outs, GAP-0055/0009):** the §14 avg-duration metric excludes TSMOM + MOMENTUM_SCALP; both reported separately; test asserts a TSMOM-heavy run does not fail avg-duration and that the carve-out figures are surfaced.
+- **C-BT-8 (duration carve-outs, GAP-0055/0009)** *(legacy: since master v2.21 §14 duration is reported, never gated)*: the §14 avg-duration metric excludes TSMOM + MOMENTUM_SCALP; both reported separately; test asserts a TSMOM-heavy run does not fail avg-duration and that the carve-out figures are surfaced.
 - **C-BT-9 (data provenance + drift, §13/v2.9, v2.17):** the tick source is declared/validated; a cross-source drift beyond threshold flags, never averages, and too little overlap is itself a flag (GAP-P12D-13); an undeclared source is refused; the primary passes an independent validation of the primary tick source (v2.17, GAP-P12D-14): ECB euro reference rates vs the primary's mid at the 14:15-Frankfurt fixing on every business day, the EUR/GBP ≈ EUR/USD ÷ GBP/USD triangle, the market's own clock marks (no ticks in the FX weekend; the spread spike at the real 17:00-New-York rollover, gold's 17:00–18:00 New-York break and the 08:30-New-York US jobs-report burst — each against one hour early/late, so a shifted clock fails), and a sampled gold comparison against HistData; every disagreement FLAGS for investigation, never averages silently. HistData's FX ticks carry the primary's own prices (GAP-P12D-13), so a Dukascopy-vs-HistData FX drift is a decoding/clock check, not a price check (`scripts/run_data_validation.py`, zero unexplained flags before any §14 pass is presented).
 - **C-BT-10 (futures/account glitch classes, F31):** the §13 classes have backtest-level tests. SEVEN forex/account classes are tested at phase 11 (`tests/backtest/test_glitch_classes.py`): triple-swap Wednesday carry, holiday half-day session, trailing-drawdown anchor (an EOD approximation must fail), symbol suffix mismatch, limit-lock/exchange halt (ties to §8.5 gap law), weekend-ban fencepost, Tier-G shock during blackout (stricter wins, no double-count). The TWO futures-lifecycle classes — contract roll gap and expiry-with-open-position (structurally unreachable given the roll policy) — require the futures roll-or-flatten policy and are tested WITH futures enablement at phase 12 (master §3.7: futures live only on futures-specific gates + a separate human sign-off; no futures instrument is enabled, so these paths are inert in phase-11 forex validation). Recorded as GAP-0109, not silently skipped.
-- **C-BT-11 v2 — the register-aware verdict (v1.7, owner-ratified 2026-09-25, R-1: "i ratify all your recommendations for R1-D1 to D14"; A1 + A2; master v2.21 §14's claim ladder).** It supersedes the v1.4 `passed` gate below (DSR ≥ 0.95, GAP-P12D-16), which passed nothing (GAP-P12D-33/37). Until the verdict module is built (R1.4), the as-built gate stays; it is the stricter one.
-  1. **Registration.** A graded number exists only if the look register (`data/validation/looks`, GAP-P12D-64) wrote its line first. The line records the declared search space's hash, the origin (human / LLM + model cutoff), the cost-map hash and the universe id, and the grade stores the family's **daily portfolio net-return vector** (GAP-P12D-98). A verdict is a pure function of the register. A graded number without a register row voids its family's results since its last clean row.
+- **C-BT-11 v2 — the register-aware verdict (v1.8; R-1 ratified 2026-09-25, then the audit triage, owner-ratified 2026-09-25, the R1 audit triage: "Ratify all"; A1 + A2; master v2.22 §14).**
+  - It supersedes ONLY the v1.4 DSR ≥ 0.95 clause of `passed` (GAP-P12D-16), which passed nothing (GAP-P12D-33/37). Every other `passed` condition stands: C-BT-2, C-BT-4, C-BT-7 and the §14 gates.
+  - Until the verdict module is built (R1.4), the as-built v2.20 `passed` stands. It is the as-built path, not a uniformly stricter one (GAP-P12D-123).
+
+  0. **Precondition B0 — machinery proven first (GAP-P12D-105).** No real-data verdict is issued unless, at the same `recon_commit`, the lab (C-BT-12) shows all of:
+     - a planted effect detected within 2 se of its theory power;
+     - the null's false-detect rate ≤ 5% + 2 se;
+     - a leaky oracle refused by structure;
+     - the research simulator ≡ the engine on lab tapes;
+     - positive controls variance-matched to their nulls.
+  1. **Registration.** A graded number exists only if the look register (`data/validation/looks`, GAP-P12D-64) wrote its line first.
+     - The line records the declared search space's hash, the origin (human / LLM + model cutoff), the cost-map hash and the universe id.
+     - The grade stores the family's **daily portfolio net-return vector** (GAP-P12D-98). A verdict is a pure function of the register.
+     - Each cycle's testing order is itself a register row, written before any stage-A look of that cycle.
+     - A graded number without a register row voids its family's results since its last clean row.
   2. **Unit of test.** A registered **family-version**: a fixed pooled combination of its members, with no argmax inside, graded on its **portfolio** daily series, never on the stacked instrument × day panel (GAP-P12D-100).
-  3. **Stage A — development (2012–2023, one tier for fixed families; E/V split only for explored ones).** Families are tested in a **pre-registered order** (fixed-sequence, GAP-P12D-102).
-     - The primary family is tested first at α = 0.05. It passes when all of these hold:
-       - the one-sided lower bound of its expanding-WF OOS annual Sharpe is > 0 (SR̂ > z₀.₉₅/√Y);
+  3. **Stage A — development (2012–2023; one tier for fixed families, an E/V split only for explored ones).** Serial gatekeeping within a registered cycle (GAP-P12D-102/111; FDA *Multiple Endpoints in Clinical Trials*, 2022, §§5 and 7):
+     - **The α budget (decision D-d).** A cycle is the set of ≤ 5 family-versions whose order is registered together, at most one cycle a quarter. Cycle 1 spends α = 0.03. Every later cycle spends half of the lifetime budget still unspent (0.01, 0.005, …), so lifetime family-wise error stays ≤ 0.05.
+     - **The chain.** The cycle's families are tested in their registered order, each at the cycle's α; testing stops at the first failure. Families outside the chain are tested only if the whole chain passed, Holm-adjusted among themselves at the cycle's α.
+     - **Looks.** Each family declares a look budget k ∈ {1, 2, 3} at registration. Each of its looks is tested at α/k.
+     - **A family passes when all of these hold:**
+       - the one-sided lower bound of its expanding-WF OOS annual Sharpe is > 0, using a HAC (Newey–West) or Lo (2002) standard error on the daily portfolio series (GAP-P12D-121);
        - its paired excess over the registered passive benchmark is > 0;
        - it is net > 0 at 2× modelled cost including swap;
-       - its cost including swap is ≤ ⅓ of its pre-cost Sharpe;
-       - no ±10% plateau neighbour fails C9 (kill-only).
-     - Each later family is tested only if every earlier one passed.
-     - Families outside the order are Holm-adjusted among themselves.
-     - An **explored** family (a declared grid) instead uses max-t over the declared grid, plus PBO ≤ 0.20.
-     - ≤ 3 registered looks per family; ≤ 5 families enter development per quarter.
+       - no ±10% plateau neighbour fails C9 (kill-only; the conventions are in master §5).
+     - The cost filters are master §5.6's: fixed expectations, never a realised per-instrument Sharpe (GAP-P12D-115).
+     - **Explored families** instead use max-t over the declared grid, plus PBO ≤ 0.20 with S = 16.
+       - Max-t's null comes from a stationary bootstrap of the members' daily series jointly, recentred, with the block length pre-registered (White 2000; Romano–Wolf step-down; GAP-P12D-120).
+       - PBO ≤ 0.20 is a declared deviation from the paper's customary 0.05: max-t carries the α, and PBO is a secondary kill (GAP-P12D-119).
   4. **Stage B — engine confirmation.** One frozen expanding-WF run through the real engine on hourly bars as ticks, graded on daily OOS net returns, with Bonferroni over ≤ 3 registered engine looks. The engine's OOS Sharpe must not be significantly below the research simulator's (one-sided 5%).
-  5. **Stage C — kill-only, once.**
-     - The held-out instruments are residualised on the explored set's class factor.
+  5. **Per-account re-grade (GAP-P12D-112).** A family that passed A and B is re-graded on each account's live-eligible universe with that account's §9.5 rules active. The §14 gates and C-BT-7 apply there.
+  6. **Stage C — kill-only, once (decision D-e; GAP-P12D-114).**
+     - The held-out instruments are graded RAW, with no residualisation. Stage C can only kill, so a factor leak can only weaken a kill, never credit.
      - The 2024–25 holdout is graded once.
-     - Each kills at t < −0.5 (GAP-P12D-97). A raw, unresidualised held-out test is never used.
-  6. **Stage D — forward.** It uses three betting e-processes on the forward record (valid under daily looks).
-     - **E1 (edge):** the daily net P&L as a fraction of equity, with W = the mean over λ ∈ {0.05, 0.1, 0.2, 0.4, 0.8} of Π(1 + λ·max(r/(6σ*), −1)), where σ* is the declared vol target. W ≥ 20 is "edge shown" and W ≥ 100 is "strong"; otherwise "not yet", never "failed".
-     - **E2 (kill):** the same bettor on μ_claim − r, with μ_claim = SR̂_dev/2. W ≥ 5 freezes scaling; W ≥ 20 kills.
+     - Each kills at t < −0.5 (GAP-P12D-97).
+  7. **Stage D — forward (GAP-P12D-110).** Three betting e-processes on the forward record, valid under daily looks (Waudby-Smith & Ramdas 2022; Ville).
+     - **Units.** σ* is the declared DAILY volatility target, σ*_ann/√252, declared before the forward record starts. r is the book's daily net P&L as a fraction of equity.
+     - **E1 (edge):** W = the mean over λ ∈ {0.05, 0.1, 0.2, 0.4, 0.8} of Π(1 + λ·max(r/(6σ*), −1)).
+       - The floor at −1 keeps each factor ≥ 1 − λ > 0, a property of the bet. It binds only on a day beyond −6σ*, which the tripwire handles.
+       - W ≥ 20 is "edge shown" and W ≥ 100 is "strong"; otherwise "not yet", never "failed".
+     - **E2 (kill):** the same bettor on (μ_claim − r)/(6σ*), with μ_claim = (SR̂_dev/2)·σ*, a daily return.
+       - W ≥ 5 freezes scaling: the family's risk allocation may not increase, and reductions stay allowed.
+       - W ≥ 20 kills.
+       - E2 is slow: a dead strategy is killed by year 1 only ~1–4% of the time, so "E2 silent" certifies little by itself. PLAN_R1's "25% by 1 year" is the freeze figure.
      - **E3 (cost):** paired per fill; realised − modelled cost in modelled-cost units, against a ±25% band. It breaches at W ≥ 20 and certifies when both one-sided nulls reach W ≥ 20.
-     - A day beyond −6σ*, or a fill beyond 5 modelled costs, is a tripwire that voids the running certification and is never clipped.
+     - **Tripwires.** A day beyond −6σ*, or a fill beyond 5 modelled costs, VOIDS the family-version's running certification: its W := 0 permanently, and a new family-version must be registered. A tripwire is never clipped away.
      - Live and replay decisions must be identical on the same feed; a difference halts the family.
      - For an LLM-originated family (master §5.6), stage D is the only stage that can credit a pass.
 
-  `passed` = stage A and stage B passed, and stage C did not kill. The Deflated Sharpe stays as an informational column. The embargo is ≥ max(7 days, the 95th percentile of the rule set's holding period measured on the lab); any CPCV stage also purges the longest lookback.
-- **C-BT-12 — the synthetic-lab law (v1.7, R1-D12).**
+  **`passed` (GAP-P12D-104)** = all of:
+  - B0 holds;
+  - stages A and B passed;
+  - stage C did not kill;
+  - the §14 gates (Max DD < 15%, SPX correlation < 0.25) hold on the per-account re-grade;
+  - C-BT-2 (≥ 2 yr, > 1 fold, ≥ 30 trades), C-BT-4 (the guardrail hash) and C-BT-7 (no §9.5 rule violation) hold.
+
+  The Deflated Sharpe stays as an informational column.
+
+  **Embargo (GAP-P12D-123).** A fixed family has no training step, so it carries no per-fold embargo, only its lookback warm-up. An explored family's embargo is ≥ max(7 days, its longest lookback), and any CPCV stage also purges the longest lookback.
+- **C-BT-12 — the synthetic-lab law (v1.8, R1-D12; corrected per GAP-P12D-117).**
   - Synthetic markets grade MACHINERY, never edge.
-  - A generator demeans nothing: a demeaned path is a bridge, GAP-P12D-91. The permuted kind shuffles, then draws an independent ±1 sign per return.
-  - A planted market is variance-matched to its null within 1 ± 0.05, so a positive control differs from its null in drift only (GAP-P12D-90).
+  - A generator demeans nothing: a demeaned path is a bridge (GAP-P12D-91).
+  - The permuted null randomises the sign of each ARITHMETIC price increment, or pairs every path with its antithetic, sign-flipped twin. So a long-biased rule earns nothing in PRICE units, not only in log units, and a price-unit null test pins it.
+  - A planted market is variance-matched to its null at the graded rule's DECISION horizon (daily for TREND; every horizon the lab's rules use). The match is made by construction (common random numbers plus an exact rescale), never by a sampled tolerance (GAP-P12D-90).
   - Intraday refinement of correlated daily bars bridges the common factor jointly (GAP-P12D-92).
   - Every synthetic verdict recorded before these fixes is re-stated after them (GAP-P12D-49 included).
   - Synthetic runs never enter a real-data verdict.
@@ -195,9 +227,17 @@ CREATE TABLE validation_report (
 
 ## 15. Integration gate
 
-**The live gate:** **phase 12** (live broker) is permitted only when a persisted per-account `ValidationReport.passed == True` on ≥2-yr out-of-sample walk-forward with the account's §9.5 rules active **and** a human sign-off record exist; ACIS-08's `acis_set_mode(live)` checks both (plus the dual-hash ack). This spec is the wall between paper and live (master §15). **Pre-phase-12 VPS deployment-readiness gate (v2.10)** runs alongside: CI running the full suite as the merge gate, the Docker scaffold, process supervision + the §8.6 watchdog deployed, and per-adapter server-side-stop verification in the §7.5 conformance suite. **Done-when (phase 11, master §15):** §14 harness green; the honesty guards are enforced in code, not just documented; never-report-in-sample proven by test; per-account grading with rules-active proven; the nine glitch classes covered; the mutation-testing quality gate configured.
+**The live gate:** **phase 12** (live broker) is permitted only when a persisted per-account **rung-2 record** (master §14, v2.22) exists — which contains `ValidationReport.passed == True` per C-BT-11 v2 (the §14 gates and C-BT-2/4/7 included) on ≥2-yr out-of-sample walk-forward with the account's §9.5 rules active, plus rung 2's practice-mode forward evidence (GAP-P12D-69) — **and** a human sign-off record exists; ACIS-08's `acis_set_mode(live)` checks both (plus the dual-hash ack). This spec is the wall between paper and live (master §15). **Pre-phase-12 VPS deployment-readiness gate (v2.10)** runs alongside: CI running the full suite as the merge gate, the Docker scaffold, process supervision + the §8.6 watchdog deployed, and per-adapter server-side-stop verification in the §7.5 conformance suite. **Done-when (phase 11, master §15):** §14 harness green; the honesty guards are enforced in code, not just documented; never-report-in-sample proven by test; per-account grading with rules-active proven; the nine glitch classes covered; the mutation-testing quality gate configured.
 
 ## Changelog
+- **1.8 (LOCKED, 2026-09-25)** — The R1 dual audit (GAP-P12D-103) triaged; owner-ratified 2026-09-25, the R1 audit triage: "Ratify all". C-BT-11 v2 is corrected:
+  - `passed` keeps the §14 gates and C-BT-2/4/7 (GAP-P12D-104), and B0 is a precondition (GAP-P12D-105);
+  - stage A is serial gatekeeping with α-spending (D-d), look budgets and a HAC standard error (GAP-P12D-111/121); explored families get a named bootstrap and a declared PBO (GAP-P12D-119/120);
+  - the per-account re-grade is added (GAP-P12D-112);
+  - stage C grades the held-out set RAW, kill-only (D-e);
+  - stage D's units are consistent, and a tripwire sets W := 0 (GAP-P12D-110).
+
+  C-BT-12 is corrected: the decision-horizon variance match and the price-unit null (GAP-P12D-117). The live gate reads the rung-2 record. No guardrail, HALT or veto semantic changes.
 - **1.7 (LOCKED, 2026-09-25)** — Master v2.21 (R-1, owner-ratified 2026-09-25, R-1: "i ratify all your recommendations for R1-D1 to D14"; drafts in R1_LEAD_REVIEW_2026-09-25.md).
   - The walk-forward is expanding (A1, GAP-P12D-67).
   - C-BT-11 v2, the register-aware verdict (A2): fixed pooled family-versions on portfolio series; a fixed-sequence stage A with the passive-benchmark, 2×-cost, ⅓-cost and plateau kill-only conditions; engine confirmation; kill-only held-out and holdout at t < −0.5; forward e-process bettors E1/E2/E3. It supersedes the DSR ≥ 0.95 `passed` gate (GAP-P12D-16), which the as-built code keeps until the verdict module lands (R1.4).

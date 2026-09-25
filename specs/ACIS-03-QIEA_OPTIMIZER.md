@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-QIEA-003` |
-| **Version** | 2.0 (LOCKED — rule parameters replace per-regime QIEA evolution, master v2.21 §5, R-1 A4, 2026-09-25; the QIEA text below is LEGACY until R1.7 retires the code) |
+| **Version** | 2.1 (LOCKED — the R1 audit triage: the staging mechanism is kept and re-homed, the retirement list is explicit, and the fixed-family plateau and C9 conventions are stated, 2026-09-25) · 2.0 (LOCKED — rule parameters replace per-regime QIEA evolution, master v2.21 §5, R-1 A4, 2026-09-25; the QIEA text below is LEGACY until R1.7 retires the code) |
 | **Layer / DIR** | Layer 3 · `[DIR:core/optimizer]` |
 | **Consumes** | `RegimeContext` (ACIS-02) + regime-labelled **historical** data only |
 | **Emits** | `ActiveParamSet` (frozen) → AGON (ACIS-04, né Alpha Arena) via `param_library` |
@@ -25,7 +25,13 @@
 - The staging rule (§7–§8) binds every parameter change, unchanged: **never during a session, never with open positions**, promotion only at a valid session boundary.
 - C8 (net of costs) and C9 (positive expectancy) bind every member. The §6.4 plateau law binds every family as a **kill-only** check.
 - An instrument with no registered, validated rule set is `tradeable=False` (master §2).
-- **Legacy until R1.7:** the QIEA purpose and every QIEA section below describe code that still exists and is frozen as the untrained baseline. R1.7 retires it by `git mv`: `qiea.py`, `evolve_step.py`, `fitness.py` (after its indicators move, GAP-P12D-99), the ParamLibrary staging and the genome. The re-baseline was approved by the owner on 2026-09-25 (BASELINE.md). No new grade uses the legacy path.
+- **Legacy QIEA and its EXPLICIT retirement list (v2.1, corrected by the R1 audit triage; GAP-P12D-107/113):**
+  - The QIEA purpose and the QIEA-specific sections below describe code that still exists, frozen as the untrained baseline.
+  - It retires by `git mv`, exactly: `qiea.py`, `evolve_step.py`, `fitness.py` (after its indicators move, GAP-P12D-99), and the genome and gene types.
+  - **The staging mechanism is NOT retired.** `PromotionForbiddenError`, the `PositionGate` and stage / promote / on_boundary in `param_library.py` are re-homed as the rule registry's staging. §7–§8 and C1/C2 stay binding law, not legacy. `core/signals/provenance.py` imports `PromotionForbiddenError`, so it moves with the mechanism.
+  - The retirement lands only after the rule registry, the research simulator and engine parity exist. The owner approved the re-baseline on 2026-09-25 (BASELINE.md).
+  - Promotion under netting is by a staged flatten-then-promote at a valid boundary (master §5 C2, decision D-c).
+  - No new grade uses the legacy path.
 
 *Legacy purpose:* Evolve, per regime, the best strategy `ParamSet` using a Quantum-Inspired Evolutionary Algorithm, and maintain a **regime-indexed parameter library** the fast loop reads. The defining constraint is *when* it is allowed to change live behaviour: **never during a session, never with open positions.**
 
@@ -141,7 +147,7 @@ After the champion clears C9 on train (GAP-0038) and the §6.3 holdout gate, QIE
 - **A refused candidate is still a Deflated Sharpe trial.** It consulted the holdout, and dropping it would shrink the trial set and loosen the gate (GAP-P12D-73).
 - **Genes the v1 fitness harness does not exercise** (GAP-0035) are perturbed like every other; their neighbours cannot die until module-gene fitness exists.
 - **Cost:** at most 2 × 11 train evaluations per surviving champion (measured ≈ 3–4% of an evolution run).
-- **v2.0 (R-1, the lead's X4, ratified):** the law binds every rule family, fixed ones included, as a **kill-only** check. A fixed family's ±10% neighbours are evaluated on the development span, and a neighbour failing C9 refuses the family. A check that can only refuse cannot raise the false-positive rate, so the neighbours are not stage-A trials.
+- **v2.0 (R-1, the lead's X4, ratified):** the law binds every rule family, fixed ones included, as a **kill-only** check. A fixed family's ±10% neighbours are evaluated on the development span, and a neighbour failing C9 refuses the family. A check that can only refuse cannot raise the false-positive rate, so the neighbours are not stage-A trials. **v2.1:** for a fixed family the neighbours are every speed or lookback ×0.9 and ×1.1 jointly (ratios kept), plus each parameter ±10% alone. Each member's C9 is evaluated standalone as its own capped-forecast book, with E = mean daily net P&L (master §5).
 - **What passing proves.** A champion passing the plateau law proves NOTHING by itself; as a standalone gate the test passes noise 93–99% of the time (the VALIDATOR, GAP-P12D-33). It is a fragility veto, not evidence of edge.
 
 ## 7. Core logic — the staging rule (the heart of this layer)
@@ -233,6 +239,7 @@ Read: `acis://params/active` and `acis://params/pending` (incl. `boundaries_skip
 **What AGON (ACIS-04) consumes:** `ActiveParamSet` via `param_library.get_active(regime)` — a frozen, validated param set keyed by the current regime, carrying `param_set_id` for signal traceability. **Owns conflict-table row:** "QIEA new params ready + open positions → stage, deploy at next session boundary only." **Done-when (phase 4, master §15, paper mode):** all §14 tests green in a full run; import contract passing; no live trading (paper only until phase 12).
 
 ## Changelog
+- **2.1 (LOCKED, 2026-09-25)** — The R1 dual audit (GAP-P12D-103), triaged, owner-ratified 2026-09-25, the R1 audit triage: "Ratify all". The staging mechanism is NOT retired: it is re-homed as the rule registry's staging and stays law (GAP-P12D-107). The retirement list is explicit (GAP-P12D-113), and promotion under netting is flatten-then-promote (D-c, GAP-P12D-108). The fixed-family plateau and C9 conventions are stated (GAP-P12D-123).
 - **2.0 (LOCKED, 2026-09-25)** — Master v2.21 §5 (R-1 A4, owner-ratified 2026-09-25, R-1: "i ratify all your recommendations for R1-D1 to D14"). Rule parameters replace per-regime × per-instrument QIEA evolution: ≤ 3 pooled, literature- or null-fixed parameters per family, fixed combinations, explored grids hashed before the first look. The staging rule binds every parameter change, unchanged. The §6.4 plateau law binds every family as kill-only. QIEA is legacy until R1.7 retires it, a re-baseline under BASELINE.md. No guardrail, HALT or veto semantic changes; the staging rule is unchanged.
 - **1.5 (LOCKED, 2026-09-25)** — The master §5.6 parameter-plateau law is implemented as §6.4 (GAP-P12D-34), merged from the BUILDER branch after the constitution's two audits (GAP-P12D-72/73, all findings fixed).
   - **What changed:** a range-based ±10% step; "dies" = fails C9 on the train window (delegated decision D8, for the owner's review); a refused candidate stays a DSR trial; `EVOLUTION_REJECTED_PLATEAU` and the logging-only `EVOLUTION_EVALUATIONS` registry, which includes the plateau neighbours.

@@ -1,5 +1,7 @@
 # R1 audit triage: the dual audit of master v2.21 (commit 271d8e0), triaged by the lead
 
+**Status: RATIFIED by the owner 2026-09-25 ("Ratify all") and APPLIED as master v2.22.**
+
 - **The reports:** `archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md` (19 findings, I1–I19) and
   `archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md` (18 findings, E1–E18). Both ran on Opus in fresh context,
   under the pinned brief `AUDIT_BRIEF_R1_AMENDMENTS_2026-09-25.md`. Both were interrupted once by a session limit

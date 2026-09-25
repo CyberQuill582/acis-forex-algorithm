@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-REGIME-002` |
-| **Version** | 1.3 (LOCKED, 2026-07-17 — v2.12 Hurst correction) |
+| **Version** | 1.4 (LOCKED, 2026-09-25 — master v2.21/v2.22: the no-params trigger is replaced by "no registered, validated rule set", and regimes no longer gate families) · 1.3 (LOCKED, 2026-07-17 — v2.12 Hurst correction) |
 | **Layer / DIR** | Layer 2 · `[DIR:core/regime]` · **the sovereign gatekeeper** |
 | **Consumes** | `MarketState` (ACIS-01) + `session_median_cache` |
 | **Emits** | `RegimeContext` (frozen) → QIEA (ACIS-03) & AGON (ACIS-04) via `regime_store` |
@@ -95,7 +95,7 @@ class RegimeContext:
 5. Compute stability, half-life, confidence.
 6. Apply veto rules (OR). Set `tradeable`.
 7. Build `RegimeContext` (with `inputs_snapshot`), write to `regime_store` (last-writer per instrument).
-8. **Shift handling:** if `regime != previous_regime` for the instrument → log `REGIME_SHIFT{from,to,inputs}`; notify `param_library` to load matching `ActiveParamSet`; **if none exists for the new regime → force `tradeable=False` until QIEA evolution completes** (master §4, conflict-table row). The shift never swaps params for *open positions* — that is QIEA's session-boundary rule (ACIS-03); NVMA only gates new entries.
+8. **Shift handling:** if `regime != previous_regime` for the instrument → log `REGIME_SHIFT{from,to,inputs}`; notify `param_library` to load matching `ActiveParamSet`; **if none exists for the new regime → force `tradeable=False` until QIEA evolution completes** (master §4, conflict-table row). *(v1.4, master v2.21/v2.22: once QIEA retires, this trigger is REPLACED by the master §2 row "instrument has no registered, validated rule set → `tradeable=False`", evaluated per instrument, not per regime. Every organic veto trigger stays unchanged.)* The shift never swaps params for *open positions* — that is QIEA's session-boundary rule (ACIS-03); NVMA only gates new entries.
 
 ## 8. State machine & cadence
 
@@ -147,7 +147,7 @@ Exposes no control tools. Surfaces (via ACIS-08) `acis://regime/current` (latest
 - **C-REG-3 (C3/F7):** half-life advisory only; a test asserts no downstream sizing path reads it (Governor spec ACIS-05 mirrors this).
 - **C-REG-4 (NaN leakage):** any NaN indicator vetoes and logs; a test injects NaN and asserts no `RegimeContext` with `tradeable=True` is emitted and no NaN reaches `regime_store`.
 - **C-REG-5 (determinism, scoped per GAP-0032):** identical (state,window) ⇒ identical *pure fields* (label, direction, classes, confidence, tradeable, snapshot) on the same classifier; stability/half-life are declared historical aggregates over classifiable labels only (GAP-0031); property test asserts both halves.
-- **C-REG-6 (shift/params):** regime shift with no params for the new regime ⇒ `tradeable=False`; owns conflict-table row "regime shift + no evolved params".
+- **C-REG-6 (shift/params):** regime shift with no params for the new regime ⇒ `tradeable=False`; owns conflict-table row "regime shift + no evolved params". *(v1.4: that row is now "no registered, validated rule set" (master v2.21 A4). This invariant holds for the legacy QIEA path until it retires, then becomes the per-instrument check.)*
 
 ## 14. Test contract (postcondition-style)
 
@@ -157,9 +157,10 @@ Exposes no control tools. Surfaces (via ACIS-08) `acis://regime/current` (latest
 
 ## 15. Integration gate
 
-**What QIEA (ACIS-03) & AGON (ACIS-04) consume:** `RegimeContext` from `regime_store`. QIEA keys its param library by `regime`; AGON gates its strategy modules by `regime` + `volatility_class` and reads `tradeable`, `regime_stability_score`, `confidence`. **Owns conflict-table rows:** "NVMA no-trade + high-conviction signal → discard" and "regime shift + no evolved params → tradeable=False". **Done-when (phase 2, master §15):** all §14 tests green; import-linter contract still passing after this layer is added.
+**What QIEA (ACIS-03) & AGON (ACIS-04) consume:** `RegimeContext` from `regime_store`. QIEA keys its param library by `regime`, and AGON gates its strategy modules by `regime` + `volatility_class` *(both legacy; v1.4: rule families are not regime-gated, and the Governor's §6 regime sizing factor stays, decision D-b)* and reads `tradeable`, `regime_stability_score`, `confidence`. **Owns conflict-table rows:** "NVMA no-trade + high-conviction signal → discard" and "regime shift + no evolved params → tradeable=False". **Done-when (phase 2, master §15):** all §14 tests green; import-linter contract still passing after this layer is added.
 
 ## Changelog
+- **1.4 (LOCKED, 2026-09-25)** — Master v2.21/v2.22 (owner-ratified). The no-params veto trigger is replaced by "no registered, validated rule set" once QIEA retires, and regimes stop gating rule families. The organic triggers and the §6 regime sizing factor are unchanged (D-b). No threshold changes.
 - **1.3 (LOCKED, 2026-07-17 — master v2.12, GAP-0066/0070 closure)** — Hurst repaired (Anis–Lloyd-corrected multi-window R/S, ≥8 geometric sizes with subseries averaging; an iid walk centres at ≈0.5) and narrowed to its ONLY defensible role: the anti-persistence gate into MEAN_REVERTING at the re-derived `hurst_meanrev = 0.35` (RW false-positive 7.5%, OU κ≥0.2 detection 95–100% at window 201). `hurst_trend` deleted from config/schema — R/S is drift-invariant and carries no trend meaning; trend confidence rides on ADX alone. Ranging fixture generators re-tuned to walk-dominated series (the old zigzag fixtures were themselves anti-persistent — tuned to the broken estimator).
 - **1.2 (LOCKED, 2026-07-15)** — Phases 2–3 subordinate-audit triage: ILLIQUID baseline fixed to session median (GAP-0028); §8/C-REG-5 determinism honestly scoped — pure fields vs declared historical aggregates (GAP-0032); gate-states excluded from stability history (GAP-0031); remaining "Alpha Arena" consumer references renamed AGON (GAP-0029).
 - **1.1 (LOCKED, 2026-07-15)** — v2.8 master consistency pass for the phase-3 build: Tier-G shock (§3.6) added as a MACRO_EVENT input (conservative-only); `session == "closed"` and exchange halt/limit-lock (§3.7) classify ILLIQUID; consumer naming updated (Alpha Arena → AGON, §5.5 reflex law); master-§15 phase renumbering (this layer is build phase 3). Status → LOCKED.

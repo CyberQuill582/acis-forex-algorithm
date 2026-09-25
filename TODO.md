@@ -1,7 +1,7 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **STATUS (2026-09-25): SPEC COMPLETE (master v2.21). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). 1002 passed, 6 skipped; ledger 238 entries. The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
-> `ACIS_SPEC.md` v2.21 is the build authority. All master-spec guardrail decisions are human-ratified.
+> **STATUS (2026-09-25): SPEC COMPLETE (master v2.22). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). 1002 passed, 6 skipped; ledger 238 entries. The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
+> `ACIS_SPEC.md` v2.22 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
@@ -55,7 +55,7 @@ The specifics need explicit OLD/NEW amendments for: the 2-year window, the DSR �
   - Resume handles (after a session limit, RESUME with `SendMessage`; never relaunch): AUDIT-INTERNAL `a4931719099e7f704` · AUDIT-EXTERNAL `a1c16d9c51348e948`.
   - 2026-09-25: both were cut off by the session limit (resets 15:00 Nairobi) and were RESUMED with `SendMessage` after the reset, per the owner's directive. Neither was relaunched.
   - Reports: `archive/AUDIT_R1_AMENDMENTS_{INTERNAL,EXTERNAL}_2026-09-25.md`.
-  - Then the lead triages every finding. The R1.1–R1.4 build waits for the triage.
+  - Then the lead triages every finding. The R1.1–R1.4 build waits for the triage. **DONE 2026-09-25:** triaged, ratified, applied as v2.22. The R1 build may now start (R1.1 the lab first).
   - [x] 2026-09-25 **BOTH LENSES IN, and TRIAGED** in `R1_AUDIT_TRIAGE_2026-09-25.md`. The umbrella is [[GAP-P12D-103]].
     - Both agree: no guard value changed, and no trade passes that v2.20 refused for safety.
     - But the applied text is wrong in places:
@@ -66,7 +66,7 @@ The specifics need explicit OLD/NEW amendments for: the 2-year window, the DSR �
       - the forward bettors' units, [[GAP-P12D-110]];
       - stage A at ~2α, [[GAP-P12D-111]];
       - and more: [[GAP-P12D-112]], [[GAP-P12D-113]], [[GAP-P12D-116]], [[GAP-P12D-117]], [[GAP-P12D-118]], [[GAP-P12D-119]], [[GAP-P12D-120]], [[GAP-P12D-121]], [[GAP-P12D-123]].
-- [ ] **OWNER: ratify the R1 audit triage.** It has two parts:
+- [x] 2026-09-25 **OWNER RATIFIED the R1 audit triage ("Ratify all") and it is APPLIED:** master v2.22, ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-08 v1.3, ACIS-09 v1.8, ACIS-11 v1.2, OOS_VALIDATION.md and CLAUDE.md rule 5. [[GAP-P12D-103]] is fixed; [[GAP-P12D-109]] and [[GAP-P12D-113]] are fixed in the spec; the rest own their builds. It had two parts:
   - the correction pass C1–C15, which restores the ratified intent and is tightening or clarifying;
   - the seven decisions, each with the lead's recommendation:
     - D-a: what "validated" means, [[GAP-P12D-106]];

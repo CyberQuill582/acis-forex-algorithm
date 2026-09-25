@@ -29,16 +29,16 @@ ACIS-09 Backtest/Validation ──exercises 01–07 end-to-end; owns §14 gate
 | ID | File | Layer / DIR | Consumes | Emits | Status |
 |---|---|---|---|---|---|
 | `ACIS-SPEC-DATA-001` | `ACIS-01-DATA_INGESTION.md` | Data `[DIR:core/data]` | raw feed | `MarketState` | v1.1 LOCKED (built, phase 1) |
-| `ACIS-SPEC-REGIME-002` | `ACIS-02-NVMA_REGIME.md` | NVMA `[DIR:core/regime]` | `MarketState` | `RegimeContext` | v1.2 LOCKED (built, phase 3) |
-| `ACIS-SPEC-QIEA-003` | `ACIS-03-QIEA_OPTIMIZER.md` | QIEA `[DIR:core/optimizer]` | `RegimeContext` + history | `ActiveParamSet` | v2.0 LOCKED (2026-09-25, R-1 A4: pooled fixed rule parameters; QIEA legacy until R1.7; v1.5 §6.4 plateau law, now kill-only for every family) |
-| `ACIS-SPEC-ALPHA-004` | `ACIS-04-ALPHA_ARENA.md` | Alpha Arena `[DIR:core/signals]` | `RegimeContext` + `ActiveParamSet` | `Signal` | v1.3 LOCKED (built, phase 5; AGON; v1.3 2026-09-25 R-1: the TREND family and forecast netting) |
+| `ACIS-SPEC-REGIME-002` | `ACIS-02-NVMA_REGIME.md` | NVMA `[DIR:core/regime]` | `MarketState` | `RegimeContext` | v1.4 LOCKED (built, phase 3; v1.4 2026-09-25: the no-params trigger is replaced by "no registered, validated rule set") |
+| `ACIS-SPEC-QIEA-003` | `ACIS-03-QIEA_OPTIMIZER.md` | QIEA `[DIR:core/optimizer]` | `RegimeContext` + history | `ActiveParamSet` | v2.1 LOCKED (2026-09-25, R-1 A4: pooled fixed rule parameters; QIEA legacy with an explicit retirement list; the staging mechanism kept; the §6.4 plateau law kill-only for every family) |
+| `ACIS-SPEC-ALPHA-004` | `ACIS-04-ALPHA_ARENA.md` | Alpha Arena `[DIR:core/signals]` | `RegimeContext` + `ActiveParamSet` | `Signal` | v1.4 LOCKED (built, phase 5; AGON; v1.3–1.4 2026-09-25 R-1: the TREND family, forecast netting, Carver's band in the Governor) |
 | `ACIS-SPEC-GOV-005` | `ACIS-05-CAPITAL_GOVERNOR.md` | Governor `[DIR:core/governor]` | `Signal` + portfolio | `SizedOrder` | v1.5 LOCKED (built, phase 6; v1.5 2026-09-25 prop-safety: pre-close ban everywhere, weekend/holiday flatten, close convention, one resume path) |
 | `ACIS-SPEC-EXEC-006` | `ACIS-06-EXECUTION_ORCHESTRATOR.md` | Execution `[DIR:core/execution]` | `SizedOrder` | `FillReport` | v1.3 LOCKED (built, phase 8; v1.2 server-side stops; v1.3 2026-09-25 reduce-only closes, lot steps, request budget, atomic pair groups) |
 | `ACIS-SPEC-RISK-007` | `ACIS-07-RISK_MONITOR.md` | Risk `[DIR:core/risk]` | `FillReport` + broker account state + all stores | `RiskSnapshot`, `HALT`/taper/decay (upward edge), heartbeat | v1.2 LOCKED (built, phase 9; v1.2 2026-09-25 halt ledger act-first + restore, persisted anchors, daily-reset rules, session-latch re-arm) |
-| `ACIS-SPEC-MCP-008` | `ACIS-08-MONITORING_MCP.md` | Monitoring `[DIR:monitoring]` | all resources | MCP resources/tools | v1.2 LOCKED (phase-10 BUILT + dual audits triaged 2026-07-18) |
-| `ACIS-SPEC-BT-009` | `ACIS-09-BACKTEST_VALIDATION.md` | Backtest `[DIR:tests/backtest]` | 01–07 | §14 validation report | v1.7 LOCKED (phase 11 ✅ 2026-07-18; v1.2–1.3 phase-12 data layer; v1.4 embargo; v1.7 2026-09-25 R-1: expanding walk-forward, C-BT-11 v2 register-aware verdict, C-BT-12 synthetic-lab law) |
+| `ACIS-SPEC-MCP-008` | `ACIS-08-MONITORING_MCP.md` | Monitoring `[DIR:monitoring]` | all resources | MCP resources/tools | v1.3 LOCKED (phase-10 BUILT + dual audits triaged 2026-07-18; v1.3 2026-09-25: `set_mode(live)` reads the rung-2 record) |
+| `ACIS-SPEC-BT-009` | `ACIS-09-BACKTEST_VALIDATION.md` | Backtest `[DIR:tests/backtest]` | 01–07 | §14 validation report | v1.8 LOCKED (phase 11 ✅ 2026-07-18; v1.4 embargo; v1.7–1.8 2026-09-25 R-1: expanding walk-forward, C-BT-11 v2 register-aware verdict, C-BT-12 synthetic-lab law, audit-corrected) |
 | `ACIS-SPEC-EVENTS-010` | `ACIS-10-EVENTS_NEWS.md` | Events `[DIR:core/data]` (master §3.5–3.6) | calendar/news feeds + `platform_rules.yaml` | `EventPicture`, blackout windows, Tier-G flags | LOCKED (built, phase 2) |
-| `ACIS-SPEC-PROV-011` | `ACIS-11-STRATEGY_PROVENANCE.md` | Provenance & literature law `[DIR:core/signals]` (master §5.5 Pair Divergence, §5.6) | literature citations, eval history | provenance records, attempt registry, rung ladder | TO AUTHOR |
+| `ACIS-SPEC-PROV-011` | `ACIS-11-STRATEGY_PROVENANCE.md` | Provenance & literature law `[DIR:core/signals]` (master §5.5 Pair Divergence, §5.6) | literature citations, eval history | provenance records, attempt registry, rung ladder | v1.2 LOCKED (built; v1.2 2026-09-25: the look register is authoritative for graded numbers) |
 | `ACIS-SPEC-SWAN-012` | `ACIS-12-SCENARIO_BOOK.md` | Black-swan replay + §8.6 watchdog `[DIR:core/risk + tests/backtest + scripts]` (master §8.5–8.6) | `scenario_book.yaml`, guardrails, heartbeat | gap-law replay verdicts (release gate), watchdog flatten | v1.0 LOCKED (authored 2026-07-17, phase-9 gate) |
 | `ACIS-SPEC-VENUE-013` | `ACIS-13-VENUE_ADAPTERS.md` | Platform adapters + attach protocol `[DIR:core/data + core/execution]` (master §7.5, §9.5 rulebook load) | platform APIs, `platform_rules.yaml`, `instruments.yaml` | feed/execution adapter pairs, capability descriptors, conformance verdicts | DRAFT v0.1 (2026-09-25, cTrader Open API first; NOT LOCKED — review pass pending: OQ-01/02/03a, ACIS-06 amendments; GAP-P12D-69/70) |
 
@@ -59,7 +59,7 @@ These are defined authoritatively in the master spec and the layer that owns the
 4. **Structured JSONL logging** `{timestamp, event_type, layer, data, session_id}` for every module; no `print` (master §11).
 5. **Guardrail limits, equity floor, HALT/veto semantics are human-only.** No config flag, MCP tool, or test hook may weaken them. There is no force flag (CLAUDE.md).
 6. **Postcondition test discipline** — assert observable outcomes, never exit codes alone (master §13).
-7. **QIEA staging rule** — never modify live params, never promote mid-session (master §5).
+7. **The staging rule** — never modify live params, never promote mid-session or with open positions (master §5; since v2.21 it binds every parameter change, and under netting promotion is flatten-then-promote).
 
 ## 6. Correction IDs carried from the audit
 Each layer spec has a **Logic Flaw Registry** (§13 of the template) that must address its assigned corrections from `../SPEC_AUDIT.md`:

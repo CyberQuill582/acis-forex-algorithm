@@ -23,9 +23,9 @@ train fold; the validation design is not an optimisation target. **Amended 2026-
   - FX 16: EUR/USD, USD/JPY, GBP/USD, AUD/USD, USD/CAD, USD/CHF, EUR/GBP, EUR/JPY, GBP/JPY, AUD/JPY, EUR/CHF, EUR/AUD, CHF/JPY, AUD/NZD, NZD/USD, CAD/JPY.
   - Metals: XAU, XAG, XCU. Indices: US500, US30, UK100, JP225, EU50, AUS200, GER40, US100. Energy: UKOIL, NATGAS, USOIL.
   - All are quoted by FTMO, with Dukascopy history from ≤ 2013; the owner confirms availability with `scripts/download_dukascopy_s3.py check` before onboarding.
-  - **Held out and LOCKED (the salt is frozen now; re-salting after any real-data look is forbidden):** AUD/NZD, NZD/USD, CAD/JPY, XCU/USD, GER40, US100 and USOIL. They were drawn by sorting each class by `sha256("ACIS-R1-holdout-2026-09-25|" + symbol)` and holding out the first k (FX 3, metal 1, index 2, energy 1), with the 8 on-disk instruments forced into the explored set. They are never explored, graded once per assembled portfolio, residualised and kill-only. They are clean of the project's looks, not of the LLM's memory.
+  - **Held out and LOCKED (the salt is frozen now; re-salting after any real-data look is forbidden):** AUD/NZD, NZD/USD, CAD/JPY, XCU/USD, GER40, US100 and USOIL. They were drawn by sorting each class by `sha256("ACIS-R1-holdout-2026-09-25|" + symbol)` (each symbol spelled BASE/QUOTE for FX and metals, "AUD/NZD" and "XCU/USD", and by its FTMO root for indices and energy, "GER40" and "USOIL"; another spelling draws a different set, GAP-P12D-123; the probe is `CLOUD_AUDIT/reports/r1/evidence/R1B/probe_holdout_draw.py`) and holding out the first k (FX 3, metal 1, index 2, energy 1), with the 8 on-disk instruments forced into the explored set. They are never explored, graded once per assembled portfolio, RAW (not residualised; owner decision D-e 2026-09-25, GAP-P12D-114) and kill-only. They are clean of the project's looks, not of the LLM's memory.
   - **Live eligibility per account:** an instrument is live-eligible on an account only if one minimum lot is ≤ its risk budget at |forecast| = 10 on that account (GAP-P12D-101). The rest stay research-only there.
-  - **Breadth** is measured as effective breadth, IDM = √(N/(1+(N−1)ρ_P&L)), not as a count.
+  - **Breadth** is measured as effective breadth, N_eff = N/(1+(N−1)ρ_P&L), not as a count. The instrument diversification multiplier is IDM = √N_eff, capped at 2.5 (Carver).
   - The 8-instrument universe below stays the on-disk tick set, forced explored.
 - *(Superseded as the research universe:)* **Data:** `2012-01-01 → 2026-01-01` (14 yr). **Enabled universe RATIFIED
   2026-07-22 (owner): 8 instruments** chosen for genuine cross-sectional
@@ -43,7 +43,7 @@ train fold; the validation design is not an optimisation target. **Amended 2026-
   is the real cost of broadening, tracked as build work.)*
 - **AMENDED 2026-09-25 (R-1 A1, R1-D1/D6, owner-ratified; ACIS-09 v1.7 C-BT-11 v2).**
   - **Walk-forward (development): EXPANDING train / 1-yr test / 1-yr step.** A fixed family (no training step) needs only its longest lookback warm; a family with a training step needs ≥ 2 years first.
-  - **The embargo** is ≥ max(7 days, the 95th percentile of the rule set's holding period, measured on the lab).
+  - **The embargo (corrected 2026-09-25, GAP-P12D-123):** a fixed family carries none (only its lookback warm-up); an explored family's is ≥ max(7 days, its longest lookback).
   - **Development is ONE tier (2012–2023) for fixed families.** The E (2012–19) / V (2020–23) split is used only for explored families.
   - The rolling plan below is superseded, kept for the record.
 - *(Superseded:)* **Walk-forward (development):** **2-yr train / 1-yr test / 1-yr step**, with a
@@ -59,7 +59,7 @@ train fold; the validation design is not an optimisation target. **Amended 2026-
   real train→test data gap is shorter than the max hold; (2) every report carries
   `trial_count` and the **Deflated Sharpe** (`deflated_sharpe.py`, pinned to Bailey & López
   de Prado's own numerical example) — pass the per-period Sharpe ratio of every
-  configuration tried as `trial_sharpes`. **Gate (owner-ratified 2026-09-15, GAP-P12D-16):**
+  configuration tried as `trial_sharpes`. **Gate (owner-ratified 2026-09-15, GAP-P12D-16; SUPERSEDED for `passed` by ACIS-09 v1.8 C-BT-11 v2 — the as-built code keeps it until the verdict module lands):**
   `passed` requires DSR ≥ 0.95 over ≥ 2 trials; the trials are the ACIS-11 attempt-registry
   configurations for the strategy family plus each fold's champion. **Deferred:**
   Combinatorial Purged CV (the spec mandates walk-forward; CPCV is a bigger §13

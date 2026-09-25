@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-PROVENANCE-011` |
-| **Version** | 1.1 (LOCKED — v2.11 declared-deviations law, 2026-07-16) |
+| **Version** | 1.2 (LOCKED — the look register is authoritative for graded numbers, 2026-09-25) · 1.1 (LOCKED — v2.11 declared-deviations law, 2026-07-16) |
 | **Layer / DIR** | Layer 4 · `[DIR:core/signals]` (provenance/lifecycle scaffolding lives with AGON) |
 | **Consumes** | Module registrations (design-time), re-validation verdicts (phase-11 harness / Phronesis via §12) |
 | **Emits** | Provenance + lifecycle state → `acis://strategies/provenance` (ACIS-08); rung gates consumed by AGON (ACIS-04) |
@@ -146,7 +146,7 @@ CREATE TABLE reading_list (
 - **C-PRV-1 (falsifier gate):** no falsifier ⇒ no registration ⇒ no module; test proves a blank falsifier is refused and AGON refuses an unregistered module id.
 - **C-PRV-2 (GAP-0019):** demotion freezes new entries in the same call, never touches open-position management, and stages removal with observable staleness; test walks freeze→stall×N→flat-boundary completion.
 - **C-PRV-3 (no self-promotion):** PAPER→LIVE requires the human token; test proves refusal without it; no MCP tool can mutate rungs.
-- **C-PRV-4 (attempt registry is append-only):** attempts only grow; snapshot always carries the count; test asserts no deletion path and count monotonicity.
+- **C-PRV-4 (attempt registry is append-only):** attempts only grow; snapshot always carries the count; test asserts no deletion path and count monotonicity. *(v1.2, master v2.21/v2.22: for GRADED numbers the authoritative registry is the look register (ACIS-09 C-BT-11 v2). This registry keeps the provenance attempts, i.e. literature variants tried; each graded one must ALSO have its look-register line.)*
 - **C-PRV-5 (graveyard is a library):** retirement without a revival condition is refused; revival re-enters at INCUBATION with attempts intact.
 - **C-PRV-6 (challenger lane is paper-only):** a challenger record never alters the champion's rung; promotion candidates go through the full ladder.
 
@@ -161,5 +161,6 @@ CREATE TABLE reading_list (
 **What AGON (ACIS-04) consumes:** `entry_allowed(strategy_id, now)` as a per-module emission gate, and the registration requirement at module construction. **What ACIS-08 consumes:** `snapshot()` for `acis://strategies/provenance`. **Done-when (phase 5 scaffolding):** §14 tests green in a full run; no walk-forward execution (phase 11), no LLM research loop (Phronesis-side), no live promotion path exercised.
 
 ## Changelog
+- **1.2 (LOCKED, 2026-09-25)** — Master v2.21/v2.22: the look register (ACIS-09) is the authoritative registry for graded numbers, and this attempt registry keeps provenance attempts (GAP-P12D-123).
 - **1.1 (LOCKED, 2026-07-16)** — v2.11 declared-deviations law (owner-directed, external-referent pass): `ProvenanceRecord.declared_deviations: tuple[str, ...]` — every departure from the cited source's ACTUAL method, exhaustively; an EMPTY tuple is the positive assertion "implemented as published"; persisted, exposed on `snapshot()`/`acis://strategies/provenance`, and audited by the new external-referent per-phase audit (CLAUDE.md). All six v1 modules now carry honest deviation lists (none is "as published"). Blank deviations refused.
 - **1.0 (LOCKED, 2026-07-15)** — Authored at phase-5 start per the deep-spec queue. Makes §5.6/§5.7 executable as scaffolding: falsifier-gated registration, append-only attempt registry, exhaustive rung ladder with quarterly re-validation due dates, the GAP-0019 demotion transition on the QIEA C2 pattern, graveyard with mandatory revival conditions, paper-only challenger lane, F29 reading-list ledger. Verdict *computation* stays with ACIS-09 (phase 11); research stays out-of-band (§0/§12). Human token required for PAPER→LIVE — no agent self-promotion, mirroring the family audit-firewall.

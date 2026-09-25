@@ -1,5 +1,5 @@
 # ACIS — Adaptive Capital Intelligence System
-## Master Specification v2.21 (build authority — spec COMPLETE, build in progress)
+## Master Specification v2.22 (build authority — spec COMPLETE, build in progress)
 
 Status: BUILD AUTHORITY. Consolidates and supersedes `ACIS_Agent_Prompt.md` (Drive, v1.0), `Super_Forex_Agent.html` (Drive, v1.0 architecture brief), and the ACIS sections of the July 2026 Master Spec doc. Where those disagreed (directory layout), this document decides: the detailed `core/` layout below is canonical; the coarse 4-folder layout from the master doc is retired. If any earlier document contradicts this one, this one wins.
 
@@ -91,7 +91,7 @@ Conflict resolution priority (highest wins): 1) Risk Monitor HALT · 2) NVMA `tr
 | New signal would breach correlation-cluster cap | Governor sizes to zero. Do not split. |
 | Daily drawdown limit hit while sizing | Halt new positions for session |
 | Instrument has no registered, validated rule set (v2.21, R-1 A4) | `tradeable=False` |
-| Rule families' forecasts disagree, same instrument (v2.21, R-1 A7) | Net them: fixed pre-registered weights combine them into one target position (§5.5). A net forecast inside the no-trade buffer places no order. Ambiguity = no trade. |
+| Rule families' forecasts disagree, same instrument (v2.21, R-1 A7; wording v2.22) | Net them: fixed pre-registered weights combine them into one target position (§5.5). A target inside the no-trade band around the CURRENT position places no order. Ambiguity = no trade. |
 
 ## 3. DATA INGESTION `[DIR:core/data]`
 
@@ -164,7 +164,12 @@ Classification inputs: ATR(14/50/200) ratios → volatility class; ADX(14) → t
 
 Veto (`tradeable=False`) additionally when: confidence < 0.55; spread > 3× session median; tick velocity < 0.5× session median (dead market).
 
-On regime shift: log full context. **Regime is a veto only (v2.21, R-1 A7):** regimes no longer gate rule families or key their parameters, and NVMA's one effect on trading is the `tradeable=False` veto above, which is UNCHANGED (every trigger stays, the confidence floor included). Any regime conditioning enters only as a registered family-version (§5.6). NVMA never triggers execution; it writes to `regime_store` only.
+On regime shift: log full context. **Regime no longer gates families (v2.21, R-1 A7; corrected v2.22, GAP-P12D-109):**
+- Regimes no longer gate rule families or key their parameters.
+- The `tradeable=False` veto keeps every organic trigger: confidence, spread, dead market, MACRO_EVENT, ILLIQUID and UNCLASSIFIED. Its former "no evolved params for the regime" trigger is REPLACED by the §2 row "no registered, validated rule set" (A4).
+- NVMA's other effects on trading stand until separately amended: the §6 regime sizing factor (dampen-only; **owner-ratified 2026-09-25, the R1 audit triage: "Ratify all", decision D-b: it stays**, since removing it would raise sizes by up to 1/regime_f), the C4 volatility rules, and §3.6.
+- Any regime conditioning of a family enters only as a registered family-version (§5.6).
+- NVMA never triggers execution; it writes to `regime_store` only.
 
 ## 5. RULE PARAMETERS `[DIR:core/optimizer]` (v2.21 — née QIEA OPTIMIZER; R-1 A4)
 
@@ -174,8 +179,24 @@ On regime shift: log full context. **Regime is a veto only (v2.21, R-1 A7):** re
 - Parameters are **pooled across instruments**. They may differ per instrument only through a declared, pre-registered cost filter.
 - There is no per-regime or per-instrument parameter library, and no evolutionary search.
 - An **explored** family may declare a ±1-step grid on ≤ 2 parameters (≤ 9 members). The grid is hashed before its first look and graded by max-t over the declared grid (ACIS-09 C-BT-11 v2).
-- The plateau requirement (§5.6) binds every family as a **kill-only** check.
-- **Legacy until R1.7:** the QIEA text below (the regime-indexed library, the `ParamSet` gene space and the fitness formula) describes code that still exists and is frozen as the untrained baseline (BASELINE.md). It is retired by `git mv` at R1.7, as a conscious re-baseline the owner approved on 2026-09-25. No new grade uses it.
+- The plateau requirement (§5.6) binds every family as a **kill-only** check. For a fixed family the ±10% neighbours are:
+  - every speed or lookback scaled by 0.9, and by 1.1, jointly (ratios kept);
+  - each parameter ±10% alone.
+
+  A neighbour that fails C9 on the development span refuses the family (GAP-P12D-123).
+- **C9 per member (convention, v2.22).** Each member is simulated standalone as its own capped-forecast → target-position book over the family's instruments, after the §5.6 cost filters. Its expectancy is its mean daily net P&L, and E ≤ 0 refuses the family.
+- **"Validated" (owner-ratified 2026-09-25, the R1 audit triage: "Ratify all", decision D-a; GAP-P12D-106).**
+  - **In live mode,** a rule set is validated when its family holds rung 1 of §14 on that account.
+  - **In paper and practice modes,** a REGISTERED family whose machinery passed B0 (ACIS-09 C-BT-11 v2) may trade at **minimum size**: at most one venue minimum lot per instrument, on live-eligible instruments only. That is the only way a family, an LLM-originated one above all, earns the forward record that stage D needs.
+  - Today's as-built demo trades QIEA parameter sets nobody validated in this sense. That is recorded, not hidden.
+- **Legacy QIEA and its EXPLICIT retirement list (A4; corrected v2.22, GAP-P12D-107/113):**
+  - The QIEA text below (the regime-indexed library, the `ParamSet` gene space, the fitness formula) describes code that still exists, frozen as the untrained baseline (BASELINE.md).
+  - It retires by `git mv`, as the conscious re-baseline the owner approved on 2026-09-25. The list is exactly: `core/optimizer/qiea.py`, `tests/backtest/evolve_step.py`, `core/optimizer/fitness.py` (after its indicators move, GAP-P12D-99), and the genome and gene types.
+  - **Not retired: the staging mechanism.** `PromotionForbiddenError`, the `PositionGate` and stage / promote / on_boundary in `param_library.py` are re-homed as the rule registry's staging. They stay law: C1/C2 here, ACIS-03 §7–§8.
+  - **Also not retired here:** anything another master section owns — marginal alpha (§6), the fragmenter (§7), the C4 conviction rules, the legacy modules. Each retires only by its own master amendment.
+  - The retirement lands only after the rule registry, the research simulator and engine parity exist. No phase lands before the rules it assumes (GAP-P12D-123).
+  - No new grade uses the legacy path.
+- *(v2.21 wording, superseded:)* **Legacy until R1.7:** the QIEA text below (the regime-indexed library, the `ParamSet` gene space and the fitness formula) describes code that still exists and is frozen as the untrained baseline (BASELINE.md). It is retired by `git mv` at R1.7, as a conscious re-baseline the owner approved on 2026-09-25. No new grade uses it.
 
 *Legacy:* quantum-inspired binary chromosome evolution maintaining a **regime-indexed parameter library** (best `ParamSet` per RegimeType).
 
@@ -183,13 +204,21 @@ On regime shift: log full context. **Regime is a veto only (v2.21, R-1 A7):** re
 
 **C1 — "session boundary" is defined, not assumed.** A session boundary is a discrete instant enumerated in `system_config.yaml` (`session_boundaries`, each a `{zone, at}` local wall time — default: the 17:00 New York daily forex rollover plus the 09:00 Tokyo / 08:00 London / 08:00 New York opens — the rollover is also the Sydney open; v2.14: local, so each boundary's UTC instant moves with its centre's DST — §3.7). The QIEA staging rule, the "next valid session boundary" promotion trigger, and the `session` field on `MarketState` all resolve against this one list — there is no implicit or per-instrument notion of a boundary anywhere else in the system. A bad or empty list is fatal at startup (§9).
 
-**C2 — promotion liveness (the deadlock is observable, the safety rule is not weakened).** Because forex is 24/5, a position can straddle successive boundaries, so `open_positions == 0` may not hold at any boundary for an extended period. The safety rule is absolute and unchanged: **params are never promoted while any position is open, and never mid-session — position close is NOT a promotion trigger.** To prevent silent staleness, staged params carry `staged_at` and a `boundaries_skipped` counter; each boundary that passes with open positions increments it and logs `PARAM_PROMOTION_STALLED{regime, boundaries_skipped, staged_at}`. When `boundaries_skipped ≥ config.param_stall_alert_boundaries` (default 3) the condition is surfaced on `acis://params/pending` (§12) for orchestrator/human attention. The system waits — it never force-promotes.
+**C2 — promotion liveness (the deadlock is observable, the safety rule is not weakened).** Because forex is 24/5, a position can straddle successive boundaries, so `open_positions == 0` may not hold at any boundary for an extended period. The safety rule is absolute and unchanged: **params are never promoted while any position is open, and never mid-session — position close is NOT a promotion trigger.** To prevent silent staleness, staged params carry `staged_at` and a `boundaries_skipped` counter; each boundary that passes with open positions increments it and logs `PARAM_PROMOTION_STALLED{regime, boundaries_skipped, staged_at}`. When `boundaries_skipped ≥ config.param_stall_alert_boundaries` (default 3) the condition is surfaced on `acis://params/pending` (§12) for orchestrator/human attention. The system waits — it never force-promotes. **C2 under netting (owner-ratified 2026-09-25, the R1 audit triage: "Ratify all", decision D-c; GAP-P12D-108).** A pooled book is rarely flat, so a staged rule-set change may be promoted by a **staged flatten-then-promote**:
+- at a valid session boundary, the affected instruments are flattened through the reduce-only close (risk-reducing, agent-executable, logged);
+- promotion happens only once they are flat.
+
+The rule itself is unchanged: never mid-session, never with open positions.
 
 *(Legacy QIEA gene space, frozen in BASELINE.md until R1.7; a rule family declares its own ≤ 3 parameters in its provenance record.)* `ParamSet` fields and ranges (minimum set — extend only with spec edit): ema_fast 5–50, ema_slow 20–200, rsi_period 7–21, rsi_overbought 65–80, rsi_oversold 20–35, atr_multiplier_sl 1.0–3.5, atr_multiplier_tp 1.5–5.0, momentum_lookback 5–50, breakout_atr_threshold 0.5–2.0, mean_rev_zscore_entry 1.5–2.5, max_holding_periods 1–48, plus regime, fitness_score, evolved_at.
 
 Fitness = Sharpe×0.40 + WinRate×0.20 + ProfitFactor×0.20 + MaxDrawdownPenalty×(−0.20), evaluated on **every bar of regime-labelled historical data for the target regime inside a declared recency span** (`fitness_span_days`, ACIS-03 — a time span, never a bar count, and never full history; v2.18, GAP-P12D-29). QIEA reads historical data only — never live portfolio state. *(The `Sharpe` component here is the per-trade **mean/σ** shipped as `mean_sigma` — GAP-0105 — a per-regime relative rank, NOT an annualised Sharpe; the only annualised Sharpe in the system is the §14 graded metric.)*
 
-**C8 — fitness is net of costs (binding).** The fitness mini-backtest must apply the **same** spread + commission + swap/slippage cost model used by the §13 backtest harness (`ACIS-09`) — the shared model is unit-tested identical in both places. Optimising on gross (mid-price) returns selects parameters that look profitable in a frictionless world and die net of costs; it is forbidden. This is the classic way a backtest lies, closed at the optimizer, not only at the final gate. **v2.21 (R-1):** the research simulator (RSIM) calls the same scalar cost model per fill, so no second cost model exists. The C8 model carries the venue's per-symbol swap table as data (FTMO's published table and a swap-free world, GAP-P12D-93/94). Positions round down to the venue's lot step exactly as execution does (ACIS-06 C-EXE-6, GAP-P12D-101), so the graded book is the tradeable book.
+**C8 — fitness is net of costs (binding).** The fitness mini-backtest must apply the **same** spread + commission + swap/slippage cost model used by the §13 backtest harness (`ACIS-09`) — the shared model is unit-tested identical in both places. Optimising on gross (mid-price) returns selects parameters that look profitable in a frictionless world and die net of costs; it is forbidden. This is the classic way a backtest lies, closed at the optimizer, not only at the final gate. **v2.21 (R-1):** the research simulator (RSIM) calls the same scalar cost model per fill, so no second cost model exists. The C8 model carries the venue's per-symbol swap table as data (FTMO's published table and a swap-free world, GAP-P12D-93/94). **Corrected v2.22:**
+- **One lot rule serves research and execution alike.** The TARGET position is rounded toward zero to the venue's lot step, and the order is the rounded target minus the current position (GAP-P12D-101/123).
+- The venue's minimum volume, volume step and contract size are read from the platform at onboarding and stored, dated.
+- The swap table carries its charge calendar: the rollover weekday and multiple, e.g. FTMO's triple swap Wednesday→Thursday (GAP-P12D-123).
+- The graded book is the tradeable book only on the per-account re-grade (ACIS-09 C-BT-11 v2, step 5).
 
 **C9 — positive expectancy is a hard gate (binding).** A ParamSet whose net expectancy `E = winRate·avgWin − lossRate·avgLoss` (costs included, C8) is ≤ 0 over its fitness window **cannot win evolution**, regardless of its Sharpe or win-rate components. Win rate is a *component*, never the objective: a high win rate paired with negative expectancy (tight take-profit, wide stop) is a money-loser, not an edge. The exact expectancy normalisation is a testable contract owned by `ACIS-03` (like the C6 marginal-alpha contract). This is the optimizer-side of the §5.6 anti-self-deception law — it tightens selection and weakens no guardrail. **v2.21 (R-1 A4):** C9 binds every member of a registered rule family; a member at E ≤ 0 over the development span refuses the family (kill-only).
 
@@ -203,11 +232,17 @@ AGON does NOT know capital, portfolio state, execution, or how to override the N
 
 **Forecasts, not independent signals (v2.21, owner-ratified 2026-09-25, R-1 A7).**
 - Rule families emit **forecasts**.
-- Per instrument, AGON combines them with fixed, pre-registered weights (equal within a family, then equal risk across families), multiplies by the forecast diversification multiplier (FDM) and caps at ±20.
-- The result sets **one target position per instrument**, with a 10% no-trade buffer, executed on the pre-registered per-symbol execution clock (§5.6).
+- Per instrument, AGON combines them with fixed, pre-registered weights (equal within a family, then equal risk across families), multiplies by the forecast diversification multiplier (FDM, capped at 2.5) and caps at ±20.
+- The result sets **one target position per instrument**.
+- **The no-trade buffer is Carver's (corrected v2.22, GAP-P12D-118).**
+  - It is a band of ±10% of the instrument's average position (its position at |forecast| = 10) around the CURRENT position.
+  - A target inside the band places no order; a target outside it trades to the band's nearest edge.
+  - The Governor owns the band, because AGON holds no portfolio state.
+- Orders execute on the pre-registered per-symbol execution clock (§5.6).
 - A reduction executes through the reduce-only atomic close (ACIS-06 C-EXE-7). Pair groups stay all-or-none (C-EXE-8).
 - Regimes no longer gate families (§4).
 - The Signal/target-position interface this needs is specified in ACIS-04 before R1.6 builds it (spec first).
+- A pair family is refused (no target change) while either leg's instrument is at its ±20 cap, so netting can never leave one leg trading alone (GAP-P12D-123).
 - The legacy modules below keep their text until each is re-registered as a family member or retired through §5.7.
 
 *Legacy:* concurrent strategy modules (regime-gated): **Trend Following** (dual-EMA cross + RSI filter; conviction = normalised ADX) in trend regimes; **Breakout** (channel break + volume confirm; close-beyond-level false-break filter; conviction = magnitude/ATR) in breakout regimes; **Mean Reversion** (BB extremes + RSI divergence; z-score entry from evolved params; conviction = z × divergence strength) in ranging/mean-reverting regimes; **Momentum Scalp** (tick-velocity surge + directional alignment, 5–15 bar horizon) in high-liquidity trend regimes; **Pair Divergence** (the opposite-movers edge): rolling correlation/spread z-score over historically coupled pairs from `instruments.yaml` (e.g., EURUSD↔USDCHF, AUDUSD↔NZDUSD); entry on divergence beyond evolved z-threshold with coupling-stability confirmation, exit on reconvergence or coupling break; conviction = divergence z × coupling stability; active in ranging/mean-reverting regimes on BOTH legs' instruments. Pair rules: every relationship quotes its correlation window and method (a correlation without its window is a bug); both legs are emitted as one linked signal group so the Governor sizes them together and counts their **net** currency exposure (long EURUSD + short USDCHF ≈ double USD short, not a hedge); a coupling break (rolling correlation crossing its sign/stability floor) while legs are open emits an exit signal for the group — never one leg alone.
@@ -220,13 +255,22 @@ Strategy modules do not appear from thin air, and backtest numbers are hypothese
 
 - **The verified-benchmark law (v2.9, owner-directed):** ACIS measures itself against what *provably* works, not against hype. The canon of systematic edges with decades of published, verifiable evidence — the benchmark ACIS's strategy set must engage with, module by module: (1) **time-series momentum / trend following** at 3–12-month horizons (Moskowitz–Ooi–Pedersen 2012; the century study, Hurst–Ooi–Pedersen 1880–2016, over **67 markets**: a full-sample net-of-fee Sharpe of **0.76**, ranging **0.13–1.70 by decade** and 0.41 in 2010–16, positive in 8 of the 10 worst 60/40 drawdowns — the backbone of the ~$300B CTA industry. **The evidence is portfolio breadth: the average SINGLE market's Sharpe is ≈ 0.4, gross of fees and costs**, so a TSMOM on a few instruments cannot borrow the 0.76 (v2.19, GAP-P12D-53)). **The TREND family is the required canonical implementation for v1 (v2.21, owner-ratified 2026-09-25, R-1 A3; it replaces the v2.9 "slow multi-month TSMOM module"):**
   - It is a fixed, equal-weight combination of EWMA-crossover forecasts at (16,64), (32,128) and (64,256), on 17:00 New York daily closes.
-  - Its members are the breakout form (40/80/160) and the MOP-2012 12-month sign, which is the literature-fixed **baseline variant**, run raw first (ACIS-04 §6.6).
+  - Its members are the breakout form (40/80/160, Carver's formula) and, as the literature-fixed **baseline variant** run raw first, MOP-2012's own rule (corrected v2.22, GAP-P12D-116):
+    - the sign of the 12-month EXCESS return: spot plus the carry differential from the dated rates on disk (MOP 2012 eq. 5 and App. A.3);
+    - one horizon;
+    - MOP's ex-ante volatility scaling.
+
+    ACIS-04 §6.6's 3-horizon spot vote is a separate registered member. Its spot basis is a declared deviation, and GAP-0073's "immaterial" is withdrawn: the 12-month signs disagree on 3–12% of FX days.
   - Parameters are pooled across instruments.
-  - A speed is admitted per instrument only if its cost, including the venue's swap, is ≤ ⅓ of its expected pre-cost Sharpe.
-  - Forecast scalars are fixed before any real-data look, spending zero looks.
+  - **Two cost filters (owner-ratified 2026-09-25, the R1 audit triage: "Ratify all", decision D-g; GAP-P12D-115).** Both are set against FIXED expectations, never a realised Sharpe:
+    - **Carver's speed limit.** A speed is admitted per instrument only if its annual turnover cost — (forecast turnover + rolls a year) × the cost per trade, in SR units — is ≤ 0.10 SR. That is the stricter of Carver's two published figures ("Fast but not furious", 2023).
+    - **Swap viability.** An instrument is admitted only if its expected annual swap MARKUP cost, in SR units at the family's expected time in market, is ≤ 0.10 SR (⅓ of a declared expected pre-cost Sharpe of 0.30).
+
+    Both are declared deviations in the provenance record.
+  - **Forecast scalars are Carver's published values** (owner-ratified 2026-09-25, the R1 audit triage: "Ratify all", decision D-f; GAP-P12D-122): 3.75 / 2.65 / 1.87 for (16,64) / (32,128) / (64,256). They use his reference implementation's normaliser (the daily price-unit volatility) and EWMA span convention, pinned by commit in the provenance record. Being literature-fixed, they spend no project look.
   - Forecasts are scaled, capped at ±20 and combined into one target position per instrument (§5.5).
   - Positions round down to the venue's lot step exactly as execution does, in research and live alike (C8).
-  - Execution runs on a pre-registered per-symbol clock **outside the 17:00 New York rollover window** and every gap-rule window (GAP-P12D-95).
+  - Execution runs on a pre-registered per-symbol clock **outside the 17:00 New York rollover window** and every gap-rule window (GAP-P12D-95). The gap rule's news prong needs event-day skips from the historical and live event calendar (GAP-P12D-58/03), replayed identically in research.
   - Multi-horizon ensembling is now the rule itself.
 
   The canon continues: (2) **Volatility scaling/targeting** of positions (verified to raise Sharpe on risk assets and to cut drawdowns/tails broadly; evidence for FX specifically shows the drawdown benefit more than the Sharpe benefit — recorded honestly) — applied in the Governor as the §6 dampen-only vol-normalisation factor. (3) **Fractional-Kelly discipline** — full Kelly is fragile to estimation error; aggregate risk fraction stays deliberately far below it (ACIS's fixed-fractional BASE_UNIT + guardrails already embody this; ACIS-05 records the framing). (4) **Breadth** — the CTA result rests on many uncorrelated markets; the §3.7 multi-asset architecture is the carrier. Un-verified claims (marketing EAs, social-media track records, unaudited "prop signals") are not benchmarks and never enter the canon.
@@ -248,7 +292,10 @@ Strategy modules do not appear from thin air, and backtest numbers are hypothese
 
 Markets drift; a strategy that was honest two years ago can be a memory today. Parameters are pooled and fixed per registered family (§5, v2.21); this section makes **strategy-level** evolution a standing obligation, not an aspiration:
 
-- **Strategy lifecycle (binding):** every Arena module lives on the §5.6 rung ladder its whole life, not just at birth: `incubation (backtest) → paper → live → decayed → retired`. Every strategy and every promoted ParamSet carries a **re-validation due date** (config cadence, default quarterly): a fresh walk-forward on data it has never seen, judged by its own declared falsifier and the C9 expectancy gate. Passing re-arms the date; failing demotes one rung — automatically, logged, no debate. Demotion is risk-reducing and therefore agent-executable; **promotion remains gated as in §5.6** (live behaviour only, human sign-off for live). **Demotion transition (closes GAP-0019, mirrors the QIEA C2 pattern):** a failed re-validation freezes the strategy's **new entries immediately** (instant, risk-reducing); its open positions remain managed by its own exit logic until flat — a live position is never orphaned by its strategy's demotion; removal from the Arena is staged and lands at the next session boundary at which that strategy holds no open positions, with staleness observable exactly like a stalled param promotion.
+- **Strategy lifecycle (binding):** every Arena module lives on the §5.6 rung ladder its whole life, not just at birth: `incubation (backtest) → paper → live → decayed → retired`. Every strategy and every promoted ParamSet carries a **re-validation due date** (config cadence, default quarterly): a fresh walk-forward on data it has never seen, judged by its own declared falsifier and the C9 expectancy gate. Passing re-arms the date; failing demotes one rung — automatically, logged, no debate. Demotion is risk-reducing and therefore agent-executable; **promotion remains gated as in §5.6** (live behaviour only, human sign-off for live). **Demotion transition (closes GAP-0019, mirrors the QIEA C2 pattern):** a failed re-validation freezes the strategy's **new entries immediately** (instant, risk-reducing); its open positions remain managed by its own exit logic until flat — a live position is never orphaned by its strategy's demotion; removal from the Arena is staged and lands at the next session boundary at which that strategy holds no open positions, with staleness observable exactly like a stalled param promotion. **Under netting (v2.22, D-c):**
+- a demoted family's forecast is frozen at once, so it can no longer raise any instrument's exposure;
+- its contribution is removed at the next session boundary;
+- the resulting target change executes like any other (reduce-only where it reduces).
 - **Graveyard with revival conditions:** a retired strategy is never deleted. It enters the graveyard with its full provenance record, final performance, and a **declared revival condition** (typically the regime/inefficiency conditions under which its edge existed). When NVMA regime statistics again match a graveyard entry's revival condition, the system surfaces it on `acis://strategies/provenance` for re-incubation — from the *bottom* rung. Edges are cyclical; the graveyard is a library, not a landfill.
 - **Challenger lane:** for any live strategy, bespoke variants (§5.6 derivation) may run concurrently in paper as **challengers** on the same live data. A challenger that beats the champion out-of-sample over the declared comparison window becomes the promotion *candidate* — through the full rung ladder, never by swap-in. Champions are never displaced by backtest numbers.
 - **Literature acquisition cadence:** the §5.6 research loop (LLM-side, out-of-band) is a scheduled Phronesis routine, not a one-time seeding: hunt published strategies and books from recognized practitioners → `literature-distil` → faithful implementation → raw evaluation → honest record — continuously growing the incubation pool. The reading-list ledger and each source's disposition (implemented / rejected-with-reason / queued) are part of the provenance store.
@@ -340,7 +387,7 @@ A prop account is not a funded account with extra steps; it is a different survi
 ## 10. THREE-SPEED LOOP ARCHITECTURE
 
 Three independent asyncio loops sharing read access to stores, zero synchronous coupling:
-- **Loop 1 SLOW (4–24h):** QIEA evolution at session boundaries with zero open positions; stages, never promotes mid-session.
+- **Loop 1 SLOW (4–24h):** QIEA evolution at session boundaries with zero open positions; stages, never promotes mid-session. **v2.22:** once QIEA retires, Loop 1 registers and stages rule-set changes under the unchanged staging rule (including the §5 C2 flatten-then-promote), and keeps the forward e-process books.
 - **Loop 2 MEDIUM (60–300s):** NVMA classification → `regime_store`; handles shift events.
 - **Loop 3 FAST (tick–5s):** stream MarketState → check `regime.tradeable` → fetch active params → AGON → Governor → Execution.
 
@@ -403,11 +450,21 @@ A module is complete only when its tests pass; the system is complete only when 
 *Retired from the gate by v2.21 (GAP-P12D-96): annual Sharpe > 1.5, win rate > 48%, profit factor > 1.4, positive months > 70%, and an average trade duration of 30 min–48 h. A planted SR 0.87 daily rule fails every shape row, and win rate > 48% contradicted §5.6's own "trend-following wins ~35–48%".*
 
 **The claim ladder (binding words; nothing weaker earns them):**
-1. **"Validated on history (kill-tested)"** = ACIS-09 C-BT-11 v2 `passed` (stages A–C), plus the two gates above.
-2. **"Fit to trade at minimum size / challenge-eligible"** = rung 1, plus live = replay on the demo feed, forward cost certified (E3), the forward kill bettor (E2) silent for ≥ 3 months, and explicit human sign-off (R1-D10).
-3. **"Edge shown forward"** = rung 2, plus the forward edge bettor E1 ≥ 20 (C-BT-11 v2 stage D).
+1. **"Validated on history (kill-tested)"** = ACIS-09 C-BT-11 v2 `passed` (corrected v2.22, GAP-P12D-104/105/112). That includes:
+   - B0, machinery proven first;
+   - stages A–C;
+   - the two gates above, on the per-account re-grade;
+   - C-BT-2/4/7.
+2. **"Fit to trade at minimum size / challenge-eligible"** = rung 1, plus a practice-mode forward record (GAP-P12D-69 — rung 2 cannot be earned before that mode exists) showing all of:
+   - live = replay on the demo feed;
+   - forward cost certified (E3);
+   - the forward kill bettor (E2) silent for ≥ 3 months (weak evidence by itself);
+   - explicit human sign-off (R1-D10).
 
-A paid prop challenge is a capped-loss forward test, never evidence of edge (GAP-P12D-62). The §15 live gate's "§14 minimums" means rung 2.
+   "Minimum size" = at most one venue minimum lot per instrument, on live-eligible instruments.
+3. **"Edge shown forward"** = rung 2, plus the forward edge bettor E1 ≥ 20 (C-BT-11 v2 stage D). Its expected horizon is long: about two decades at a true Sharpe of 0.5, about 11 years at 0.8, and 2.4–3 years at 1.5. "Not yet" must never be read as "soon".
+
+A paid prop challenge is a capped-loss forward test, never evidence of edge (GAP-P12D-62). The §15 live gate's "§14 minimums" means rung 2. The machine gate (ACIS-08 `acis_set_mode(live)`) reads the rung-2 record, never a bare verdict.
 
 Targets are evaluated **per attached account** on that account's enabled universe (§3.7/§9.5) — an XAUUSD-only prop account and a majors basket each clear the same bar on their own data. On rule-restricted accounts, the §9.5 platform limits apply *during* the evaluation run, not just live: a strategy mix that clears §14 only by violating the account's own rules has not cleared §14.
 
@@ -438,6 +495,16 @@ Both laws bind the implementing agent **and** every future spec pass. Neither ma
 > The system's job is not to make the most money possible on any given day. Its job is to **still be running, with positive expectancy, two years from now.** Every design decision must answer: *"Does this make the system more likely to survive a regime it has never seen?"* If the answer is no — redesign it.
 
 ## CHANGELOG
+
+**v2.22 (2026-09-25 — the constitution's two audits of v2.21 (GAP-P12D-103), triaged in R1_AUDIT_TRIAGE_2026-09-25.md; owner-ratified 2026-09-25, the R1 audit triage: "Ratify all").** Corrections C1–C15 restore the ratified intent, and decisions D-a..D-g are applied:
+- **`passed`** again carries the §14 gates and C-BT-2/4/7. B0 is restored. Rung 1 needs a per-account re-grade. The live gate reads the rung-2 record (C1, C2, C7).
+- **The staging mechanism is NOT retired;** the retirement list is explicit (C3, C8). D-c: flatten-then-promote.
+- **§4 is narrowed:** the regime sizing factor stays (C4, D-b). "Validated" is defined per mode (D-a).
+- **Stage A** is serial gatekeeping with α-spending (0.03 first, then half the remainder), look budgets and a HAC standard error. Explored families get a named bootstrap and a declared PBO. Stage C grades the held-out set RAW, kill-only. Stage D's bettors are in consistent units, and a tripwire voids (W := 0) (C5, C6, C12–C14, D-d, D-e).
+- **The trend family:** the MOP baseline is MOP's own excess-return sign; Carver's published scalars; the split cost filters; Carver's band as the no-trade buffer, owned by the Governor; the FDM/IDM caps at 2.5 (C9, C11, D-f, D-g).
+- **C-BT-12:** the variance is matched at the decision horizon, by construction; the permuted null is zero-edge in price units (C10).
+- **The C15 batch:** one lot rule; a swap charge calendar; the platform's minimum lot, dated; a pair family refused while a leg is capped; rung 2 needs the practice mode; rung 3's horizon stated; §10 Loop 1.
+- **No guardrail value, equity floor or HALT semantic changes.** The NVMA veto is unchanged; the only veto-trigger change is v2.21's ratified A4 row.
 
 **v2.21 (2026-09-25 — the owner ratified the R-1 direction, then every lead recommendation R1-D1..D14 in chat: "i ratify all your recommendations for R1-D1 to D14"; drafts and evidence in R1_LEAD_REVIEW_2026-09-25.md; the constitution's two audits run on this applied text before the build relies on it)**:
 - **§5 → RULE PARAMETERS (A4):** pooled, fixed rule parameters (≤ 3 per family, literature- or null-fixed, fixed combinations); no per-regime library and no evolutionary search. QIEA is legacy until R1.7 retires it (a re-baseline, BASELINE.md). The staging rule binds every parameter change; C8/C9 bind every member; C8 carries the venue's swap table and lot rounding.

@@ -370,6 +370,7 @@ Triage below, same-day. ========================================================
 - Proof: `core/signals/canonical.py` (TSMOM `declared_deviations`), `test_v211_declared_deviations_exposed_on_snapshot` (ledger-closure triage 2026-09-11)
 - Residual: none — the deviation is declared with its immateriality note.
 - Linked: archive/KNOWN_GAPS_EXTERNAL_PENDING.md GAP-0073, GAP-0055
+- **2026-09-25 — the "immaterial" claim is WITHDRAWN.** The R1 external audit measured the 12-month spot and excess signs disagreeing on 3.0–12.1% of FX days (2013–2025). The faithful MOP baseline is now owned by [[GAP-P12D-116]] (master v2.22 §5.6).
 
 ## GAP-0090: the TSMOM honest negative "0 disaster-stop hits / 100.00% capture" was not robust — the verifier measured 17 stop hits across 160 replays at low trend-to-noise ratios
 - Severity: low
