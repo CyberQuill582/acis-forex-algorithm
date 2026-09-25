@@ -144,6 +144,33 @@ async def test_governor_pair_exit_leaves_the_venue_flat(tmp_path) -> None:
     assert await face.open_positions() == ()                 # FLAT, not doubled
 
 
+async def test_weekend_flatten_leaves_the_venue_flat(tmp_path) -> None:
+    """Master §9.5 through the real seam: a no-weekend-holding account's positions,
+    opened by the Governor and the orchestrator, are closed by the Governor's weekend
+    flatten and the venue is FLAT before the Friday close."""
+    from datetime import datetime, timedelta, timezone
+    from core.governor.portfolio_types import Position
+    from core.signals.signal_types import StrategyType
+    from tests.unit.test_governor import _pair_signals, mk_rulebook
+    gov, _ = mk_governor(rulebook=mk_rulebook(weekend_holding_allowed=False))
+    legs = gov.allocate_group(_pair_signals(), mk_portfolio(), mk_regime(), T0)
+    orch, face, _ = mk_exec(tmp_path, unit_venue())
+    for leg in legs:
+        await orch.submit(leg, valid_for_seconds=300)
+    book = mk_portfolio(open_positions=tuple(
+        Position(instrument=p.instrument, direction=p.direction, size_units=p.size_units,
+                 entry_price=leg.entry_price, stop_loss=leg.stop_loss, take_profit=None,
+                 opened_at=T0, strategy_type=StrategyType.PAIR_DIVERGENCE,
+                 param_set_id=leg.param_set_id, group_id=leg.group_id)
+        for p, leg in zip(await face.open_positions(),
+                          sorted(legs, key=lambda o: o.instrument))))
+    friday = datetime(2026, 7, 10, 20, 0, tzinfo=timezone.utc)     # 1 h before the close
+    for close in gov.weekend_flatten(book, friday):
+        await orch.submit(close, valid_for_seconds=300)
+    assert await face.open_positions() == ()                   # flat before the weekend
+    assert gov.weekend_flatten(mk_portfolio(), friday + timedelta(minutes=1)) == ()
+
+
 async def test_zero_sized_order_never_reaches_a_venue(tmp_path) -> None:
     """The Governor's zero IS the veto — execution must not resurrect it."""
     agon, _, _ = make_agon(tmp_path)

@@ -19,7 +19,9 @@ from typing import Callable, Mapping
 
 from config.schemas import AccountRulebook, GovernorConfig, GuardrailLimits, ZonedTime
 from core.data.errors import DataQualityError
-from core.governor.calendar_gates import next_boundary, within_weekend_buffer
+from core.governor.calendar_gates import (next_boundary, weekend_flatten_orders,
+                                          within_weekend_buffer)
+from core.governor.exposure import delta_contributions, exposure_breach
 from core.governor.factors import correlation_factor, liquidity_factor, vol_norm
 from core.governor.units import usd_per_base_unit
 from core.governor.marginal_alpha import MarginalAlphaEstimator
@@ -176,11 +178,11 @@ class CapitalGovernor:
                               if a.instrument in members or b.instrument in members}
             net_deltas: dict[str, Decimal] = {}
             for sig, notional in ((a, notional_a), (b, notional_b)):
-                for ccy, contrib in self._delta_contributions(sig, notional).items():
+                for ccy, contrib in delta_contributions(sig, notional).items():
                     net_deltas[ccy] = net_deltas.get(ccy, Decimal("0")) + contrib
-            breach = self._exposure_breach(
-                portfolio, {c: group_notional for c in union_clusters},
-                net_deltas, f"group:{a.group_id}")
+            breach = exposure_breach(
+                self._limits, portfolio, {c: group_notional for c in union_clusters},
+                net_deltas, f"group:{a.group_id}", self._log)
             if breach is not None:
                 reason = f"group_blocked:{breach}"
                 self._log.event("GROUP_BLOCKED", group_id=a.group_id,
@@ -218,6 +220,25 @@ class CapitalGovernor:
                 ))
             self._log.event("GROUP_EXIT", group_id=group_id, reason=reason)
         return tuple(closes)
+
+    def weekend_flatten(self, portfolio: PortfolioState,
+                        now: datetime) -> tuple[SizedOrder, ...]:
+        """§9.5: a no-weekend-holding account is flattened from the pre-close entry ban
+        on, by reduce-only closes naming each open position (both legs of a pair); called
+        every tick, so a close that fails is re-emitted. A position still open once the
+        market has closed is surfaced (WEEKEND_FLATTEN_INCOMPLETE), never ignored."""
+        if self._rules.weekend_holding_allowed:
+            return ()
+        closes = weekend_flatten_orders(portfolio, now, self._week_close, self._week_open,
+                                        self._cfg.weekend_entry_buffer_s)
+        for close in closes:
+            self._open_groups.pop(close.group_id, None)
+            self._log_order(close)
+        if closes:
+            closed = within_weekend_buffer(now, self._week_close, self._week_open, 0)
+            self._log.event("WEEKEND_FLATTEN_INCOMPLETE" if closed else "WEEKEND_FLATTEN",
+                            instruments=sorted({c.instrument for c in closes}))
+        return closes
 
     def open_groups(self) -> tuple[str, ...]:
         return tuple(self._open_groups)
@@ -304,9 +325,9 @@ class CapitalGovernor:
             # runs them on the AGGREGATE (cluster counted once, deltas netted) —
             # per-leg checks here would understate the group's true exposure.
             notional = size_units * per_unit          # USD notional
-            breach = self._exposure_breach(
-                portfolio, {c: notional for c in clusters},
-                self._delta_contributions(signal, notional), signal.instrument)
+            breach = exposure_breach(
+                self._limits, portfolio, {c: notional for c in clusters},
+                delta_contributions(signal, notional), signal.instrument, self._log)
             if breach is not None:
                 return self._zero(signal, breach, snapshot, now)
 
@@ -374,37 +395,6 @@ class CapitalGovernor:
             snapshot["vol_norm_pinned"] = True
             return 1.0
         return vol_norm(a / seq[-1].close, self._vol_targets[instrument])
-
-    def _delta_contributions(self, signal: Signal,
-                             notional: Decimal) -> dict[str, Decimal]:
-        base, _, quote = signal.instrument.partition("_")
-        d = Decimal(signal.direction)
-        return {base: d * notional, quote: -d * notional}
-
-    def _exposure_breach(self, portfolio: PortfolioState,
-                         cluster_notional: dict[str, Decimal],
-                         delta_contributions: dict[str, Decimal],
-                         instrument: str) -> str | None:
-        """Cluster + net-currency-delta hard caps over the given contributions.
-        GAP-0051: an order that REDUCES an existing |delta| breach is never
-        blocked by that breach — the layer may only ever reduce risk."""
-        cap = Decimal(str(self._limits.cluster_cap_pct / 100.0)) * portfolio.nav
-        for cluster, notional in cluster_notional.items():
-            exposure = portfolio.per_cluster_exposure.get(cluster, Decimal("0"))
-            if exposure + notional > cap:
-                self._log.event("CLUSTER_CAP_ZERO", instrument=instrument,
-                                cluster=cluster)
-                return "cluster_cap"
-        delta_cap = (Decimal(str(self._limits.single_currency_delta_cap_pct / 100.0))
-                     * portfolio.nav)
-        for ccy, contribution in delta_contributions.items():
-            old = portfolio.per_currency_delta.get(ccy, Decimal("0"))
-            new = old + contribution
-            if abs(new) > delta_cap and abs(new) > abs(old):
-                self._log.event("CURRENCY_DELTA_ZERO", instrument=instrument,
-                                currency=ccy)
-                return "currency_delta_cap"
-        return None
 
     def _zero(self, signal: Signal, reason: str, snapshot: dict,
               now: datetime) -> SizedOrder:
