@@ -372,7 +372,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-73: the plateau law shrinks the Deflated-Sharpe trial set — a champion refused after the holdout gate drops out of the trials, which loosens a ratified gate
 - Severity: high · Likelihood: high
-- Status: open (2026-09-25 — found by AUDIT-INTERNAL, F3, in the constitutional dual audit of the BUILDER branch. The lead REPRODUCED it with the auditor's `trial_set.py` on 24 identical evolution runs: base 7695ed0 gives 24 champions and 23 trial Sharpes; branch head 9b9ec80 gives 18 champions and 18 trial Sharpes. The fix is sent back to the BUILDER on its branch)
+- Status: fixed (2026-09-25 — MERGED. `QIEA.evolve_outcome` returns the holdout-passed candidate whether or not the plateau law stages it, and `evolve_fold` counts every candidate as a trial. The lead re-ran the auditor's `trial_set.py` on the fixed head: 23 trial Sharpes, the same as base, where the defective head gave 18)
 - Area: the BUILDER branch — core/optimizer/qiea.py (the order of the plateau and holdout gates), tests/backtest/evolve_step.py (trial assembly), tests/backtest/report.py (the owner-ratified DSR gate, C-BT-11)
 - Description:
   - **How it happens.** The plateau check runs AFTER the holdout gate. A champion that clears the holdout and is then refused for plateau reasons is silently removed from the trial set that the DSR deflates by.
@@ -381,11 +381,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **Required fix:** a refused champion is still a trial (it was evaluated and selected), so it stays counted.
   - **Regression test:** base and head count the same trials.
   - **Proof it can fail (A16):** the test must be falsified.
+- Proof: `test_a_plateau_refused_candidate_stays_a_deflated_sharpe_trial`, `test_every_candidate_champion_with_a_sharpe_is_a_trial`.
+- Residual: none — the trial count is restored exactly, and the gate itself belongs to GAP-P12D-33.
 - Linked: [[GAP-P12D-34]], [[GAP-P12D-33]], [[GAP-P12D-72]]
 
 ## GAP-P12D-72: the dual audit of the BUILDER branch — findings and triage
 - Severity: medium · Likelihood: high
-- Status: open (2026-09-25 — the constitution's two lenses, and only those two, per the owner directive. Reports: archive/AUDIT_BUILDER_BRANCH_INTERNAL_2026-09-24.md (3 Medium, 6 Low) and archive/AUDIT_BUILDER_BRANCH_EXTERNAL_2026-09-24.md (4 Medium, 5 Low/Low–Medium). Every finding is reproduced by a script or quoted. The lead re-ran F3 itself. The fixes are sent back to the BUILDER on its branch)
+- Status: fixed (2026-09-25 — every finding of the BUILDER-branch dual audit is fixed on the branch, committed separately, falsified, and MERGED to main. The lead verified the branch suite at 847 passed, 6 skipped, and the F3 trial count at 23 = base. The merge-time items are done: F7, ACIS-03 v1.5; F8, the report is relocated to archive/)
 - Area: the BUILDER branch `worktree-agent-a128ab904780ce593`, as for [[GAP-P12D-37]] / [[GAP-P12D-34]] / [[GAP-P12D-38]] / [[GAP-P12D-33]]
 - Description: triage, one line each. The gate-affecting F3 has its own entry, [[GAP-P12D-73]].
   - **FIX on the branch:**
@@ -429,6 +431,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - a new finding, [[GAP-P12D-85]];
   - an OWNER NOTE on E6: the range step moves period genes near their floor by large ratios (`ema_fast` 6 → 10). The delegated range-step decision trades one inconsistency (RSI moving 44% of its range) for another (small periods moving by large ratios). A grid-step neighbour, the external referent, is the refinement if it matters.
 - Justification: open until the lead verifies the full suite on the branch head, and the branch merges on the owner's go with the merge-time items applied: F7 (the ACIS-03 v1.5 text) and F8 (relocate BUILDER_REPORT and PARTIAL_BUILDER to archive/, and fix the link at plateau.py:5).
+- Proof: `test_strict_json_writes_every_non_finite_float_as_null`, `test_the_plateau_neighbours_are_recorded_too`, `test_the_oracle_sizes_one_nav_of_notional_on_every_instrument`, `test_on_a_weekend_flat_min_hold_account_the_oracle_keeps_the_rules_and_the_grade_decides`, plus the proofs under GAP-P12D-37, -34 and -73.
+- Residual: GAP-P12D-85 — the fold-end weekend-holding artifact the BUILDER found while fixing F2; E8 (the registry cannot feed PBO) is owned by GAP-P12D-68 item 6; E5 is GAP-P12D-71.
 - Linked: [[GAP-P12D-73]], [[GAP-P12D-37]], [[GAP-P12D-34]], [[GAP-P12D-38]], [[GAP-P12D-33]], [[GAP-P12D-71]]
 
 ## GAP-P12D-71: TSMOM's declared "raw returns, not excess returns" deviation rests on a false premise — for FX it drops carry, and the vote flips on 2–10% of days
@@ -998,7 +1002,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-37: the falsification VERDICT IS VOID - the pass gate was unsatisfiable before the first tick, and the suite has no positive control
 - Severity: critical - Likelihood: high
-- Status: open (2026-09-16 - found by the BLIND adversarial agent, the one deliberately given no framing; VERIFIED by the author the same day from the run's own artifacts)
+- Status: fixed (2026-09-25 — the oracle positive control is MERGED to main from the BUILDER branch, after the constitution's two audits (GAP-P12D-72) with every finding fixed. It is the first stage of `scripts/falsify_engine.py`: the engine verdict is VOID (exit 4) unless the harness recognises planted on every non-DSR clause and refuses every control by a §14 row. Near-fail rungs prove the grader separates just-above from just-below; there is NO VERDICT (exit 5) without planted, and GATE-LIMITED (exit 6) when only the DSR or trial-count gate fails. Originally found 2026-09-16 by the BLIND agent)
 - Area: scripts/falsify_engine.py `EXPECT_PASS`, tests/backtest/report.py `passed` (the DSR gate), tests/backtest/deflated_sharpe.py `sharpe_threshold`, the whole GAP-P12D-28 falsification design
 - Description: `falsify_engine` asserts planted must PASS, where "pass" is the full 14 gate including `deflated_sharpe >= 0.95`. Feeding the run's OWN recorded trial Sharpe ratios back through the repo's own `sharpe_threshold` gives SR0 (per trade) of **2.430 planted / 0.617 null / 0.649 permuted**, which at each market's own trade count over the graded span demands an **annualised Sharpe above 76.2 / 18.6 / 20.8**. The section-14 target is 1.5. **Planted could not have passed under any engine behaviour whatsoever**, so "planted FAILED" carries no information about the engine. Worse, the hurdle is HIGHEST where the edge is real: the planted trial Sharpes have sd 0.936 against 0.248 on null, because genuine signal widens the dispersion the DSR deflates by - the gate tightens exactly when the strategy works. This is the sharper form of [[GAP-P12D-33]]: that entry documents the inversion with respect to trial COUNT; this one is with respect to trial DISPERSION, and it is why the falsification returned no usable answer.
 - Also: the suite has **no positive control**. An oracle strategy replayed through the same harness (a rule with perfect knowledge of the planted drift sign) would have exposed both this and the 30-minute duration floor in minutes, before any 6-hour run. Nothing in the suite asserts that the harness can recognise a strategy known to be good.
@@ -1015,6 +1019,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - the VALIDATOR's calibration shows it passes 0 of 1,200 planted edges.
     The gate itself was not touched.
   - **Lead review:** diff read; the lead re-ran the full suite on the branch (828 passed, 6 skipped). Close this entry when the branch merges, after audit and the owner's go.
+- Proof: `test_a_failed_oracle_voids_the_verdict_before_any_engine_compute`, `test_a_near_fail_rung_the_harness_passes_voids_the_verdict`, `test_the_planted_oracle_clears_every_non_dsr_clause_at_full_fold_scale`, `test_the_harness_passes_a_rung_just_above_the_cut_offs_and_refuses_one_just_below`, `test_non_dsr_failures_is_every_clause_of_passed_but_the_trials`.
+- Residual: GAP-P12D-33 — the ratified DSR gate itself (it mixes sample lengths and passes 0 of 1,200 planted edges); the owner's option C+D decision is pending.
 - Linked: [[GAP-P12D-33]], [[GAP-P12D-31]], [[GAP-P12D-35]], [[GAP-P12D-36]], [[GAP-P12D-28]], [[GAP-P12D-16]]
 
 ## GAP-P12D-38: 79% of the graded "trades" are zero-duration artifacts, and they sit inside the section-14 ratios
@@ -1026,10 +1032,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **The fix.** An empty population now reports NaN, not 0.0. It is BUILT, PENDING AUDIT, on branch `worktree-agent-a128ab904780ce593`, with a falsified regression test, and is not yet merged.
   - **When this closes.** Close it on merge, with a Residual pointing at [[GAP-P12D-63]]. The §14 win-rate and PF quotes that this entry barred are no longer barred for this reason; the other reasons still hold, notably [[GAP-P12D-37]] and [[GAP-P12D-33]].
 - Severity: high - Likelihood: high
-- Status: open (2026-09-16 - found by the blind adversarial agent by exact rational arithmetic on the report's own averages; VERIFIED by the author)
+- Status: closed (2026-09-25 — REFUTED and MERGED. There were never any zero-duration trades: the "0.0" was an EMPTY population's mean, since MOMENTUM_SCALP never fires on the synthetic tape. An empty population now reports NaN, written as null in JSON, per GAP-P12D-72 F6/E7. Lead-verified against the ladder's per-strategy attribution)
 - Area: tests/backtest/metrics.py (`win_rate`, `profit_factor`, `n_trades` include every closed trade), core/signals/agon.py `_momentum_scalp`, tests/backtest/book.py open/close on the same tick
 - Description: planted reports `n_trades = 2018` and `avg_trade_duration_s = 477.5061425061425`, which is exactly 194345/407 - so only **407** trades are in the section-14 duration band. TSMOM contributes about 13. The remaining **~1,598 are MOMENTUM_SCALP trades whose durations sum to exactly zero** (`scalp_avg_duration_s = 0.0` with a non-zero scalp population). Same shape on null (733 of 1,864 in band) and permuted (1,717 of 2,111). These zero-duration trades carry non-zero PnL and are counted in `n_trades`, `win_rate` and `profit_factor` - the two section-14 ratios previously quoted as evidence describe a majority-artifact population. The mechanism (open and close on the same tick) is not yet established and is the first thing to reproduce.
 - Justification: open. Until this is explained, no section-14 ratio from any run may be quoted, and the 30-trade floor ([[GAP-P11I-07]]) is not measuring what it was built to measure.
+- Proof: `test_an_empty_carve_out_has_no_mean_duration_never_zero`, `test_momentum_scalp_can_never_fire_on_a_uniform_synthetic_tape`, `test_the_ladder_document_is_strict_json_even_when_the_duration_band_is_empty`.
+- Residual: GAP-P12D-63 — MOMENTUM_SCALP is untested by every synthetic falsification run.
 - Linked: [[GAP-P12D-37]], [[GAP-P12D-31]], [[GAP-SP12I-03]], [[GAP-0075]]
 
 ## GAP-P12D-39: `RegimeContext.trend_direction` is computed every cycle and read by nothing
@@ -1095,7 +1103,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-34: the §5.6 parameter-plateau law is spec-mandated and entirely unimplemented
 - Severity: high · Likelihood: high
-- Status: open (2026-09-16 — found by the statistical-methodology research agent; verified by the author: `grep -rn plateau --include=*.py` returns ONE hit, a prompt string in monitoring/prompts.py:40)
+- Status: fixed (2026-09-25 — the §5.6 plateau law is MERGED as ACIS-03 v1.5 §6.4, after the constitution's two audits (GAP-P12D-72/73). It uses a range-based ±10% step, and "dies" = fails C9 on the train window, the lead's delegated decision D8, for the owner's review. A refused candidate stays a DSR trial)
 - Area: ACIS_SPEC.md §5.6 anti-overfitting law, core/optimizer/qiea.py (selection), specs/ACIS-03 §6, specs/ACIS-11
 - Description: master §5.6 binds: "Parameter plateaus required — a strategy that dies at +/-10% on any parameter fails." Nothing in the optimizer, the harness or the validation path computes or enforces this. QIEA selects the single best-scoring individual, which is the peak-picking the law exists to forbid. The spec also requires reported metrics to be read against an attempt registry; the registry exists for strategies but does not count parameter configurations (see GAP-P12D-33's secondary finding).
 - Justification: open. This is the cheapest genuine anti-overfitting device available to us — perturb the champion's genes by +/-10% and require the neighbourhood to survive — and it is already law, so implementing it needs no ratification, only building. It directly attacks the failure mode the falsification exposed: parameters that score well in selection and do nothing in execution.
@@ -1108,6 +1116,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **The gene search space is unchanged**, so no re-baseline.
   - **The plateau law is a filter, not evidence.** The VALIDATOR measured the ±10% plateau test as a GATE on its own: it passes noise 93–99% of the time ([[GAP-P12D-33]] options). The spec requires it, and it removes knife-edge champions, but a champion passing it proves nothing.
   - **Close** when it merges after audit.
+- Proof: `test_every_gene_moves_ten_percent_of_its_range_each_way_and_nothing_else_moves`, `test_a_single_dead_neighbour_fails_the_champion_and_is_named`, `test_qiea_refuses_the_same_champion_once_its_neighbourhood_dies`, `test_a_knife_edge_champion_on_the_real_landscape_is_refused`, `test_a_plateau_refused_candidate_stays_a_deflated_sharpe_trial`.
+- Residual: GAP-P12D-68 — whether per-regime QIEA survives the redesign (item 4), and the owner's review of the D8 "dies" reading and the E6 range step (small period genes move by large ratios, e.g. ema_fast 6 → 10; a grid-step neighbour is the refinement).
 - Linked: [[GAP-P12D-33]], [[GAP-0035]], [[GAP-P12D-31]], [[GAP-0008]]
 
 ## GAP-P12D-32: external research pass — findings and triage (report 1 of 5 in)

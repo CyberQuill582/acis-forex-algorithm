@@ -114,6 +114,11 @@ class Backtest:
         """The ParamLibrary `PositionGate` in a backtest: this book is the position layer."""
         return len(self._active.open_by_inst) if self._active is not None else 0
 
+    def graded_trades(self) -> tuple[ClosedTrade, ...]:
+        """The last run's out-of-sample closed trades, read-only (the oracle positive control
+        reports their net PnL, GAP-P12D-37)."""
+        return tuple(self._active.trades) if self._active is not None else ()
+
     def portfolio_state(self) -> PortfolioState:
         """The Governor's `portfolio_fn` in a replay (GAP-P12D-21): the real snapshot."""
         book = self._active or BookState()

@@ -136,7 +136,8 @@ def test_duration_averages_hand_worked() -> None:
     m = compute_metrics(trades=trades, equity_curve=_eq([100, 101]), rollover_marks=(), spx_closes={},
                         periods_per_year=252)
     assert m.avg_trade_duration_s == 2 * 3600                          # (1 h + 3 h) / 2
-    assert m.tsmom_avg_duration_s == 0.0 and m.scalp_avg_duration_s == 0.0   # none of either
+    # none of either: an empty population has NO mean (GAP-P12D-38: 0.0 read as zero-duration trades)
+    assert math.isnan(m.tsmom_avg_duration_s) and math.isnan(m.scalp_avg_duration_s)
 
 
 def test_rolling_var_breach_rate_second_breach_and_divisors() -> None:

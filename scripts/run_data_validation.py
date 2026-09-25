@@ -12,7 +12,6 @@ report.md listing every flag first. It never edits or averages the data (C-BT-9)
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 from collections import defaultdict
@@ -24,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 from tests.backtest.bi5 import SYMBOLS  # noqa: E402
+from tests.backtest.oos_runner import strict_json  # noqa: E402
 from tests.backtest.validation_checks import (  # noqa: E402
     TRIANGLE, day_metrics, summarise_instrument_year, summarise_triangle, triangle_samples)
 from tests.backtest.validation_gold import gold_day, second_wednesday, summarise_gold  # noqa: E402
@@ -136,7 +136,7 @@ def main() -> int:
               "seconds": round(time.perf_counter() - t0, 1),
               "instrument_years": summaries, "triangle": triangle, "gold": gold}
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
+    (OUT / "report.json").write_text(strict_json(report), encoding="utf-8")   # RFC 8259 (F6/E7)
     (OUT / "report.md").write_text(_md(report), encoding="utf-8")
     n_flags = (sum(len(s["flags"]) for s in summaries) + sum(len(t["flags"]) for t in triangle)
                + sum(len(g["flags"]) for g in gold))

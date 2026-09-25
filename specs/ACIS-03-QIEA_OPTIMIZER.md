@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-QIEA-003` |
-| **Version** | 1.4 (LOCKED — master v2.18 fitness window as a time span, 2026-09-15) |
+| **Version** | 1.5 (LOCKED — §5.6 parameter-plateau law as §6.4, 2026-09-25) |
 | **Layer / DIR** | Layer 3 · `[DIR:core/optimizer]` |
 | **Consumes** | `RegimeContext` (ACIS-02) + regime-labelled **historical** data only |
 | **Emits** | `ActiveParamSet` (frozen) → AGON (ACIS-04, né Alpha Arena) via `param_library` |
@@ -91,7 +91,7 @@ class ActiveParamSet:
 2. Observe (collapse) each individual to a binary string; decode to a `ParamSet` (fixed-point decode into each gene's range; clamp to range; enforce cross-field invariants by repair, not by emitting invalid).
 3. Evaluate fitness on the **training split** of the regime-labelled bars for **this regime only** (never full history — master §5).
 4. Apply the rotation gate: turn each `theta` toward the best observed individual's bit by `rotation_angle_rad` (Han–Kim-style **simplified** rotation — comparison is always against the generation best, so the canonical Δθ lookup table reduces to a fixed signed step; angles clamped off saturation so no bit becomes unrecoverable). *(v1.2 honesty note, GAP-0037: v1.1's "canonical Han & Kim" overclaimed — the shipped gate is the reduced best-only form, now with true angle encoding.)*
-5. Repeat for `generations`; keep the best `ParamSet`. **The champion must itself have cleared the C9 gate on train** (`fitness > WORST_FITNESS`; otherwise `EVOLUTION_REJECTED_TRAIN`, nothing staged — GAP-0038), then pass the §6.3 holdout gate before it may be staged.
+5. Repeat for `generations`; keep the best `ParamSet`. **The champion must itself have cleared the C9 gate on train** (`fitness > WORST_FITNESS`; otherwise `EVOLUTION_REJECTED_TRAIN`, nothing staged — GAP-0038), then pass the §6.3 holdout gate **and the §6.4 plateau law** before it may be staged.
 
 **`param_set_id` (§4 audit link, v1.2 — GAP-0036):** derived deterministically from the param **content** (genes + regime + seed + `evolved_at`, uuid5) — distinct param sets always carry distinct ids, and same seed + same history + same clock reproduces the same id.
 
@@ -121,6 +121,19 @@ Over the split's closed trades (net of C8 costs): `E = mean(net_pnl_per_trade)` 
 - **Holdout:** the window splits chronologically — train = first `1 − holdout_fraction`, holdout = last `holdout_fraction`. Evolution selects on train only. The champion is then evaluated on the holdout — **indicators warm up on the preceding train bars, but only trades *entered* within the holdout tail count** (no lookahead; no artificial indicator starvation of long-lookback params in a short tail) — and **must pass the C9 gate there with ≥ `holdout_min_trades` closed trades; otherwise it is not staged** (`EVOLUTION_REJECTED_OOS` logged). An in-window overfit that cannot carry positive expectancy forward dies here, not at the phase-11 gate.
 - **Cross-regime OOS before live** remains with `ACIS-09` (phase 11 walk-forward, per GAP-0008) — this section is the optimizer-side half.
 
+### 6.4 Parameter plateau (master §5.6 anti-overfitting law; closes GAP-P12D-34)
+
+After the champion clears C9 on train (GAP-0038) and the §6.3 holdout gate, QIEA evaluates its neighbourhood on the **same train window**.
+- **Neighbours.** For each gene g in `GENE_SPECS` and each direction d ∈ {−1, +1}, the neighbour is the champion with g ← g + d·0.10·(hi_g − lo_g): **10% of the gene's declared range** (GAP-P12D-72 E6; a value-relative step was inconsistent across genes).
+- **Making a neighbour valid.** An integer gene is rounded as the decoder rounds, the value is clamped to g's range, and the cross-field invariants are repaired as §6 step 2 repairs them.
+- **Degenerate moves.** A move that returns the champion is not a neighbour. `direction` records the gene's ACTUAL move after repair.
+- **When a neighbour dies.** A neighbour **dies** iff its train fitness is `WORST_FITNESS`, i.e. it fails C9: fewer than `fitness_min_trades` closed trades, or E_R ≤ `expectancy_min_r`. *(This reading of the master's "dies" is the lead's recommendation, adopted under the owner's 2026-09-24 delegation, decision D8; the owner reviews it.)*
+- **Any dead neighbour ⇒ the champion is not staged.** `EVOLUTION_REJECTED_PLATEAU` is logged, and the regime stays param-less (safe; NVMA holds `tradeable=False`).
+- **A refused candidate is still a Deflated Sharpe trial.** It consulted the holdout, and dropping it would shrink the trial set and loosen the gate (GAP-P12D-73).
+- **Genes the v1 fitness harness does not exercise** (GAP-0035) are perturbed like every other; their neighbours cannot die until module-gene fitness exists.
+- **Cost:** at most 2 × 11 train evaluations per surviving champion (measured ≈ 3–4% of an evolution run).
+- **What passing proves.** A champion passing the plateau law proves NOTHING by itself; as a standalone gate the test passes noise 93–99% of the time (the VALIDATOR, GAP-P12D-33). It is a fragility veto, not evidence of edge.
+
 ## 7. Core logic — the staging rule (the heart of this layer)
 
 **Invariant (non-overridable, master §5):** QIEA never mutates an `ActiveParamSet` in place, and never promotes while a session is live or any position is open.
@@ -139,7 +152,7 @@ Over the split's closed trades (net of C8 costs): `E = mean(net_pnl_per_trade)` 
 
 ## 9. Persistence & logging
 
-Dedicated `optimizer_log` (JSONL, phase-1 envelope): `PARAM_STAGED`, `PARAM_PROMOTED` (logged only after the sweep transaction commits — committed facts only), `PARAM_PROMOTION_STALLED`, `EVOLUTION_RUN{regime, best_fitness, generations, seed, train_bars, holdout_bars}`, `EVOLUTION_INSUFFICIENT_DATA`, `EVOLUTION_REJECTED_TRAIN{regime, generations, seed}` (v1.2, GAP-0038), `EVOLUTION_REJECTED_OOS{regime, holdout_trades, holdout_e_r}`, `PROMOTION_FORBIDDEN` (if the guard fires — indicates a caller bug). Every promoted `ParamSet` persists with its `fitness_score` and `evolved_at` so any live trade's params are auditable.
+Dedicated `optimizer_log` (JSONL, phase-1 envelope): `PARAM_STAGED`, `PARAM_PROMOTED` (logged only after the sweep transaction commits — committed facts only), `PARAM_PROMOTION_STALLED`, `EVOLUTION_RUN{regime, best_fitness, generations, seed, train_bars, holdout_bars}`, `EVOLUTION_INSUFFICIENT_DATA`, `EVOLUTION_REJECTED_TRAIN{regime, generations, seed}` (v1.2, GAP-0038), `EVOLUTION_REJECTED_PLATEAU{regime, seed, neighbours, champion, dead[{gene, direction, value}]}` (v1.5), `EVOLUTION_EVALUATIONS{regime, seed, outcome, genes, evaluated, holdout_trades, holdout_e_r}` (v1.5, logging only; lists the plateau neighbours), `EVOLUTION_REJECTED_OOS{regime, holdout_trades, holdout_e_r}`, `PROMOTION_FORBIDDEN` (if the guard fires — indicates a caller bug). Every promoted `ParamSet` persists with its `fitness_score` and `evolved_at` so any live trade's params are auditable.
 
 ## 10. Store schema (SQLite, phase-1 store discipline)
 
@@ -182,6 +195,7 @@ Read: `acis://params/active` and `acis://params/pending` (incl. `boundaries_skip
 | cross-field invariant violation | repaired in decode; `ParamSet` construction still validates (defense in depth) |
 | zero-trade / thin-sample / NaN / non-positive-expectancy fitness | `WORST_FITNESS` (C9 gate) — never a high score |
 | champion fails holdout gate | not staged; `EVOLUTION_REJECTED_OOS`; regime stays param-less (safe) |
+| champion's ±10%-of-range neighbourhood fails C9 on train | not staged; `EVOLUTION_REJECTED_PLATEAU`; regime stays param-less (safe); still counted as a DSR trial |
 | < `fitness_min_bars` labelled bars | no evolution; `EVOLUTION_INSUFFICIENT_DATA` |
 | bar regime ≠ target regime | `DataQualityError` (mislabelled history is a caller bug, not repairable) |
 | pending stall ≥ threshold | `PARAM_PROMOTION_STALLED` + MCP surfacing; **no** force-promote |
@@ -195,6 +209,7 @@ Read: `acis://params/active` and `acis://params/pending` (incl. `boundaries_skip
 - **C-QIEA-5 (mid-session immutability):** active params are never mutated in place; test asserts the active set is byte-stable across staging a successor + a regime shift (jointly with ACIS-02).
 - **C-QIEA-6 (C8):** a param set profitable on mid-prices but losing net of spread+commission+slippage scores `WORST_FITNESS` — the frictionless mirage cannot win. The cost model is one shared module (`costs.py`) with a pinned-semantics unit test; ACIS-09 imports it, never re-implements it.
 - **C-QIEA-7 (C9/GAP-0006):** exact `E_R = E/avgLoss` values asserted on hand-computed trade series; `E_R ≤ 0` ⇒ can never win regardless of Sharpe/win-rate (arithmetic: `WORST_FITNESS < formula floor`); a high-win-rate/negative-expectancy series is gated out.
+- **C-QIEA-9 (§5.6 plateau, GAP-P12D-34):** a champion on a peak cannot be staged. Test: the same champion with its neighbours in one gene made to fail C9 is refused, naming them, and it is staged when they hold. A plateau-refused champion stays in the DSR trial set (GAP-P12D-73).
 - **C-QIEA-8 (GAP-0008):** train/holdout split is chronological (no shuffle — lookahead is the classic sin); a champion with no holdout trades or failing the holdout C9 gate is never staged.
 
 ## 14. Test contract (postcondition-style)
@@ -208,6 +223,9 @@ Read: `acis://params/active` and `acis://params/pending` (incl. `boundaries_skip
 **What AGON (ACIS-04) consumes:** `ActiveParamSet` via `param_library.get_active(regime)` — a frozen, validated param set keyed by the current regime, carrying `param_set_id` for signal traceability. **Owns conflict-table row:** "QIEA new params ready + open positions → stage, deploy at next session boundary only." **Done-when (phase 4, master §15, paper mode):** all §14 tests green in a full run; import contract passing; no live trading (paper only until phase 12).
 
 ## Changelog
+- **1.5 (LOCKED, 2026-09-25)** — The master §5.6 parameter-plateau law is implemented as §6.4 (GAP-P12D-34), merged from the BUILDER branch after the constitution's two audits (GAP-P12D-72/73, all findings fixed).
+  - **What changed:** a range-based ±10% step; "dies" = fails C9 on the train window (delegated decision D8, for the owner's review); a refused candidate stays a DSR trial; `EVOLUTION_REJECTED_PLATEAU` and the logging-only `EVOLUTION_EVALUATIONS` registry, which includes the plateau neighbours.
+  - **Scope:** selection is tightened only. No guardrail, HALT, veto or staging semantics changed, and the gene search space is unchanged, so there is no re-baseline.
 - **1.4 (LOCKED, 2026-09-15)** — Master v2.18 (GAP-P12D-29, owner-ratified in-chat "I ratify a"): the fitness window is a recency span in time, not the last 500 bars. `fitness_bars` → `fitness_span_days` (730 = the ratified 2-year walk-forward train window); `qiea.fitness_window(history, cfg, now)` keeps every target-regime bar opening within the span before `now`, and the walk-forward's holdout re-evaluation reads the same function. At 1-minute bars a 500-bar window's 100-bar holdout almost never held `holdout_min_trades` = 5 trades, so no champion was ever staged. The train and holdout gates, C8 and C9 are unchanged; no guardrail or staging semantics changed.
 - **1.3 (2026-09-11)** — Master v2.14 (GAP-P12D-10): `session_boundaries_utc` → `session_boundaries` (local `{zone, at}` pairs); the boundary match is the local minute in the declared zone. The GAP-0025/0033 ruling is unchanged — the declared list stays authoritative; the cross-check now compares `(zone, local time)` pairs.
 - **1.2 (LOCKED, 2026-07-15)** — Phase-4 subordinate-audit triage (GAP-0036..0039, all fixed same-day with regression tests; suite 159 green): **GAP-0036** `param_set_id` now content-derived (uuid5 of genes+regime+seed+evolved_at — §4 traceability genuinely unique) and the promotion boundary sweep is one all-or-nothing transaction surfacing `DataQualityError`, never a partial write; **GAP-0037** genuine qubit-angle encoding (`P(1)=sin²θ`, rotation gate turns θ by `rotation_angle_rad` — dimensionally honest) and the "canonical Han & Kim" claim corrected to the reduced best-only rotation actually shipped; **GAP-0038** champion must clear the C9 gate on TRAIN (`EVOLUTION_REJECTED_TRAIN`) before the holdout gate — an all-gated generation stages nothing; **GAP-0039** mark-to-close at window end — no silent discard of open positions from the fitness/E_R series. Selection tightened or honesty corrected in every case; no guardrail/staging semantics weakened.

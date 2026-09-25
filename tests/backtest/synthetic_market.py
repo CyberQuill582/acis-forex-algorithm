@@ -10,10 +10,16 @@ Three kinds, generated deterministically from one `MarketSpec`:
 Every kind is demeaned, so no market carries net drift a buy-and-hold could harvest. Ticks
 fall only on weekdays (Mon 00:00 – Fri 24:00 UTC; the loader applies its own weekend window).
 `synthetic_spx` gives daily closes independent of every market, so the SPX gate is answerable.
+
+The episode schedule (`episodes`, `SyntheticMarket.episode_sign`) is the ONE source of the
+planted drift: `_returns` applies exactly that schedule, and the oracle positive control
+(oracle.py, GAP-P12D-37) reads it. Every kind draws it in the same RNG order (noise, then the
+schedule, then permuted's shuffle), so null and permuted carry planted's schedule unapplied.
 """
 
 from __future__ import annotations
 
+import bisect
 import math
 import random
 from array import array
@@ -63,25 +69,49 @@ class MarketSpec:
         return full * 5 + min(rest, 5)
 
 
-def _returns(spec: MarketSpec, instrument_index: int) -> array:
-    # null and planted share the noise; permuted shuffles exactly planted's returns
+@dataclass(frozen=True)
+class Episode:
+    start: int          # first weekday-tick return index the drift applies to
+    end: int            # exclusive
+    sign: float         # +1.0 or -1.0: the drift's direction
+
+
+def _draw(spec: MarketSpec, instrument_index: int) -> tuple[random.Random, list[float], tuple[Episode, ...]]:
+    """Noise first, then the episode schedule, from ONE generator. The order is load-bearing:
+    null and planted share the noise, permuted shuffles planted's returns with the generator
+    left here, and every recorded synthetic run was drawn in this order."""
     rng = random.Random(spec.seed * 1000 + instrument_index)
     n = spec.weekdays() * spec.ticks_per_day
     sigma = spec.daily_vol / math.sqrt(spec.ticks_per_day)
-    out = [rng.gauss(0.0, sigma) for _ in range(n)]
+    noise = [rng.gauss(0.0, sigma) for _ in range(n)]
+    lo, hi = (max(1, round(h * 3600 / spec.tick_seconds)) for h in spec.episode_hours)
+    schedule, k = [], 0
+    while k < n:
+        length = rng.randint(lo, hi)
+        schedule.append(Episode(k, min(n, k + length), rng.choice((-1.0, 1.0))))
+        k += length
+    return rng, noise, tuple(schedule)
+
+
+def episodes(spec: MarketSpec, instrument_index: int) -> tuple[Episode, ...]:
+    """The planted schedule of one instrument. Every kind has it; only planted applies it."""
+    return _draw(spec, instrument_index)[2]
+
+
+def _returns(spec: MarketSpec, instrument_index: int) -> tuple[array, tuple[Episode, ...]]:
+    # null and planted share the noise; permuted shuffles exactly planted's returns
+    rng, out, schedule = _draw(spec, instrument_index)
+    n = len(out)
     if spec.kind != "null":
-        lo, hi = (max(1, round(h * 3600 / spec.tick_seconds)) for h in spec.episode_hours)
-        k = 0
-        while k < n:
-            length = rng.randint(lo, hi)
-            drift = rng.choice((-1.0, 1.0)) * spec.drift_sigma * sigma
-            for j in range(k, min(n, k + length)):
+        sigma = spec.daily_vol / math.sqrt(spec.ticks_per_day)
+        for ep in schedule:
+            drift = ep.sign * spec.drift_sigma * sigma
+            for j in range(ep.start, ep.end):
                 out[j] += drift
-            k += length
         if spec.kind == "permuted":
             rng.shuffle(out)
     mean = math.fsum(out) / n
-    return array("d", (r - mean for r in out))
+    return array("d", (r - mean for r in out)), schedule
 
 
 class SyntheticMarket(TickSource):
@@ -92,10 +122,34 @@ class SyntheticMarket(TickSource):
         self._first = dict(spec.prices)
         self._returns: dict[str, array] = {}
         self._log_mid: dict[str, array] = {}
+        self._schedule: dict[str, tuple[Episode, ...]] = {}
+        self._starts: dict[str, list[int]] = {}
+
+    def index_of(self, ts: datetime) -> int:
+        """The weekday-tick return index of the tick at `ts` — `load`'s own arithmetic."""
+        spec = self.spec
+        d = (ts - spec.start).days
+        offset = (ts - (spec.start + timedelta(days=d))).total_seconds()
+        if d < 0 or d % 7 >= 5 or offset % spec.tick_seconds:
+            raise ValueError(f"{ts.isoformat()} is not a weekday tick of this market")
+        return (d // 7 * 5 + d % 7) * spec.ticks_per_day + int(offset) // spec.tick_seconds
+
+    def episode_at(self, instrument: str, ts: datetime) -> Episode:
+        """The planted episode containing the return that produced the tick at `ts`: the state IN
+        FORCE now, never the next one (no foresight of a change). On null and permuted the same
+        schedule exists but moves no price."""
+        self.returns(instrument)                             # the schedule comes with the returns
+        k = bisect.bisect_right(self._starts[instrument], self.index_of(ts)) - 1
+        return self._schedule[instrument][k]
+
+    def episode_sign(self, instrument: str, ts: datetime) -> float:
+        return self.episode_at(instrument, ts).sign
 
     def returns(self, instrument: str) -> array:
         if instrument not in self._returns:                  # built on first use, per instrument
-            self._returns[instrument] = _returns(self.spec, self._index[instrument])
+            ret, schedule = _returns(self.spec, self._index[instrument])
+            self._returns[instrument], self._schedule[instrument] = ret, schedule
+            self._starts[instrument] = [ep.start for ep in schedule]
         return self._returns[instrument]
 
     def _path(self, instrument: str) -> array:
