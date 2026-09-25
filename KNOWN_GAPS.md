@@ -144,6 +144,19 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-76: the development laptop keeps losing power abruptly — four hard power-offs in 13 days — so it cannot host the demo engine
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — measured by the lead from the Windows System log, read-only. The latest: an "unexpected" shutdown at 00:40:22 on 2026-09-25 (event 6008) and a reboot at 04:48 (Kernel-Power 41). Every event-41 record reads `BugcheckCode=0`, `PowerButtonTimestamp=0`, `LongPowerButtonPressDetected=false`: no crash, no button, a straight loss of power. Earlier ones: 2026-09-23 08:20, 2026-09-23 16:28 (during sleep), and 2026-09-12 23:51 (recorded in TODO.md). The battery now reads 100% on AC, which suggests mains drops that the battery cannot carry)
+- Area: infrastructure. The laptop holds the ONLY copy of the tick set ([[GAP-P12D-50]]) and is the only machine running ACIS work; the demo engine (Track A) needs an always-on host
+- Description:
+  - **The pattern.** The laptop drops power without warning roughly every few days. Last night it killed three running build agents mid-stage, leaving uncommitted, possibly truncated, files in their worktrees. They were resumed and told to verify file integrity first.
+  - **Why the demo cannot run here.** For a trading engine a power drop means: the fast loop and the §8.6 watchdog die TOGETHER, which defeats the watchdog's purpose; the feed goes stale; and a restart must reconcile against the venue. [[GAP-P12D-55]] and [[GAP-P12D-75]] exist because restarts are dangerous. Server-side stops still protect open positions, but a host that dies every few days makes every restart path a routine event, not an exception.
+  - **The data is at risk too.** Repeated hard power-offs also threaten the single copy of the 12 GB tick set.
+- Justification: open, owner-owned (hardware, and spend).
+  - **Recommendation:** run the demo engine on a small Linux VPS OUTSIDE the US, which FTMO requires. That is what the deployment gate (Docker + systemd + watchdog) was built for. Keep the laptop for development.
+  - **Also for the owner:** check the charger, the mains supply and the battery health (`powercfg /batteryreport` in an elevated shell). And make the second tick-set copy ([[GAP-P12D-50]]) sooner rather than later.
+- Linked: [[GAP-P12D-50]], [[GAP-P12D-51]], [[GAP-P12D-55]], [[GAP-P12D-75]]
+
 ## GAP-P12D-75: a restart silently clears every explicit HALT — `halt_event` rows are written but never read back
 - Severity: critical · Likelihood: high
 - Status: open (2026-09-25 — found by BUILDER-3 (F2). The lead VERIFIED it on main: core/risk/store.py writes `halt_event` (`record_halt`) and clears it (`clear_halt`), but nothing in `core/`, `monitoring/` or `scripts/` ever reads the table back)

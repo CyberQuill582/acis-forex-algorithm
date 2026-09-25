@@ -58,6 +58,9 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 - (2) **Audits are ONLY the constitution's two per phase.** No extra audit agents unless the owner asks. It is recorded in CLAUDE.md's audit section and in memory.
 - (3) **After a session-limit reset, RESUME the running agents with `SendMessage`; NEVER relaunch them.** Their handles are listed above.
 
+**2026-09-25 morning: the laptop lost power at 00:40** ([[GAP-P12D-76]]; Kernel-Power 41, `BugcheckCode=0`: a power loss, not a crash). BUILDER, BUILDER-2 and BUILDER-3 had stopped mid-stage, and each was RESUMED with `SendMessage`, never relaunched. Each was told to check its uncommitted files (`py_compile` + a full diff read) before building on them. Their committed stages were all intact, and main was clean at `6a58e89`.
+- [ ] **OWNER:** decide where the demo engine runs. The recommendation is a small non-US Linux VPS, not this laptop. Also check the charger, mains and battery health, and make the second tick-set copy ([[GAP-P12D-50]]).
+
 **BUILDER-3 IS IN (2026-09-25):** branch `worktree-agent-a9e00713d15bb5082`, BUILT, PENDING AUDIT. The lead re-ran the suite on it: **842 passed, 6 skipped**.
 - [x] Stage 1: drawdown anchors and the taper persist across restarts ([[GAP-P12D-55]]).
 - [x] Stage 2: lot-step round-down and a minimum-lot refusal, plus a rolling 24-hour venue request budget of 1,000 that survives a restart, with an exemption for verified reducing closes ([[GAP-P12D-57]]).
