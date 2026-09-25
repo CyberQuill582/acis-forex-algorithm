@@ -1,0 +1,11 @@
+# python3 repro_lead_eprocess.py 7 1000   (OMP_NUM_THREADS=1; 2026-09-25 ~08:30 UTC; lead's own re-implementation of R1-A P1)
+null_gauss_FPR_e20_10y 0.028
+null_gauss_tpeek_FPR_10y 0.403
+null_t4_FPR_e20_10y 0.025
+null_t4_tpeek_FPR_10y 0.396
+SR1.0_P(e20 by 3y) 0.258
+SR1.0_median_years_to_e20 6.763888888888889
+SR1.5_P(e20 by 3y) 0.55
+SR1.5_median_years_to_e20 2.6547619047619047
+SR2.0_P(e20 by 3y) 0.805
+SR2.0_median_years_to_e20 1.4623015873015872
