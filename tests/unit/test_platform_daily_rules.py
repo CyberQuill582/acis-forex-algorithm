@@ -169,7 +169,7 @@ def test_restart_keeps_the_ftmo_day_anchor_and_never_restores_below_initial(tmp_
     store.save_restrictive_state(alpha_armed=False, taper_factor=1.0, anchors=anchors)
     sink2 = RecordingSink()
     mon2, _, _, _ = _monitor(ftmo_rulebook(100_000.0), sink2, store=store)
-    restore_on_boot(store, mon2)
+    restore_on_boot(store, mon2, DAY2_RESET + timedelta(hours=2))
     snap = mon2.evaluate(acct(98_000.0, balance=102_000.0), DAY2_RESET + timedelta(hours=2))
     rules = {s.rule_key: s.measured_pct for s in snap.platform_drawdown}
     assert rules[DAILY] == pytest.approx(4.0)          # 102,000 day anchor, 5% of 100k

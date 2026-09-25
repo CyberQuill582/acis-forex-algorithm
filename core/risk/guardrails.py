@@ -11,6 +11,10 @@ relaxation (GAP-0050).
 The upward edge is the injected `HaltSink` — issuance is idempotent and
 serialized so two conditions firing "simultaneously" resolve to one halt state,
 most-severe scope winning (global flatten > session halt > instrument halt).
+The session-halt latch lives exactly as long as the Governor's session halt: it
+lapses at the next session boundary (master §8), so the next day's breach halts
+again (audit F2/X1) — in one process and across a restart, where a session row
+whose boundary has passed is closed as expired instead of re-latched (F1).
 """
 
 from __future__ import annotations
@@ -20,7 +24,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Mapping, Sequence
 
-from config.schemas import GuardrailLimits, RiskConfig
+from config.schemas import GuardrailLimits, RiskConfig, ZonedTime
+from core.data.fx_clock import next_local
 from core.risk.drawdown_series import (DrawdownSeries, _RuleAnchor,  # noqa: F401 (re-export)
                                        build_drawdown_series, taper_factor)
 from core.risk.risk_types import PlatformDrawdownState
@@ -52,7 +57,8 @@ class GuardrailOutcome:
 class Guardrails:
     def __init__(self, limits: GuardrailLimits, cfg: RiskConfig,
                  series: DrawdownSeries, sink: HaltSink, logger, *,
-                 taper_start: float, entry_halt: float) -> None:
+                 taper_start: float, entry_halt: float,
+                 session_boundaries: Sequence[ZonedTime]) -> None:
         self._limits = limits
         self._cfg = cfg
         self._series = series
@@ -60,12 +66,17 @@ class Guardrails:
         self._log = logger
         self._start = taper_start
         self._halt = entry_halt
+        self._boundaries = tuple(session_boundaries)   # the Governor's, master §8 / C1
         self._halted_scopes: set[str] = set()  # {"all","session",<instrument>}
         self._flattened_scopes: set[str] = set()
         self._instruments_halted: set[str] = set()
         self._session_halted = False
+        self._session_until: datetime | None = None    # when the session halt lapses
         self._equity_flattened = False
         self._last_taper: float | None = None
+
+    def _next_boundary(self, at: datetime) -> datetime:
+        return min(next_local(at, b.zone, b.at) for b in self._boundaries)
 
     # -- re-arm on human resume (GAP-P9I-06) --------------------------------- #
 
@@ -79,6 +90,7 @@ class Guardrails:
         self._flattened_scopes.clear()
         self._instruments_halted.clear()
         self._session_halted = False
+        self._session_until = None
         self._equity_flattened = False
         self._log.event("GUARDRAILS_REARMED")
 
@@ -89,18 +101,24 @@ class Guardrails:
         return self._series
 
     def restore_state(self, *, anchors: Mapping[str, Mapping], taper_factor: float | None,
-                      halts: Sequence[tuple[str, str, str, datetime]] = ()) -> None:
-        """Put the persisted drawdown anchors back, RE-APPLY every uncleared halt through
-        the same edge with the same scope and reason (ACIS-07 §7), and RE-PUSH the last
-        taper to the (fresh) Governor, before the first check. Restore-only: it puts
-        back restrictions the dead process had; it cannot loosen one."""
+                      halts: Sequence = (), now: datetime | None = None) -> list:
+        """Put the persisted drawdown anchors back, RE-APPLY every uncleared halt still
+        in force through the same edge with the same scope and reason (ACIS-07 §7), and
+        RE-PUSH the last taper to the (fresh) Governor, before the first check. A session
+        halt whose own boundary is at or before `now` has lapsed (master §8): it is not
+        re-applied or latched, and is RETURNED so the caller closes its row as expired."""
         restored = self._series.restore(anchors)
         self._log.event("ANCHORS_RESTORED", rule_keys=list(restored),
                         ignored=sorted(set(anchors) - set(restored)))
-        for kind, scope, reason, at in halts:    # latches set: the first check coalesces
+        if halts and now is None:
+            raise ValueError("restoring halts needs the boot instant (session expiry)")
+        expired = [h for h in halts if h[0] == "session" and self._next_boundary(h[3]) <= now]
+        halts = [h for h in halts if h not in expired]
+        for kind, scope, reason, at, *_ in halts:   # latches set: the first check coalesces
             if kind == "session":
                 self._sink.apply_session_halt(at, reason)     # lifts at ITS boundary
                 self._session_halted = True
+                self._session_until = self._next_boundary(at)
             elif kind == "flatten":
                 self._sink.flatten(scope, reason)
                 self._flattened_scopes.add(scope)
@@ -112,11 +130,15 @@ class Guardrails:
             self._equity_flattened |= reason == "equity_floor"
         if halts:
             self._log.event("HALTS_RESTORED", halts=[[k, s, r, a.isoformat()]
-                                                     for k, s, r, a in halts])
+                                                     for k, s, r, a, *_ in halts])
+        if expired:
+            self._log.event("SESSION_HALTS_EXPIRED", halts=[[r, a.isoformat()]
+                                                            for _, _, r, a, *_ in expired])
         if taper_factor is not None:
             self._sink.apply_risk_state(taper_factor=taper_factor)
             self._last_taper = taper_factor
             self._log.event("TAPER_RESTORED", factor=taper_factor)
+        return expired
 
     # -- racing-HALT coalescing (C-RSK-4) ------------------------------------ #
     # Idempotent + serialized: a scope already covered by an equal-or-more-severe
@@ -143,11 +165,15 @@ class Guardrails:
             self._instruments_halted.add(scope)
 
     def _issue_session_halt(self, now: datetime, reason: str) -> None:
+        if self._session_until is not None and now >= self._session_until:
+            self._session_halted = False            # the Governor's halt lapsed here (§8)
+            self._session_until = None
         if "all" in self._flattened_scopes or "all" in self._halted_scopes \
                 or self._session_halted:
             return
         self._sink.apply_session_halt(now, reason)
         self._session_halted = True
+        self._session_until = self._next_boundary(now)
 
     def _issue_flatten(self, scope: str, reason: str) -> None:
         if scope in self._flattened_scopes or "all" in self._flattened_scopes:

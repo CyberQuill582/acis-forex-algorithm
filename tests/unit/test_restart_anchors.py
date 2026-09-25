@@ -37,11 +37,11 @@ def _run_down_to_9400(cfg, store):
     return snap, sink
 
 
-def _restart(cfg, store):
+def _restart(cfg, store, now=T0 + timedelta(minutes=40)):
     """A fresh process on the same store: nothing in memory survives."""
     sink = RecordingSink()
     mon, _, _, log = build_monitor(cfg, sink, account="ftmo", store=store)
-    restore_on_boot(store, mon)
+    restore_on_boot(store, mon, now)
     return mon, sink, log
 
 

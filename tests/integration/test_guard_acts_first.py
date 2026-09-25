@@ -82,10 +82,10 @@ def test_the_equity_breaker_holds_when_any_store_write_fails(tmp_path, write_poi
     assert alarms                                            # the failure is loud
     store.locked = False                                     # the store recovers ...
     mon.evaluate(acct(8_990.0), T0 + timedelta(seconds=2))   # ... and the next check flushes
-    assert {(k, s, r) for k, s, r, _ in store.open_halts()} == {
+    assert {(h.kind, h.scope, h.reason) for h in store.open_halts()} == {
         ("flatten", "all", "equity_floor"), ("halt", "all", "equity_floor")}
     gov2, orch2, mon2, _ = _process(tmp_path, store)         # so a restart still restores it
-    restore_on_boot(store, mon2)
+    restore_on_boot(store, mon2, T0 + timedelta(minutes=1))
     assert _entry(gov2, T0 + timedelta(minutes=1)) == "halt" and orch2.frozen
     store.close()
 

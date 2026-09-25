@@ -11,8 +11,10 @@ evaluate beside anchors from another. `restore_on_boot` reads it back.
 Every halt, session halt and flatten that crosses the upward edge is a `halt_event`
 row (core/risk/halt_ledger.py, ACIS-07 §7); its kind rides in the opaque `halt_id`
 as `<kind>|…` (the §10 DDL has no column for it). An uncleared row is re-applied at
-boot. Only a human resume clears rows, and `cleared_by` is `human:<sha256 prefix of
-the token>` — never the token itself. Snapshot writes are idempotent on the ts PK.
+boot — except a session halt whose own boundary has passed, which is closed as
+`auto:session_boundary` instead (master §8: it lapses there). Otherwise only a human
+resume clears rows, and `cleared_by` is `human:<sha256 prefix of the token>` — never
+the token itself. Snapshot writes are idempotent on the ts PK.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 from core.data.errors import DataQualityError
 from core.risk.risk_types import RiskSnapshot
@@ -29,14 +32,23 @@ from core.risk.risk_types import RiskSnapshot
 _ANCHOR = "anchor:"
 
 
-def restore_on_boot(store: "RiskStore", monitor) -> None:
-    """Boot, before the first evaluate: put back everything the dead process had
-    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55),
-    and every halt no human has cleared (ACIS-07 §7, GAP-0050)."""
+class HaltRow(NamedTuple):
+    kind: str            # "halt" | "session" | "flatten"
+    scope: str
+    reason: str
+    at: datetime
+    halt_id: str
+
+
+def restore_on_boot(store: "RiskStore", monitor, now: datetime) -> None:
+    """Boot at `now`, before the first evaluate: put back everything the dead process
+    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55), and
+    every halt no human has cleared that is still in force (ACIS-07 §7, GAP-0050)."""
     state = store.load_restrictive_state()
     monitor.restore_restrictive_state(alpha_armed=bool(state.get("alpha_armed", False)),
                                       taper_factor=state.get("taper_factor"),
-                                      anchors=store.load_anchors(), halts=store.open_halts())
+                                      anchors=store.load_anchors(), halts=store.open_halts(),
+                                      now=now)
 
 
 class RiskStore:
@@ -83,13 +95,20 @@ class RiskStore:
             "VALUES (?,?,?,?)", (halt_id, ts, scope, reason))
         self._conn.commit()
 
-    def open_halts(self) -> list[tuple[str, str, str, datetime]]:
-        """(kind, scope, reason, ts) of every uncleared halt, oldest first."""
+    def open_halts(self) -> list[HaltRow]:
+        """Every uncleared halt, oldest first."""
         rows = self._conn.execute(
             "SELECT halt_id, ts, scope, reason FROM halt_event WHERE cleared_at IS NULL "
             "ORDER BY ts, halt_id").fetchall()
-        return [(hid.split("|", 1)[0] if "|" in hid else "halt", scope, reason,
-                 datetime.fromisoformat(ts)) for hid, ts, scope, reason in rows]
+        return [HaltRow(hid.split("|", 1)[0] if "|" in hid else "halt", scope, reason,
+                        datetime.fromisoformat(ts), hid) for hid, ts, scope, reason in rows]
+
+    def expire_halts(self, halt_ids: list[str], at: datetime) -> None:
+        """Close session-halt rows whose own boundary has passed (they lapsed there)."""
+        self._conn.executemany("UPDATE halt_event SET cleared_at=?, cleared_by=? "
+                               "WHERE halt_id=? AND cleared_at IS NULL",
+                               [(at.isoformat(), "auto:session_boundary", h) for h in halt_ids])
+        self._conn.commit()
 
     def clear_halts(self, cleared_at: datetime, human_token: str) -> int:
         """A HUMAN resume clears every open halt, as the Governor's resume clears every

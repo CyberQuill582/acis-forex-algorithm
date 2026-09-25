@@ -58,8 +58,9 @@ class PersistentHaltSink(HaltSink):
             self._pending.pop(0)
 
     def _write(self, kind: str, scope: str, reason: str, at: datetime) -> None:
-        for k, s, r, t in self._store.open_halts():
-            if (k, s, r) == (kind, scope, reason) and (kind != "session" or t == at):
+        for row in self._store.open_halts():
+            same = (row.kind, row.scope, row.reason) == (kind, scope, reason)
+            if same and (kind != "session" or row.at == at):
                 return
         self._store.record_halt(f"{kind}|{at.isoformat()}|{scope}|{reason}",
                                 at.isoformat(), scope, reason)

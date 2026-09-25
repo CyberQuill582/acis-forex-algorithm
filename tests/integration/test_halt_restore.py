@@ -49,7 +49,7 @@ def test_equity_floor_halt_survives_a_restart_until_a_human_resumes(tmp_path) ->
 
     gov2, _, orch2, mon2, rlog2, _ = _process(tmp_path, store)      # the restart
     assert _entry(gov2) == "formula"                      # a fresh Governor knows nothing...
-    restore_on_boot(store, mon2)                          # ...until boot, BEFORE any evaluate
+    restore_on_boot(store, mon2, T0)                        # ...until boot, BEFORE any evaluate
     assert _entry(gov2) == "halt"
     assert orch2.frozen                                   # the flatten is re-applied too
     assert [h[:3] for h in rlog2.events("HALTS_RESTORED")[0]["data"]["halts"]] == [
@@ -66,7 +66,7 @@ def test_equity_floor_halt_survives_a_restart_until_a_human_resumes(tmp_path) ->
     assert store.open_halts() == []
 
     gov3, _, _, mon3, _, _ = _process(tmp_path, store)    # a restart after the resume
-    restore_on_boot(store, mon3)
+    restore_on_boot(store, mon3, T0 + timedelta(minutes=3))
     assert _entry(gov3) == "formula"                      # nothing left to re-apply
     store.close()
 
@@ -76,7 +76,7 @@ def test_an_agent_halt_is_reapplied_with_its_own_scope_and_reason(tmp_path) -> N
     _, _, _, _, _, sink = _process(tmp_path, store)
     sink.apply_halt("EUR_USD", "mcp_halt")                # the MCP control target's route
     gov2, glog2, _, mon2, _, _ = _process(tmp_path, store)
-    restore_on_boot(store, mon2)
+    restore_on_boot(store, mon2, T0)
     applied = glog2.events("HALT_APPLIED")
     assert [(e["data"]["scope"], e["data"]["reason"]) for e in applied] == [
         ("EUR_USD", "mcp_halt")]
@@ -89,7 +89,7 @@ def test_a_session_halt_lifts_at_its_own_boundary_after_a_restart(tmp_path) -> N
     _, _, _, _, _, sink = _process(tmp_path, store)
     sink.apply_session_halt(T0, "daily_drawdown")        # 10:00 UTC: halted until 12:00
     gov2, _, _, mon2, _, _ = _process(tmp_path, store)
-    restore_on_boot(store, mon2)
+    restore_on_boot(store, mon2, T0 + timedelta(minutes=4))
     assert _entry(gov2, T0 + timedelta(minutes=5)) == "drawdown_halt"
     assert _entry(gov2, NOON + timedelta(minutes=1)) == "formula"   # not a day-long halt
     store.close()
@@ -103,8 +103,8 @@ def test_restoring_writes_nothing_twice_and_keeps_distinct_reasons(tmp_path) -> 
     assert len(store.open_halts()) == 2
     for hours in (1, 2):                                  # two restarts, each at a later clock
         _, _, _, mon, _, _ = _process(tmp_path, store, T0 + timedelta(hours=hours))
-        restore_on_boot(store, mon)
-    assert sorted(r for _, _, r, _ in store.open_halts()) == ["cluster_cap", "var_cap"]
+        restore_on_boot(store, mon, T0 + timedelta(hours=hours))
+    assert sorted(r for _, _, r, _, _ in store.open_halts()) == ["cluster_cap", "var_cap"]
     store.close()
 
 

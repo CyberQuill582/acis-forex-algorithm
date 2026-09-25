@@ -101,7 +101,8 @@ def build_monitor(cfg, sink, *, account: str = "dev_paper",
     g = Guardrails(
         cfg.guardrails, cfg.system.risk, series, sink, log,
         taper_start=taper_start if taper_start is not None else doctrine.taper_start_fraction,
-        entry_halt=entry_halt if entry_halt is not None else doctrine.entry_halt_fraction)
+        entry_halt=entry_halt if entry_halt is not None else doctrine.entry_halt_fraction,
+        session_boundaries=cfg.system.session_boundaries)
     alpha = mk_alpha(cfg.system.risk)
     mon = RiskMonitor(cfg.system.risk, cfg.guardrails, g, alpha, sink,
                       cfg.instruments.clusters, "s1", log, store=store)

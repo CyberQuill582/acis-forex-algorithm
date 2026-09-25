@@ -16,25 +16,22 @@ always authoritative for the breaker and drawdown series (§9.5).
 from __future__ import annotations
 
 import json
-import math
 import os
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from statistics import NormalDist, stdev
 
 from config.schemas import RiskConfig, GuardrailLimits
 from core.data.errors import DataQualityError
 from core.execution.venue import BrokerAccount, BrokerPosition, FillReport, FillStatus
 from core.risk.alpha_decay import AlphaDecayDetector
+from core.risk.exposure_metrics import max_cluster_pct, portfolio_var_pct
 from core.risk.guardrails import GuardrailContext, Guardrails
 from core.risk.risk_types import RiskPosition, RiskSnapshot, Trade
 from core.risk.sink import HaltSink
 from core.risk.usd_conversion import usd_factor
-
-_Z_99 = NormalDist().inv_cdf(0.99)      # ≈ 2.326 — 1% VaR z-score
 
 
 @dataclass
@@ -165,8 +162,11 @@ class RiskMonitor:
         daily_pnl = daily_realised + unrealised
 
         per_inst_dd = self._per_instrument_drawdown(marks, nav)
-        var_pct = self._var_pct(marks, nav)
-        cluster_pct = self._max_cluster_pct(marks, nav)
+        notional = {inst: self._notional(inst, pos, marks) for inst, pos in self._positions.items()}
+        var_pct = portfolio_var_pct(notional, self._marks, float(nav),
+                                    var_horizon_seconds=self._cfg.var_horizon_seconds,
+                                    eval_cadence_s=self._cfg.eval_cadence_s)
+        cluster_pct = max_cluster_pct(notional, self._clusters, float(nav))
         slip = (sum(self._slippage) / len(self._slippage)) if self._slippage else 0.0
 
         outcome = self._guards.check(GuardrailContext(
@@ -256,34 +256,6 @@ class RiskMonitor:
         quote_notional = Decimal(str(abs(float(pos.signed_units)) * mark))
         return float(self._to_usd(inst, quote_notional, mark))
 
-    def _var_pct(self, marks, nav) -> float:
-        """Delta-normal, UNDIVERSIFIED (no correlation credit: a conservative sum of
-        per-position VaR). σ is the rolling log-return of marks scaled by
-        √(var_horizon_seconds / eval_cadence_s) to the DECLARED horizon (GAP-P9E-03);
-        the 3% cap is ratified against the 1-day horizon (GAP-0103); in-loop: GAP-0091b."""
-        horizon_scale = math.sqrt(self._cfg.var_horizon_seconds
-                                  / self._cfg.eval_cadence_s)
-        total = 0.0
-        for inst, pos in self._positions.items():
-            hist = self._marks.get(inst)
-            if hist is None or len(hist) < 3:
-                continue
-            rets = [math.log(hist[i] / hist[i - 1]) for i in range(1, len(hist))
-                    if hist[i - 1] > 0 and hist[i] > 0]
-            if len(rets) < 2:
-                continue
-            sigma = stdev(rets) * horizon_scale        # sample σ, horizon-scaled
-            total += self._notional(inst, pos, marks) * _Z_99 * sigma
-        return total / float(nav) * 100.0
-
-    def _max_cluster_pct(self, marks, nav) -> float:
-        worst = 0.0
-        for members in self._clusters.values():
-            notional = sum(self._notional(inst, self._positions[inst], marks)
-                           for inst in members if inst in self._positions)
-            worst = max(worst, notional / float(nav) * 100.0)
-        return worst
-
     # -- heartbeat (§8.6 / ACIS-12) ------------------------------------------ #
 
     def write_heartbeat(self, now: datetime, mode: str, fast_loop_seq: int) -> None:
@@ -312,13 +284,17 @@ class RiskMonitor:
         return tuple(out)
 
     def restore_restrictive_state(self, *, alpha_armed: bool, taper_factor: float | None = None,
-                                  anchors: dict | None = None, halts: list | None = None) -> None:
+                                  anchors: dict | None = None, halts: list | None = None,
+                                  now: datetime | None = None) -> None:
         """Persisted risk-restrictive state is restored BEFORE the first
         evaluate — a restart is never a relaxation (GAP-0050). GAP-P9I-05: the
         restored throttle must be RE-PUSHED to the (fresh) Governor over the upward
-        edge; so are the anchors, the taper (GAP-P12D-55) and open halts (ACIS-07 §7)."""
-        self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor,
-                                   halts=halts or ())
+        edge; so are the anchors, the taper (GAP-P12D-55) and open halts (ACIS-07 §7).
+        A session halt that lapsed while the engine was down is closed, not re-applied."""
+        expired = self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor,
+                                             halts=halts or (), now=now)
+        if expired and self._store is not None:
+            self._store.expire_halts([h.halt_id for h in expired], now)
         self._alpha.restore_armed(alpha_armed)
         self._alpha_armed_prev = alpha_armed
         if alpha_armed:
