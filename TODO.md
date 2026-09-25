@@ -59,6 +59,8 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 - **Resuming is allowed.** Resuming an approved agent's interrupted, in-flight task is permitted.
 - **Due audits and builds** are listed here as ASKS, never launched. **The session must ASK the owner explicitly** (one standalone question: what, why, how big, and the cheaper alternative), because the owner cannot track when a launch is due.
 
+**OWNER ANSWER (2026-09-25, asked explicitly): "Let all four finish".** BUILDER (audit fixes), BUILDER-3 (safety fixes) and the two audits of the BUILDER-2 branch run to completion. After them, launch NOTHING further without an explicit ask.
+
 **OWNER DIRECTIVES (2026-09-24, before sleeping):**
 - (1) "let them continue". The night run goes on.
 - (2) **Audits are ONLY the constitution's two per phase.** No extra audit agents unless the owner asks. It is recorded in CLAUDE.md's audit section and in memory.
