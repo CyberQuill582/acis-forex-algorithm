@@ -12,16 +12,16 @@ Every halt, session halt and flatten that crosses the upward edge is a `halt_eve
 row (core/risk/halt_ledger.py, ACIS-07 §7); its kind rides in the opaque `halt_id`
 as `<kind>|…` (the §10 DDL has no column for it). An uncleared row is re-applied at
 boot — except a session halt whose own boundary has passed, which is closed as
-`auto:session_boundary` instead (master §8: it lapses there). Otherwise only a human
-resume clears rows, and `cleared_by` is `human:<sha256 prefix of the token>` — never
-the token itself. Snapshot writes are idempotent on the ts PK.
+`auto:session_boundary` instead (master §8: it lapses there). Otherwise only the human
+resume clears rows, and `cleared_by` is `human:<random resume id>` — no bit of it is
+derived from the token (audits X9/F10). Snapshot writes are idempotent on the ts PK.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
@@ -111,16 +111,17 @@ class RiskStore:
                                [(at.isoformat(), "auto:session_boundary", h) for h in halt_ids])
         self._conn.commit()
 
-    def clear_halts(self, cleared_at: datetime, human_token: str) -> int:
+    def clear_halts(self, cleared_at: datetime, human_token: str) -> str:
         """A HUMAN resume clears every open halt, as the Governor's resume clears every
-        scope. A blank token is refused: no machine path can unhalt a restart."""
+        scope. A blank token is refused: no machine path can unhalt a restart. Returns the
+        resume id the rows are signed with — random, never derived from the token."""
         if not isinstance(human_token, str) or not human_token.strip():
             raise DataQualityError("human_token", human_token, "only a human resume clears")
-        by = "human:" + hashlib.sha256(human_token.encode("utf-8")).hexdigest()[:12]
-        cur = self._conn.execute("UPDATE halt_event SET cleared_at=?, cleared_by=? "
-                                 "WHERE cleared_at IS NULL", (cleared_at.isoformat(), by))
+        resume_id = uuid.uuid4().hex[:12]
+        self._conn.execute("UPDATE halt_event SET cleared_at=?, cleared_by=? WHERE "
+                           "cleared_at IS NULL", (cleared_at.isoformat(), f"human:{resume_id}"))
         self._conn.commit()
-        return cur.rowcount
+        return resume_id
 
     def persist_evaluate(self, snap: RiskSnapshot, *, alpha_armed: bool, taper_factor: float,
                          anchors: dict[str, dict], log) -> None:

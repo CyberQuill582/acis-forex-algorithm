@@ -9,7 +9,8 @@ observability only (v2.10 item c). The venue's own limits DO gate (GAP-P12D-57,
 venue_limits.py): whole lot steps rounded DOWN, below the minimum lot refused, a spent
 request budget refuses opens. A close is REDUCE-ONLY (GAP-0040 exits, ACIS-06 §7): it
 names its position's side, trades the opposite side, and is capped at — or refused
-without — the venue's holding on that side. Every refusal is a FillReport.
+without — the venue's holding on that side. Every refusal of an order that reaches
+dispatch is a FillReport; a frozen OPEN is refused before dispatch, logged only (F12).
 """
 
 from __future__ import annotations

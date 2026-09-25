@@ -11,7 +11,8 @@ A restart is never a relaxation (GAP-0050), and the ledger never gates a guard. 
   * Boot re-applies every uncleared row through the same edge, same scope and reason,
     before the first evaluate (`Guardrails.restore_state`).
   * Re-applying writes nothing new: an open row with the same kind, scope and reason
-    (and, for a session halt, instant) is not written twice.
+    (and, for a session halt, instant) is not written twice. Every row id is unique, so a
+    halt re-issued at the instant of a CLEARED row is still written (audit F9).
   * The sink has no clearing verb. Only the human resume clears rows, so an agent that
     reaches the sink can halt, never unhalt, and never make a restart forget a halt.
 """
@@ -19,6 +20,7 @@ A restart is never a relaxation (GAP-0050), and the ledger never gates a guard. 
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from datetime import datetime
 from typing import Callable
 
@@ -62,7 +64,7 @@ class PersistentHaltSink(HaltSink):
             same = (row.kind, row.scope, row.reason) == (kind, scope, reason)
             if same and (kind != "session" or row.at == at):
                 return
-        self._store.record_halt(f"{kind}|{at.isoformat()}|{scope}|{reason}",
+        self._store.record_halt(f"{kind}|{at.isoformat()}|{scope}|{reason}|{uuid.uuid4().hex}",
                                 at.isoformat(), scope, reason)
 
     def apply_halt(self, scope: str, reason: str) -> None:

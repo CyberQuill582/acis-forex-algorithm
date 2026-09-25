@@ -109,12 +109,39 @@ def test_restoring_writes_nothing_twice_and_keeps_distinct_reasons(tmp_path) -> 
     store.close()
 
 
-def test_the_ledger_is_signed_by_a_token_fingerprint_never_the_token(tmp_path) -> None:
+def test_the_ledger_is_signed_with_a_random_resume_id_never_token_bits(tmp_path) -> None:
+    # audits X9/F10: 48 bits of the unsalted sha256 the MCP verifier holds made the risk
+    # DB an offline guessing oracle for a low-entropy token. Now: a random resume id.
+    import hashlib
     store = RiskStore(tmp_path / "risk.db")
     _, _, _, mon, _, sink = _process(tmp_path, store)
     sink.apply_halt("all", "mcp_halt")
     mon.on_human_resume(HUMAN, T0)
+    sink.apply_halt("all", "var_cap")
+    mon.on_human_resume(HUMAN, T0 + timedelta(minutes=1))   # the SAME token again
     store.close()
-    (by,) = sqlite3.connect(tmp_path / "risk.db").execute(
-        "SELECT cleared_by FROM halt_event").fetchone()
-    assert by.startswith("human:") and HUMAN not in by
+    signed = [by for (by,) in sqlite3.connect(tmp_path / "risk.db").execute(
+        "SELECT cleared_by FROM halt_event ORDER BY ts, halt_id")]
+    digest = hashlib.sha256(HUMAN.encode()).hexdigest()
+    assert all(by.startswith("human:") and HUMAN not in by and by[6:] not in digest
+               for by in signed)
+    assert len(set(signed)) == 2                             # nothing derived from the token
+
+
+def test_the_store_itself_refuses_a_blank_resume_token(tmp_path) -> None:
+    store = RiskStore(tmp_path / "risk.db")                  # audit F12: the A16 survivor
+    with pytest.raises(DataQualityError):
+        store.clear_halts(T0, "  ")
+    store.close()
+
+
+def test_a_halt_reissued_at_the_instant_of_a_cleared_row_is_persisted(tmp_path) -> None:
+    # audit F9 (r7 part b): INSERT OR IGNORE on a colliding id dropped the re-issued halt
+    store = RiskStore(tmp_path / "risk.db")
+    _, _, _, mon, _, sink = _process(tmp_path, store)        # the sink's clock is fixed at T0
+    sink.apply_halt("all", "var_cap")
+    mon.on_human_resume(HUMAN, T0 + timedelta(minutes=1))
+    sink.apply_halt("all", "var_cap")                        # the same instant, again
+    assert [(h.kind, h.scope, h.reason) for h in store.open_halts()] == [
+        ("halt", "all", "var_cap")]                          # was [] — live, but not on disk
+    store.close()
