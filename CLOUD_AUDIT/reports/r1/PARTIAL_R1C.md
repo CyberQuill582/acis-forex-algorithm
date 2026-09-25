@@ -4,7 +4,7 @@
 - **Fresh context:** yes. I read only BRIEF_R1, FLEET_PLAN §1/§6, C3 §2.5 + §5, P3 § C3, C2 §2.7, the LEAD bridge
   probe, and the BASE files named below.
 - **BASE:** `974dbda` (read-only at `/tmp/review-acis`). **Date:** 2026-09-25. **Web used:** 21 of 25.
-- **Status:** PARTIAL, updated 08:25 UTC (first commit 08:14). Numbers are **DRAFT** unless marked final. Everything is synthetic.
+- **Status:** PARTIAL, updated 08:25 UTC (first commit 08:14). **Superseded by the final `R1C_SYNTH_LAB.md` (08:35 UTC).** Numbers are **DRAFT** unless marked final. Everything is synthetic.
 
 ## First findings
 
