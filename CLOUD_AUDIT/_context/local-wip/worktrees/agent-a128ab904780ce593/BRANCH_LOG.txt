@@ -1,3 +1,4 @@
+5d108de 2026-09-25 10:06:55 +0300 BUILDER report: "Fixes after dual audit" section; corrections the audits forced
 76f2ce7 2026-09-25 07:01:38 +0300 Audits F6 + E7: no bare NaN in any JSON the backtest writes (RFC 8259)
 4b1e723 2026-09-25 06:48:52 +0300 Audit E4: report the gate's SR0 hurdle; drop the unfaithful "oracle DSR"
 11fbe54 2026-09-25 06:37:15 +0300 Audit E2: a planted refusal only by the DSR gate is GATE-LIMITED, exit 6

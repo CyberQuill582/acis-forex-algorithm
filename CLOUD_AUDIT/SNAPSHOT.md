@@ -1,7 +1,7 @@
 # SNAPSHOT — acis
 
-- **Built:** 2026-09-25T07:06:10Z (2026-09-25 10:06 EAST) by `cloud-handoff/cloud_sync.sh` on the owner's laptop.
-- **Code under review:** branch `main` at commit `f77a583c2f592edc9d05ea3740ed515be88dc36c` — "BUILDER-2 internal audit triaged: register bypass reproduced (L1-L5), sweep blind spots; fixes await the owner's go".
+- **Built:** 2026-09-25T07:08:50Z (2026-09-25 10:08 EAST) by `cloud-handoff/cloud_sync.sh` on the owner's laptop.
+- **Code under review:** branch `main` at commit `0270212e35d0df62fffdbd89d3daa1a69f5f9217` — "Owner: BUILDER-2 fixes go to BUILDER-2 after the BUILDER branch merges (one job: re-merge + fix)".
   This branch's parent chain contains that commit; review the code *as of that commit*.
 - **The local side has NOT stopped.** Another Claude Code instance may keep committing after this
   moment. State the base commit in your reports; the owner reconciles later.
