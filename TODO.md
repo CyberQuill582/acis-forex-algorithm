@@ -61,6 +61,18 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 **2026-09-25 morning: the laptop lost power at 00:40** ([[GAP-P12D-76]]; Kernel-Power 41, `BugcheckCode=0`: a power loss, not a crash). BUILDER, BUILDER-2 and BUILDER-3 had stopped mid-stage, and each was RESUMED with `SendMessage`, never relaunched. Each was told to check its uncommitted files (`py_compile` + a full diff read) before building on them. Their committed stages were all intact, and main was clean at `6a58e89`.
 - [ ] **OWNER:** decide where the demo engine runs. The recommendation is a small non-US Linux VPS, not this laptop. Also check the charger, mains and battery health, and make the second tick-set copy ([[GAP-P12D-50]]).
 
+**BUILDER-2 IS IN (2026-09-25):** branch `worktree-agent-a8937e82f9a7a5391`, head `5d96570`. BUILT, PENDING AUDIT; author's count 864 passed, 6 skipped.
+- [x] Stages 1–3: the structural leakage suite (T1 truncation, T2 future-perturbation at EVERY decision point, T7 controls proving the guard bites) ([[GAP-P12D-65]]).
+- [x] Stage 4: the look register. Every real-data grade writes its line first, and `run_walk_forward` refuses without it ([[GAP-P12D-64]]).
+- [x] Stage 5: T6. A bar that opens through the stop exits at the open.
+- [ ] Stage 6 (T4 config provenance, T8 decision-time accessor) was not built.
+- **Lead pre-check:** `report.py` gains only an informational `look` field, and `passed` is byte-identical. No guard, spec or ledger file is touched.
+- **Pre-existing leak paths it found** are filed as [[GAP-P12D-82]], with delegated decisions on F1/F2/F3/F5, built after the merges.
+- [ ] **The constitution's TWO audits of the BUILDER-2 branch are RUNNING** (pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`; [[GAP-P12D-83]]):
+  - AUDIT-INTERNAL `a2c3bcf53066dd551`;
+  - AUDIT-EXTERNAL `a9d24cf88c3353a04`.
+- **Merge order:** BUILDER first, then BUILDER-2 (it stacks on BUILDER), then BUILDER-3. Each needs the owner's go.
+
 **BUILDER-3 IS IN (2026-09-25):** branch `worktree-agent-a9e00713d15bb5082`, BUILT, PENDING AUDIT. The lead re-ran the suite on it: **842 passed, 6 skipped**.
 - [x] Stage 1: drawdown anchors and the taper persist across restarts ([[GAP-P12D-55]]).
 - [x] Stage 2: lot-step round-down and a minimum-lot refusal, plus a rolling 24-hour venue request budget of 1,000 that survives a restart, with an exemption for verified reducing closes ([[GAP-P12D-57]]).

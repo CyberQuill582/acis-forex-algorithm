@@ -144,6 +144,32 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-82: four latent look-ahead or artifact paths in the research instrument, found by the structural leakage suite (pre-existing on main)
+- Severity: medium · Likelihood: medium
+- Status: open (2026-09-25 — surfaced by BUILDER-2's T1/T2 leakage sweeps; see its branch report `BUILDER2_REPORT_2026-09-24.md` §2 and §5. Each has a named mechanism and `file:line` evidence. None leaks on the current production call paths, which the sweeps checked clean: 102,998 / 102,961 decisions compared)
+- Area: core/optimizer/fitness.py (`trade_path` costs), core/optimizer/qiea.py (`fitness_window`), the NVMA session-median callback via `MarketStateFactory`, the per-regime fitness windows (ACIS-03 §6)
+- Description:
+  1. **F1: the fitness fill pays the entry bar's CLOSING spread**, a datum from after the fill. It is a small cost look-ahead in selection.
+  2. **F2: QIEA's `fitness_window` bounds only the START of the span.** It would evolve on bars after `now` if a caller supplied them. The production caller does not, and `refuse_lookahead` plus the new sweep check it.
+  3. **F3: materialising the tick stream leaks end-of-tape session medians into NVMA.** Every current path is lazy; any `list(market_states(...))` before labelling would leak.
+  4. **F5: regime-sliced fitness windows are concatenated across time**, so every junction between two regime stretches is a synthetic price jump. After T6's gap-through exit it is no longer optimistic, but the series itself is an artifact.
+- Justification: open. **DELEGATED DECISIONS** (the lead's recommendations under the owner's delegation, recorded for review):
+  - **F2 [impl]:** the one-line tightening, keeping only `b.ts + bar_seconds <= now`. No ratification is needed.
+  - **F1 [spec, ACIS-03]:** charge the SIGNAL bar's closing spread, the latest known at decision time. This is the clean no-look-ahead convention.
+  - **F5 [spec, ACIS-03]:** simulate each contiguous regime stretch separately, flat at every junction.
+  - **F3 [impl]:** make it structural via the T8 decision-time accessor.
+
+  All four are built AFTER the three open branches merge, to avoid conflicts. F1 and F5 change fitness numbers, so they get an ACIS-03 amendment. The gene search space is unchanged, so no re-baseline is needed.
+- Linked: [[GAP-P12D-65]], [[GAP-P12D-64]], [[GAP-P12D-83]]
+
+## GAP-P12D-83: the dual audit of the BUILDER-2 branch (leakage suite, look register, T6)
+- Severity: medium · Likelihood: high
+- Status: open (2026-09-25 — the constitution's two lenses only, launched under the pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`. The branch `worktree-agent-a8937e82f9a7a5391` is at head `5d96570`, and BUILDER-2's own work sits on top of the BUILDER-branch merge `577d882`. Lead pre-checks: `report.py` gains only an informational `look` field and the `passed` gate is byte-identical; no guard, spec or ledger file is touched)
+- Area: the BUILDER-2 branch — the leakage suite (T1/T2/T7), the look register and its `run_walk_forward` refusal, and T6 gap-through exits in `core/optimizer/fitness.py`
+- Description: BUILT, PENDING AUDIT. Findings are appended here when the two reports land.
+- Justification: open until both lenses' findings are triaged and the branch merges on the owner's go. It merges AFTER the BUILDER branch, which it stacks on.
+- Linked: [[GAP-P12D-64]], [[GAP-P12D-65]], [[GAP-P12D-82]], [[GAP-P12D-72]]
+
 ## GAP-P12D-81: lot-step rounding can orphan one leg of a pair group, leaving a naked directional position — on the BUILDER-3 branch, looser than main
 - Severity: high · Likelihood: medium
 - Status: open (2026-09-25 — found by AUDIT-INTERNAL (F11) in the BUILDER-3 branch audit. The lead REPRODUCED it with `r9_pair_leg_rounding.py`: with legs of 1,500 and 900 units, base `bdd3a75` fills both, while head `d8361a7` leaves only EUR_USD +1,000 at the venue, because the 900-unit leg is under the minimum lot and refused)
