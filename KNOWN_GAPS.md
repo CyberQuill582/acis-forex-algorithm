@@ -146,7 +146,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-102: even swap-free, the R1 flagship family (pooled trend, "D1") most likely fails the plan's own development bar
 - Severity: high · Likelihood: high
-- Status: open [spec — owner ratification, R1-D2] (2026-09-25 — found by the lead reviewing PLAN_R1; `archive/r1_lead_probes/d1_power.py` → `.out`)
+- Status: open [impl — RATIFIED 2026-09-25 (owner: "i ratify all your recommendations for R1-D1 to D14") and the spec APPLIED: ACIS-09 v1.7 C-BT-11 v2 stage A is fixed-sequence; built with the verdict module, R1.4] (2026-09-25 — found by the lead reviewing PLAN_R1; `archive/r1_lead_probes/d1_power.py` → `.out`)
 - Area: PLAN_R1 §6 B2 and its A2 (C-BT-11 v2); the testing procedure of stage A
 - Description: PLAN_R1 estimates D1's net portfolio Sharpe at +0.32..+0.79 swap-free (−0.15..+0.32 at FTMO's swaps). Its own stage-A bar is SR̂ > 0.81 (Holm, K ≤ 10, Y = 10), or 0.74 at K = 5. With the plan's own se = 1/√Y, D1 passes 6% / 21% / 47% of the time at the low / mid / high swap-free estimate, and 1% at FTMO swaps. A pre-registered fixed-sequence order (D1 first, at the full α; the next family only if it passes) controls family-wise error exactly as Holm does and lowers D1's bar to 0.50 at Y = 11 (fixed families need no 2-year burn-in): 28% / 58% / 84%.
 - Justification: open. Recommendation in R1_LEAD_REVIEW_2026-09-25.md §2 X2 and A2: fixed-sequence for the first cycle; Holm only among families outside the order. The owner rules with A2.
@@ -154,7 +154,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-101: the R1 plan never models the venue's minimum lot — at the owner's account size most of its breadth cannot be held
 - Severity: high · Likelihood: certain
-- Status: open [owner decision R1-D14 + impl] (2026-09-25 — found by the lead; `archive/r1_lead_probes/lot_granularity.py` → `.out`, FTMO contract sizes from `archive/r1_lead_probes/ftmo_symbols_2026-09-25.json`; the 0.01-lot minimum is an ASSUMPTION, since the JSON carries no min-volume field)
+- Status: open [impl — R1-D14 RATIFIED 2026-09-25 (owner: "i ratify all your recommendations for R1-D1 to D14") and the spec APPLIED: lot rounding in master v2.21 §5 C8 and the live-eligibility rule in OOS_VALIDATION.md; the account size / vol target is decided WITH R1-D9 at the first real-data look] (2026-09-25 — found by the lead; `archive/r1_lead_probes/lot_granularity.py` → `.out`, FTMO contract sizes from `archive/r1_lead_probes/ftmo_symbols_2026-09-25.json`; the 0.01-lot minimum is an ASSUMPTION, since the JSON carries no min-volume field)
 - Area: PLAN_R1 A3/A5 (breadth, IDM ≈ 2.4–2.5, N_eff ≈ 6), the research simulator (RSIM), ACIS-06 C-EXE-6 lot rounding, [[GAP-P12D-61]]
 - Description: Carver sizing (capital × vol target × weight × IDM) with ACIS's round-down to lot steps, class-equal weights over the 23 explored instruments:
   - at $6,000 and a 10% vol target, 15 of 23 can NEVER hold one minimum lot (all 13 FX pairs, gold, silver);
@@ -191,7 +191,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-97: the holdout kill at SR̂ < 0 wrongly kills 18–32% of real edges
 - Severity: medium · Likelihood: high
-- Status: open [spec — owner ratification, A2 stage C] (2026-09-25 — from PLAN_R1 §9 #9, R1-A simulation; not re-run by the local lead)
+- Status: open [impl — RATIFIED 2026-09-25 (owner: "i ratify all your recommendations for R1-D1 to D14") and the spec APPLIED: ACIS-09 v1.7 C-BT-11 v2 stage C kills at t < −0.5] (2026-09-25 — from PLAN_R1 §9 #9, R1-A simulation; not re-run by the local lead)
 - Area: the kill rule for the held-out instruments and the 2024–25 holdout (VALIDATOR K4)
 - Description: with two years of holdout, a true edge frequently shows a negative sample Sharpe. Killing at SR̂ < 0 throws away 18–32% of real edges; killing at t < −0.5 keeps the kill's power against false claims while sparing most real ones.
 - Justification: open; decided with A2 (R1-D2).
@@ -199,7 +199,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-96: §14's trade-shape rows fail any daily-horizon rule whatever its edge
 - Severity: high · Likelihood: certain
-- Status: open [spec — OWNER-ONLY, R1-D7] (2026-09-25 — from PLAN_R1 §9 #8, a planted SR 0.87 daily rule: win rate 0.18, average hold 53.5 days, positive months 52%, re-run by the cloud lead)
+- Status: open [impl — R1-D7 RATIFIED 2026-09-25 (owner: "i ratify all your recommendations for R1-D1 to D14") and the spec APPLIED: master v2.21 §14 is the claim ladder; `report.py` keeps the stricter v2.20 rows until the verdict module lands, R1.4] (2026-09-25 — from PLAN_R1 §9 #8, a planted SR 0.87 daily rule: win rate 0.18, average hold 53.5 days, positive months 52%, re-run by the cloud lead)
 - Area: master §14 (ACIS_SPEC.md:361-367), tests/backtest/report.py (`WIN_RATE_MIN`, `POSITIVE_MONTHS_MIN_PCT`, `DURATION_*`)
 - Description: win rate > 48%, positive months > 70% and a 30 min–48 h average hold exclude every slow rule by construction, and "win rate > 48%" contradicts §5.6's own "trend-following wins ~35–48%" (ACIS_SPEC.md:213). An annual Sharpe > 1.5 cannot be certified on 12 years of history for any plausible edge.
 - Justification: open. It LOOSENS the live gate (`report.py:30-31`: "loosening is a master-spec change"), so it is owner-only, never delegated. The draft is A6 in R1_LEAD_REVIEW_2026-09-25.md.
@@ -247,7 +247,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-90: the planted positive-control market is ~3.3× the null's daily volatility, with a frictionless oracle Sharpe of ~157 — every recorded synthetic verdict is confounded by it
 - Severity: high · Likelihood: certain
-- Status: open [spec — owner ratification, R1-D12] (2026-09-25 — from PLAN_R1 §9 #2; the lead's own arithmetic from the generator defaults agrees: ~9.6 episodes/day of ~450 ticks at 0.15σ drift → daily ratio ≈ 3.3; oracle 0.15·√(4320·252) ≈ 156.5)
+- Status: open [impl — R1-D12 RATIFIED 2026-09-25 (owner: "i ratify all your recommendations for R1-D1 to D14") and the spec APPLIED: ACIS-09 v1.7 C-BT-12; built in the lab, R1.1, then every recorded synthetic verdict is re-stated] (2026-09-25 — from PLAN_R1 §9 #2; the lead's own arithmetic from the generator defaults agrees: ~9.6 episodes/day of ~450 ticks at 0.15σ drift → daily ratio ≈ 3.3; oracle 0.15·√(4320·252) ≈ 156.5)
 - Area: tests/backtest/synthetic_market.py (`drift_sigma`, `episode_hours`), every falsification and ladder verdict, [[GAP-P12D-49]]
 - Description: "planted passes, null fails" can be read off the volatility level and the cost/move ratio alone, not only off the planted drift. The positive control must differ from its null in drift only (variance-matched planting, R1-C C-2).
 - Justification: open; R1-D12. It moves recorded runs, so it is ratified before it is applied.
@@ -255,7 +255,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-89: counting runs is not enough under adaptive iteration — search spaces must be declared and hashed before the first look, and families graded as fixed combinations
 - Severity: critical · Likelihood: high
-- Status: open [spec — owner ratification, R1-D2/R1-D4] (2026-09-25 — from PLAN_R1 §9 #1; R1-A simulation at R = 400, direction reproduced by the cloud lead at R = 80; not re-run locally)
+- Status: open [impl — R1-D2/D4 RATIFIED 2026-09-25 (owner: "i ratify all your recommendations for R1-D1 to D14") and the spec APPLIED: master v2.21 §5 and ACIS-09 v1.7 C-BT-11 v2; built in R1.2/R1.4] (2026-09-25 — from PLAN_R1 §9 #1; R1-A simulation at R = 400, direction reproduced by the cloud lead at R = 80; not re-run locally)
 - Area: the verdict (C-BT-11 v2), the look register, master §5 (rule parameters)
 - Description: when a researcher hill-climbs, the set of tried runs depends on the data, so a union bound over tried runs leaks: max-t over the registered union passes noise 10–16% of the time and Bonferroni over runs 6.5–13%. Max-t over a pre-DECLARED grid holds ~5.2–5.5%; Holm over fixed family combinations 1.5%, with higher power.
 - Justification: open; A2 and A4 in R1_LEAD_REVIEW_2026-09-25.md. It extends [[GAP-P12D-64]].
@@ -610,6 +610,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Justification: open.
   - **Where it gets fixed:** in the TSMOM rebuild ([[GAP-P12D-68]] item 2: a faithful slow sleeve), which should use excess, carry-inclusive returns.
   - **Until then:** correct the declaration's wording, because a false justification is dishonest provenance under §5.6.
+- **Progress 2026-09-25 (R-1, R1-D3 RATIFIED):** TSMOM is no longer required canonical; it is a registered member of the TREND family (master v2.21 §5.6, ACIS-04 v1.3). Carry enters as the venue's swap in C8 ([[GAP-P12D-93]]), not as a return omission. The build is R1.3.
 - Linked: [[GAP-P12D-49]], [[GAP-P12D-68]], [[GAP-0073]], [[GAP-P12D-53]]
 
 ## GAP-P12D-70: fills the venue makes on its own — a server-side stop firing, a broker close — have no path into ACIS; the position view goes stale until a restart calls it drift and halts
@@ -673,6 +674,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   1. First, the validation protocol ([[GAP-P12D-33]]), the look register ([[GAP-P12D-64]]) and the leakage suite ([[GAP-P12D-65]]), so that any redesign is graded honestly.
   2. Then the position policy (item 1), which is also a Track A blocker.
   3. Then the module set and instruments (items 2 and 5) together with RSIM (item 6).
+- **Progress 2026-09-25:** the redesign's direction is RATIFIED (R-1) and its specifics too (R1-D1..D14, master v2.21). What remains is the build, R1.0–R1.7 (TODO START HERE).
 - Linked: [[GAP-P12D-52]], [[GAP-0075]], [[GAP-P12D-49]], [[GAP-P12D-62]], [[GAP-P12D-33]], [[GAP-P12D-66]], [[GAP-P12D-39]]
 
 ## GAP-P12D-67: the ratified 2-year rolling train window throws a real edge away — it realises Sharpe 0.15 from a true 0.44
@@ -681,6 +683,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Area: tests/backtest/OOS_VALIDATION.md (walk-forward design RATIFIED 2026-07-21: 2-year train / 1-year test / 1-year step), tests/backtest/oos_plan.py
 - Description: selecting on a 2-year rolling train window is so noisy that most of a genuine edge is lost to selection error. With a true best-config Sharpe of 0.44, the realised out-of-sample Sharpe is only 0.15. Training on all prior years instead (an expanding window) lifts detection power from 66% to 74% at a true 0.94.
 - Justification: open, owner-owned, because the fold design is ratified. It bears directly on "iterate until we find the edge": a design that discards most of a real edge makes a true negative likelier, and pushes the iterator to keep revising, which is the false-positive channel in [[GAP-P12D-64]]. Proposal: an expanding train window, or CPCV per the VALIDATOR's option C ([[GAP-P12D-33]]).
+- **Progress 2026-09-25 (R-1, R1-D1 RATIFIED):** the expanding window is now the spec (ACIS-09 v1.7; OOS_VALIDATION.md amended). Fixed families need only their lookback warm. The code change (`oos_plan.py`) is the remaining [impl].
 - Linked: [[GAP-P12D-52]], [[GAP-P12D-33]], [[GAP-P12D-64]]
 
 ## GAP-P12D-66: an LLM-originated hypothesis cannot be certified on any history the model was trained on — for this session that is ALL of 2012–2025, the holdout included
@@ -1276,6 +1279,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - The cross-instrument holdout passes noise 10–23% unless it is residualised on the development instruments' P&L; residualised, it passes 2.7–4.7%.
 
   The Masters permutation test is more powerful (43% / 96%, false positives 3–8%), but needs 60 full re-runs of the search, so it can run only on a fast research simulator.
+- **Progress 2026-09-25 (R-1, R1-D2 RATIFIED):** C-BT-11 v2 (ACIS-09 v1.7) supersedes the DSR gate for `passed` with a register-aware verdict: fixed-sequence stage A, engine confirmation, kill-only stage C, forward e-processes. The DSR becomes informational. The as-built gate stays until the verdict module lands (R1.4); it is the stricter one.
 - Linked: [[GAP-P12D-16]], [[GAP-P12D-32]], [[GAP-P12D-25]], [[GAP-SP12E-03]], [[GAP-P12D-31]], [[GAP-0035]]
 
 ## GAP-P12D-34: the §5.6 parameter-plateau law is spec-mandated and entirely unimplemented

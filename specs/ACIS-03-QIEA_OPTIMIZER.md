@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-QIEA-003` |
-| **Version** | 1.5 (LOCKED — §5.6 parameter-plateau law as §6.4, 2026-09-25) |
+| **Version** | 2.0 (LOCKED — rule parameters replace per-regime QIEA evolution, master v2.21 §5, R-1 A4, 2026-09-25; the QIEA text below is LEGACY until R1.7 retires the code) |
 | **Layer / DIR** | Layer 3 · `[DIR:core/optimizer]` |
 | **Consumes** | `RegimeContext` (ACIS-02) + regime-labelled **historical** data only |
 | **Emits** | `ActiveParamSet` (frozen) → AGON (ACIS-04, né Alpha Arena) via `param_library` |
@@ -18,7 +18,16 @@
 
 ## 1. Purpose & scope
 
-**Purpose.** Evolve, per regime, the best strategy `ParamSet` using a Quantum-Inspired Evolutionary Algorithm, and maintain a **regime-indexed parameter library** the fast loop reads. The defining constraint is *when* it is allowed to change live behaviour: **never during a session, never with open positions.**
+**Purpose (v2.0, owner-ratified 2026-09-25, R-1: "i ratify all your recommendations for R1-D1 to D14"; master v2.21 §5, A4).**
+- Serve the active parameters of each **registered, validated rule family**: ≤ 3 free parameters, fixed at literature values or on the synthetic null (spending zero looks), pooled across instruments, differing per instrument only through a declared, pre-registered cost filter.
+- A family is a fixed combination of its members. There is no per-regime or per-instrument library and no evolutionary search.
+- An **explored** family may declare a ±1-step grid on ≤ 2 parameters (≤ 9 members), hashed before its first look and graded by max-t (ACIS-09 C-BT-11 v2).
+- The staging rule (§7–§8) binds every parameter change, unchanged: **never during a session, never with open positions**, promotion only at a valid session boundary.
+- C8 (net of costs) and C9 (positive expectancy) bind every member. The §6.4 plateau law binds every family as a **kill-only** check.
+- An instrument with no registered, validated rule set is `tradeable=False` (master §2).
+- **Legacy until R1.7:** the QIEA purpose and every QIEA section below describe code that still exists and is frozen as the untrained baseline. R1.7 retires it by `git mv`: `qiea.py`, `evolve_step.py`, `fitness.py` (after its indicators move, GAP-P12D-99), the ParamLibrary staging and the genome. The re-baseline was approved by the owner on 2026-09-25 (BASELINE.md). No new grade uses the legacy path.
+
+*Legacy purpose:* Evolve, per regime, the best strategy `ParamSet` using a Quantum-Inspired Evolutionary Algorithm, and maintain a **regime-indexed parameter library** the fast loop reads. The defining constraint is *when* it is allowed to change live behaviour: **never during a session, never with open positions.**
 
 **IS:** quantum-bit chromosome evolution; per-regime fitness evaluation on regime-labelled history, **net of costs (C8)** and gated on **positive net expectancy (C9)** with a chronological held-out split (GAP-0008); staging evolved params to `PendingParamStore`; promotion to `ActiveParamSet` only at a valid session boundary with `open_positions == 0`; staleness observability.
 
@@ -132,6 +141,7 @@ After the champion clears C9 on train (GAP-0038) and the §6.3 holdout gate, QIE
 - **A refused candidate is still a Deflated Sharpe trial.** It consulted the holdout, and dropping it would shrink the trial set and loosen the gate (GAP-P12D-73).
 - **Genes the v1 fitness harness does not exercise** (GAP-0035) are perturbed like every other; their neighbours cannot die until module-gene fitness exists.
 - **Cost:** at most 2 × 11 train evaluations per surviving champion (measured ≈ 3–4% of an evolution run).
+- **v2.0 (R-1, the lead's X4, ratified):** the law binds every rule family, fixed ones included, as a **kill-only** check. A fixed family's ±10% neighbours are evaluated on the development span, and a neighbour failing C9 refuses the family. A check that can only refuse cannot raise the false-positive rate, so the neighbours are not stage-A trials.
 - **What passing proves.** A champion passing the plateau law proves NOTHING by itself; as a standalone gate the test passes noise 93–99% of the time (the VALIDATOR, GAP-P12D-33). It is a fragility veto, not evidence of edge.
 
 ## 7. Core logic — the staging rule (the heart of this layer)
@@ -223,6 +233,7 @@ Read: `acis://params/active` and `acis://params/pending` (incl. `boundaries_skip
 **What AGON (ACIS-04) consumes:** `ActiveParamSet` via `param_library.get_active(regime)` — a frozen, validated param set keyed by the current regime, carrying `param_set_id` for signal traceability. **Owns conflict-table row:** "QIEA new params ready + open positions → stage, deploy at next session boundary only." **Done-when (phase 4, master §15, paper mode):** all §14 tests green in a full run; import contract passing; no live trading (paper only until phase 12).
 
 ## Changelog
+- **2.0 (LOCKED, 2026-09-25)** — Master v2.21 §5 (R-1 A4, owner-ratified 2026-09-25, R-1: "i ratify all your recommendations for R1-D1 to D14"). Rule parameters replace per-regime × per-instrument QIEA evolution: ≤ 3 pooled, literature- or null-fixed parameters per family, fixed combinations, explored grids hashed before the first look. The staging rule binds every parameter change, unchanged. The §6.4 plateau law binds every family as kill-only. QIEA is legacy until R1.7 retires it, a re-baseline under BASELINE.md. No guardrail, HALT or veto semantic changes; the staging rule is unchanged.
 - **1.5 (LOCKED, 2026-09-25)** — The master §5.6 parameter-plateau law is implemented as §6.4 (GAP-P12D-34), merged from the BUILDER branch after the constitution's two audits (GAP-P12D-72/73, all findings fixed).
   - **What changed:** a range-based ±10% step; "dies" = fails C9 on the train window (delegated decision D8, for the owner's review); a refused candidate stays a DSR trial; `EVOLUTION_REJECTED_PLATEAU` and the logging-only `EVOLUTION_EVALUATIONS` registry, which includes the plateau neighbours.
   - **Scope:** selection is tightened only. No guardrail, HALT, veto or staging semantics changed, and the gene search space is unchanged, so there is no re-baseline.

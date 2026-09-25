@@ -17,9 +17,17 @@ purged-CV & Deflated Sharpe; the "meta-overfitting" walk-forward failure mode).
 below is fixed *now, before any output is seen*, and is never re-tuned to flatter
 the grade (that is selection bias / meta-overfitting — the exact §5.6 self-deception
 the spec forbids). The only legitimate optimisation is QIEA evolving genes on each
-train fold; the validation design is not an optimisation target.
+train fold; the validation design is not an optimisation target. **Amended 2026-09-25 (R-1, owner-ratified; ACIS-09 v1.7):** the only legitimate selection is among the members of a declared search space, hashed and registered before the first look; the validation design is still not an optimisation target.
 
-- **Data:** `2012-01-01 → 2026-01-01` (14 yr). **Enabled universe RATIFIED
+- **AMENDED 2026-09-25 (R-1 A5, R1-D5, owner-ratified): the research universe is 30 instruments.**
+  - FX 16: EUR/USD, USD/JPY, GBP/USD, AUD/USD, USD/CAD, USD/CHF, EUR/GBP, EUR/JPY, GBP/JPY, AUD/JPY, EUR/CHF, EUR/AUD, CHF/JPY, AUD/NZD, NZD/USD, CAD/JPY.
+  - Metals: XAU, XAG, XCU. Indices: US500, US30, UK100, JP225, EU50, AUS200, GER40, US100. Energy: UKOIL, NATGAS, USOIL.
+  - All are quoted by FTMO, with Dukascopy history from ≤ 2013; the owner confirms availability with `scripts/download_dukascopy_s3.py check` before onboarding.
+  - **Held out and LOCKED (the salt is frozen now; re-salting after any real-data look is forbidden):** AUD/NZD, NZD/USD, CAD/JPY, XCU/USD, GER40, US100 and USOIL. They were drawn by sorting each class by `sha256("ACIS-R1-holdout-2026-09-25|" + symbol)` and holding out the first k (FX 3, metal 1, index 2, energy 1), with the 8 on-disk instruments forced into the explored set. They are never explored, graded once per assembled portfolio, residualised and kill-only. They are clean of the project's looks, not of the LLM's memory.
+  - **Live eligibility per account:** an instrument is live-eligible on an account only if one minimum lot is ≤ its risk budget at |forecast| = 10 on that account (GAP-P12D-101). The rest stay research-only there.
+  - **Breadth** is measured as effective breadth, IDM = √(N/(1+(N−1)ρ_P&L)), not as a count.
+  - The 8-instrument universe below stays the on-disk tick set, forced explored.
+- *(Superseded as the research universe:)* **Data:** `2012-01-01 → 2026-01-01` (14 yr). **Enabled universe RATIFIED
   2026-07-22 (owner): 8 instruments** chosen for genuine cross-sectional
   diversification (the honest path to a trustworthy Sharpe, GAP-SP12E-01), not more
   USD-correlated majors: **EUR/USD, USD/JPY** (keep) · **GBP/USD, AUD/USD** (distinct
@@ -33,7 +41,12 @@ train fold; the validation design is not an optimisation target.
   ladder; ACIS monitors per-instrument/per-strategy natively, so 8 ≠ diluted attention.
   Per-instrument onboarding — cost model, calendar, cluster, pair stats, §13 tests —
   is the real cost of broadening, tracked as build work.)*
-- **Walk-forward (development):** **2-yr train / 1-yr test / 1-yr step**, with a
+- **AMENDED 2026-09-25 (R-1 A1, R1-D1/D6, owner-ratified; ACIS-09 v1.7 C-BT-11 v2).**
+  - **Walk-forward (development): EXPANDING train / 1-yr test / 1-yr step.** A fixed family (no training step) needs only its longest lookback warm; a family with a training step needs ≥ 2 years first.
+  - **The embargo** is ≥ max(7 days, the 95th percentile of the rule set's holding period, measured on the lab).
+  - **Development is ONE tier (2012–2023) for fixed families.** The E (2012–19) / V (2020–23) split is used only for explored families.
+  - The rolling plan below is superseded, kept for the record.
+- *(Superseded:)* **Walk-forward (development):** **2-yr train / 1-yr test / 1-yr step**, with a
   **~1-week embargo** between train and test (purge boundary leakage; embargo ≥ the
   48 h max-hold). Over 2012→2024 this is **~10 rolling folds, ~10 yr concatenated
   OOS** — far above the §14 ≥2-yr / >1-fold / ≥30-trade floors.

@@ -6,7 +6,7 @@
   - where the lead disagrees, with evidence;
   - the plan's §4 amendments (A1–A7), re-drafted under ACIS governance for the owner's ratification;
   - the R1 owner decisions, each with a recommendation.
-- **Status: PROPOSED.** Nothing here is applied. No spec, guardrail, equity floor or HALT/veto semantic has
+- **Status: RATIFIED 2026-09-25 and APPLIED.** The owner said *"i ratify all your recommendations for R1-D1 to D14"*. A1–A7 are applied as master v2.21, ACIS-03 v2.0, ACIS-04 v1.3 and ACIS-09 v1.7. One deliberate difference: the NVMA veto keeps its confidence < 0.55 trigger, which the plan's A7 list omitted; dropping it is a veto change the owner was never asked about. The constitution's two audits run on the applied text. *(At drafting time: PROPOSED; nothing here was applied.)* No spec, guardrail, equity floor or HALT/veto semantic has
   changed. The plan is finder evidence (A5): it clears nothing, and the lead minted its ledger IDs
   (GAP-P12D-89..102).
 - **Direction already ratified:** R-1, 2026-09-25 (owner: *"I ratify it"*; relayed from

@@ -1,7 +1,7 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **STATUS (2026-09-25): SPEC COMPLETE (master v2.20). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). 1002 passed, 6 skipped; ledger 238 entries. The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
-> `ACIS_SPEC.md` v2.20 is the build authority. All master-spec guardrail decisions are human-ratified.
+> **STATUS (2026-09-25): SPEC COMPLETE (master v2.21). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). 1002 passed, 6 skipped; ledger 238 entries. The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
+> `ACIS_SPEC.md` v2.21 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
@@ -36,7 +36,7 @@ The specifics need explicit OLD/NEW amendments for: the 2-year window, the DSR �
   - [[GAP-P12D-101]] the minimum lot vs account size (the lead's);
   - [[GAP-P12D-102]] D1's power against its own bar (the lead's).
 - [x] 2026-09-25 **R1-D9 RULED by the owner** (the swap regime; asked twice): **decide at the first real-data look.** No emails wait on it. The cost model carries both worlds (FTMO's published swaps, and swap-free). E8 One/Pro Forex swap-free is confirmed on E8's own page; FTMO swap-free is unconfirmed. See [[GAP-P12D-94]].
-- [ ] **OWNER: rule on the R1 decisions** (the table in R1_LEAD_REVIEW §4, each with a recommendation):
+- [x] 2026-09-25 **OWNER RULED: "i ratify all your recommendations for R1-D1 to D14".** Every recommendation in the table in R1_LEAD_REVIEW §4 is ratified, the owner-only A4 re-baseline, A6 and A7 included. APPLIED the same day as master v2.21, ACIS-03 v2.0, ACIS-04 v1.3 and ACIS-09 v1.7, with OOS_VALIDATION.md, the BASELINE.md re-baseline entry (cut at R1.7), and the wording of CLAUDE.md rule 5. The ruling covered:
   - R1-D1 (A1, the expanding window);
   - R1-D2 (A2, the register-aware verdict, with a fixed-sequence order: [[GAP-P12D-102]]);
   - R1-D3 (A3, the trend family);
@@ -49,6 +49,7 @@ The specifics need explicit OLD/NEW amendments for: the 2-year window, the DSR �
   - **R1-D14, NEW: account size and vol target against the minimum lot** ([[GAP-P12D-101]]), decided WITH D9 at the first real-data look.
 
   The R1-D* numbers do not collide with the local D1–D9 below. R1-D2 supersedes local D1 (C+D) for fixed families; R1-D1 is local D4; R1-D3/D4/D8 carry local D5.
+- [ ] **OWNER, OPTIONAL: the NVMA confidence veto.** The plan's A7 list of NVMA safety-veto triggers omits `confidence < 0.55`. The lead KEPT it: dropping a veto trigger is a veto-semantics change the owner was never asked about. Rule on it only if you want it dropped.
 - [ ] **ASKED 2026-09-25, and the owner answered: "After you rule".** The dual audit (A3's two lenses) of the R1 spec amendments runs AFTER the owner rules on R1-D1..D14, on the final applied text. At that point the session ASKS again for the launch itself. Nothing launches before that.
 - [ ] **The R1 build order** (PLAN_R1 §2), once the rulings land:
   - R1.0 preconditions (merge 3 DONE);
@@ -242,11 +243,11 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   The gate CHOICE itself (option C versus A/B1/B2) is NOT ratified; the ratified DSR gate stays untouched.
 
 **OWNER DECISIONS OWED, in recommended order.** Nothing below is applied until the owner rules.
-- [ ] **D1. Validation protocol** ([[GAP-P12D-33]]): options A/B1/B2/C/D. The recommendation is **C+D**. D (the oracle control, a leakage suite, a look register) needs no ratification and can start at once.
+- [x] 2026-09-25 (superseded for fixed families by R1-D2, RATIFIED; C+D stays for explored families) **D1. Validation protocol** ([[GAP-P12D-33]]): options A/B1/B2/C/D. The recommendation is **C+D**. D (the oracle control, a leakage suite, a look register) needs no ratification and can start at once.
 - [ ] **D2. The prop objective** ([[GAP-P12D-62]]): "PropEV" with a zero-edge control, beside or instead of §14's Sharpe, positive-months and win-rate rows for prop accounts.
 - [ ] **D3. The LLM-contamination rule** ([[GAP-P12D-66]]): LLM-originated hypotheses certify only on post-cutoff data, i.e. the demo.
-- [ ] **D4. Walk-forward train window** ([[GAP-P12D-67]]): an expanding window instead of the ratified 2-year rolling one.
-- [ ] **D5. The redesign package** ([[GAP-P12D-68]]): the position policy (critical, also a Track A blocker), module set v2, NVMA as a safety veto only, retiring per-regime QIEA, declaring index CFDs and energies, RSIM, the registry, the cost gate, the demo scope, and TSMOM's account fit.
+- [x] 2026-09-25 (RATIFIED as R1-D1, master v2.21 / ACIS-09 v1.7) **D4. Walk-forward train window** ([[GAP-P12D-67]]): an expanding window instead of the ratified 2-year rolling one.
+- [x] 2026-09-25 (RATIFIED in direction by R-1 and in specifics by R1-D1..D14; the build is R1.0–R1.7) **D5. The redesign package** ([[GAP-P12D-68]]): the position policy (critical, also a Track A blocker), module set v2, NVMA as a safety veto only, retiring per-regime QIEA, declaring index CFDs and energies, RSIM, the registry, the cost gate, the demo scope, and TSMOM's account fit.
 - [ ] **D6. Guardrail-adjacent fixes; human-only, each RAISED:**
   - [[GAP-P12D-55]] restart persistence (critical);
   - [[GAP-P12D-56]] the equity floor per account;

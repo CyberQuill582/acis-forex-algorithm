@@ -63,3 +63,10 @@ is the enforcement.
 ### Re-baseline log (append-only)
 - `baseline-untrained-v1` — 2026-07-21 — initial freeze at phases 1–11 ✅
   (master spec v2.12, 11-gene search space). The pristine pre-live baseline.
+- **Re-baseline APPROVED, not yet cut — 2026-09-25 (owner, R1-D4: "i ratify all your recommendations for
+  R1-D1 to D14"; master v2.21 §5, ACIS-03 v2.0).** QIEA's per-regime gene search is replaced by pooled, fixed
+  rule parameters.
+  - **At R1.7**, when the QIEA code is retired by `git mv`, the manifest and the drift-guard test are
+    re-pointed, the new tag `baseline-untrained-v2` is cut, and the new tag is recorded here.
+  - **Until then:** the v1 manifest and its test stay exactly as they are, and `baseline-untrained-v1` is
+    never moved.
