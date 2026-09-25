@@ -12,10 +12,11 @@ Invariants:
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from core.data.sqlite_wal import open_store
 
 if TYPE_CHECKING:
     from core.execution.venue import FillReport
@@ -35,7 +36,7 @@ class FillReportStore:
     CREATE INDEX IF NOT EXISTS ix_fill_order ON fill_report (order_id);"""
 
     def __init__(self, db_path: str | Path) -> None:
-        self._conn = sqlite3.connect(str(db_path))
+        self._conn = open_store(db_path)     # WAL + synchronous=FULL: power-loss durable (X4)
         self._conn.executescript(self._DDL)
         self._conn.commit()
 

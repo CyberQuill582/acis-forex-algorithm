@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from core.data.errors import DataQualityError
+from core.data.sqlite_wal import open_store
 from core.risk.risk_types import RiskSnapshot
 
 _ANCHOR = "anchor:"
@@ -73,7 +74,7 @@ class RiskStore:
     """
 
     def __init__(self, db_path: str | Path) -> None:
-        self._conn = sqlite3.connect(str(db_path))
+        self._conn = open_store(db_path)     # WAL + synchronous=FULL: power-loss durable (X4)
         self._conn.executescript(self._DDL)
         self._conn.commit()
 
