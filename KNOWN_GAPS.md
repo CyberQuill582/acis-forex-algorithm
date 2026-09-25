@@ -154,7 +154,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-84: PRE-EXISTING ON MAIN — the graded backtest book fills a gapped-through stop AT THE STOP, not at the gap price, so every graded result flatters gap losses
 - Severity: high · Likelihood: high
-- Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X1) in the BUILDER-2 branch audit. The lead VERIFIED it on main: tests/backtest/book.py `maybe_close` runs `if price <= pos.stop_loss: return self.close_at(pos, pos.stop_loss, …)`, so the fill is the stop level however far the tick has gapped past it. The auditor's reproduction: a gap to 1.0950 against a 1.0990 stop books −100 instead of −500 per 100k)
+- Status: fixed (2026-09-25 — fixed by the lead in the main session, as the first change after the BUILDER merge. `PositionModel.maybe_close` now fills a triggered stop at `min(price, stop)` for longs and `max(price, stop)` for shorts: the first price equal to or worse than the stop, as OANDA v20 and backtrader do. Targets keep their level, which is conservative on gaps. Falsified per A16: reverting either side turns exactly its test red, and the restore is byte-identical. The full suite gives 856 passed. Originally found by AUDIT-EXTERNAL (X1) of the BUILDER-2 branch, and verified by the lead)
 - Area: tests/backtest/book.py `maybe_close` (the graded tick book behind every §14 grade, the falsification runs and the cost ladder); master §8.5's gap law (ACIS_SPEC.md "gap" / black-swan preparedness)
 - Description:
   - **The mismatch with real venues.** Real venues fill a triggered stop at the first price equal to or worse than the trigger. OANDA's v20 docs: "filled … by the first price that is equal to or worse than the threshold"; backtrader fills gapped stops at the open.
@@ -162,6 +162,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **The selection side is now stricter than grading.** BUILDER-2's T6 made the selection-side fitness simulator fill gaps at the open.
   - **An earlier test covered a different path.** The phase-9 "weekend gap through stop books loss at gap price" test exercises the Risk Monitor, not this graded book.
 - Justification: open. The fix is a TIGHTENING one-liner that fills at `min(price, stop)` for longs and `max(price, stop)` for shorts, pinned by hand-worked tests for a gap through the stop, falsified. It is DEFERRED until after the BUILDER branch merges, because that branch also edits tests/backtest/book.py and a fix on main now would conflict. It is the first change applied after the merges. Until then, any graded number is optimistic on gaps. The ladder's verdict (the engine loses, [[GAP-P12D-49]]) only gets worse, so no conclusion flips.
+- Proof: `test_a_long_stop_gapped_through_books_the_gap_price_not_the_stop`, `test_a_short_stop_gapped_through_books_the_gap_price_not_the_stop`, `test_a_stop_touched_exactly_still_fills_at_the_stop`.
+- Residual: GAP-P12D-83 — the selection-side twins: T6's fitness-simulator gap exits (on the unmerged BUILDER-2 branch, which also pays the closing spread at an open fill) and X3 (a bar that opens beyond the target and then touches the stop).
 - Linked: [[GAP-P12D-83]], [[GAP-P12D-65]], [[GAP-P12D-49]], [[GAP-0001]]
 
 ## GAP-P12D-82: four latent look-ahead or artifact paths in the research instrument, found by the structural leakage suite (pre-existing on main)

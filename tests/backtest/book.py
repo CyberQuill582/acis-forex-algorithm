@@ -118,15 +118,19 @@ class PositionModel:
             entry_spread=st.spread)
 
     def maybe_close(self, pos: OpenPos, st: MarketState, book: BookState) -> ClosedTrade | None:
+        # GAP-P12D-84: a triggered stop fills at the first price equal to or WORSE than it (a
+        # gap past the stop books the gap); a target keeps its level (conservative on gaps).
         price = st.mid
         if pos.direction == 1:
             if price <= pos.stop_loss:
-                return self.close_at(pos, pos.stop_loss, st.timestamp, "stop", book, st.spread)
+                return self.close_at(pos, min(price, pos.stop_loss), st.timestamp, "stop", book,
+                                     st.spread)
             if pos.take_profit is not None and price >= pos.take_profit:
                 return self.close_at(pos, pos.take_profit, st.timestamp, "target", book, st.spread)
         else:
             if price >= pos.stop_loss:
-                return self.close_at(pos, pos.stop_loss, st.timestamp, "stop", book, st.spread)
+                return self.close_at(pos, max(price, pos.stop_loss), st.timestamp, "stop", book,
+                                     st.spread)
             if pos.take_profit is not None and price <= pos.take_profit:
                 return self.close_at(pos, pos.take_profit, st.timestamp, "target", book, st.spread)
         if (st.timestamp - pos.entry_ts).total_seconds() >= self.max_hold_s:
