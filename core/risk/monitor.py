@@ -206,11 +206,10 @@ class RiskMonitor:
             platform_drawdown=tuple(s for s in outcome.platform_drawdown
                                     if s.rule_key != "engine:daily"),
             taper_factor=outcome.taper_factor, session_id=self._session_id)
-        if self._store is not None:        # restrictive state persisted every evaluate
-            self._store.write_snapshot(snap)
-            self._store.save_restrictive_state(               # (GAP-0050 / GAP-P12D-55)
-                alpha_armed=self._alpha.armed, taper_factor=outcome.taper_factor,
-                anchors=self._guards.series.export())
+        if self._store is not None:        # after the guard acted; never gates it (audit F0)
+            self._store.persist_evaluate(                     # (GAP-0050 / GAP-P12D-55)
+                snap, alpha_armed=self._alpha.armed, taper_factor=outcome.taper_factor,
+                anchors=self._guards.series.export(), log=self._log)
         return snap
 
     # -- quote→USD conversion (GAP-P9E-04 / rescoped GAP-0092) ---------------- #

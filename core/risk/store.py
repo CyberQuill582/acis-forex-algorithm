@@ -102,6 +102,18 @@ class RiskStore:
         self._conn.commit()
         return cur.rowcount
 
+    def persist_evaluate(self, snap: RiskSnapshot, *, alpha_armed: bool, taper_factor: float,
+                         anchors: dict[str, dict], log) -> None:
+        """Bookkeeping AFTER the guard has acted (audit F0/X2): a failure is raised as a
+        RISK_STORE_WRITE_FAILED alarm, never into the guard's path, and the next evaluate
+        writes the whole state again."""
+        try:
+            self.write_snapshot(snap)
+            self.save_restrictive_state(alpha_armed=alpha_armed, taper_factor=taper_factor,
+                                        anchors=anchors)
+        except (sqlite3.Error, OSError) as exc:
+            log.event("RISK_STORE_WRITE_FAILED", error=str(exc))
+
     def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float,
                                anchors: dict[str, dict] | None = None) -> None:
         rows = [("alpha_armed", json.dumps(alpha_armed)),

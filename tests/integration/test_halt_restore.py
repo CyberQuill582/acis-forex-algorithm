@@ -26,10 +26,13 @@ NOON = datetime(2026, 7, 6, 12, 0, tzinfo=timezone.utc)   # = 08:00 EDT, the nex
 
 
 def _process(tmp_path, store, clock=T0):
+    from tests.optimizer_fixtures import CapturingLogger
     gov, glog = mk_governor()
     orch = _mk_exec(tmp_path)
-    sink = PersistentHaltSink(GovernorHaltSink(gov, orch, PaperBook()), store, lambda: clock)
-    mon, _, _, rlog = build_monitor(load_cfg(), sink, store=store)
+    rlog = CapturingLogger()
+    sink = PersistentHaltSink(GovernorHaltSink(gov, orch, PaperBook()), store, lambda: clock,
+                              rlog)
+    mon, _, _, _ = build_monitor(load_cfg(), sink, store=store, logger=rlog)
     return gov, glog, orch, mon, rlog, sink
 
 

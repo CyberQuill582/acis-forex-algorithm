@@ -99,14 +99,14 @@ class Guardrails:
                         ignored=sorted(set(anchors) - set(restored)))
         for kind, scope, reason, at in halts:    # latches set: the first check coalesces
             if kind == "session":
-                self._session_halted = True
                 self._sink.apply_session_halt(at, reason)     # lifts at ITS boundary
+                self._session_halted = True
             elif kind == "flatten":
-                self._flattened_scopes.add(scope)
                 self._sink.flatten(scope, reason)
+                self._flattened_scopes.add(scope)
             else:
-                self._halted_scopes.add(scope)
                 self._sink.apply_halt(scope, reason)
+                self._halted_scopes.add(scope)
             if scope not in ("all", "session"):
                 self._instruments_halted.add(scope)
             self._equity_flattened |= reason == "equity_floor"
@@ -131,11 +131,14 @@ class Guardrails:
             return True
         return scope in self._halted_scopes
 
+    # Audit F0/X2: every latch is set only AFTER the edge call returned, so an edge that
+    # failed is re-issued on the next check instead of being latched as done.
+
     def _issue_halt(self, scope: str, reason: str) -> None:
         if self._covered(scope):
             return
-        self._halted_scopes.add(scope)
         self._sink.apply_halt(scope, reason)
+        self._halted_scopes.add(scope)
         if scope not in ("all", "session"):
             self._instruments_halted.add(scope)
 
@@ -143,35 +146,36 @@ class Guardrails:
         if "all" in self._flattened_scopes or "all" in self._halted_scopes \
                 or self._session_halted:
             return
-        self._session_halted = True
         self._sink.apply_session_halt(now, reason)
+        self._session_halted = True
 
     def _issue_flatten(self, scope: str, reason: str) -> None:
         if scope in self._flattened_scopes or "all" in self._flattened_scopes:
             return
-        self._flattened_scopes.add(scope)
         self._sink.flatten(scope, reason)
+        self._flattened_scopes.add(scope)
         if scope != "all":
             self._instruments_halted.add(scope)
 
     # -- the evaluation ------------------------------------------------------ #
 
     def check(self, ctx: GuardrailContext) -> GuardrailOutcome:
+        self._sink.flush()         # re-record any halt the ledger could not write (audit F0)
         equity_breached = ctx.equity < Decimal(str(self._limits.equity_floor_usd))
 
         # 1. Equity breaker — highest, unthrottleable, human-only resume. Spec
         #    §7: flatten THEN global HALT (both are distinct wiring actions —
         #    flatten closes via execution, HALT blocks new entries). One-shot
-        #    (idempotent via `_equity_flattened`); both mark the scope covered so
-        #    every later halt/flatten coalesces under them.
+        #    (idempotent via `_equity_flattened`, set once BOTH edge calls returned);
+        #    both mark the scope covered so every later halt/flatten coalesces under them.
         if equity_breached and not self._equity_flattened:
-            self._equity_flattened = True
             self._log.event("EQUITY_FLOOR_BREACH", equity=str(ctx.equity),
                             floor=self._limits.equity_floor_usd)
             self._sink.flatten("all", "equity_floor")
             self._sink.apply_halt("all", "equity_floor")
             self._flattened_scopes.add("all")
             self._halted_scopes.add("all")
+            self._equity_flattened = True
 
         # 2. Platform + engine drawdown series, each under its own semantics.
         states = self._series.measure(
