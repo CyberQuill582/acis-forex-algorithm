@@ -72,7 +72,13 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - [[GAP-P12D-75]]: a restart silently clears every explicit HALT. Critical.
   - The governance gate was RED on main from comment shape; that is FIXED by the lead (comment-only, proven code-identical by AST).
 - [ ] **DELEGATED:** BUILDER-3 fixes [[GAP-P12D-75]] (restore halts at boot) and [[GAP-P12D-74]] (reduce-only close semantics) on its branch.
-- [ ] Then the constitution's TWO audits of the BUILDER-3 branch, then a merge on the owner's go.
+- [x] 2026-09-25: BUILDER-3 finished stages 6 (halts restored at boot, [[GAP-P12D-75]]), 7 (reduce-only closes, [[GAP-P12D-74]]) and 5 (weekend flatten). Head `d8361a7`, 11 commits, 35 files; no guard, spec or ledger file touched. Author's count: 856 passed, 6 skipped.
+- [ ] **The constitution's TWO audits of the BUILDER-3 branch are RUNNING** (launched 2026-09-25; pinned brief `AUDIT_BRIEF_BUILDER3_2026-09-25.md`):
+  - AUDIT-INTERNAL `a253f98af675aef1f`: its top priority is finding any input where the branch is LOOSER than main;
+  - AUDIT-EXTERNAL `a137391bac5f1cb52`: FTMO/E8 rules, reduce-only semantics in real venue APIs, crash-safe persistence.
+
+  Reports: AUDIT_BUILDER3_BRANCH_{INTERNAL,EXTERNAL}_2026-09-25.md in archive/. Then triage, then merge on the owner's go.
+- [ ] **Not wired yet:** production must route halts and MCP controls through the new halt-recording layer, call the resume-clear, and call the weekend flatten each tick. All three wait on the three-loop runtime ([[GAP-0091b]]).
 
 **ACIS-13 DRAFTED (2026-09-25, SPEC-AUTHOR): `specs/ACIS-13-VENUE_ADAPTERS.md` v0.1, a DRAFT, NOT LOCKED.**
 - **What it covers.** The cTrader Open API adapter comes first. It has an 11-step attach protocol with re-attach when an account churns, and 16 invariants (C-VEN-1..16). There are 42 quoted facts in Appendix A and 18 open questions in Appendix B.
