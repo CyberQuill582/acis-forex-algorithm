@@ -14,7 +14,7 @@
 - The spec is at master **v2.22**, with ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-08 v1.3, ACIS-09 v1.8 and ACIS-11 v1.2.
 - **Nothing is running.** No agents, no worktrees, no background jobs.
 - The branches `worktree-agent-a128ab904780ce593`, `-a8937e82f9a7a5391` and `-a9e00713d15bb5082` are all merged. They are kept, and safe to delete.
-- **GitHub:** see the push note at the end of this block.
+- **GitHub:** `main` was pushed to origin on 2026-09-25 with the owner's go (`43f881a..e447207`, plus this note). It is in sync, so the laptop is not the only copy of the code. The tick data is still single-copy (GAP-P12D-50).
 
 **What happened on 2026-09-25** (details further down in this file and in the ledger):
 1. **Merges 1–3.** The BUILDER, BUILDER-3 and BUILDER-2 branches (the leakage suite and the look register) were merged, each on the owner's go.
