@@ -1,9 +1,9 @@
 diff --git a/BUILDER3_REPORT_2026-09-24.md b/BUILDER3_REPORT_2026-09-24.md
 new file mode 100644
-index 0000000..bc24820
+index 0000000..622f10a
 --- /dev/null
 +++ b/BUILDER3_REPORT_2026-09-24.md
-@@ -0,0 +1,549 @@
+@@ -0,0 +1,705 @@
 +# BUILDER-3 report — prop-account tightening batch (2026-09-24/25)
 +
 +**Status: BUILT — PENDING AUDIT.** A builder is a finder, not a clearer. Nothing here is ✅ until the two audits
@@ -32,8 +32,14 @@ index 0000000..bc24820
 +| 2. Venue lot step, minimum lot, request cap | GAP-P12D-57 | `3c2aee9` | 14 | 4 of 4 | 828 passed, 6 skipped |
 +| 3. Pre-close entry ban on every account | GAP-P12D-58 | `57fc40f` | 2 (+1 inverted) | 1 of 1 | 830 passed, 6 skipped |
 +| 4. Daily-reset rules and a declared initial capital | GAP-P12D-54 / -59 | `713a84e` | 11 | 5 of 5 | 841 passed, 6 skipped |
-+| 2b. The budget exemption checks the venue position | GAP-P12D-57 (+ F1 below) | `272e2f6` | 1 | 1 of 1 | **842 passed, 6 skipped** (final) |
-+| 5. Weekend flatten | master §9.5 | not built: **design only**, see §5 | — | — | — |
++| 2b. The budget exemption checks the venue position | GAP-P12D-57 (+ F1 below) | `272e2f6` | 1 | 1 of 1 | 842 passed, 6 skipped |
++| 6. Explicit HALTs survive a restart | lead's P12D-75 (F2 below) | `34d3f77` | 5 | 5 of 5 | 847 passed, 6 skipped |
++| 7. Reduce-only closes trade the opposite side | lead's P12D-74 (F1 below) | `16150bb` | 4 (+1 made stricter) | 4 of 4 | 850 passed, 6 skipped |
++| 5. Weekend flatten, built after stage 7 fixed the close path | master §9.5 | `f23e73d` | 6 | 5 of 5 | **856 passed, 6 skipped** (final) |
++
++The lead's new ledger IDs are written without the `GAP-` prefix in this report and in the code: this branch's
++`KNOWN_GAPS.md` predates them, and `scripts/ledger_check.py` fails on an ID the branch's ledger does not define. The
++code cites the spec section instead (ACIS-07 §7; the close convention in `venue_limits.py`).
 +
 +**How each revert was run:** each A16 revert used a scratch helper. It applied one text mutation that undoes one
 +fix, ran the named tests, restored the file from its original bytes, and compared sha256 before and after. The
@@ -108,9 +114,7 @@ index 0000000..bc24820
 +- **R1-2: the downtime bracket is conservative, not exact.** It is never below either known sample, but the true
 +  value at the rollover is unknowable without the broker's balance history (GAP-P12D-55's other candidate fix). The
 +  ACIS-13 adapter can make it exact.
-+- **R1-3 (new, F2 below): active halts are not re-applied at boot.** Restored anchors make every *measured* breach
-+  fire again on the first evaluate, which the test proves. An explicit MCP/agent HALT and a latched session halt are
-+  written to `halt_event` but never read back. ACIS-07 §7 lists "active halts" as restrictive state to restore.
++- **R1-3 (F2 below): active halts were not re-applied at boot. Addressed by stage 6.**
 +- **R1-4: the per-evaluate write cost is unmeasured.** It is one small transaction per evaluate (10 s cadence). The
 +  backtest replay does not construct a `RiskStore`, so it pays nothing.
 +
@@ -411,45 +415,174 @@ index 0000000..bc24820
 +
 +---
 +
-+## §5 — Weekend flatten (master §9.5): DESIGN ONLY, deliberately not built
++## Stage 6: explicit HALTs survive a restart (lead's P12D-75, from F2)
 +
-+**Why not built.** The brief allows the design instead when the loop-owner seam is not ready, and it is not:
-+- no production loop owner exists yet (the three-loop runtime is GAP-0091b / GAP-0075);
-+- the flatten wiring (`HaltSink.flatten`) exists only test-side;
-+- the existing Governor close path is **defective** (F1 below).
++### What changed
 +
-+A weekend flatten built on that path would, today, double the positions it means to close.
++Nothing wrote or read `halt_event` before: `RiskStore.record_halt` had no caller. ACIS-07 §7 lists "active halts"
++among the restrictive state a restart must restore before the first evaluate.
 +
-+### The design, precise enough to build once F1 is settled
++**Write path** (`core/risk/halt_ledger.py`). `PersistentHaltSink` wraps the single upward edge. Every `apply_halt`,
++`apply_session_halt` and `flatten` is written to `halt_event` BEFORE it is forwarded, so a crash between the two can
++only leave a recorded halt not yet applied, never the reverse. The DDL is unchanged: the kind rides in the opaque
++`halt_id` as `<kind>|ts|scope|reason`, and the reason is part of the id so two halts at one instant never collide.
 +
-+1. **Owner.** The Governor. §9.5 files weekend-holding bans among the downward, config-driven Governor overrides,
-+   not the Risk Monitor's upward flatten edge.
-+2. **Trigger.** Add a pure `weekend_flatten_due(now, week_close, week_open, lead_s) -> bool` in
-+   `core/governor/calendar_gates.py`. It is true from `close − lead_s` through the closed window until the Sunday
-+   open, in local `{zone, at}` terms.
-+3. **Lead time.** Add a new required key `governor.weekend_flatten_lead_s` (suggested 1,800 s). The schema enforces
-+   `0 < weekend_flatten_lead_s <= weekend_entry_buffer_s`, so no entry can open after the flatten starts.
-+4. **Orders.** Add `CapitalGovernor.weekend_flatten(portfolio, now) -> tuple[SizedOrder, ...]`. It emits orders only
-+   when `not rules.weekend_holding_allowed` and the flatten is due:
-+   - one `action="close"` order per open position, carrying the full position size;
-+   - both legs of a pair group, never one;
-+   - `reason="weekend_flatten"`, logged as `WEEKEND_FLATTEN{instrument, units}`;
-+   - emitted on every tick while positions remain, so a rejected close is retried. Retries are bounded by the stage-2
-+     request budget, which never blocks a verified close.
-+   `capital_governor.py` is at its cap (447), so the logic belongs in `calendar_gates.py` or a new module, with a
-+   thin method.
-+5. **Surfaced if impossible (§9.5).** If a position is still open 60 s before the close, or at the close, log
-+   `WEEKEND_FLATTEN_INCOMPLETE{instruments}` and surface it on `acis://status` for the human. It changes no HALT
-+   semantics.
-+6. **Loop owner.** On each fast-loop tick, submit `governor.weekend_flatten(portfolio, now)` through
-+   `ExecutionOrchestrator.submit`. Closes pass the execution freeze and the request budget.
-+7. **Tests.** A no-weekend account with a position:
-+   - at `close − lead − 1 s`: no orders;
-+   - at `close − lead`: a close for each position;
-+   - at the close with the position unfilled: INCOMPLETE is logged.
-+   Also: a weekend-allowed account gets none; a pair group closes both legs; EDT and EST; a seam test that the
-+   positions are **flat** at the venue after execution (this is what F1 breaks today).
-+8. **Spec.** Master §9.5 already mandates the flatten. ACIS-05 §7 needs a step (draft below).
++**Boot** (`restore_on_boot` → `Guardrails.restore_state`). Every uncleared row is re-applied through the same edge,
++same scope and reason, before the first evaluate, and the coalescing latches are set so the first check does not
++re-issue. Two kinds need care:
++- **A session halt** is re-applied with its ORIGINAL instant, so it lifts at the boundary it would have.
++- **A flatten** is re-applied, so positions are closed again if the dead process had not finished.
++
++Re-applying writes nothing new.
++
++**Clear path** (`RiskMonitor.on_human_resume(human_token, now)`). Only this clears rows. It refuses a blank token
++and signs `cleared_by` with a sha256 fingerprint of the token, never the token itself. The sink has no clearing
++verb: an agent that can reach it can halt, never unhalt.
++
++### Tests (`tests/integration/test_halt_restore.py`, real Governor behind the test-side edge)
++
++- `test_equity_floor_halt_survives_a_restart_until_a_human_resumes`:
++  - a fresh Governor is sized; after `restore_on_boot` it is halted and the orchestrator is frozen;
++  - recovered equity does not lift the halt;
++  - a blank token is refused;
++  - a human resume clears it exactly as today;
++  - a restart after the resume restores nothing.
++- `test_an_agent_halt_is_reapplied_with_its_own_scope_and_reason`.
++- `test_a_session_halt_lifts_at_its_own_boundary_after_a_restart`.
++- `test_restoring_writes_nothing_twice_and_keeps_distinct_reasons`.
++- `test_the_ledger_is_signed_by_a_token_fingerprint_never_the_token`.
++
++### Falsification (A16)
++
++| Revert | Result |
++|---|---|
++| boot restores no halts | 3 failed |
++| the sink persists nothing | 5 failed |
++| a human resume does not clear the ledger | 2 failed |
++| a session halt is restored as a plain halt | 1 failed |
++| restore writes every halt again | at first **survived**: the test's clock was constant, so a re-written row had an identical id. The test now restarts at later clocks, as real restarts do, and the revert fails 1 |
++
++### Residuals
++
++- **R6-1: the production wiring is not built.** The runtime must wrap its edge adapter in `PersistentHaltSink`,
++  route the MCP control target's `apply_halt`/`flatten` through it, and call `on_human_resume(token, now)` on the
++  human resume path next to `Governor.resume`. Owner: GAP-0091b.
++- **R6-2: one resume clears every row.** This mirrors `Governor.resume`, which clears every scope. ACIS-07 §7's
++  "a resume clears exactly the scope it names" is not what the Governor does today; that is pre-existing and unchanged.
++- **R6-3: `on_human_resume` gained required parameters.** Its only caller is a test.
++
++**No guard loosened.** Every restored halt is the dead process's own; clearing needs a human token.
++
++---
++
++## Stage 7: reduce-only closes trade the opposite side (lead's P12D-74, from F1)
++
++**The convention** (the lead's delegated decision under the owner's delegation):
++- a `SizedOrder` with `action="close"` NAMES the position to close; its `direction` is the position's side, exactly
++  as the Governor emits it today;
++- the orchestrator trades the OPPOSITE side, and fills and refusals carry that traded side;
++- at every dispatch attempt, at the venue the attempt goes to, a close is checked against that venue's holding on the
++  side it names:
++  - it is capped at the holding (`EXEC_CLOSE_CAPPED`; the rest is a REJECTED report);
++  - it is REFUSED when the venue is flat or holds the other side (`EXEC_CLOSE_REFUSED`).
++
++A close can shrink |position|; it can never open, add to, or flip one. So the execution freeze admits only
++reduce-only closes, and the spent-budget exemption needs no extra read (stage 2b's `_shrinks` is gone). Venue
++capability filtering moved to `venue_limits.capable_venues`; the orchestrator is at 300 lines.
++
++**Stricter, stated:** `test_frozen_blocks_opens_allows_closes` asserted that a "close" into a flat venue FILLED,
++which meant a flatten could OPEN a position. That close is now REJECTED. The test also proves that a real close
++under the freeze trades the other side and leaves the venue flat.
++
++### Tests
++
++- **Seam:** `test_governor_pair_exit_leaves_the_venue_flat` (real Governor and orchestrator; the pair exit that used
++  to double both legs now flattens them).
++- **Conformance, every adapter:**
++  - `test_a_close_into_a_flat_venue_is_refused`;
++  - `test_a_close_naming_the_other_side_is_refused_not_added`;
++  - `test_a_close_larger_than_the_position_is_capped_never_flips`;
++  - `test_spent_request_budget_refuses_opens_but_never_a_close`, updated to the convention.
++
++### Falsification (A16)
++
++| Revert | Result |
++|---|---|
++| a close is sent verbatim | 4 failed, incl. the seam test and the freeze test |
++| no reduce-only check | 4 failed |
++| no cap at the holding | 1 failed |
++| `reducible` ignores the named side | 1 failed |
++
++### Residuals
++
++- **R7-1: one extra read per close attempt.** The reduce-only check calls `open_positions()` on each close attempt.
++  The watchdog's direct broker flatten does not pass through it (it has no core imports).
++- **R7-2: a hedging account must close by position ID.** A hedging account (cTrader can be one) holding both sides
++  sums the named side; closing by position ID there is the ACIS-13 adapter's job.
++- **R7-3: an unclosable remainder is reported, not closed.** A position that is not a whole number of lot steps
++  (opened outside ACIS) keeps its sub-step remainder, reported as REJECTED. A close-by-position-ID adapter can close
++  it fully (ACIS-13).
++
++**No guard loosened.** Every change refuses or shrinks a close; nothing adds exposure.
++
++---
++
++## Stage 5: the weekend flatten (master §9.5), built on stage 7's close path
++
++**Why it waited.** The first pass left this stage as a design. The Governor's close path doubled positions (F1), and
++a flatten built on it would have done the same. Stage 7 fixed that path, and this stage uses it.
++
++### What changed
++
++`CapitalGovernor.weekend_flatten(portfolio, now)` (logic in `core/governor/calendar_gates.py`):
++- **Who.** It acts only on an account that may not hold over the weekend; an account allowed to hold is never touched.
++- **When.** From the start of the pre-close entry ban until the Sunday open, through the closed window. The ban is
++  the existing `weekend_entry_buffer_s`, 2 h; no new config key.
++- **What.** Every open position gets an `action="close"` order naming it: its own side and size, with
++  `reason="weekend_flatten"`. Both legs of a pair are closed and the group is retired from the registry.
++- **Retries.** It is called every tick, so a close that fails is re-emitted. The stage-2 request budget never blocks
++  a reduce-only close.
++- **Surfaced.** A position still open once the market has closed is logged as `WEEKEND_FLATTEN_INCOMPLETE`, never
++  ignored.
++
++The exposure caps moved unchanged to `core/governor/exposure.py`, taking `capital_governor.py` from 447 to 437 (the
++ratchet is lowered).
++
++**A narrower design choice than first drafted.** The first design proposed a separate `weekend_flatten_lead_s` key.
++Reusing the entry ban's 2 h is leaner and stricter: positions close at the moment new entries stop, so no entry can
++open after the flatten starts. A shorter, separate lead remains an owner option.
++
++### Tests
++
++- **`tests/unit/test_weekend_flatten.py`:**
++  - it starts exactly at the ban, not a second earlier, in EDT and EST;
++  - a weekend-allowed account is never flattened;
++  - a position still open after the close is surfaced;
++  - both legs of a pair are closed and the group retired.
++- **Seam:** `test_weekend_flatten_leaves_the_venue_flat` (real Governor and orchestrator: the venue is FLAT an hour
++  before the close).
++
++### Falsification (A16)
++
++| Revert | Result |
++|---|---|
++| it never flattens | 5 failed |
++| closes carry the traded side instead of the position's | 3 failed, incl. the seam test (stage 7 refuses them, so the venue stays open) |
++| the pair group stays registered | 1 failed |
++| an unclosed position is never surfaced | 1 failed |
++| the weekend-holding flag is ignored | 1 failed |
++
++### Residuals
++
++- **R5-1: nothing calls it yet.** The runtime's fast loop must call `governor.weekend_flatten(portfolio, now)` each
++  tick and submit the closes (GAP-0091b). `WEEKEND_FLATTEN_INCOMPLETE` still needs surfacing on `acis://status`
++  (ACIS-08).
++- **R5-2: only the Friday FX close is covered,** with the FX `week_close`/`week_open`. Per-instrument exchange
++  calendars (index CFDs, metals holidays) are not (same scope as R3-1).
++- **R5-3: FTMO Standard's "shortly before the markets close" is met with a 2 h lead,** which is stricter. It is the
++  same window as the entry ban.
++
++**No guard loosened.** It only closes positions, through reduce-only closes, on accounts that may not hold them.
 +
 +---
 +
@@ -457,7 +590,7 @@ index 0000000..bc24820
 +
 +Chat is not a record, and this builder may not edit `KNOWN_GAPS.md`.
 +
-+### F1 (new, HIGH): Governor close orders ADD to the position when executed
++### F1 (HIGH): Governor close orders ADDED to the position when executed. **Fixed by stage 7**
 +
 +The close-direction contract is unspecified between ACIS-05 and ACIS-06.
 +- `CapitalGovernor.check_group_exits` (GAP-0040) emits `action="close"` orders that carry each leg's **own**
@@ -486,9 +619,9 @@ index 0000000..bc24820
 +Mitigated here only where this batch had reach: the stage-2b budget exemption checks the venue position. The freeze
 +path was not changed (HALT-adjacent, human-owned).
 +
-+**Blocks:** the weekend flatten (§5 above) and any Governor-originated close.
++**Blocked** the weekend flatten and any Governor-originated close, until stages 7 and 5 were built.
 +
-+### F2 (new, MEDIUM): active halts are not restored at boot
++### F2 (MEDIUM): active halts were not restored at boot. **Fixed by stage 6**
 +
 +ACIS-07 §7 lists "active halts" among the restrictive state a restart must restore. Explicit HALTs are written to
 +`halt_event` by `RiskStore.record_halt`, but nothing reads them back. After this batch, every *measured* breach
@@ -503,11 +636,13 @@ index 0000000..bc24820
 +
 +### Ledger map for this batch's gaps
 +
-+- **GAP-P12D-55:** stage 1. Residuals R1-1 (GAP-0091b), R1-2 (ACIS-13), R1-3 (F2).
++- **GAP-P12D-55:** stage 1. Residuals R1-1 (GAP-0091b), R1-2 (ACIS-13). R1-3 was addressed by stage 6.
++- **The lead's P12D-75 (F2):** stage 6. Residuals R6-1 (GAP-0091b), R6-2, R6-3.
++- **The lead's P12D-74 (F1):** stage 7. Residuals R7-1, R7-2 and R7-3 (ACIS-13).
 +- **GAP-P12D-57:** stage 2 [impl] parts. The [spec] NAV-relative sizing stays open (GAP-P12D-61). Residuals R2-1,
 +  R2-2, R2-4, R2-5.
-+- **GAP-P12D-58:** stage 3 [impl] part. The [spec] rulebook field, the news blackout and the weekend flatten stay
-+  open (R3-1, §5).
++- **GAP-P12D-58:** stage 3 [impl] part, plus the weekend flatten (stage 5). The [spec] rulebook field and the news
++  blackout stay open (R3-1). Residuals R5-1 (GAP-0091b, ACIS-08) and R5-2.
 +- **GAP-P12D-54:** the schema half (stage 4). The config half is the owner's commit of the draft (R4-3).
 +- **GAP-P12D-59:** the per-account day boundary is expressible and enforced for platform daily rules (stage 4). The
 +  pre-breach flatten and the engine daily-halt semantics stay owner-owned (R4-1, R4-2).
@@ -531,7 +666,10 @@ index 0000000..bc24820
 +     holding allowed or not (GAP-P12D-58)"*.
 +   - §7.1: the guard becomes *"any account within `weekend_entry_buffer_s` of the weekend close, or inside the closed
 +     window → `(0,"weekend_ban")`"*.
-+   - Add step 9 (the weekend flatten, §5 above) once F1 is ruled on.
++   - Add step 9 (stage 5): *"On an account without weekend holding, from the start of the `weekend_entry_buffer_s`
++     window until the Sunday open, `weekend_flatten(portfolio, now)` emits an `action="close"` order naming every open
++     position (both legs of a pair; the group retired), every tick until flat. A position still open after the close
++     logs `WEEKEND_FLATTEN_INCOMPLETE` for the human."*
 +4. **ACIS-06:**
 +   - §5 config gains `max_venue_requests_per_day` (required; per venue; rolling 24 h; every submit attempt).
 +   - §7 gains: *"quantities are sent in whole venue lot steps, rounded down; a sub-step remainder and any quantity
@@ -539,7 +677,20 @@ index 0000000..bc24820
 +     and only a close that shrinks the venue position is exempt"*.
 +   - C-EXE-6 becomes *"total filled ≤ sized; equal to sized less the reported sub-step remainder on a full fill"*.
 +   - Master §7.5's "rejected loudly, never emulated silently" then reads as satisfied by the reported remainder.
-+5. **ACIS-06 §7 / ACIS-05 §4:** define the close-direction convention (F1).
++5. **The close convention (F1, built in stage 7).**
++   - **ACIS-05 §4:** *"`action="close"` names the position to close: `direction` is that position's side and
++     `size_units` the quantity to take off it. The Governor never emits the trade's side for a close."*
++   - **ACIS-06 §2 guard, §7 and §8:** *"A close is REDUCE-ONLY. Execution trades the side opposite to the order's
++     `direction`, and at each dispatch caps the quantity at the venue's holding on the named side, refusing it
++     (`REJECTED`) when the venue is flat or holds the other side. A close can shrink |position| but never open, add
++     to or flip one. The execution freeze admits only such closes."*
++   - **ACIS-06 §4:** a FillReport's `direction` is the side TRADED; for a close it is opposite to the order's.
++   - **ACIS-06 §13:** a new C-EXE-7 with that contract, proven at the seam by
++     `test_governor_pair_exit_leaves_the_venue_flat`.
++6. **ACIS-07 §7 (stage 6):** *"Every halt, session halt and flatten crossing the upward edge is persisted in
++   `halt_event` before it is forwarded, re-applied at boot through the same edge (same scope and reason; a session
++   halt with its original instant) before the first evaluate, and cleared only by a human resume, which signs it with
++   a token fingerprint."* §10: `halt_event.cleared_by` is `human:<fingerprint>`, never the token.
 +
 +## Governance notes
 +
@@ -549,10 +700,15 @@ index 0000000..bc24820
 +  stage (evidence above), not by `falsify.mjs`.
 +- **Module budget (a tightening of the ratchet):**
 +  - `guardrails.py` leaves the grandfather list;
-+  - caps are lowered: `monitor.py` 368, `venue.py` 342, `capital_governor.py` 447, `schemas.py` 581;
++  - caps are lowered: `monitor.py` 368, `venue.py` 342, `capital_governor.py` 437, `schemas.py` 581;
 +  - new modules, all under 300 lines and each opening with its invariants: `drawdown_series.py`,
-+    `usd_conversion.py`, `fill_store.py`, `venue_limits.py`, `config/rulebook.py`;
-+  - `orchestrator.py` is at 299, near the 300-line budget.
++    `usd_conversion.py`, `fill_store.py`, `venue_limits.py`, `config/rulebook.py`, `halt_ledger.py`,
++    `core/governor/exposure.py`;
++  - `orchestrator.py` is at exactly 300 lines, the budget itself; its next addition needs an extraction first;
++  - the code-shape baseline lost `monitor.py`'s last BLOCK and HISTORY entries (stage 6).
++- **Resumed after a power cut** (2026-09-25). The uncommitted stage-7 files were checked before continuing: each
++  compiled, each diff was read end to end and found complete, and the stage-7 falsification and full suite were
++  re-run before the commit.
 diff --git a/code-shape.baseline.json b/code-shape.baseline.json
 index 6e31b8a..20bbb54 100644
 --- a/code-shape.baseline.json
@@ -575,7 +731,7 @@ index 6e31b8a..20bbb54 100644
    "core/risk/store.py|BLOCK": 1,
    "core/signals/indicators.py|BLOCK": 1,
 diff --git a/config/calendars.py b/config/calendars.py
-index 02f5c17..a6851ec 100644
+index 02f5c17..7c081a9 100644
 --- a/config/calendars.py
 +++ b/config/calendars.py
 @@ -16,7 +16,8 @@ from typing import Literal
@@ -588,6 +744,38 @@ index 02f5c17..a6851ec 100644
  
  _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
  
+@@ -68,12 +69,15 @@ class Session(_Strict):
+ class FxCalendar(_Strict):
+     """A 24/5 over-the-counter market (spot FX, spot metals): open from the Sunday
+     `week_open` to the Friday `week_close`, tagged by the centre sessions, closed
+-    inside an optional `daily_break` (spot gold's daily hour — master §3.7)."""
++    inside an optional `daily_break` (spot gold's daily hour — master §3.7). A declared
++    holiday D is closed from the `week_close` time on the day before D to that time on D
++    (the firm's server day D; audit X5: FTMO closes FX all day on Dec 25 and Jan 1)."""
+     type: Literal["fx"]
+     sessions: dict[str, Session] = Field(min_length=1)
+     week_close: ZonedTime   # Friday, local
+     week_open: ZonedTime    # Sunday, local
+     daily_break: Session | None = None
++    holidays: list[date] = Field(default_factory=list)
+ 
+ 
+ class ExchangeCalendar(_Strict):
+diff --git a/config/instruments.yaml b/config/instruments.yaml
+index e7a4c37..c8b41d8 100644
+--- a/config/instruments.yaml
++++ b/config/instruments.yaml
+@@ -13,6 +13,10 @@ calendars:
+       new_york: {zone: America/New_York, open: "08:00", close: "17:00"}
+     week_close: {zone: America/New_York, at: "17:00"}   # Friday = the rollover
+     week_open: {zone: America/New_York, at: "17:00"}    # Sunday
++    # Audit X5: whole-day FX closures (interbank convention; FTMO's 2025 holiday table,
++    # "Forex & Exotics ... Closed" on Dec 25 and Jan 1). Each closes the trading day that
++    # ends at 17:00 New York on that date. RE-VERIFY against the firm's table each December.
++    holidays: ["2025-12-25", "2026-01-01", "2026-12-25", "2027-01-01"]
+   spot_metals:                   # GAP-P12D-11: OTC spot gold — 24/5 with a daily hour off
+     type: fx
+     sessions:
 diff --git a/config/rulebook.py b/config/rulebook.py
 new file mode 100644
 index 0000000..5888000
@@ -785,12 +973,152 @@ index 6c7bb23..bdf74db 100644
  }
  
  
+diff --git a/core/data/sqlite_wal.py b/core/data/sqlite_wal.py
+index 0e8cc1c..8e5872c 100644
+--- a/core/data/sqlite_wal.py
++++ b/core/data/sqlite_wal.py
+@@ -1,15 +1,16 @@
+-"""Open the engine's small SQLite stores in WAL journal mode (GAP-P12D-15).
++"""Open the engine's small SQLite stores in WAL journal mode (GAP-P12D-15), durably.
+ 
+ The fast loop reads the parameter library and the provenance store on every tick. Under
+ SQLite's default rollback journal each statement takes and releases a file lock; on the
+ Windows dev laptop that measured ~150-220 us per keyed SELECT. In WAL mode the same read
+ measured ~5-20 us, because readers use the shared-memory index instead of file locks.
+ 
+-Invariant: WAL changes only locking and journaling, not what a read returns. Every read
+-still goes to the database, so a promotion or a freeze committed through ANY connection is
+-visible on the very next call — no in-memory copy of store state can go stale. Commits
+-stay durable (the default synchronous=FULL is unchanged). WAL needs the -wal/-shm files on
+-a local filesystem shared by every process that opens the store (not a network share).
++Invariants: WAL changes only locking and journaling, not what a read returns — every read
++goes to the database, so no in-memory copy of store state can go stale. `synchronous` is
++set to FULL explicitly: SQLite documents FULL as durable across a POWER LOSS in WAL mode,
++while rollback mode needs EXTRA (audit X4). The risk store (halt ledger, anchors) and the
++fill log (the request-budget seed) open through here. WAL needs its -wal/-shm files on a
++local filesystem shared by every process that opens the store (not a network share).
+ """
+ 
+ from __future__ import annotations
+@@ -21,4 +22,5 @@ from pathlib import Path
+ def open_store(path: str | Path) -> sqlite3.Connection:
+     db = sqlite3.connect(str(path))
+     db.execute("PRAGMA journal_mode=WAL")
++    db.execute("PRAGMA synchronous=FULL")
+     return db
+diff --git a/core/execution/attach.py b/core/execution/attach.py
+new file mode 100644
+index 0000000..d7e4e46
+--- /dev/null
++++ b/core/execution/attach.py
+@@ -0,0 +1,44 @@
++"""The §7.5 attach protocol, the phase-8 contract half (ACIS-06 §7.5, GAP-0018). Moved out of
++core/execution/venue.py (legibility budget, GAP-P12M-01). Invariants:
++  * the descriptor's symbol map must cover the enabled universe (the §13 suffix problem
++    dies here, once);
++  * flat-or-decide: an account holding open positions at attach HALTS for a human
++    decision, never caught-and-continued by any agent path.
++"""
++
++from __future__ import annotations
++
++from core.data.errors import DataQualityError
++from core.execution.venue import BrokerPosition, ExecutionFace
++
++
++class AttachHalt(Exception):
++    """GAP-0018 flat-or-decide: the account holds open positions at attach —
++    a HUMAN must decide (flatten via platform, or manage manually until flat).
++    Never caught-and-continued by any agent path."""
++
++    def __init__(self, positions: tuple[BrokerPosition, ...]) -> None:
++        self.positions = positions
++        super().__init__(
++            f"attach halted: {len(positions)} open position(s) on the account — "
++            "human decision required (flatten first, or manage manually until flat)")
++
++
++async def verify_attach(face: ExecutionFace, enabled_symbols: set[str],
++                        logger) -> None:
++    """§7.5 attach protocol, the phase-8 contract half: (1) the capability
++    descriptor's symbol map must cover the enabled universe (the §13 suffix
++    problem dies here, once); (2) flat-or-decide (GAP-0018). Rulebook loading
++    is the §9.5 config layer's job and precedes this call; paper-always mode
++    start follows it."""
++    missing = enabled_symbols - set(face.descriptor.symbol_map)
++    if missing:
++        raise DataQualityError("symbol_map", sorted(missing),
++                               "descriptor must map every enabled instrument")
++    positions = await face.open_positions()
++    if positions:
++        logger.event("ATTACH_HALTED_OPEN_POSITIONS", venue=face.name,
++                     count=len(positions))
++        raise AttachHalt(positions)
++    logger.event("ATTACH_VERIFIED", venue=face.name,
++                 symbols=sorted(enabled_symbols))
+diff --git a/core/execution/boundary.py b/core/execution/boundary.py
+new file mode 100644
+index 0000000..2e48a8b
+--- /dev/null
++++ b/core/execution/boundary.py
+@@ -0,0 +1,51 @@
++"""The venue-boundary checks each dispatch attempt runs, as REJECTED reports (ACIS-06 §4,
++master §7.5). Moved out of orchestrator.py (legibility budget, GAP-P12M-01). Invariants:
++  * Quantity (GAP-P12D-57): `units` go out rounded DOWN to the venue's lot step, never
++    up; below the venue's minimum lot nothing goes out. What is not sent is reported.
++  * Reduce-only (the close convention): a close names its position's side and may trade
++    at most what THIS venue holds on that side — capped at it, refused without it. It is
++    the engine's second line; the venue's own atomic close is the first (`close_position`).
++"""
++
++from __future__ import annotations
++
++from decimal import Decimal
++
++from core.execution.reports import ReportBook
++from core.execution.venue import ExecutionFace, FillReport
++from core.execution.venue_limits import reducible, venue_quantity
++from core.governor.portfolio_types import SizedOrder
++
++
++def side(order: SizedOrder) -> int:
++    """The side traded: a close names its position's side and trades the opposite."""
++    return -order.direction if order.action == "close" else order.direction
++
++
++def _refuse(reports: ReportBook, order: SizedOrder, units: Decimal,
++            fragment_id: str) -> list[FillReport]:
++    report = reports.reject(order, side(order), units=units, fragment_id=fragment_id)
++    reports.record(report)
++    return [report]
++
++
++def quantity_at(face: ExecutionFace, venue: str, order: SizedOrder, units: Decimal,
++                tag: str, reports: ReportBook, log) -> tuple[Decimal, list[FillReport]]:
++    sendable, rest = venue_quantity(units, face.descriptor)
++    if rest == 0:
++        return sendable, []
++    kind = "EXEC_MIN_LOT_REFUSED" if sendable == 0 else "EXEC_LOT_STEP_ROUNDED"
++    log.event(kind, order_id=order.order_id, venue=venue, action=order.action,
++              units=str(units), sent=str(sendable), unsent=str(rest))
++    return sendable, _refuse(reports, order, rest,
++                             f"{tag}:{'minlot' if sendable == 0 else 'step'}")
++
++
++async def reduce_only_at(face: ExecutionFace, venue: str, order: SizedOrder, units: Decimal,
++                         tag: str, reports: ReportBook, log) -> tuple[Decimal, list[FillReport]]:
++    held = reducible(await face.open_positions(), order)
++    if held >= units:
++        return units, []
++    kind = "EXEC_CLOSE_REFUSED" if held == 0 else "EXEC_CLOSE_CAPPED"
++    log.event(kind, order_id=order.order_id, venue=venue, units=str(units), held=str(held))
++    return held, _refuse(reports, order, units - held, f"{tag}:reduce")
 diff --git a/core/execution/fill_store.py b/core/execution/fill_store.py
 new file mode 100644
-index 0000000..6df7da8
+index 0000000..2015f81
 --- /dev/null
 +++ b/core/execution/fill_store.py
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,63 @@
 +"""The persisted fill log (ACIS-06 §10). Moved out of core/execution/venue.py, which
 +re-exports it (legibility budget, GAP-P12M-01).
 +
@@ -805,10 +1133,11 @@ index 0000000..6df7da8
 +
 +from __future__ import annotations
 +
-+import sqlite3
 +from datetime import datetime
 +from pathlib import Path
 +from typing import TYPE_CHECKING
++
++from core.data.sqlite_wal import open_store
 +
 +if TYPE_CHECKING:
 +    from core.execution.venue import FillReport
@@ -828,7 +1157,7 @@ index 0000000..6df7da8
 +    CREATE INDEX IF NOT EXISTS ix_fill_order ON fill_report (order_id);"""
 +
 +    def __init__(self, db_path: str | Path) -> None:
-+        self._conn = sqlite3.connect(str(db_path))
++        self._conn = open_store(db_path)     # WAL + synchronous=FULL: power-loss durable (X4)
 +        self._conn.executescript(self._DDL)
 +        self._conn.commit()
 +
@@ -922,10 +1251,10 @@ index 975157c..b201c25 100644
      # venues arrive best-quality-first; fragment 0 routes to the best venue,
      # later fragments rotate through the list (§6 signature randomisation —
 diff --git a/core/execution/orchestrator.py b/core/execution/orchestrator.py
-index 6e22a1a..da24fbf 100644
+index 6e22a1a..8804530 100644
 --- a/core/execution/orchestrator.py
 +++ b/core/execution/orchestrator.py
-@@ -1,12 +1,13 @@
+@@ -1,12 +1,15 @@
  """Execution Orchestrator (ACIS-06 v1.1, master §7). How and where — never
  how much.
  
@@ -937,24 +1266,52 @@ index 6e22a1a..da24fbf 100644
 -only (v2.10 item c): nothing gates on it.
 +Hard walls: never sends more than `size_units` (C-EXE-6); never opens what the
 +Governor sized to zero; the execution-freeze (Risk flatten path, phase 9) blocks
-+opens while allowing closes; slippage is REPORTED, never acted on (F10: no throttle
-+knob). Randomness and time are injected. `dispatch_budget_ms` is observability only
-+(v2.10 item c). The venue's own limits DO gate (GAP-P12D-57, venue_limits.py): whole
-+lot steps rounded DOWN, below the minimum lot refused, and a spent request budget
-+refuses opens but never a close that truly shrinks the position — each a FillReport.
++opens while allowing reduce-only closes; slippage is REPORTED, never acted on (F10:
++no throttle knob). Randomness and time are injected. `dispatch_budget_ms` is
++observability only (v2.10 item c). The venue's own limits DO gate (GAP-P12D-57,
++venue_limits.py): whole lot steps rounded DOWN, below the minimum lot refused, a spent
++request budget refuses opens. A close is REDUCE-ONLY (GAP-0040 exits, ACIS-06 §7): it
++names its position's side, trades the opposite side, and is capped at — or refused
++without — the venue's holding on that side. Every refusal is a FillReport.
  """
  
  from __future__ import annotations
-@@ -26,6 +27,7 @@ from core.execution.venue import (
+@@ -17,15 +20,19 @@ from decimal import Decimal
+ 
+ from config.schemas import ExecutionConfig
+ from core.data.errors import DataQualityError
++from core.execution.boundary import quantity_at, reduce_only_at, side
+ from core.execution.fragmenter import Fragment, FragmentPlan, plan
++from core.execution.reports import ReportBook
+ from core.execution.venue import (
+     ExecutionFace,
+     FillReport,
+     FillReportStore,
+     FillStatus,
      UNITS_PER_LOT,
-     VenueQuality,
+-    VenueQuality,
  )
-+from core.execution.venue_limits import WINDOW, RequestBudget, lot_units, venue_quantity
++from core.execution.venue_quality import VenueQuality
++from core.execution.venue_limits import (WINDOW, RequestBudget, capable_venues, lot_units,
++                                         venue_quantity)
  from core.governor.portfolio_types import SizedOrder
  
  # §7 steps 5–6: "bounded" remainder/reroute policy — the bounds, as constants.
-@@ -64,6 +66,10 @@ class ExecutionOrchestrator:
+@@ -52,8 +59,6 @@ class ExecutionOrchestrator:
+         self._cfg = cfg
+         self._faces = faces
+         self._quality = quality
+-        self._store = store
+-        self._alert_bps = slippage_alert_bps
+         self._rng = rng
+         self._log = logger
+         self._session = session_id
+@@ -62,8 +67,14 @@ class ExecutionOrchestrator:
+             import asyncio
+             sleep_fn = asyncio.sleep
          self._sleep = sleep_fn
++        self._reports = ReportBook(quality, store, logger, slippage_alert_bps, session_id,
++                                   now_fn)
          self._frozen: str | None = None
          self.budget_exceeded_count = 0      # §10 loop-health surface
 +        since = self._now() - WINDOW        # a restart re-seeds, never resets (GAP-P12D-57)
@@ -964,15 +1321,82 @@ index 6e22a1a..da24fbf 100644
  
      # -- freeze (Risk flatten path lands here at phase 9) ---------------------- #
  
-@@ -106,9 +112,13 @@ class ExecutionOrchestrator:
-             self._record(report)
+@@ -82,7 +93,52 @@ class ExecutionOrchestrator:
+         """Execute one SizedOrder. `valid_for_seconds` is the originating
+         signal's validity (the loop owner carries it across; SizedOrder does
+         not — ACIS-05 locked shape): < cfg.fast_decay_seconds ⇒ aggressive IOC.
+-        Returns every FillReport (fills, partials, rejects) — Risk's input."""
++        Returns every FillReport (fills, partials, rejects) — Risk's input. An OPEN
++        pair leg is refused here: a pair opens only through `submit_group`."""
++        if order.group_id is not None and order.action == "open" and order.size_units > 0:
++            self._log.event("EXEC_GROUP_LEG_ALONE", order_id=order.order_id,
++                            group_id=order.group_id)
++            report = self._reports.reject(order, side(order), fragment_id="group")
++            self._reports.record(report)
++            return (report,)
++        return await self._submit(order, valid_for_seconds)
++
++    async def submit_group(self, legs: tuple[SizedOrder, ...], *,
++                           valid_for_seconds: int) -> tuple[FillReport, ...]:
++        """§5.5 "both legs or neither", held in execution (audit F11): every open leg's
++        quantity (lot step, minimum lot) and the request budget are checked FIRST; if any
++        leg would be refused or round to zero, the WHOLE group is refused, nothing sent."""
++        now = self._now()
++        short = [leg.order_id for leg in legs if leg.action == "open"
++                 and self._sendable(leg, valid_for_seconds, len(legs), now) == 0]
++        if short:
++            self._log.event("EXEC_GROUP_REFUSED", group_id=legs[0].group_id, legs=short)
++            reports = tuple(self._reports.reject(leg, side(leg), fragment_id="group")
++                            for leg in legs)
++            for report in reports:
++                self._reports.record(report)
++            return reports
++        out: list[FillReport] = []
++        for leg in legs:
++            out.extend(await self._submit(leg, valid_for_seconds))
++        return tuple(out)
++
++    def _sendable(self, leg: SizedOrder, valid_for_seconds: int, requests: int,
++                  now: datetime) -> Decimal:
++        """What a leg's planning venue would take, or 0 (no venue, below its minimum lot,
++        or too little request budget left for the whole group)."""
++        venues = capable_venues(self._faces, self._quality, leg,
++                                float(leg.size_units / UNITS_PER_LOT),
++                                need_ioc=valid_for_seconds < self._cfg.fast_decay_seconds)
++        if not venues:
++            return Decimal("0")
++        budget = self._requests[venues[0]]
++        if budget.used(now) + requests > budget.limit:
++            return Decimal("0")
++        return venue_quantity(leg.size_units, self._faces[venues[0]].descriptor)[0]
++
++    async def _submit(self, order: SizedOrder,
++                      valid_for_seconds: int) -> tuple[FillReport, ...]:
+         t0 = time.perf_counter()
+         if order.size_units == 0:
+             self._log.event("EXEC_NOOP", order_id=order.order_id)
+@@ -97,18 +153,23 @@ class ExecutionOrchestrator:
+ 
+         fast_decay = valid_for_seconds < self._cfg.fast_decay_seconds
+         total_lots = float(order.size_units / UNITS_PER_LOT)
+-        venues = self._capable_venues(order, total_lots, need_ioc=fast_decay)
++        venues = capable_venues(self._faces, self._quality, order, total_lots,
++                                need_ioc=fast_decay)
+         if not venues:
+             self._log.event("EXEC_CAPABILITY_REJECT", order_id=order.order_id,
+                             instrument=order.instrument, lots=total_lots,
+                             ioc=fast_decay)
+-            report = self._synthetic_reject(order, "no_capable_venue")
+-            self._record(report)
++            report = self._reports.reject(order, side(order))
++            self._reports.record(report)
              return (report,)
  
 -        fragment_plan = plan(order.order_id, order.size_units,
 -                             fast_decay=fast_decay, cfg=self._cfg,
 -                             venues=venues, now=self._now(), rng=self._rng)
-+        units, reports = self._venue_quantity(order, order.size_units, venues[0],
-+                                              order.order_id)
++        units, reports = quantity_at(self._faces[venues[0]], venues[0], order, order.size_units,
++                                     order.order_id, self._reports, self._log)
 +        if units == 0:
 +            return tuple(reports)
 +        fragment_plan = plan(order.order_id, units, fast_decay=fast_decay, cfg=self._cfg,
@@ -981,7 +1405,7 @@ index 6e22a1a..da24fbf 100644
          self._log.event(          # logged BEFORE dispatch: crash-reconcilable (§9)
              "FRAGMENT_PLAN", order_id=order.order_id, path=fragment_plan.path,
              weighting=fragment_plan.weighting, n=len(fragment_plan.fragments),
-@@ -122,7 +132,6 @@ class ExecutionOrchestrator:
+@@ -122,7 +183,6 @@ class ExecutionOrchestrator:
                              elapsed_ms=round(elapsed_ms, 3),
                              budget_ms=self._cfg.dispatch_budget_ms)
  
@@ -989,95 +1413,211 @@ index 6e22a1a..da24fbf 100644
          for fragment in fragment_plan.fragments:
              reports.extend(await self._dispatch(order, fragment, fragment_plan))
          filled = sum((r.filled_units for r in reports), Decimal("0"))
-@@ -163,6 +172,10 @@ class ExecutionOrchestrator:
+@@ -133,24 +193,6 @@ class ExecutionOrchestrator:
+ 
+     # -- internals --------------------------------------------------------------- #
+ 
+-    def _capable_venues(self, order: SizedOrder, total_lots: float,
+-                        *, need_ioc: bool) -> list[str]:
+-        """Venues whose descriptor covers this order, best quality first.
+-        A missing capability excludes the venue — never silent emulation."""
+-        capable = []
+-        for name, face in self._faces.items():
+-            d = face.descriptor
+-            if order.instrument not in d.symbol_map:
+-                continue
+-            if total_lots > d.max_order_lots:
+-                continue
+-            if need_ioc and not d.supports_ioc:
+-                continue
+-            capable.append(name)
+-        capable.sort(key=lambda n: self._quality.score(n, order.instrument),
+-                     reverse=True)
+-        return capable
+-
+     async def _dispatch(self, order: SizedOrder, fragment: Fragment,
+                         fragment_plan: FragmentPlan) -> list[FillReport]:
+         delay = (fragment.scheduled_at - self._now()).total_seconds()
+@@ -163,19 +205,30 @@ class ExecutionOrchestrator:
          reroutes = 0
          retries = 0
          while True:
-+            units, boundary = self._venue_quantity(order, units, venue, fragment_id)
++            if order.action == "close":               # reduce-only, at THIS venue
++                units, refused = await reduce_only_at(self._faces[venue], venue, order, units,
++                                                      fragment_id, self._reports, self._log)
++                reports.extend(refused)
++                if units == 0:
++                    return reports
++            units, boundary = quantity_at(self._faces[venue], venue, order, units, fragment_id,
++                                          self._reports, self._log)
 +            reports.extend(boundary)
 +            if units == 0:
 +                return reports
              report = await self._submit_once(order, fragment_id, venue, units,
                                               fragment_plan.path == "ioc")
              if report is None:                        # gave up mid-reconcile
-@@ -205,8 +218,14 @@ class ExecutionOrchestrator:
+-                report = self._synthetic_reject(order, "venue_unreachable",
+-                                                fragment_id=fragment_id, venue=venue)
+-                self._record(report)
++                report = self._reports.reject(order, side(order),
++                                              fragment_id=fragment_id, venue=venue)
++                self._reports.record(report)
+                 reports.append(report)
+                 return reports
+-            self._record(report)
++            self._reports.record(report)
+             reports.append(report)
+             if report.status is FillStatus.REJECTED:
+-                nxt = [v for v in self._capable_venues(
+-                    order, float(units / UNITS_PER_LOT),
++                nxt = [v for v in capable_venues(
++                    self._faces, self._quality, order, float(units / UNITS_PER_LOT),
+                     need_ioc=fragment_plan.path == "ioc") if v != venue]
+                 if reroutes < MAX_REROUTES and nxt:
+                     reroutes += 1
+@@ -205,14 +258,20 @@ class ExecutionOrchestrator:
          reconcile against the broker (authoritative) BEFORE any resubmission;
          idempotent fragment_ids make the retry double-fill-safe. Two failures
          ⇒ give up (None)."""
 -        face = self._faces[venue]
+-        for attempt in (1, 2):
 +        face, budget = self._faces[venue], self._requests[venue]
-         for attempt in (1, 2):
-+            now = self._now()
-+            derisk = (order.action == "close" and budget.used(now) >= budget.limit
-+                      and await self._shrinks(face, order, units))       # no read for opens
-+            if not budget.admit(now, closing=derisk, order_id=order.order_id, log=self._log):
-+                return self._synthetic_reject(order, "request_budget", units=units,
-+                                              fragment_id=f"{fragment_id}:budget")
++        for attempt in (1, 2):      # a close here was checked reduce-only at this venue
++            if not budget.admit(self._now(), closing=order.action == "close",
++                                order_id=order.order_id, log=self._log):
++                return self._reports.reject(order, side(order), units=units,
++                                            fragment_id=f"{fragment_id}:budget")
++            common = dict(fragment_id=fragment_id, order_id=order.order_id,
++                          instrument=order.instrument, units=units,
++                          requested_price=order.entry_price, now=self._now(),
++                          session_id=self._session)
              try:
-                 return await face.submit_order(
-                     fragment_id=fragment_id, order_id=order.order_id,
-@@ -223,6 +242,29 @@ class ExecutionOrchestrator:
+-                return await face.submit_order(
+-                    fragment_id=fragment_id, order_id=order.order_id,
+-                    instrument=order.instrument, direction=order.direction,
+-                    units=units, requested_price=order.entry_price,
+-                    ioc=ioc, now=self._now(), session_id=self._session)
++                if order.action == "close":        # the venue's own atomic reduce (X3)
++                    return await face.close_position(direction=order.direction, **common)
++                return await face.submit_order(direction=order.direction, ioc=ioc, **common)
+             except ConnectionError:
+                 positions = await face.open_positions()
+                 self._log.event(
+@@ -222,34 +281,3 @@ class ExecutionOrchestrator:
+                          "units": str(p.size_units)} for p in positions])
                  if attempt == 2:
                      return None
- 
-+    @staticmethod
-+    async def _shrinks(face: ExecutionFace, order: SizedOrder, units: Decimal) -> bool:
-+        """A spent budget exempts only a close that really shrinks the venue position:
-+        the `close` label is no proof while the close-direction contract is open."""
-+        held = [p for p in await face.open_positions() if p.instrument == order.instrument]
-+        return (len(held) == 1 and held[0].direction == -order.direction
-+                and units <= held[0].size_units)
-+
-+    def _venue_quantity(self, order: SizedOrder, units: Decimal, venue: str,
-+                        tag: str) -> tuple[Decimal, list[FillReport]]:
-+        """GAP-P12D-57: `units` rounded DOWN to `venue`'s lot step, or 0 if that falls
-+        below its minimum lot. What is not sent is recorded as a REJECTED report."""
-+        sendable, rest = venue_quantity(units, self._faces[venue].descriptor)
-+        if rest == 0:
-+            return sendable, []
-+        kind = "EXEC_MIN_LOT_REFUSED" if sendable == 0 else "EXEC_LOT_STEP_ROUNDED"
-+        self._log.event(kind, order_id=order.order_id, venue=venue, action=order.action,
-+                        units=str(units), sent=str(sendable), unsent=str(rest))
-+        report = self._synthetic_reject(order, kind, units=rest,
-+                                        fragment_id=f"{tag}:{'minlot' if sendable == 0 else 'step'}")
-+        self._record(report)
-+        return sendable, [report]
-+
-     def _record(self, report: FillReport) -> None:
-         self._quality.update(report)
-         self._store.write(report)
-@@ -242,9 +284,10 @@ class ExecutionOrchestrator:
-                             slippage_bps=round(report.slippage_bps, 4),
-                             alert_bps=self._alert_bps)
- 
+-
+-    def _record(self, report: FillReport) -> None:
+-        self._quality.update(report)
+-        self._store.write(report)
+-        event = {FillStatus.FILLED: "FILL", FillStatus.PARTIAL: "PARTIAL",
+-                 FillStatus.REJECTED: "REJECT",
+-                 FillStatus.CANCELLED: "CANCEL"}[report.status]
+-        self._log.event(event, fill_id=report.fill_id, order_id=report.order_id,
+-                        fragment_id=report.fragment_id, venue=report.venue,
+-                        filled_units=str(report.filled_units),
+-                        fill_px=report.fill_price,
+-                        slippage_bps=round(report.slippage_bps, 4),
+-                        remaining=str(report.remaining_units))
+-        if (report.status in (FillStatus.FILLED, FillStatus.PARTIAL)
+-                and report.slippage_bps > self._alert_bps):
+-            self._log.event("SLIPPAGE_ALERT", fill_id=report.fill_id,
+-                            instrument=report.instrument,
+-                            slippage_bps=round(report.slippage_bps, 4),
+-                            alert_bps=self._alert_bps)
+-
 -    def _synthetic_reject(self, order: SizedOrder, reason: str, *,
 -                          fragment_id: str = "", venue: str = "none") -> FillReport:
 -        """A boundary rejection is still a FillReport — never a silent drop (§4)."""
-+    def _synthetic_reject(self, order: SizedOrder, reason: str, *, fragment_id: str = "",
-+                          venue: str = "none", units: Decimal | None = None) -> FillReport:
-+        """A boundary rejection is still a FillReport — never a silent drop (§4);
-+        `units` is what went unsent (default: the whole order)."""
-         return FillReport(
-             fill_id=f"{order.order_id}:{fragment_id or 'cap'}:rej",
-             order_id=order.order_id, fragment_id=fragment_id or "none",
-@@ -252,4 +295,5 @@ class ExecutionOrchestrator:
-             requested_price=order.entry_price, fill_price=0.0,
-             filled_units=Decimal("0"), slippage_bps=0.0, fill_time=self._now(),
-             venue=venue, status=FillStatus.REJECTED,
+-        return FillReport(
+-            fill_id=f"{order.order_id}:{fragment_id or 'cap'}:rej",
+-            order_id=order.order_id, fragment_id=fragment_id or "none",
+-            instrument=order.instrument, direction=order.direction,
+-            requested_price=order.entry_price, fill_price=0.0,
+-            filled_units=Decimal("0"), slippage_bps=0.0, fill_time=self._now(),
+-            venue=venue, status=FillStatus.REJECTED,
 -            remaining_units=order.size_units, session_id=self._session)
+diff --git a/core/execution/reports.py b/core/execution/reports.py
+new file mode 100644
+index 0000000..5b7cba1
+--- /dev/null
++++ b/core/execution/reports.py
+@@ -0,0 +1,60 @@
++"""Every execution outcome becomes a recorded FillReport (ACIS-06 §4). Moved out of
++orchestrator.py (legibility budget, GAP-P12M-01). Invariants:
++  * A boundary refusal (no capable venue, lot step, minimum lot, request budget,
++    reduce-only, pair group) is a REJECTED FillReport — never a silent drop — whose
++    `remaining_units` is what went unsent, on the side the engine would have traded.
++  * Every report updates venue quality, is written to the fill log and is logged; a fill
++    worse than the slippage alert level raises SLIPPAGE_ALERT and nothing more (F10).
++"""
++
++from __future__ import annotations
++
++from decimal import Decimal
++from typing import Callable
++
++from core.execution.venue import FillReport, FillReportStore, FillStatus
++from core.execution.venue_quality import VenueQuality
++from core.governor.portfolio_types import SizedOrder
++
++_EVENT = {FillStatus.FILLED: "FILL", FillStatus.PARTIAL: "PARTIAL",
++          FillStatus.REJECTED: "REJECT", FillStatus.CANCELLED: "CANCEL"}
++
++
++class ReportBook:
++    def __init__(self, quality: VenueQuality, store: FillReportStore, logger,
++                 alert_bps: float, session_id: str, now_fn: Callable) -> None:
++        self._quality = quality
++        self._store = store
++        self._log = logger
++        self._alert_bps = alert_bps
++        self._session = session_id
++        self._now = now_fn
++
++    def record(self, report: FillReport) -> None:
++        self._quality.update(report)
++        self._store.write(report)
++        self._log.event(_EVENT[report.status], fill_id=report.fill_id,
++                        order_id=report.order_id, fragment_id=report.fragment_id,
++                        venue=report.venue, filled_units=str(report.filled_units),
++                        fill_px=report.fill_price, slippage_bps=round(report.slippage_bps, 4),
++                        remaining=str(report.remaining_units))
++        if (report.status in (FillStatus.FILLED, FillStatus.PARTIAL)
++                and report.slippage_bps > self._alert_bps):
++            self._log.event("SLIPPAGE_ALERT", fill_id=report.fill_id,
++                            instrument=report.instrument,
++                            slippage_bps=round(report.slippage_bps, 4),
++                            alert_bps=self._alert_bps)
++
++    def reject(self, order: SizedOrder, side: int, *, fragment_id: str = "",
++               venue: str = "none", units: Decimal | None = None) -> FillReport:
++        """A boundary refusal as a REJECTED report; `units` is what went unsent
++        (default: the whole order)."""
++        return FillReport(
++            fill_id=f"{order.order_id}:{fragment_id or 'cap'}:rej",
++            order_id=order.order_id, fragment_id=fragment_id or "none",
++            instrument=order.instrument, direction=side,
++            requested_price=order.entry_price, fill_price=0.0,
++            filled_units=Decimal("0"), slippage_bps=0.0, fill_time=self._now(),
++            venue=venue, status=FillStatus.REJECTED,
 +            remaining_units=order.size_units if units is None else units,
 +            session_id=self._session)
 diff --git a/core/execution/venue.py b/core/execution/venue.py
-index 15f6f3b..22f935c 100644
+index 15f6f3b..b66cc5d 100644
 --- a/core/execution/venue.py
 +++ b/core/execution/venue.py
-@@ -11,16 +11,15 @@ state flows exclusively through this face DOWNWARD to the Risk Monitor
+@@ -10,17 +10,17 @@ state flows exclusively through this face DOWNWARD to the Risk Monitor
+ 
  from __future__ import annotations
  
++import asyncio
  import math
 -import sqlite3
  from abc import ABC, abstractmethod
- from dataclasses import dataclass
+-from dataclasses import dataclass
++from dataclasses import dataclass, replace
  from datetime import datetime
  from decimal import Decimal
  from enum import Enum
@@ -1089,7 +1629,7 @@ index 15f6f3b..22f935c 100644
  
  UNITS_PER_LOT = Decimal("100000")
  
-@@ -133,6 +132,9 @@ class CapabilityDescriptor:
+@@ -133,6 +133,9 @@ class CapabilityDescriptor:
          if self.account_model not in ("netting", "hedging"):
              raise DataQualityError("account_model", self.account_model,
                                     "must be netting or hedging")
@@ -1099,10 +1639,128 @@ index 15f6f3b..22f935c 100644
          if not (0 < self.min_lot <= self.max_order_lots):
              raise DataQualityError("min_lot/max_order_lots",
                                     (self.min_lot, self.max_order_lots),
-@@ -338,41 +340,3 @@ class VenueQuality:
-         fills = [s for ok, s in rows if ok]
-         avg_adverse = max(0.0, sum(fills) / len(fills)) if fills else 0.0
-         return fill_rate / (1.0 + avg_adverse / 10.0)
+@@ -161,6 +164,16 @@ class ExecutionFace(ABC):
+         reject an order carrying a stop, never accept it unprotected."""
+         ...
+ 
++    @abstractmethod
++    async def close_position(self, *, fragment_id: str, order_id: str, instrument: str,
++                             direction: int, units: Decimal, requested_price: float,
++                             now: datetime, session_id: str) -> FillReport:
++        """REDUCE-ONLY, atomically (audit X3/F4): take up to `units` off the `direction`
++        position; never open, add to or flip one (nothing held: REJECTED). Adapters map it
++        to the venue's close: cTrader ClosePositionReq(positionId), OANDA REDUCE_ONLY, FIX
++        PositionEffect=C. The report's `direction` is the side traded (the opposite)."""
++        ...
++
+     @abstractmethod
+     async def cancel(self, fragment_id: str) -> bool: ...
+ 
+@@ -211,6 +224,7 @@ class MockExecutionFace(ExecutionFace):
+         self._net: dict[str, Decimal] = {}
+         self._stops: dict[str, float] = {}  # instrument -> stop RESTING at the venue
+         self.submissions = 0                # physical venue hits (idempotency proof)
++        self._lock = asyncio.Lock()
+ 
+     def _behaviour(self) -> str:
+         return self._script.pop(0) if self._script else "fill"
+@@ -225,7 +239,31 @@ class MockExecutionFace(ExecutionFace):
+             raise DataQualityError(                     # never accept unprotected
+                 "stop_loss", stop_loss,
+                 f"venue {self.name} does not hold server-side stops (§279)")
+-        behaviour = self._behaviour()
++        return self._execute(self._behaviour(), fragment_id, order_id, instrument, direction,
++                             units, requested_price, now, session_id, stop_loss)
++
++    async def close_position(self, *, fragment_id: str, order_id: str, instrument: str,
++                             direction: int, units: Decimal, requested_price: float,
++                             now: datetime, session_id: str) -> FillReport:
++        async with self._lock:                          # read-and-act as ONE step
++            if fragment_id in self._by_fragment:
++                return self._by_fragment[fragment_id]
++            net = self._net.get(instrument, Decimal("0"))
++            held = abs(net) if net * direction > 0 else Decimal("0")
++            await asyncio.sleep(0)           # the venue's round-trip; the lock keeps it one step
++            behaviour = self._behaviour() if held > 0 else "reject"   # nothing to close
++            report = self._execute(behaviour, fragment_id, order_id, instrument, -direction,
++                                   min(units, held) if held > 0 else units,
++                                   requested_price, now, session_id, None)
++            if held and held < units and report.filled_units > 0:
++                report = replace(report, status=FillStatus.PARTIAL,
++                                 remaining_units=units - report.filled_units)
++                self._by_fragment[fragment_id] = report
++            return report
++
++    def _execute(self, behaviour: str, fragment_id: str, order_id: str, instrument: str,
++                 direction: int, units: Decimal, requested_price: float, now: datetime,
++                 session_id: str, stop_loss: float | None) -> FillReport:
+         if behaviour == "disconnect":
+             raise ConnectionError("mock venue: connection lost before submission")
+         self.submissions += 1
+@@ -278,101 +316,3 @@ class MockExecutionFace(ExecutionFace):
+         # a COPY of the venue-held stops — the caller sees broker state, never a
+         # live handle into engine memory (§279).
+         return dict(self._stops)
+-
+-
+-class AttachHalt(Exception):
+-    """GAP-0018 flat-or-decide: the account holds open positions at attach —
+-    a HUMAN must decide (flatten via platform, or manage manually until flat).
+-    Never caught-and-continued by any agent path."""
+-
+-    def __init__(self, positions: tuple[BrokerPosition, ...]) -> None:
+-        self.positions = positions
+-        super().__init__(
+-            f"attach halted: {len(positions)} open position(s) on the account — "
+-            "human decision required (flatten first, or manage manually until flat)")
+-
+-
+-async def verify_attach(face: ExecutionFace, enabled_symbols: set[str],
+-                        logger) -> None:
+-    """§7.5 attach protocol, the phase-8 contract half: (1) the capability
+-    descriptor's symbol map must cover the enabled universe (the §13 suffix
+-    problem dies here, once); (2) flat-or-decide (GAP-0018). Rulebook loading
+-    is the §9.5 config layer's job and precedes this call; paper-always mode
+-    start follows it."""
+-    missing = enabled_symbols - set(face.descriptor.symbol_map)
+-    if missing:
+-        raise DataQualityError("symbol_map", sorted(missing),
+-                               "descriptor must map every enabled instrument")
+-    positions = await face.open_positions()
+-    if positions:
+-        logger.event("ATTACH_HALTED_OPEN_POSITIONS", venue=face.name,
+-                     count=len(positions))
+-        raise AttachHalt(positions)
+-    logger.event("ATTACH_VERIFIED", venue=face.name,
+-                 symbols=sorted(enabled_symbols))
+-
+-
+-class VenueQuality:
+-    """Per-(venue, instrument) rolling execution quality (ACIS-06 §5). Fed by
+-    this layer's own FillReports — internal feedback, never upstream. Score is
+-    deterministic and monotone: higher fill rate raises it, adverse slippage
+-    and rejects lower it."""
+-
+-    def __init__(self, window: int = 50) -> None:
+-        self._window = window
+-        self._records: dict[tuple[str, str], list[tuple[bool, float]]] = {}
+-
+-    def update(self, report: FillReport) -> None:
+-        key = (report.venue, report.instrument)
+-        rows = self._records.setdefault(key, [])
+-        rejected = report.status in (FillStatus.REJECTED, FillStatus.CANCELLED)
+-        rows.append((not rejected, 0.0 if rejected else report.slippage_bps))
+-        if len(rows) > self._window:
+-            del rows[0]
+-
+-    def score(self, venue: str, instrument: str) -> float:
+-        rows = self._records.get((venue, instrument))
+-        if not rows:
+-            return 0.5                       # unknown venue: neutral prior
+-        fill_rate = sum(1 for ok, _ in rows if ok) / len(rows)
+-        fills = [s for ok, s in rows if ok]
+-        avg_adverse = max(0.0, sum(fills) / len(fills)) if fills else 0.0
+-        return fill_rate / (1.0 + avg_adverse / 10.0)
 -
 -
 -class FillReportStore:
@@ -1143,10 +1801,10 @@ index 15f6f3b..22f935c 100644
 -        self._conn.close()
 diff --git a/core/execution/venue_limits.py b/core/execution/venue_limits.py
 new file mode 100644
-index 0000000..e392055
+index 0000000..443b9c7
 --- /dev/null
 +++ b/core/execution/venue_limits.py
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,88 @@
 +"""A venue's quantity and request limits, enforced in the execution path (GAP-P12D-57).
 +Master §7.5: an order needing a capability the venue lacks is refused, never emulated.
 +
@@ -1155,10 +1813,12 @@ index 0000000..e392055
 +    Execution never rounds up: that would add size the Governor did not size (it only
 +    ever clamps downward). The unsendable remainder is reported, never dropped.
 +  * A quantity below the venue's `min_lot` is refused with a REJECTED FillReport.
++  * A close is REDUCE-ONLY: it names its position (its direction is the position's side),
++    trades the opposite side, and never exceeds the venue's holding on that side — so it
++    can shrink |position| but never open, add to, or flip one.
 +  * Each venue has a hard budget of trading requests (every submit attempt) over ANY
-+    rolling 24 hours, which is stricter than a firm's "per day" cap whatever its day
-+    boundary. Once spent, opens are refused; a close is never blocked (de-risking is
-+    never throttled) and every such exception is logged.
++    rolling 24 hours, stricter than a firm's "per day" cap whatever its day boundary.
++    Once spent, opens are refused; a reduce-only close never is (logged as such).
 +  * A restart does not reset the budget: it is seeded from the persisted fill log.
 +"""
 +
@@ -1167,15 +1827,37 @@ index 0000000..e392055
 +from collections import deque
 +from datetime import datetime, timedelta
 +from decimal import ROUND_FLOOR, Decimal
-+from typing import Iterable
++from typing import Iterable, Mapping
 +
-+from core.execution.venue import UNITS_PER_LOT, CapabilityDescriptor
++from core.execution.venue import (UNITS_PER_LOT, BrokerPosition, CapabilityDescriptor,
++                                  ExecutionFace)
++from core.execution.venue_quality import VenueQuality
++from core.governor.portfolio_types import SizedOrder
 +
 +WINDOW = timedelta(hours=24)
 +
 +
 +def lot_units(lots: float) -> Decimal:
 +    return Decimal(str(lots)) * UNITS_PER_LOT
++
++
++def capable_venues(faces: Mapping[str, ExecutionFace], quality: VenueQuality,
++                   order: SizedOrder, total_lots: float, *, need_ioc: bool) -> list[str]:
++    """Venues whose descriptor covers this order, best quality first. A missing
++    capability excludes the venue — never silent emulation."""
++    capable = [name for name, face in faces.items()
++               if order.instrument in face.descriptor.symbol_map
++               and total_lots <= face.descriptor.max_order_lots
++               and (face.descriptor.supports_ioc or not need_ioc)]
++    return sorted(capable, key=lambda n: quality.score(n, order.instrument), reverse=True)
++
++
++def reducible(positions: Iterable[BrokerPosition], order: SizedOrder) -> Decimal:
++    """What a close may trade: the venue's holding on the side the close names —
++    0 when the venue is flat on the instrument or holds the other side."""
++    return sum((p.size_units for p in positions
++                if p.instrument == order.instrument and p.direction == order.direction),
++               Decimal("0"))
 +
 +
 +def venue_quantity(units: Decimal, d: CapabilityDescriptor) -> tuple[Decimal, Decimal]:
@@ -1211,11 +1893,54 @@ index 0000000..e392055
 +                return False
 +        self._stamps.append(now)
 +        return True
+diff --git a/core/execution/venue_quality.py b/core/execution/venue_quality.py
+new file mode 100644
+index 0000000..bc6c706
+--- /dev/null
++++ b/core/execution/venue_quality.py
+@@ -0,0 +1,37 @@
++"""Per-(venue, instrument) rolling execution quality (ACIS-06 §5). Moved out of
++core/execution/venue.py (legibility budget, GAP-P12M-01). Invariant: fed only by this
++layer's own FillReports (internal feedback, never upstream); the score is deterministic
++and monotone — a higher fill rate raises it, adverse slippage and rejects lower it.
++"""
++
++from __future__ import annotations
++
++from core.execution.venue import FillReport, FillStatus
++
++
++class VenueQuality:
++    """Per-(venue, instrument) rolling execution quality (ACIS-06 §5). Fed by
++    this layer's own FillReports — internal feedback, never upstream. Score is
++    deterministic and monotone: higher fill rate raises it, adverse slippage
++    and rejects lower it."""
++
++    def __init__(self, window: int = 50) -> None:
++        self._window = window
++        self._records: dict[tuple[str, str], list[tuple[bool, float]]] = {}
++
++    def update(self, report: FillReport) -> None:
++        key = (report.venue, report.instrument)
++        rows = self._records.setdefault(key, [])
++        rejected = report.status in (FillStatus.REJECTED, FillStatus.CANCELLED)
++        rows.append((not rejected, 0.0 if rejected else report.slippage_bps))
++        if len(rows) > self._window:
++            del rows[0]
++
++    def score(self, venue: str, instrument: str) -> float:
++        rows = self._records.get((venue, instrument))
++        if not rows:
++            return 0.5                       # unknown venue: neutral prior
++        fill_rate = sum(1 for ok, _ in rows if ok) / len(rows)
++        fills = [s for ok, s in rows if ok]
++        avg_adverse = max(0.0, sum(fills) / len(fills)) if fills else 0.0
++        return fill_rate / (1.0 + avg_adverse / 10.0)
 diff --git a/core/governor/calendar_gates.py b/core/governor/calendar_gates.py
-index 6a7b9dc..b1ab5b8 100644
+index 6a7b9dc..aa06a6b 100644
 --- a/core/governor/calendar_gates.py
 +++ b/core/governor/calendar_gates.py
-@@ -1,8 +1,10 @@
+@@ -1,19 +1,30 @@
  """Calendar gates the Governor applies (ACIS-05 §7 step 1; GAP-0053, GAP-P12D-10).
  
  Moved unchanged out of capital_governor.py (module legibility, GAP-P12M-01). Invariants:
@@ -1225,25 +1950,261 @@ index 6a7b9dc..b1ab5b8 100644
 +    window through the Sunday open — there is no post-close bypass. It binds EVERY
 +    account, weekend holding allowed or not (GAP-P12D-58: FTMO forbids opening a trade
 +    two hours or less before a market closes for two hours or more, on every account).
++  * The same ban and window apply before, and during, EVERY closure of two hours or
++    more, not only the Friday close: a declared FX holiday D closes from the close on the
++    day before D to the close on D (audit X5; FTMO's "gap trading" names any such closure).
++  * The weekend FLATTEN (master §9.5, no-weekend-holding accounts) starts with that same
++    window, so no entry can open after it starts: every open position gets a reduce-only
++    close naming it — its own side and size (the close convention, venue_limits.py).
    * Every time is the declared centre's local wall clock, so it follows DST.
    * The next boundary is the earliest declared session boundary strictly after `now`.
  """
+ 
+ from __future__ import annotations
+ 
+-from datetime import datetime
+-from typing import Sequence
++import uuid
++from datetime import date, datetime, timedelta
++from types import MappingProxyType
++from typing import Collection, Sequence
+ 
+ from config.schemas import ZonedTime
+ from core.data.fx_clock import local_to_utc, next_local, to_local
++from core.governor.portfolio_types import PortfolioState, SizedOrder
+ 
+ 
+ def within_weekend_buffer(now: datetime, week_close: ZonedTime, week_open: ZonedTime,
+@@ -30,5 +41,33 @@ def within_weekend_buffer(now: datetime, week_close: ZonedTime, week_open: Zoned
+     return gap <= buffer_s                            # buffer window OR past close
+ 
+ 
++def within_closure_buffer(now: datetime, week_close: ZonedTime, week_open: ZonedTime,
++                          holidays: Collection[date], buffer_s: float) -> bool:
++    """Inside `buffer_s` before, or inside, the weekend or a declared holiday closure."""
++    if within_weekend_buffer(now, week_close, week_open, buffer_s):
++        return True
++    for day in holidays:
++        start = local_to_utc(day - timedelta(days=1), week_close.at, week_close.zone)
++        end = local_to_utc(day, week_close.at, week_close.zone)
++        if start - timedelta(seconds=buffer_s) <= now < end:
++            return True
++    return False
++
++
+ def next_boundary(now: datetime, boundaries: Sequence[ZonedTime]) -> datetime:
+     return min(next_local(now, b.zone, b.at) for b in boundaries)
++
++
++def weekend_flatten_orders(portfolio: PortfolioState, now: datetime, week_close: ZonedTime,
++                           week_open: ZonedTime, holidays: Collection[date],
++                           buffer_s: float) -> tuple[SizedOrder, ...]:
++    """A close for every open position once a closure's window has begun, else ()."""
++    if not within_closure_buffer(now, week_close, week_open, holidays, buffer_s):
++        return ()
++    return tuple(SizedOrder(
++        order_id=str(uuid.uuid4()), signal_id=f"weekend_flatten:{p.instrument}",
++        instrument=p.instrument, direction=p.direction, size_units=p.size_units,
++        entry_price=p.entry_price, stop_loss=p.stop_loss, take_profit=p.take_profit,
++        reason="weekend_flatten", factors_snapshot=MappingProxyType({"weekend_flatten": True}),
++        sized_at=now, param_set_id=p.param_set_id, group_id=p.group_id, action="close",
++    ) for p in portfolio.open_positions)
 diff --git a/core/governor/capital_governor.py b/core/governor/capital_governor.py
-index 3898096..2c909cb 100644
+index 3898096..1895b64 100644
 --- a/core/governor/capital_governor.py
 +++ b/core/governor/capital_governor.py
-@@ -350,9 +350,8 @@ class CapitalGovernor:
+@@ -12,14 +12,16 @@ import json
+ import math
+ import uuid
+ from collections import deque
+-from datetime import datetime, timedelta
++from datetime import date, datetime, timedelta
+ from decimal import Decimal
+ from types import MappingProxyType
+-from typing import Callable, Mapping
++from typing import Callable, Mapping, Sequence
+ 
+ from config.schemas import AccountRulebook, GovernorConfig, GuardrailLimits, ZonedTime
+ from core.data.errors import DataQualityError
+-from core.governor.calendar_gates import next_boundary, within_weekend_buffer
++from core.governor.calendar_gates import (next_boundary, weekend_flatten_orders,
++                                          within_closure_buffer)
++from core.governor.exposure import delta_contributions, exposure_breach
+ from core.governor.factors import correlation_factor, liquidity_factor, vol_norm
+ from core.governor.units import usd_per_base_unit
+ from core.governor.marginal_alpha import MarginalAlphaEstimator
+@@ -46,6 +48,7 @@ class CapitalGovernor:
+         session_boundaries: list[ZonedTime],
+         week_close: ZonedTime,
+         week_open: ZonedTime,
++        holidays: Sequence[date],        # declared whole-day FX closures (audit X5)
+         scalp_horizon_s: int,
+         atr_period: int,
+         blackout: Callable[[str, datetime], bool],
+@@ -59,8 +62,7 @@ class CapitalGovernor:
+         self._vol_targets = vol_targets
+         self._confidence_veto = confidence_veto
+         self._boundaries = session_boundaries
+-        self._week_close = week_close
+-        self._week_open = week_open
++        self._closure = (week_close, week_open, tuple(holidays))   # every >= 2 h closure
+         self._scalp_horizon_s = scalp_horizon_s
+         self._atr = AtrMemo(atr_period)   # GAP-P12D-15: recomputed only when a window changes
+         self._blackout = blackout
+@@ -176,11 +178,11 @@ class CapitalGovernor:
+                               if a.instrument in members or b.instrument in members}
+             net_deltas: dict[str, Decimal] = {}
+             for sig, notional in ((a, notional_a), (b, notional_b)):
+-                for ccy, contrib in self._delta_contributions(sig, notional).items():
++                for ccy, contrib in delta_contributions(sig, notional).items():
+                     net_deltas[ccy] = net_deltas.get(ccy, Decimal("0")) + contrib
+-            breach = self._exposure_breach(
+-                portfolio, {c: group_notional for c in union_clusters},
+-                net_deltas, f"group:{a.group_id}")
++            breach = exposure_breach(
++                self._limits, portfolio, {c: group_notional for c in union_clusters},
++                net_deltas, f"group:{a.group_id}", self._log)
+             if breach is not None:
+                 reason = f"group_blocked:{breach}"
+                 self._log.event("GROUP_BLOCKED", group_id=a.group_id,
+@@ -219,6 +221,25 @@ class CapitalGovernor:
+             self._log.event("GROUP_EXIT", group_id=group_id, reason=reason)
+         return tuple(closes)
+ 
++    def weekend_flatten(self, portfolio: PortfolioState,
++                        now: datetime) -> tuple[SizedOrder, ...]:
++        """§9.5: a no-weekend-holding account is flattened from the pre-close entry ban
++        on, by reduce-only closes naming each open position (both legs of a pair); called
++        every tick, so a close that fails is re-emitted. A position still open once the
++        market has closed is surfaced (WEEKEND_FLATTEN_INCOMPLETE), never ignored."""
++        if self._rules.weekend_holding_allowed:
++            return ()
++        closes = weekend_flatten_orders(portfolio, now, *self._closure,
++                                        self._cfg.weekend_entry_buffer_s)
++        for close in closes:
++            self._open_groups.pop(close.group_id, None)
++            self._log_order(close)
++        if closes:
++            closed = within_closure_buffer(now, *self._closure, 0)
++            self._log.event("WEEKEND_FLATTEN_INCOMPLETE" if closed else "WEEKEND_FLATTEN",
++                            instruments=sorted({c.instrument for c in closes}))
++        return closes
++
+     def open_groups(self) -> tuple[str, ...]:
+         return tuple(self._open_groups)
+ 
+@@ -304,9 +325,9 @@ class CapitalGovernor:
+             # runs them on the AGGREGATE (cluster counted once, deltas netted) —
+             # per-leg checks here would understate the group's true exposure.
+             notional = size_units * per_unit          # USD notional
+-            breach = self._exposure_breach(
+-                portfolio, {c: notional for c in clusters},
+-                self._delta_contributions(signal, notional), signal.instrument)
++            breach = exposure_breach(
++                self._limits, portfolio, {c: notional for c in clusters},
++                delta_contributions(signal, notional), signal.instrument, self._log)
+             if breach is not None:
+                 return self._zero(signal, breach, snapshot, now)
+ 
+@@ -350,9 +371,8 @@ class CapitalGovernor:
                              instrument=signal.instrument,
                              account=self._rules.platform)
              return "blackout"
 -        if (not self._rules.weekend_holding_allowed
 -                and within_weekend_buffer(now, self._week_close, self._week_open,
 -                                          self._cfg.weekend_entry_buffer_s)):
-+        if within_weekend_buffer(now, self._week_close, self._week_open,   # EVERY account,
-+                                 self._cfg.weekend_entry_buffer_s):         # GAP-P12D-58
++        if within_closure_buffer(now, *self._closure,             # EVERY account and every
++                                 self._cfg.weekend_entry_buffer_s):  # closure (P12D-58, X5)
              return "weekend_ban"
          if (self._cfg.scalp_min_hold_conflict
                  and signal.strategy_type is StrategyType.MOMENTUM_SCALP
+@@ -376,37 +396,6 @@ class CapitalGovernor:
+             return 1.0
+         return vol_norm(a / seq[-1].close, self._vol_targets[instrument])
+ 
+-    def _delta_contributions(self, signal: Signal,
+-                             notional: Decimal) -> dict[str, Decimal]:
+-        base, _, quote = signal.instrument.partition("_")
+-        d = Decimal(signal.direction)
+-        return {base: d * notional, quote: -d * notional}
+-
+-    def _exposure_breach(self, portfolio: PortfolioState,
+-                         cluster_notional: dict[str, Decimal],
+-                         delta_contributions: dict[str, Decimal],
+-                         instrument: str) -> str | None:
+-        """Cluster + net-currency-delta hard caps over the given contributions.
+-        GAP-0051: an order that REDUCES an existing |delta| breach is never
+-        blocked by that breach — the layer may only ever reduce risk."""
+-        cap = Decimal(str(self._limits.cluster_cap_pct / 100.0)) * portfolio.nav
+-        for cluster, notional in cluster_notional.items():
+-            exposure = portfolio.per_cluster_exposure.get(cluster, Decimal("0"))
+-            if exposure + notional > cap:
+-                self._log.event("CLUSTER_CAP_ZERO", instrument=instrument,
+-                                cluster=cluster)
+-                return "cluster_cap"
+-        delta_cap = (Decimal(str(self._limits.single_currency_delta_cap_pct / 100.0))
+-                     * portfolio.nav)
+-        for ccy, contribution in delta_contributions.items():
+-            old = portfolio.per_currency_delta.get(ccy, Decimal("0"))
+-            new = old + contribution
+-            if abs(new) > delta_cap and abs(new) > abs(old):
+-                self._log.event("CURRENCY_DELTA_ZERO", instrument=instrument,
+-                                currency=ccy)
+-                return "currency_delta_cap"
+-        return None
+-
+     def _zero(self, signal: Signal, reason: str, snapshot: dict,
+               now: datetime) -> SizedOrder:
+         return SizedOrder(
+diff --git a/core/governor/exposure.py b/core/governor/exposure.py
+new file mode 100644
+index 0000000..a426846
+--- /dev/null
++++ b/core/governor/exposure.py
+@@ -0,0 +1,43 @@
++"""The Governor's hard exposure caps (ACIS-05 §7 step 4; master §6), moved unchanged out of
++capital_governor.py (legibility budget, GAP-P12M-01). Invariants:
++  * A cluster cap or single-currency net-delta cap breach sizes the order to ZERO, never
++    a split and never a clamp (master §6: "Breach → size to zero, never split").
++  * GAP-0051: an order that REDUCES an existing |delta| breach is never blocked by it —
++    the layer may only ever reduce risk.
++  * Deltas are signed USD notional: +notional on the base currency, −notional on the quote.
++"""
++
++from __future__ import annotations
++
++from decimal import Decimal
++
++from config.schemas import GuardrailLimits
++from core.governor.portfolio_types import PortfolioState
++from core.signals.signal_types import Signal
++
++
++def delta_contributions(signal: Signal, notional: Decimal) -> dict[str, Decimal]:
++    base, _, quote = signal.instrument.partition("_")
++    d = Decimal(signal.direction)
++    return {base: d * notional, quote: -d * notional}
++
++
++def exposure_breach(limits: GuardrailLimits, portfolio: PortfolioState,
++                    cluster_notional: dict[str, Decimal],
++                    delta_contributions: dict[str, Decimal], instrument: str,
++                    log) -> str | None:
++    """Cluster + net-currency-delta hard caps over the given contributions."""
++    cap = Decimal(str(limits.cluster_cap_pct / 100.0)) * portfolio.nav
++    for cluster, notional in cluster_notional.items():
++        exposure = portfolio.per_cluster_exposure.get(cluster, Decimal("0"))
++        if exposure + notional > cap:
++            log.event("CLUSTER_CAP_ZERO", instrument=instrument, cluster=cluster)
++            return "cluster_cap"
++    delta_cap = Decimal(str(limits.single_currency_delta_cap_pct / 100.0)) * portfolio.nav
++    for ccy, contribution in delta_contributions.items():
++        old = portfolio.per_currency_delta.get(ccy, Decimal("0"))
++        new = old + contribution
++        if abs(new) > delta_cap and abs(new) > abs(old):
++            log.event("CURRENCY_DELTA_ZERO", instrument=instrument, currency=ccy)
++            return "currency_delta_cap"
++    return None
 diff --git a/core/risk/drawdown_series.py b/core/risk/drawdown_series.py
 new file mode 100644
 index 0000000..ff99d90
@@ -1419,11 +2380,58 @@ index 0000000..ff99d90
 +    if len(set(keys)) != len(keys):
 +        raise DataQualityError("drawdown_rules", keys, "two rules share a key (and an anchor)")
 +    return DrawdownSeries(limits=limits, rules=tuple(rules), initial=initial_capital)
+diff --git a/core/risk/exposure_metrics.py b/core/risk/exposure_metrics.py
+new file mode 100644
+index 0000000..1ec477d
+--- /dev/null
++++ b/core/risk/exposure_metrics.py
+@@ -0,0 +1,41 @@
++"""Portfolio VaR and correlated-cluster exposure for the RiskSnapshot (ACIS-07 §4, master §8).
++Moved unchanged out of core/risk/monitor.py (legibility budget, GAP-P12M-01). Invariants:
++  * VaR is delta-normal and UNDIVERSIFIED (no correlation credit: a conservative sum of
++    per-position 1% VaR). σ is the rolling log-return of marks scaled by
++    √(var_horizon_seconds / eval_cadence_s) to the DECLARED horizon (GAP-P9E-03); the 3%
++    cap is ratified against the 1-day horizon (GAP-0103); in-loop wiring is GAP-0091b.
++  * A position with fewer than 3 marks (2 returns) adds nothing: not enough data.
++  * Cluster exposure is the largest cluster's summed USD notional, as a % of NAV.
++"""
++
++from __future__ import annotations
++
++import math
++from statistics import NormalDist, stdev
++from typing import Mapping, Sequence
++
++_Z_99 = NormalDist().inv_cdf(0.99)      # ≈ 2.326 — 1% VaR z-score
++
++
++def portfolio_var_pct(notional: Mapping[str, float], marks: Mapping[str, Sequence[float]],
++                      nav: float, *, var_horizon_seconds: float, eval_cadence_s: float) -> float:
++    horizon_scale = math.sqrt(var_horizon_seconds / eval_cadence_s)
++    total = 0.0
++    for inst, usd in notional.items():
++        hist = marks.get(inst)
++        if hist is None or len(hist) < 3:
++            continue
++        rets = [math.log(hist[i] / hist[i - 1]) for i in range(1, len(hist))
++                if hist[i - 1] > 0 and hist[i] > 0]
++        if len(rets) < 2:
++            continue
++        total += usd * _Z_99 * stdev(rets) * horizon_scale    # sample σ, horizon-scaled
++    return total / nav * 100.0
++
++
++def max_cluster_pct(notional: Mapping[str, float], clusters: Mapping[str, Sequence[str]],
++                    nav: float) -> float:
++    worst = 0.0
++    for members in clusters.values():
++        worst = max(worst, sum(notional[i] for i in members if i in notional) / nav * 100.0)
++    return worst
 diff --git a/core/risk/guardrails.py b/core/risk/guardrails.py
-index ea18c5c..6766c7b 100644
+index ea18c5c..01c10bc 100644
 --- a/core/risk/guardrails.py
 +++ b/core/risk/guardrails.py
-@@ -1,9 +1,12 @@
+@@ -1,128 +1,37 @@
  """Guardrail checks + the stop authority (ACIS-07 §6/§7).
  
  The equity breaker, platform-measured drawdown series (§9.5, each rule under
@@ -1439,7 +2447,12 @@ index ea18c5c..6766c7b 100644
  
  The upward edge is the injected `HaltSink` — issuance is idempotent and
  serialized so two conditions firing "simultaneously" resolve to one halt state,
-@@ -12,117 +15,18 @@ most-severe scope winning (global flatten > session halt > instrument halt).
+ most-severe scope winning (global flatten > session halt > instrument halt).
++The session-halt latch lives exactly as long as the Governor's session halt: it
++lapses at the next session boundary (master §8), so the next day's breach halts
++again (audit F2/X1) — in one process and across a restart, where a session row
++whose boundary has passed is closed as expired instead of re-latched (F1).
+ """
  
  from __future__ import annotations
  
@@ -1451,7 +2464,8 @@ index ea18c5c..6766c7b 100644
  
 -from config.schemas import DrawdownRule, GuardrailLimits, RiskConfig
 -from core.data.fx_clock import trading_day
-+from config.schemas import GuardrailLimits, RiskConfig
++from config.schemas import GuardrailLimits, RiskConfig, ZonedTime
++from core.data.fx_clock import next_local
 +from core.risk.drawdown_series import (DrawdownSeries, _RuleAnchor,  # noqa: F401 (re-export)
 +                                       build_drawdown_series, taper_factor)
  from core.risk.risk_types import PlatformDrawdownState
@@ -1562,7 +2576,40 @@ index ea18c5c..6766c7b 100644
  @dataclass
  class GuardrailContext:
      now: datetime
-@@ -178,6 +82,42 @@ class Guardrails:
+@@ -148,7 +57,8 @@ class GuardrailOutcome:
+ class Guardrails:
+     def __init__(self, limits: GuardrailLimits, cfg: RiskConfig,
+                  series: DrawdownSeries, sink: HaltSink, logger, *,
+-                 taper_start: float, entry_halt: float) -> None:
++                 taper_start: float, entry_halt: float,
++                 session_boundaries: Sequence[ZonedTime]) -> None:
+         self._limits = limits
+         self._cfg = cfg
+         self._series = series
+@@ -156,13 +66,18 @@ class Guardrails:
+         self._log = logger
+         self._start = taper_start
+         self._halt = entry_halt
++        self._boundaries = tuple(session_boundaries)   # the Governor's, master §8 / C1
+         self._halted_scopes: set[str] = set()  # {"all","session",<instrument>}
+         self._flattened_scopes: set[str] = set()
+         self._instruments_halted: set[str] = set()
+         self._session_halted = False
++        self._session_until: datetime | None = None    # when the session halt lapses
+         self._equity_flattened = False
+         self._last_taper: float | None = None
+ 
++    def _next_boundary(self, at: datetime) -> datetime:
++        return min(next_local(at, b.zone, b.at) for b in self._boundaries)
++
+     # -- re-arm on human resume (GAP-P9I-06) --------------------------------- #
+ 
+     def rearm(self) -> None:
+@@ -175,9 +90,56 @@ class Guardrails:
+         self._flattened_scopes.clear()
+         self._instruments_halted.clear()
+         self._session_halted = False
++        self._session_until = None
          self._equity_flattened = False
          self._log.event("GUARDRAILS_REARMED")
  
@@ -1573,91 +2620,190 @@ index ea18c5c..6766c7b 100644
 +        return self._series
 +
 +    def restore_state(self, *, anchors: Mapping[str, Mapping], taper_factor: float | None,
-+                      halts: Sequence[tuple[str, str, str, datetime]] = ()) -> None:
-+        """Put the persisted drawdown anchors back, RE-APPLY every uncleared halt through
-+        the same edge with the same scope and reason (ACIS-07 §7), and RE-PUSH the last
-+        taper to the (fresh) Governor, before the first check. Restore-only: it puts
-+        back restrictions the dead process had; it cannot loosen one."""
++                      halts: Sequence = (), now: datetime | None = None) -> list:
++        """Put the persisted drawdown anchors back, RE-APPLY every uncleared halt still
++        in force through the same edge with the same scope and reason (ACIS-07 §7), and
++        RE-PUSH the last taper to the (fresh) Governor, before the first check. A session
++        halt whose own boundary is at or before `now` has lapsed (master §8): it is not
++        re-applied or latched, and is RETURNED so the caller closes its row as expired."""
 +        restored = self._series.restore(anchors)
 +        self._log.event("ANCHORS_RESTORED", rule_keys=list(restored),
 +                        ignored=sorted(set(anchors) - set(restored)))
-+        for kind, scope, reason, at in halts:    # latches set: the first check coalesces
++        if halts and now is None:
++            raise ValueError("restoring halts needs the boot instant (session expiry)")
++        expired = [h for h in halts if h[0] == "session" and self._next_boundary(h[3]) <= now]
++        halts = [h for h in halts if h not in expired]
++        for kind, scope, reason, at, *_ in halts:   # latches set: the first check coalesces
 +            if kind == "session":
-+                self._session_halted = True
 +                self._sink.apply_session_halt(at, reason)     # lifts at ITS boundary
++                self._session_halted = True
++                self._session_until = self._next_boundary(at)
 +            elif kind == "flatten":
-+                self._flattened_scopes.add(scope)
 +                self._sink.flatten(scope, reason)
++                self._flattened_scopes.add(scope)
 +            else:
-+                self._halted_scopes.add(scope)
 +                self._sink.apply_halt(scope, reason)
++                self._halted_scopes.add(scope)
 +            if scope not in ("all", "session"):
 +                self._instruments_halted.add(scope)
 +            self._equity_flattened |= reason == "equity_floor"
 +        if halts:
 +            self._log.event("HALTS_RESTORED", halts=[[k, s, r, a.isoformat()]
-+                                                     for k, s, r, a in halts])
++                                                     for k, s, r, a, *_ in halts])
++        if expired:
++            self._log.event("SESSION_HALTS_EXPIRED", halts=[[r, a.isoformat()]
++                                                            for _, _, r, a, *_ in expired])
 +        if taper_factor is not None:
 +            self._sink.apply_risk_state(taper_factor=taper_factor)
 +            self._last_taper = taper_factor
 +            self._log.event("TAPER_RESTORED", factor=taper_factor)
++        return expired
 +
      # -- racing-HALT coalescing (C-RSK-4) ------------------------------------ #
      # Idempotent + serialized: a scope already covered by an equal-or-more-severe
      # active halt is a no-op. Severity: instrument < session < all < flatten.
+@@ -191,47 +153,55 @@ class Guardrails:
+             return True
+         return scope in self._halted_scopes
+ 
++    # Audit F0/X2: every latch is set only AFTER the edge call returned, so an edge that
++    # failed is re-issued on the next check instead of being latched as done.
++
+     def _issue_halt(self, scope: str, reason: str) -> None:
+         if self._covered(scope):
+             return
+-        self._halted_scopes.add(scope)
+         self._sink.apply_halt(scope, reason)
++        self._halted_scopes.add(scope)
+         if scope not in ("all", "session"):
+             self._instruments_halted.add(scope)
+ 
+     def _issue_session_halt(self, now: datetime, reason: str) -> None:
++        if self._session_until is not None and now >= self._session_until:
++            self._session_halted = False            # the Governor's halt lapsed here (§8)
++            self._session_until = None
+         if "all" in self._flattened_scopes or "all" in self._halted_scopes \
+                 or self._session_halted:
+             return
+-        self._session_halted = True
+         self._sink.apply_session_halt(now, reason)
++        self._session_halted = True
++        self._session_until = self._next_boundary(now)
+ 
+     def _issue_flatten(self, scope: str, reason: str) -> None:
+         if scope in self._flattened_scopes or "all" in self._flattened_scopes:
+             return
+-        self._flattened_scopes.add(scope)
+         self._sink.flatten(scope, reason)
++        self._flattened_scopes.add(scope)
+         if scope != "all":
+             self._instruments_halted.add(scope)
+ 
+     # -- the evaluation ------------------------------------------------------ #
+ 
+     def check(self, ctx: GuardrailContext) -> GuardrailOutcome:
++        self._sink.flush()         # re-record any halt the ledger could not write (audit F0)
+         equity_breached = ctx.equity < Decimal(str(self._limits.equity_floor_usd))
+ 
+         # 1. Equity breaker — highest, unthrottleable, human-only resume. Spec
+         #    §7: flatten THEN global HALT (both are distinct wiring actions —
+         #    flatten closes via execution, HALT blocks new entries). One-shot
+-        #    (idempotent via `_equity_flattened`); both mark the scope covered so
+-        #    every later halt/flatten coalesces under them.
++        #    (idempotent via `_equity_flattened`, set once BOTH edge calls returned);
++        #    both mark the scope covered so every later halt/flatten coalesces under them.
+         if equity_breached and not self._equity_flattened:
+-            self._equity_flattened = True
+             self._log.event("EQUITY_FLOOR_BREACH", equity=str(ctx.equity),
+                             floor=self._limits.equity_floor_usd)
+             self._sink.flatten("all", "equity_floor")
+             self._sink.apply_halt("all", "equity_floor")
+             self._flattened_scopes.add("all")
+             self._halted_scopes.add("all")
++            self._equity_flattened = True
+ 
+         # 2. Platform + engine drawdown series, each under its own semantics.
+         states = self._series.measure(
 diff --git a/core/risk/halt_ledger.py b/core/risk/halt_ledger.py
 new file mode 100644
-index 0000000..c3433be
+index 0000000..cdbca07
 --- /dev/null
 +++ b/core/risk/halt_ledger.py
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,83 @@
 +"""The persisted HALT ledger on the upward edge (ACIS-07 §7 "active halts", §10).
 +
-+A restart is never a relaxation (GAP-0050). Invariants:
++A restart is never a relaxation (GAP-0050), and the ledger never gates a guard. Invariants:
 +  * `PersistentHaltSink` wraps the single upward edge. Every halt, session halt and
-+    flatten is written to `halt_event` BEFORE it is forwarded, so a crash between the
-+    two can only leave a recorded halt not yet applied (restored at boot), never the
-+    reverse. The MCP control target must route its halts and flattens through it too.
++    flatten is FORWARDED FIRST — the Governor and execution act before any disk write —
++    then recorded in `halt_event` (audit F0/X2). The MCP control target must route its
++    halts and flattens through it too.
++  * A failed write is retried, raised as a `HALT_LEDGER_WRITE_FAILED` alarm, and kept
++    pending in memory; the halt itself is already in force. Every `flush()` (each check)
++    writes the pending rows again until they land.
 +  * Boot re-applies every uncleared row through the same edge, same scope and reason,
-+    before the first evaluate (`Guardrails.restore_state`). A session halt is re-applied
-+    with its ORIGINAL instant, so it lifts at the boundary it would have lifted at.
++    before the first evaluate (`Guardrails.restore_state`).
 +  * Re-applying writes nothing new: an open row with the same kind, scope and reason
 +    (and, for a session halt, instant) is not written twice.
-+  * The sink has no clearing verb. Only a human resume clears rows
-+    (`RiskMonitor.on_human_resume`), so an agent that reaches the sink can halt, never
-+    unhalt, and never make a restart forget a halt.
++  * The sink has no clearing verb. Only the human resume clears rows, so an agent that
++    reaches the sink can halt, never unhalt, and never make a restart forget a halt.
 +"""
 +
 +from __future__ import annotations
 +
++import sqlite3
 +from datetime import datetime
 +from typing import Callable
 +
 +from core.risk.sink import HaltSink
 +from core.risk.store import RiskStore
 +
++WRITE_ATTEMPTS = 3
++
 +
 +class PersistentHaltSink(HaltSink):
 +    def __init__(self, inner: HaltSink, store: RiskStore,
-+                 now_fn: Callable[[], datetime]) -> None:
++                 now_fn: Callable[[], datetime], logger) -> None:
 +        self._inner = inner
 +        self._store = store
 +        self._now = now_fn
++        self._log = logger
++        self._pending: list[tuple[str, str, str, datetime]] = []
 +
 +    def _record(self, kind: str, scope: str, reason: str, at: datetime) -> None:
-+        for k, s, r, t in self._store.open_halts():
-+            if (k, s, r) == (kind, scope, reason) and (kind != "session" or t == at):
++        self._pending.append((kind, scope, reason, at))
++        self.flush()
++
++    def flush(self) -> None:
++        while self._pending:
++            kind, scope, reason, at = self._pending[0]
++            error = None
++            for _ in range(WRITE_ATTEMPTS):
++                try:
++                    self._write(kind, scope, reason, at)
++                    break
++                except (sqlite3.Error, OSError) as exc:      # bookkeeping, never the guard
++                    error = exc
++            else:
++                self._log.event("HALT_LEDGER_WRITE_FAILED", kind=kind, scope=scope,
++                                reason=reason, error=str(error), pending=len(self._pending))
++                return
++            self._pending.pop(0)
++
++    def _write(self, kind: str, scope: str, reason: str, at: datetime) -> None:
++        for row in self._store.open_halts():
++            same = (row.kind, row.scope, row.reason) == (kind, scope, reason)
++            if same and (kind != "session" or row.at == at):
 +                return
 +        self._store.record_halt(f"{kind}|{at.isoformat()}|{scope}|{reason}",
 +                                at.isoformat(), scope, reason)
 +
 +    def apply_halt(self, scope: str, reason: str) -> None:
-+        self._record("halt", scope, reason, self._now())
 +        self._inner.apply_halt(scope, reason)
++        self._record("halt", scope, reason, self._now())
 +
 +    def apply_session_halt(self, now: datetime, reason: str) -> None:
-+        self._record("session", "session", reason, now)
 +        self._inner.apply_session_halt(now, reason)
++        self._record("session", "session", reason, now)
 +
 +    def apply_risk_state(self, *, taper_factor: float | None = None,
 +                         alpha_decay: bool | None = None) -> None:
@@ -1665,36 +2811,63 @@ index 0000000..c3433be
 +        self._inner.apply_risk_state(taper_factor=taper_factor, alpha_decay=alpha_decay)
 +
 +    def flatten(self, scope: str, reason: str) -> None:
-+        self._record("flatten", scope, reason, self._now())
 +        self._inner.flatten(scope, reason)
++        self._record("flatten", scope, reason, self._now())
 diff --git a/core/risk/monitor.py b/core/risk/monitor.py
-index 3afdfce..d23299a 100644
+index 3afdfce..517906b 100644
 --- a/core/risk/monitor.py
 +++ b/core/risk/monitor.py
-@@ -26,11 +26,13 @@ from pathlib import Path
- from statistics import NormalDist, stdev
+@@ -16,23 +16,22 @@ always authoritative for the breaker and drawdown series (§9.5).
+ from __future__ import annotations
+ 
+ import json
+-import math
+ import os
+ from collections import deque
+ from dataclasses import dataclass
+ from datetime import datetime, timezone
+ from decimal import Decimal
+ from pathlib import Path
+-from statistics import NormalDist, stdev
  
  from config.schemas import RiskConfig, GuardrailLimits
 +from core.data.errors import DataQualityError
  from core.execution.venue import BrokerAccount, BrokerPosition, FillReport, FillStatus
  from core.risk.alpha_decay import AlphaDecayDetector
++from core.risk.exposure_metrics import max_cluster_pct, portfolio_var_pct
  from core.risk.guardrails import GuardrailContext, Guardrails
  from core.risk.risk_types import RiskPosition, RiskSnapshot, Trade
  from core.risk.sink import HaltSink
+-
+-_Z_99 = NormalDist().inv_cdf(0.99)      # ≈ 2.326 — 1% VaR z-score
 +from core.risk.usd_conversion import usd_factor
  
- _Z_99 = NormalDist().inv_cdf(0.99)      # ≈ 2.326 — 1% VaR z-score
  
-@@ -204,30 +206,17 @@ class RiskMonitor:
+ @dataclass
+@@ -163,8 +162,11 @@ class RiskMonitor:
+         daily_pnl = daily_realised + unrealised
+ 
+         per_inst_dd = self._per_instrument_drawdown(marks, nav)
+-        var_pct = self._var_pct(marks, nav)
+-        cluster_pct = self._max_cluster_pct(marks, nav)
++        notional = {inst: self._notional(inst, pos, marks) for inst, pos in self._positions.items()}
++        var_pct = portfolio_var_pct(notional, self._marks, float(nav),
++                                    var_horizon_seconds=self._cfg.var_horizon_seconds,
++                                    eval_cadence_s=self._cfg.eval_cadence_s)
++        cluster_pct = max_cluster_pct(notional, self._clusters, float(nav))
+         slip = (sum(self._slippage) / len(self._slippage)) if self._slippage else 0.0
+ 
+         outcome = self._guards.check(GuardrailContext(
+@@ -204,30 +206,16 @@ class RiskMonitor:
              platform_drawdown=tuple(s for s in outcome.platform_drawdown
                                      if s.rule_key != "engine:daily"),
              taper_factor=outcome.taper_factor, session_id=self._session_id)
 -        if self._store is not None:
-+        if self._store is not None:        # restrictive state persisted every evaluate
-             self._store.write_snapshot(snap)
-+            self._store.save_restrictive_state(               # (GAP-0050 / GAP-P12D-55)
-+                alpha_armed=self._alpha.armed, taper_factor=outcome.taper_factor,
-+                anchors=self._guards.series.export())
+-            self._store.write_snapshot(snap)
++        if self._store is not None:        # after the guard acted; never gates it (audit F0)
++            self._store.persist_evaluate(                     # (GAP-0050 / GAP-P12D-55)
++                snap, alpha_armed=self._alpha.armed, taper_factor=outcome.taper_factor,
++                anchors=self._guards.series.export(), log=self._log)
          return snap
  
      # -- quote→USD conversion (GAP-P9E-04 / rescoped GAP-0092) ---------------- #
@@ -1721,10 +2894,11 @@ index 3afdfce..d23299a 100644
          if factor is None:
              self._log.event("CONVERSION_UNAVAILABLE", instrument=instrument,
                              note="cross pair — quote-ccy used, phase-11 FX table owed")
-@@ -269,15 +258,10 @@ class RiskMonitor:
+@@ -268,39 +256,6 @@ class RiskMonitor:
+         quote_notional = Decimal(str(abs(float(pos.signed_units)) * mark))
          return float(self._to_usd(inst, quote_notional, mark))
  
-     def _var_pct(self, marks, nav) -> float:
+-    def _var_pct(self, marks, nav) -> float:
 -        """Delta-normal, UNDIVERSIFIED (no correlation credit — conservative
 -        sum of per-position VaR), scaled to a DECLARED holding-period horizon
 -        (GAP-P9E-03: a VaR without a stated horizon is meaningless — the raw
@@ -1734,29 +2908,52 @@ index 3afdfce..d23299a 100644
 -        horizon. (The 3% cap's re-confirmation against this horizon is RAISED
 -        to the owner — GAP-P9E-03 — as the horizon was previously undeclared;
 -        VaR is not yet wired in-loop, GAP-0091b, so nothing live changes.)"""
-+        """Delta-normal, UNDIVERSIFIED (no correlation credit: a conservative sum of
-+        per-position VaR). σ is the rolling log-return of marks scaled by
-+        √(var_horizon_seconds / eval_cadence_s) to the DECLARED horizon (GAP-P9E-03);
-+        the 3% cap is ratified against the 1-day horizon (GAP-0103); in-loop: GAP-0091b."""
-         horizon_scale = math.sqrt(self._cfg.var_horizon_seconds
-                                   / self._cfg.eval_cadence_s)
-         total = 0.0
-@@ -328,23 +312,29 @@ class RiskMonitor:
+-        horizon_scale = math.sqrt(self._cfg.var_horizon_seconds
+-                                  / self._cfg.eval_cadence_s)
+-        total = 0.0
+-        for inst, pos in self._positions.items():
+-            hist = self._marks.get(inst)
+-            if hist is None or len(hist) < 3:
+-                continue
+-            rets = [math.log(hist[i] / hist[i - 1]) for i in range(1, len(hist))
+-                    if hist[i - 1] > 0 and hist[i] > 0]
+-            if len(rets) < 2:
+-                continue
+-            sigma = stdev(rets) * horizon_scale        # sample σ, horizon-scaled
+-            total += self._notional(inst, pos, marks) * _Z_99 * sigma
+-        return total / float(nav) * 100.0
+-
+-    def _max_cluster_pct(self, marks, nav) -> float:
+-        worst = 0.0
+-        for members in self._clusters.values():
+-            notional = sum(self._notional(inst, self._positions[inst], marks)
+-                           for inst in members if inst in self._positions)
+-            worst = max(worst, notional / float(nav) * 100.0)
+-        return worst
+-
+     # -- heartbeat (§8.6 / ACIS-12) ------------------------------------------ #
+ 
+     def write_heartbeat(self, now: datetime, mode: str, fast_loop_seq: int) -> None:
+@@ -328,23 +283,33 @@ class RiskMonitor:
                  stop_loss=pos.stop_loss, take_profit=pos.take_profit))
          return tuple(out)
  
 -    def restore_restrictive_state(self, *, alpha_armed: bool) -> None:
 +    def restore_restrictive_state(self, *, alpha_armed: bool, taper_factor: float | None = None,
-+                                  anchors: dict | None = None, halts: list | None = None) -> None:
++                                  anchors: dict | None = None, halts: list | None = None,
++                                  now: datetime | None = None) -> None:
          """Persisted risk-restrictive state is restored BEFORE the first
          evaluate — a restart is never a relaxation (GAP-0050). GAP-P9I-05: the
 -        restored throttle must be RE-PUSHED to the (fresh) Governor over the
 -        upward edge — restoring the detector's flag alone leaves a rebooted
 -        Governor un-throttled."""
 +        restored throttle must be RE-PUSHED to the (fresh) Governor over the upward
-+        edge; so are the anchors, the taper (GAP-P12D-55) and open halts (ACIS-07 §7)."""
-+        self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor,
-+                                   halts=halts or ())
++        edge; so are the anchors, the taper (GAP-P12D-55) and open halts (ACIS-07 §7).
++        A session halt that lapsed while the engine was down is closed, not re-applied."""
++        expired = self._guards.restore_state(anchors=anchors or {}, taper_factor=taper_factor,
++                                             halts=halts or (), now=now)
++        if expired and self._store is not None:
++            self._store.expire_halts([h.halt_id for h in expired], now)
          self._alpha.restore_armed(alpha_armed)
          self._alpha_armed_prev = alpha_armed
          if alpha_armed:
@@ -1780,11 +2977,23 @@ index 3afdfce..d23299a 100644
          self._guards.rearm()
  
      def reconcile_on_restart(self, broker_positions: tuple[BrokerPosition, ...],
+diff --git a/core/risk/sink.py b/core/risk/sink.py
+index 4bb67e5..01d4be3 100644
+--- a/core/risk/sink.py
++++ b/core/risk/sink.py
+@@ -35,3 +35,7 @@ class HaltSink(ABC):
+     @abstractmethod
+     def flatten(self, scope: str, reason: str) -> None:
+         """Close positions on a scope ("all" | instrument) and halt it."""
++
++    def flush(self) -> None:
++        """Record any halt the edge could not persist yet (audit F0/X2). A no-op for an
++        edge without a ledger; never a way to lift, shorten or skip a halt."""
 diff --git a/core/risk/store.py b/core/risk/store.py
-index 01774ae..f88e36d 100644
+index 01774ae..96ab95b 100644
 --- a/core/risk/store.py
 +++ b/core/risk/store.py
-@@ -2,19 +2,42 @@
+@@ -2,19 +2,55 @@
  risk-restrictive state a restart must restore before the first evaluate
  (GAP-0050 — a restart is never a relaxation).
  
@@ -1800,8 +3009,10 @@ index 01774ae..f88e36d 100644
 +Every halt, session halt and flatten that crosses the upward edge is a `halt_event`
 +row (core/risk/halt_ledger.py, ACIS-07 §7); its kind rides in the opaque `halt_id`
 +as `<kind>|…` (the §10 DDL has no column for it). An uncleared row is re-applied at
-+boot. Only a human resume clears rows, and `cleared_by` is `human:<sha256 prefix of
-+the token>` — never the token itself. Snapshot writes are idempotent on the ts PK.
++boot — except a session halt whose own boundary has passed, which is closed as
++`auto:session_boundary` instead (master §8: it lapses there). Otherwise only a human
++resume clears rows, and `cleared_by` is `human:<sha256 prefix of the token>` — never
++the token itself. Snapshot writes are idempotent on the ts PK.
  """
  
  from __future__ import annotations
@@ -1811,26 +3022,46 @@ index 01774ae..f88e36d 100644
  import sqlite3
 +from datetime import datetime
  from pathlib import Path
++from typing import NamedTuple
  
 +from core.data.errors import DataQualityError
++from core.data.sqlite_wal import open_store
  from core.risk.risk_types import RiskSnapshot
  
 +_ANCHOR = "anchor:"
 +
 +
-+def restore_on_boot(store: "RiskStore", monitor) -> None:
-+    """Boot, before the first evaluate: put back everything the dead process had
-+    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55),
-+    and every halt no human has cleared (ACIS-07 §7, GAP-0050)."""
++class HaltRow(NamedTuple):
++    kind: str            # "halt" | "session" | "flatten"
++    scope: str
++    reason: str
++    at: datetime
++    halt_id: str
++
++
++def restore_on_boot(store: "RiskStore", monitor, now: datetime) -> None:
++    """Boot at `now`, before the first evaluate: put back everything the dead process
++    persisted — the throttle, the last taper, every drawdown anchor (GAP-P12D-55), and
++    every halt no human has cleared that is still in force (ACIS-07 §7, GAP-0050)."""
 +    state = store.load_restrictive_state()
 +    monitor.restore_restrictive_state(alpha_armed=bool(state.get("alpha_armed", False)),
 +                                      taper_factor=state.get("taper_factor"),
-+                                      anchors=store.load_anchors(), halts=store.open_halts())
++                                      anchors=store.load_anchors(), halts=store.open_halts(),
++                                      now=now)
 +
  
  class RiskStore:
      _DDL = """
-@@ -60,23 +83,44 @@ class RiskStore:
+@@ -38,7 +74,7 @@ class RiskStore:
+     """
+ 
+     def __init__(self, db_path: str | Path) -> None:
+-        self._conn = sqlite3.connect(str(db_path))
++        self._conn = open_store(db_path)     # WAL + synchronous=FULL: power-loss durable (X4)
+         self._conn.executescript(self._DDL)
+         self._conn.commit()
+ 
+@@ -60,23 +96,63 @@ class RiskStore:
              "VALUES (?,?,?,?)", (halt_id, ts, scope, reason))
          self._conn.commit()
  
@@ -1838,13 +3069,20 @@ index 01774ae..f88e36d 100644
 -        self._conn.execute(
 -            "UPDATE halt_event SET cleared_at=?, cleared_by=? WHERE halt_id=?",
 -            (cleared_at, cleared_by, halt_id))
-+    def open_halts(self) -> list[tuple[str, str, str, datetime]]:
-+        """(kind, scope, reason, ts) of every uncleared halt, oldest first."""
++    def open_halts(self) -> list[HaltRow]:
++        """Every uncleared halt, oldest first."""
 +        rows = self._conn.execute(
 +            "SELECT halt_id, ts, scope, reason FROM halt_event WHERE cleared_at IS NULL "
 +            "ORDER BY ts, halt_id").fetchall()
-+        return [(hid.split("|", 1)[0] if "|" in hid else "halt", scope, reason,
-+                 datetime.fromisoformat(ts)) for hid, ts, scope, reason in rows]
++        return [HaltRow(hid.split("|", 1)[0] if "|" in hid else "halt", scope, reason,
++                        datetime.fromisoformat(ts), hid) for hid, ts, scope, reason in rows]
++
++    def expire_halts(self, halt_ids: list[str], at: datetime) -> None:
++        """Close session-halt rows whose own boundary has passed (they lapsed there)."""
++        self._conn.executemany("UPDATE halt_event SET cleared_at=?, cleared_by=? "
++                               "WHERE halt_id=? AND cleared_at IS NULL",
++                               [(at.isoformat(), "auto:session_boundary", h) for h in halt_ids])
++        self._conn.commit()
 +
 +    def clear_halts(self, cleared_at: datetime, human_token: str) -> int:
 +        """A HUMAN resume clears every open halt, as the Governor's resume clears every
@@ -1856,6 +3094,18 @@ index 01774ae..f88e36d 100644
 +                                 "WHERE cleared_at IS NULL", (cleared_at.isoformat(), by))
          self._conn.commit()
 +        return cur.rowcount
++
++    def persist_evaluate(self, snap: RiskSnapshot, *, alpha_armed: bool, taper_factor: float,
++                         anchors: dict[str, dict], log) -> None:
++        """Bookkeeping AFTER the guard has acted (audit F0/X2): a failure is raised as a
++        RISK_STORE_WRITE_FAILED alarm, never into the guard's path, and the next evaluate
++        writes the whole state again."""
++        try:
++            self.write_snapshot(snap)
++            self.save_restrictive_state(alpha_armed=alpha_armed, taper_factor=taper_factor,
++                                        anchors=anchors)
++        except (sqlite3.Error, OSError) as exc:
++            log.event("RISK_STORE_WRITE_FAILED", error=str(exc))
  
 -    def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float) -> None:
 -        for k, v in (("alpha_armed", json.dumps(alpha_armed)),
@@ -1913,11 +3163,37 @@ index 0000000..f418964
 +    if base == "USD":
 +        return (1.0 / price) if price else 1.0
 +    return None
+diff --git a/tests/backtest/test_glitch_classes.py b/tests/backtest/test_glitch_classes.py
+index a414ec0..db46981 100644
+--- a/tests/backtest/test_glitch_classes.py
++++ b/tests/backtest/test_glitch_classes.py
+@@ -79,7 +79,8 @@ def test_symbol_suffix_incomplete_map_rejected_at_attach() -> None:
+     import asyncio
+ 
+     from core.data.errors import DataQualityError
+-    from core.execution.venue import MockExecutionFace, verify_attach
++    from core.execution.attach import verify_attach
++    from core.execution.venue import MockExecutionFace
+     from tests.optimizer_fixtures import CapturingLogger
+ 
+     face = MockExecutionFace()
+diff --git a/tests/integration/paper_loop.py b/tests/integration/paper_loop.py
+index 9446cf7..c836b2c 100644
+--- a/tests/integration/paper_loop.py
++++ b/tests/integration/paper_loop.py
+@@ -263,6 +263,7 @@ def build_paper_loop(
+         session_boundaries=cfg.system.session_boundaries,
+         week_close=fx.week_close,
+         week_open=fx.week_open,
++        holidays=fx.holidays,
+         scalp_horizon_s=(signals_cfg.momentum_scalp_horizon_bars[1]
+                          * signals_cfg.momentum_scalp_bar_seconds),
+         atr_period=signals_cfg.atr_period,
 diff --git a/tests/integration/test_adapter_conformance.py b/tests/integration/test_adapter_conformance.py
-index fd1893b..1c855b9 100644
+index fd1893b..b6da3e3 100644
 --- a/tests/integration/test_adapter_conformance.py
 +++ b/tests/integration/test_adapter_conformance.py
-@@ -188,3 +188,139 @@ def test_gap0013_feed_face_still_exposes_no_account_surface() -> None:
+@@ -188,3 +188,199 @@ def test_gap0013_feed_face_still_exposes_no_account_surface() -> None:
          for member in dir(cls):
              if not member.startswith("_"):
                  assert not forbidden.search(member)
@@ -1934,7 +3210,8 @@ index fd1893b..1c855b9 100644
 +
 +    from config.schemas import ExecutionConfig
 +    from core.execution.orchestrator import ExecutionOrchestrator
-+    from core.execution.venue import FillReportStore, VenueQuality
++    from core.execution.venue import FillReportStore
++    from core.execution.venue_quality import VenueQuality
 +    from tests.optimizer_fixtures import CapturingLogger
 +
 +    async def instant(_s: float) -> None:
@@ -2008,32 +3285,55 @@ index fd1893b..1c855b9 100644
 +    (pos,) = await face.open_positions()
 +    assert pos.size_units == lot * 2                              # the refused open never got there
 +    assert log.events("EXEC_REQUEST_BUDGET_REFUSED")
-+    # de-risking is never throttled: the close goes through, and the exception is logged
-+    closed = await orch.submit(_order(lot * 2, action="close", direction=-1,
++    # de-risking is never throttled: the close (naming the long) goes through, logged
++    closed = await orch.submit(_order(lot * 2, action="close", direction=1,
 +                                      order_id="o-close"), valid_for_seconds=300)
 +    assert [r.status for r in closed] == [FillStatus.FILLED]
 +    assert await face.open_positions() == ()
 +    assert log.events("EXEC_REQUEST_BUDGET_DERISK")
 +
 +
-+async def test_spent_budget_refuses_a_close_that_would_add_to_the_position(adapter,
-+                                                                         tmp_path) -> None:
-+    # Only a close that truly shrinks the venue position is exempt. A `close` carrying
-+    # the position's OWN direction (as the Governor's group exits do today) would add
-+    # to it, so it is an open in all but name and is refused once the budget is spent.
++# Reduce-only closes (builder F1): a close NAMES its position — its direction is the
++# position's side — and the engine trades the opposite side. It may shrink |position| at
++# the venue, never open, add to, or flip one, and the freeze and a spent budget admit only it.
++
++async def test_a_close_into_a_flat_venue_is_refused(adapter, tmp_path) -> None:
++    face = adapter()
++    orch, log = _orchestrator(face, tmp_path)
++    reports = await orch.submit(_order(_lot_units(face.descriptor.min_lot), action="close"),
++                                valid_for_seconds=300)
++    assert [r.status for r in reports] == [FillStatus.REJECTED]
++    assert await face.open_positions() == ()                      # nothing opened
++    assert log.events("EXEC_CLOSE_REFUSED")
++
++
++async def test_a_close_naming_the_other_side_is_refused_not_added(adapter, tmp_path) -> None:
 +    face = adapter()
 +    lot = _lot_units(face.descriptor.min_lot)
 +    orch, log = _orchestrator(face, tmp_path, requests_per_day=1)
-+    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)
-+    adds = await orch.submit(_order(lot, action="close", direction=1, order_id="o-mislabel"),
-+                             valid_for_seconds=300)
-+    assert [r.status for r in adds] == [FillStatus.REJECTED]
++    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)   # budget now spent
++    wrong = await orch.submit(_order(lot, action="close", direction=-1, order_id="c-short"),
++                              valid_for_seconds=300)
++    assert [r.status for r in wrong] == [FillStatus.REJECTED]     # the venue holds no short
 +    (pos,) = await face.open_positions()
-+    assert pos.size_units == lot                                  # not doubled
-+    too_big = await orch.submit(_order(lot * 2, action="close", direction=-1,
-+                                       order_id="o-flip"), valid_for_seconds=300)
-+    assert [r.status for r in too_big] == [FillStatus.REJECTED]   # would flip, not close
-+    assert log.events("EXEC_REQUEST_BUDGET_REFUSED")
++    assert (pos.direction, pos.size_units) == (1, lot)            # neither doubled nor flipped
++    assert not log.events("EXEC_REQUEST_BUDGET_DERISK")           # never reached the venue
++
++
++async def test_a_close_larger_than_the_position_is_capped_never_flips(adapter, tmp_path) -> None:
++    face = adapter()
++    lot = _lot_units(face.descriptor.min_lot)
++    orch, log = _orchestrator(face, tmp_path)
++    await orch.submit(_order(lot, order_id="o-long"), valid_for_seconds=300)
++    reports = await orch.submit(_order(lot * 3, action="close", order_id="c-big"),
++                                valid_for_seconds=300)
++    filled = sum((r.filled_units for r in reports), Decimal("0"))
++    unsent = sum((r.remaining_units for r in reports if r.status is FillStatus.REJECTED),
++                 Decimal("0"))
++    assert filled == lot and unsent == lot * 2                    # capped at the holding
++    assert all(r.direction == -1 for r in reports)                # traded the opposite side
++    assert await face.open_positions() == ()                      # flat, not short
++    assert log.events("EXEC_CLOSE_CAPPED")
 +
 +
 +async def test_request_budget_survives_a_restart(adapter, tmp_path) -> None:
@@ -2057,8 +3357,181 @@ index fd1893b..1c855b9 100644
 +                             now=T0 + timedelta(hours=25))
 +    (r,) = await orch3.submit(_order(lot, order_id="o-next-day"), valid_for_seconds=300)
 +    assert r.status is FillStatus.FILLED
++
++
++# ── close_position: the venue's own atomic reduce (audits X3/F4, ACIS-06 §7.5) ──
++# Every adapter maps it to its venue's close (cTrader ProtoOAClosePositionReq by
++# position id; OANDA positionFill=REDUCE_ONLY; FIX PositionEffect=C). Whatever the venue,
++# it may only take a position DOWN: never open one, add to one, or flip one.
++
++async def _close(face, units, direction=1, fragment_id="cl"):
++    return await face.close_position(
++        fragment_id=fragment_id, order_id="ord-cl", instrument="EUR_USD",
++        direction=direction, units=Decimal(str(units)), requested_price=1.10, now=T0,
++        session_id="conf")
++
++
++async def test_close_position_on_a_flat_venue_opens_nothing(adapter) -> None:
++    face = adapter()
++    report = await _close(face, 1000)
++    assert report.status is FillStatus.REJECTED
++    assert await face.open_positions() == ()
++
++
++async def test_close_position_naming_the_other_side_opens_nothing(adapter) -> None:
++    face = adapter()
++    await _submit(face)                                           # long 1,000
++    report = await _close(face, 1000, direction=-1)               # "close the short"
++    assert report.status is FillStatus.REJECTED
++    (pos,) = await face.open_positions()
++    assert (pos.direction, pos.size_units) == (1, Decimal("1000"))
++
++
++async def test_close_position_larger_than_the_holding_never_flips(adapter) -> None:
++    face = adapter()
++    await _submit(face)                                           # long 1,000
++    report = await _close(face, 3000)
++    assert report.filled_units == Decimal("1000") and report.direction == -1
++    assert await face.open_positions() == ()                      # flat, not short 2,000
+diff --git a/tests/integration/test_atomic_close.py b/tests/integration/test_atomic_close.py
+new file mode 100644
+index 0000000..0a8a102
+--- /dev/null
++++ b/tests/integration/test_atomic_close.py
+@@ -0,0 +1,131 @@
++"""A close carries its intent across the face boundary (audits X3 / F4).
++
++The engine's reduce-only pre-check reads the venue position and then sends: a check-then-
++act that a concurrent close or a venue-side stop can race, and that a hedging venue turns
++into a new opposite position. The close now reaches the venue as `close_position`, which
++the adapter maps to the venue's own atomic close; the mock does it under a lock. Tests from
++the audits' repros (`r3_close_race_and_hedging.py`, `r3_close_races.py`)."""
++
++from __future__ import annotations
++
++import asyncio
++from dataclasses import replace
++from decimal import Decimal
++
++from core.execution.venue import BrokerPosition, FillReport, FillStatus, MockExecutionFace
++from tests.unit.test_execution import T0, mk_order, mk_orchestrator
++
++LOT = Decimal("100000")
++
++
++class YieldingFace(MockExecutionFace):
++    """Every venue call yields to the event loop first, like a network round-trip."""
++
++    async def open_positions(self):
++        await asyncio.sleep(0)
++        return await super().open_positions()
++
++    async def close_position(self, **kw):
++        await asyncio.sleep(0)
++        return await super().close_position(**kw)
++
++
++class StopFiresAfterRead(MockExecutionFace):
++    """The venue's resting stop closes the long right after the engine reads it."""
++    armed = True
++
++    async def open_positions(self):
++        held = await super().open_positions()
++        if self.armed and held:
++            self.armed = False
++            self._net["EUR_USD"] = Decimal("0")
++        return held
++
++
++class HedgingFace(MockExecutionFace):
++    """A hedging venue: an opposite ORDER opens a second position; only a close reduces."""
++
++    def __init__(self) -> None:
++        super().__init__()
++        self.descriptor = replace(self.descriptor, account_model="hedging")
++        self.book: list[list] = []                            # [direction, units]
++
++    async def submit_order(self, *, direction, units, fragment_id, **kw):
++        self.book.append([direction, units])
++        return FillReport(fill_id=f"{fragment_id}:f", order_id=kw["order_id"],
++                          fragment_id=fragment_id, instrument=kw["instrument"],
++                          direction=direction, requested_price=kw["requested_price"],
++                          fill_price=kw["requested_price"], filled_units=units,
++                          slippage_bps=0.0, fill_time=kw["now"], venue=self.name,
++                          status=FillStatus.FILLED, remaining_units=Decimal("0"),
++                          session_id=kw["session_id"])
++
++    async def close_position(self, *, direction, units, fragment_id, **kw):
++        async with self._lock:
++            take = units
++            for pos in self.book:
++                if pos[0] == direction and take > 0:
++                    cut = min(pos[1], take)
++                    pos[1] -= cut
++                    take -= cut
++            self.book = [p for p in self.book if p[1] > 0]
++            filled = units - take
++            return FillReport(
++                fill_id=f"{fragment_id}:c", order_id=kw["order_id"], fragment_id=fragment_id,
++                instrument=kw["instrument"], direction=-direction,
++                requested_price=kw["requested_price"],
++                fill_price=kw["requested_price"] if filled else 0.0, filled_units=filled,
++                slippage_bps=0.0, fill_time=kw["now"], venue=self.name,
++                status=FillStatus.FILLED if filled == units else
++                FillStatus.REJECTED if filled == 0 else FillStatus.PARTIAL,
++                remaining_units=take, session_id=kw["session_id"])
++
++    async def open_positions(self):
++        return tuple(BrokerPosition(instrument="EUR_USD", direction=d, size_units=u)
++                     for d, u in self.book)
++
++
++async def test_two_concurrent_closes_never_flip_the_position(tmp_path) -> None:
++    face = YieldingFace()
++    orch, _, _, _ = mk_orchestrator(tmp_path, faces={"mock": face})
++    await orch.submit(mk_order(str(LOT), order_id="long"), valid_for_seconds=300)
++    await asyncio.gather(
++        orch.submit(mk_order(str(LOT), action="close", order_id="c1"), valid_for_seconds=300),
++        orch.submit(mk_order(str(LOT), action="close", order_id="c2"), valid_for_seconds=300))
++    assert await face.open_positions() == ()                   # flat — was SHORT 100,000
++
++
++async def test_a_venue_stop_between_read_and_close_opens_nothing(tmp_path) -> None:
++    face = StopFiresAfterRead()
++    face._net["EUR_USD"] = Decimal("50000")
++    orch, _, _, _ = mk_orchestrator(tmp_path, faces={"mock": face})
++    reports = await orch.submit(mk_order("50000", action="close", order_id="c"),
++                                valid_for_seconds=300)
++    assert [r.status for r in reports] == [FillStatus.REJECTED]  # nothing left to close
++    assert await face.open_positions() == ()                   # was SHORT 50,000, no stop
++
++
++async def test_a_hedging_venue_never_ends_net_opposite(tmp_path) -> None:
++    face = HedgingFace()
++    orch, _, _, _ = mk_orchestrator(tmp_path, faces={"mock": face})
++    await orch.submit(mk_order(str(LOT), order_id="long"), valid_for_seconds=300)
++    for i in range(3):                  # e.g. the weekend flatten re-emitting each tick
++        await orch.submit(mk_order(str(LOT), action="close", order_id=f"c{i}"),
++                          valid_for_seconds=300)
++    net = sum(d * u for d, u in face.book)
++    assert face.book == [] and net == 0                        # was net SHORT 200,000
++
++
++async def test_close_position_is_reduce_only_on_the_shipped_mock() -> None:
++    face = MockExecutionFace()
++    flat = await face.close_position(fragment_id="f0", order_id="o", instrument="EUR_USD",
++                                     direction=1, units=LOT, requested_price=1.1, now=T0,
++                                     session_id="s")
++    assert flat.status is FillStatus.REJECTED and await face.open_positions() == ()
++    await face.submit_order(fragment_id="o1", order_id="o", instrument="EUR_USD", direction=1,
++                            units=LOT, requested_price=1.1, ioc=False, now=T0, session_id="s")
++    big = await face.close_position(fragment_id="f1", order_id="o", instrument="EUR_USD",
++                                    direction=1, units=LOT * 3, requested_price=1.1, now=T0,
++                                    session_id="s")
++    assert (big.status, big.filled_units, big.direction) == (FillStatus.PARTIAL, LOT, -1)
++    assert await face.open_positions() == ()                   # flat, never short
 diff --git a/tests/integration/test_execution_pipeline.py b/tests/integration/test_execution_pipeline.py
-index 6eece80..867c762 100644
+index 6eece80..08dc737 100644
 --- a/tests/integration/test_execution_pipeline.py
 +++ b/tests/integration/test_execution_pipeline.py
 @@ -1,10 +1,16 @@
@@ -2080,6 +3553,16 @@ index 6eece80..867c762 100644
  from random import Random
  
  from core.execution.fragmenter import plan  # noqa: F401  (import contract smoke)
+@@ -14,8 +20,8 @@ from core.execution.venue import (
+     FillReportStore,
+     FillStatus,
+     MockExecutionFace,
+-    VenueQuality,
+ )
++from core.execution.venue_quality import VenueQuality
+ from core.regime.regime_types import RegimeType
+ from tests.optimizer_fixtures import CapturingLogger, make_paramset
+ from tests.signals_fixtures import (
 @@ -31,6 +37,20 @@ from tests.signals_fixtures import (
  from tests.unit.test_governor import mk_governor, mk_portfolio
  
@@ -2134,28 +3617,201 @@ index 6eece80..867c762 100644
  
  
  async def test_pair_group_executes_both_legs(tmp_path) -> None:
-@@ -91,11 +112,12 @@ async def test_pair_group_executes_both_legs(tmp_path) -> None:
+@@ -91,15 +112,65 @@ async def test_pair_group_executes_both_legs(tmp_path) -> None:
      usd = [o.size_units * usd_per_base_unit(o.instrument, o.entry_price, {}) for o in (oa, ob)]
      assert min(usd) > 0 and abs(usd[0] - usd[1]) <= Decimal("0.05")   # equal USD legs (GAP-P12D-26)
  
 -    orch, face, _ = mk_exec(tmp_path)
-+    orch, face, _ = mk_exec(tmp_path, unit_venue())
-     ra = await orch.submit(oa, valid_for_seconds=pair[0].valid_for_seconds)
-     rb = await orch.submit(ob, valid_for_seconds=pair[1].valid_for_seconds)
+-    ra = await orch.submit(oa, valid_for_seconds=pair[0].valid_for_seconds)
+-    rb = await orch.submit(ob, valid_for_seconds=pair[1].valid_for_seconds)
 -    assert sum((r.filled_units for r in ra), Decimal("0")) == oa.size_units   # each leg fills its own
 -    assert sum((r.filled_units for r in rb), Decimal("0")) == ob.size_units   # size: the pair is intact
++    orch, face, _ = mk_exec(tmp_path, unit_venue())
++    both = await orch.submit_group((oa, ob), valid_for_seconds=pair[0].valid_for_seconds)
++    ra = [r for r in both if r.order_id == oa.order_id]
++    rb = [r for r in both if r.order_id == ob.order_id]
 +    for order, reports in ((oa, ra), (ob, rb)):   # each leg fills its own size in whole units
 +        whole, filled, unsent = _sent_and_unsent(order, reports)
 +        assert filled == whole and filled + unsent == order.size_units
      assert {p.instrument for p in await face.open_positions()} == {
          "EUR_USD", "USD_JPY"}
  
+ 
++async def test_governor_pair_exit_leaves_the_venue_flat(tmp_path) -> None:
++    """Reduce-only closes (builder F1): the Governor's group-exit closes carry each
++    leg's OWN direction (they name the position). Executed, they must FLATTEN both
++    legs. Before the convention was enforced they were sent verbatim and DOUBLED them
++    (EUR_USD −441 → −882, USD_JPY −486 → −972)."""
++    from tests.unit.test_governor import _pair_signals
++    gov, _ = mk_governor()
++    legs = gov.allocate_group(_pair_signals(), mk_portfolio(), mk_regime(), T0)
++    orch, face, _ = mk_exec(tmp_path, unit_venue())
++    await orch.submit_group(legs, valid_for_seconds=300)
++    opened = {p.instrument: (p.direction, p.size_units) for p in await face.open_positions()}
++    assert set(opened) == {"EUR_USD", "USD_JPY"}
++    closes = gov.check_group_exits({legs[0].group_id: "coupling_break"}, T0)
++    assert [(c.action, c.direction) for c in closes] == [("close", leg.direction) for leg in legs]
++    for close in closes:
++        reports = await orch.submit(close, valid_for_seconds=300)
++        traded = [r for r in reports if r.status is FillStatus.FILLED]
++        assert traded and all(r.direction == -close.direction for r in traded)
++    assert await face.open_positions() == ()                 # FLAT, not doubled
++
++
++async def test_weekend_flatten_leaves_the_venue_flat(tmp_path) -> None:
++    """Master §9.5 through the real seam: a no-weekend-holding account's positions,
++    opened by the Governor and the orchestrator, are closed by the Governor's weekend
++    flatten and the venue is FLAT before the Friday close."""
++    from datetime import datetime, timedelta, timezone
++    from core.governor.portfolio_types import Position
++    from core.signals.signal_types import StrategyType
++    from tests.unit.test_governor import _pair_signals, mk_rulebook
++    gov, _ = mk_governor(rulebook=mk_rulebook(weekend_holding_allowed=False))
++    legs = gov.allocate_group(_pair_signals(), mk_portfolio(), mk_regime(), T0)
++    orch, face, _ = mk_exec(tmp_path, unit_venue())
++    await orch.submit_group(legs, valid_for_seconds=300)
++    book = mk_portfolio(open_positions=tuple(
++        Position(instrument=p.instrument, direction=p.direction, size_units=p.size_units,
++                 entry_price=leg.entry_price, stop_loss=leg.stop_loss, take_profit=None,
++                 opened_at=T0, strategy_type=StrategyType.PAIR_DIVERGENCE,
++                 param_set_id=leg.param_set_id, group_id=leg.group_id)
++        for p, leg in zip(await face.open_positions(),
++                          sorted(legs, key=lambda o: o.instrument))))
++    assert len(book.open_positions) == 2                        # both legs really opened
++    friday = datetime(2026, 7, 10, 20, 0, tzinfo=timezone.utc)     # 1 h before the close
++    for close in gov.weekend_flatten(book, friday):
++        await orch.submit(close, valid_for_seconds=300)
++    assert await face.open_positions() == ()                   # flat before the weekend
++    assert gov.weekend_flatten(mk_portfolio(), friday + timedelta(minutes=1)) == ()
++
++
+ async def test_zero_sized_order_never_reaches_a_venue(tmp_path) -> None:
+     """The Governor's zero IS the veto — execution must not resurrect it."""
+     agon, _, _ = make_agon(tmp_path)
+diff --git a/tests/integration/test_guard_acts_first.py b/tests/integration/test_guard_acts_first.py
+new file mode 100644
+index 0000000..532595d
+--- /dev/null
++++ b/tests/integration/test_guard_acts_first.py
+@@ -0,0 +1,112 @@
++"""The guard acts first; recording never gates it (audit F0 / X2; ACIS-07 §7).
++
++Regression tests from the audits' repros (`r6_store_failure.py`, `r2_store_failure.py`):
++the risk store raises `database is locked` at the moment equity falls under the $9,000
++floor. Before the fix the halt-ledger write ran BEFORE the halt was forwarded and the
++breaker's latch was set BEFORE the edge call, so one failed write dropped the equity-floor
++flatten and HALT for the life of the process. Now the Governor and execution act first,
++a failed write is retried and alarmed and kept pending, and every latch waits for the edge.
++"""
++
++from __future__ import annotations
++
++import sqlite3
++from datetime import timedelta
++
++import pytest
++
++from core.risk.halt_ledger import PersistentHaltSink
++from core.risk.store import RiskStore, restore_on_boot
++from tests.integration.test_risk_pipeline import GovernorHaltSink, PaperBook, _mk_exec
++from tests.optimizer_fixtures import CapturingLogger
++from tests.risk_fixtures import acct, build_monitor, load_cfg
++from tests.signals_fixtures import T0, mk_regime
++from tests.unit.test_governor import mk_governor, mk_portfolio
++from tests.unit.test_signal_types import mk_signal
++
++
++class LockedStore(RiskStore):
++    """A risk store whose chosen write raises `database is locked` while `locked`."""
++
++    def __init__(self, path, fail: str) -> None:
++        super().__init__(path)
++        self.fail = fail
++        self.locked = False
++
++    def _gate(self, name: str) -> None:
++        if self.locked and name == self.fail:
++            raise sqlite3.OperationalError("database is locked")
++
++    def record_halt(self, *a, **k):
++        self._gate("record_halt")
++        return super().record_halt(*a, **k)
++
++    def open_halts(self):
++        self._gate("open_halts")
++        return super().open_halts()
++
++    def write_snapshot(self, *a, **k):
++        self._gate("write_snapshot")
++        return super().write_snapshot(*a, **k)
++
++    def save_restrictive_state(self, *a, **k):
++        self._gate("save_restrictive_state")
++        return super().save_restrictive_state(*a, **k)
++
++
++def _process(tmp_path, store, inner_cls=GovernorHaltSink):
++    gov, _ = mk_governor()
++    orch = _mk_exec(tmp_path)
++    log = CapturingLogger()
++    sink = PersistentHaltSink(inner_cls(gov, orch, PaperBook()), store, lambda: T0, log)
++    mon, _, _, _ = build_monitor(load_cfg(), sink, store=store, logger=log)
++    return gov, orch, mon, log
++
++
++def _entry(gov, at) -> str:
++    return gov.allocate(mk_signal(generated_at=at), mk_portfolio(), mk_regime(), at).reason
++
++
++@pytest.mark.parametrize("write_point", ["record_halt", "open_halts", "write_snapshot",
++                                         "save_restrictive_state"])
++def test_the_equity_breaker_holds_when_any_store_write_fails(tmp_path, write_point) -> None:
++    store = LockedStore(tmp_path / "risk.db", write_point)
++    gov, orch, mon, log = _process(tmp_path, store)
++    mon.evaluate(acct(9_050.0), T0)
++    store.locked = True
++    mon.evaluate(acct(8_990.0), T0 + timedelta(seconds=1))   # under the floor; no raise
++    assert _entry(gov, T0 + timedelta(seconds=1)) == "halt"  # the HALT is in force
++    assert orch.frozen                                       # and the flatten froze opens
++    alarms = [e["event_type"] for e in log.events()
++              if e["event_type"] in ("HALT_LEDGER_WRITE_FAILED", "RISK_STORE_WRITE_FAILED")]
++    assert alarms                                            # the failure is loud
++    store.locked = False                                     # the store recovers ...
++    mon.evaluate(acct(8_990.0), T0 + timedelta(seconds=2))   # ... and the next check flushes
++    assert {(h.kind, h.scope, h.reason) for h in store.open_halts()} == {
++        ("flatten", "all", "equity_floor"), ("halt", "all", "equity_floor")}
++    gov2, orch2, mon2, _ = _process(tmp_path, store)         # so a restart still restores it
++    restore_on_boot(store, mon2, T0 + timedelta(minutes=1))
++    assert _entry(gov2, T0 + timedelta(minutes=1)) == "halt" and orch2.frozen
++    store.close()
++
++
++class FlakyEdge(GovernorHaltSink):
++    """The Governor-side adapter fails its first flatten (e.g. execution briefly down)."""
++    failed = False
++
++    def flatten(self, scope: str, reason: str) -> None:
++        if not FlakyEdge.failed:
++            FlakyEdge.failed = True
++            raise ConnectionError("execution unreachable")
++        super().flatten(scope, reason)
++
++
++def test_an_edge_call_that_fails_is_reissued_not_latched(tmp_path) -> None:
++    FlakyEdge.failed = False
++    store = RiskStore(tmp_path / "risk.db")
++    gov, orch, mon, _ = _process(tmp_path, store, FlakyEdge)
++    with pytest.raises(ConnectionError):
++        mon.evaluate(acct(8_990.0), T0)                      # the edge itself failed
++    mon.evaluate(acct(8_990.0), T0 + timedelta(seconds=1))   # so the breaker fires again
++    assert _entry(gov, T0 + timedelta(seconds=1)) == "halt" and orch.frozen
++    store.close()
 diff --git a/tests/integration/test_halt_restore.py b/tests/integration/test_halt_restore.py
 new file mode 100644
-index 0000000..94a0181
+index 0000000..f68188c
 --- /dev/null
 +++ b/tests/integration/test_halt_restore.py
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,119 @@
 +"""Explicit HALTs survive a restart (ACIS-07 §7 "active halts"; GAP-0050).
 +
 +Every halt, session halt and flatten crossing the upward edge is persisted before it
@@ -2184,10 +3840,13 @@ index 0000000..94a0181
 +
 +
 +def _process(tmp_path, store, clock=T0):
++    from tests.optimizer_fixtures import CapturingLogger
 +    gov, glog = mk_governor()
 +    orch = _mk_exec(tmp_path)
-+    sink = PersistentHaltSink(GovernorHaltSink(gov, orch, PaperBook()), store, lambda: clock)
-+    mon, _, _, rlog = build_monitor(load_cfg(), sink, store=store)
++    rlog = CapturingLogger()
++    sink = PersistentHaltSink(GovernorHaltSink(gov, orch, PaperBook()), store, lambda: clock,
++                              rlog)
++    mon, _, _, _ = build_monitor(load_cfg(), sink, store=store, logger=rlog)
 +    return gov, glog, orch, mon, rlog, sink
 +
 +
@@ -2204,7 +3863,7 @@ index 0000000..94a0181
 +
 +    gov2, _, orch2, mon2, rlog2, _ = _process(tmp_path, store)      # the restart
 +    assert _entry(gov2) == "formula"                      # a fresh Governor knows nothing...
-+    restore_on_boot(store, mon2)                          # ...until boot, BEFORE any evaluate
++    restore_on_boot(store, mon2, T0)                        # ...until boot, BEFORE any evaluate
 +    assert _entry(gov2) == "halt"
 +    assert orch2.frozen                                   # the flatten is re-applied too
 +    assert [h[:3] for h in rlog2.events("HALTS_RESTORED")[0]["data"]["halts"]] == [
@@ -2221,7 +3880,7 @@ index 0000000..94a0181
 +    assert store.open_halts() == []
 +
 +    gov3, _, _, mon3, _, _ = _process(tmp_path, store)    # a restart after the resume
-+    restore_on_boot(store, mon3)
++    restore_on_boot(store, mon3, T0 + timedelta(minutes=3))
 +    assert _entry(gov3) == "formula"                      # nothing left to re-apply
 +    store.close()
 +
@@ -2231,7 +3890,7 @@ index 0000000..94a0181
 +    _, _, _, _, _, sink = _process(tmp_path, store)
 +    sink.apply_halt("EUR_USD", "mcp_halt")                # the MCP control target's route
 +    gov2, glog2, _, mon2, _, _ = _process(tmp_path, store)
-+    restore_on_boot(store, mon2)
++    restore_on_boot(store, mon2, T0)
 +    applied = glog2.events("HALT_APPLIED")
 +    assert [(e["data"]["scope"], e["data"]["reason"]) for e in applied] == [
 +        ("EUR_USD", "mcp_halt")]
@@ -2244,7 +3903,7 @@ index 0000000..94a0181
 +    _, _, _, _, _, sink = _process(tmp_path, store)
 +    sink.apply_session_halt(T0, "daily_drawdown")        # 10:00 UTC: halted until 12:00
 +    gov2, _, _, mon2, _, _ = _process(tmp_path, store)
-+    restore_on_boot(store, mon2)
++    restore_on_boot(store, mon2, T0 + timedelta(minutes=4))
 +    assert _entry(gov2, T0 + timedelta(minutes=5)) == "drawdown_halt"
 +    assert _entry(gov2, NOON + timedelta(minutes=1)) == "formula"   # not a day-long halt
 +    store.close()
@@ -2258,8 +3917,8 @@ index 0000000..94a0181
 +    assert len(store.open_halts()) == 2
 +    for hours in (1, 2):                                  # two restarts, each at a later clock
 +        _, _, _, mon, _, _ = _process(tmp_path, store, T0 + timedelta(hours=hours))
-+        restore_on_boot(store, mon)
-+    assert sorted(r for _, _, r, _ in store.open_halts()) == ["cluster_cap", "var_cap"]
++        restore_on_boot(store, mon, T0 + timedelta(hours=hours))
++    assert sorted(r for _, _, r, _, _ in store.open_halts()) == ["cluster_cap", "var_cap"]
 +    store.close()
 +
 +
@@ -2272,11 +3931,89 @@ index 0000000..94a0181
 +    (by,) = sqlite3.connect(tmp_path / "risk.db").execute(
 +        "SELECT cleared_by FROM halt_event").fetchone()
 +    assert by.startswith("human:") and HUMAN not in by
+diff --git a/tests/integration/test_pair_group_atomicity.py b/tests/integration/test_pair_group_atomicity.py
+new file mode 100644
+index 0000000..b182083
+--- /dev/null
++++ b/tests/integration/test_pair_group_atomicity.py
+@@ -0,0 +1,62 @@
++"""A pair group is both legs or neither in execution too (ACIS-05 §5.5; audit F11).
++
++Regression tests from the audit's repro (`r9_pair_leg_rounding.py`): on the shipped mock
++venue (minimum lot 0.01 = 1,000 units, same step), legs of EUR_USD +1,500 and USD_JPY −900
++used to leave the venue holding ONE directional leg (+1,000) because each leg was rounded
++and checked on its own. Now every leg is checked first and one refusal refuses the group,
++and an open pair leg sent alone is refused."""
++
++from __future__ import annotations
++
++from dataclasses import replace
++from decimal import Decimal
++
++from core.execution.venue import FillStatus, MockExecutionFace
++from tests.unit.test_execution import mk_order, mk_orchestrator
++
++
++def _pair(units_a: str, units_b: str):
++    a = replace(mk_order(units_a, instrument="EUR_USD", order_id="leg-a"), group_id="g1")
++    b = replace(mk_order(units_b, instrument="USD_JPY", order_id="leg-b"), group_id="g1",
++                direction=-1)
++    return a, b
++
++
++async def test_a_leg_below_the_minimum_refuses_the_whole_group(tmp_path) -> None:
++    face = MockExecutionFace()
++    orch, log, _, _ = mk_orchestrator(tmp_path, faces={"mock": face})
++    reports = await orch.submit_group(_pair("1500", "900"), valid_for_seconds=300)
++    assert [r.status for r in reports] == [FillStatus.REJECTED, FillStatus.REJECTED]
++    assert await face.open_positions() == ()                 # FLAT, not one naked leg
++    assert face.submissions == 0                             # nothing reached the venue
++    assert log.events("EXEC_GROUP_REFUSED")[0]["data"]["legs"] == ["leg-b"]
++
++
++async def test_a_pair_leg_sent_alone_is_refused(tmp_path) -> None:
++    face = MockExecutionFace()
++    orch, log, _, _ = mk_orchestrator(tmp_path, faces={"mock": face})
++    for leg in _pair("1500", "900"):                          # the audit's exact path
++        (report,) = await orch.submit(leg, valid_for_seconds=300)
++        assert report.status is FillStatus.REJECTED
++    assert await face.open_positions() == ()
++    assert len(log.events("EXEC_GROUP_LEG_ALONE")) == 2
++
++
++async def test_a_group_the_venue_can_take_opens_both_legs(tmp_path) -> None:
++    face = MockExecutionFace()
++    orch, _, _, _ = mk_orchestrator(tmp_path, faces={"mock": face})
++    await orch.submit_group(_pair("2000", "3000"), valid_for_seconds=300)
++    held = {p.instrument: (p.direction, p.size_units) for p in await face.open_positions()}
++    assert held == {"EUR_USD": (1, Decimal("2000")), "USD_JPY": (-1, Decimal("3000"))}
++
++
++async def test_a_group_is_refused_when_the_budget_cannot_send_both_legs(tmp_path) -> None:
++    from tests.unit.test_execution import exec_cfg
++    face = MockExecutionFace()
++    orch, log, _, _ = mk_orchestrator(tmp_path, faces={"mock": face},
++                                      cfg=exec_cfg(max_venue_requests_per_day=2))
++    await orch.submit(mk_order("1000", order_id="solo"), valid_for_seconds=300)  # 1 of 2 used
++    reports = await orch.submit_group(_pair("2000", "3000"), valid_for_seconds=300)
++    assert all(r.status is FillStatus.REJECTED for r in reports)
++    assert {p.instrument for p in await face.open_positions()} == {"EUR_USD"}   # only "solo"
++    assert log.events("EXEC_GROUP_REFUSED")
 diff --git a/tests/integration/test_risk_pipeline.py b/tests/integration/test_risk_pipeline.py
-index b8cfc38..81e5cbf 100644
+index b8cfc38..7d38868 100644
 --- a/tests/integration/test_risk_pipeline.py
 +++ b/tests/integration/test_risk_pipeline.py
-@@ -79,7 +79,8 @@ def _mk_exec(tmp_path):
+@@ -20,7 +20,8 @@ from decimal import Decimal
+ import pytest
+ 
+ from core.execution.orchestrator import ExecutionOrchestrator
+-from core.execution.venue import FillReportStore, MockExecutionFace, VenueQuality
++from core.execution.venue import FillReportStore, MockExecutionFace
++from core.execution.venue_quality import VenueQuality
+ from core.governor.capital_governor import CapitalGovernor, ResumeForbiddenError
+ from core.risk.sink import HaltSink
+ from tests.risk_fixtures import acct, build_monitor, load_cfg, mk_fill
+@@ -79,7 +80,8 @@ def _mk_exec(tmp_path):
          ExecutionConfig(fragment_threshold_lots=1.0, fragment_size_jitter=(0.85, 1.15),
                          fragment_time_jitter_s=(0.5, 3.0), min_fragment_lots=0.10,
                          vwap_threshold_lots=5.0, vwap_window_s=300, fast_decay_seconds=30,
@@ -2286,11 +4023,104 @@ index b8cfc38..81e5cbf 100644
          {"mock": MockExecutionFace()}, VenueQuality(),
          FillReportStore(tmp_path / "fills.db"), slippage_alert_bps=8.0, rng=Random(7),
          logger=CapturingLogger(), session_id="r9", now_fn=lambda: T0, sleep_fn=instant)
+diff --git a/tests/integration/test_session_halt_rearm.py b/tests/integration/test_session_halt_rearm.py
+new file mode 100644
+index 0000000..05f205e
+--- /dev/null
++++ b/tests/integration/test_session_halt_rearm.py
+@@ -0,0 +1,87 @@
++"""The daily-drawdown session halt fires every day, not once per process (audits F2, F1,
++X1; master §8: "halt all new positions for session").
++
++Regression tests from the audits' repros (`r2b_inprocess_latch.py`, `r2_stale_session_latch.py`,
++`r1_stale_session_latch.py`, `r1b_inprocess.py`). The Risk latch that stops a session halt
++being re-issued within its session used to live for the whole process (F2, pre-existing),
++and after a restart a stale session row re-set it until a human resume (F1/X1). Now the
++latch lapses at the session boundary, exactly when the Governor's session halt does, and
++a session row whose boundary passed while the engine was down is closed as expired.
++"""
++
++from __future__ import annotations
++
++import sqlite3
++from datetime import datetime, timedelta, timezone
++
++from core.risk.halt_ledger import PersistentHaltSink
++from core.risk.store import RiskStore, restore_on_boot
++from tests.integration.test_risk_pipeline import GovernorHaltSink, PaperBook, _mk_exec
++from tests.optimizer_fixtures import CapturingLogger
++from tests.risk_fixtures import acct, build_monitor, load_cfg
++from tests.signals_fixtures import mk_regime
++from tests.unit.test_governor import mk_governor, mk_portfolio
++from tests.unit.test_signal_types import mk_signal
++
++D1 = datetime(2026, 7, 14, 14, 0, tzinfo=timezone.utc)   # Tue; the session ends 21:00 UTC
++MIN = timedelta(minutes=1)
++
++
++def _process(tmp_path, store=None, clock=D1):
++    gov, _ = mk_governor()
++    inner = GovernorHaltSink(gov, _mk_exec(tmp_path), PaperBook())
++    log = CapturingLogger()
++    sink = inner if store is None else PersistentHaltSink(inner, store, lambda: clock, log)
++    mon, _, _, _ = build_monitor(load_cfg(), sink, store=store, logger=log)
++    return gov, mon, log
++
++
++def _entry(gov, at) -> str:
++    return gov.allocate(mk_signal(generated_at=at), mk_portfolio(daily_drawdown_pct=0.0),
++                        mk_regime(), at).reason
++
++
++def _breach_and_recover(mon, day) -> None:
++    mon.evaluate(acct(10_000.0), day)
++    mon.evaluate(acct(9_790.0), day + MIN)                   # −2.1%: over the 2% daily limit
++    mon.evaluate(acct(9_990.0), day + 2 * MIN)               # recovers inside the session
++
++
++def test_a_breach_on_a_later_day_halts_again_in_one_process(tmp_path) -> None:
++    gov, mon, _ = _process(tmp_path)
++    _breach_and_recover(mon, D1)
++    assert _entry(gov, D1 + 3 * MIN) == "drawdown_halt"
++    day3 = D1 + timedelta(days=2)
++    _breach_and_recover(mon, day3)
++    assert _entry(gov, day3 + 3 * MIN) == "drawdown_halt"    # was "formula": halted once ever
++
++
++def test_after_a_restart_the_next_day_a_fresh_breach_halts(tmp_path) -> None:
++    store = RiskStore(tmp_path / "risk.db")
++    _, mon, _ = _process(tmp_path, store)
++    _breach_and_recover(mon, D1)                             # day 1: a session row is written
++    day2 = D1 + timedelta(days=1)
++    gov2, mon2, log2 = _process(tmp_path, store, day2)       # restart on day 2
++    restore_on_boot(store, mon2, day2)
++    assert _entry(gov2, day2) == "formula"                   # the lapsed halt is not restored
++    assert log2.events("SESSION_HALTS_EXPIRED")
++    _breach_and_recover(mon2, day2)
++    assert _entry(gov2, day2 + 3 * MIN) == "drawdown_halt"   # the day-2 breach halts
++    store.close()
++    rows = sqlite3.connect(tmp_path / "risk.db").execute(
++        "SELECT cleared_by FROM halt_event ORDER BY ts").fetchall()
++    assert rows[0] == ("auto:session_boundary",)             # closed, never re-latched
++
++
++def test_a_restart_inside_the_session_keeps_the_halt_until_its_boundary(tmp_path) -> None:
++    store = RiskStore(tmp_path / "risk.db")
++    _, mon, _ = _process(tmp_path, store)
++    _breach_and_recover(mon, D1)
++    gov2, mon2, _ = _process(tmp_path, store, D1 + timedelta(minutes=30))
++    restore_on_boot(store, mon2, D1 + timedelta(minutes=30))
++    assert _entry(gov2, D1 + timedelta(minutes=31)) == "drawdown_halt"
++    close = D1.replace(hour=21)                              # 17:00 New York
++    assert _entry(gov2, close + MIN) == "formula"            # it lifts at its boundary
++    _breach_and_recover(mon2, close + 10 * MIN)              # and the next session re-arms
++    assert _entry(gov2, close + 13 * MIN) == "drawdown_halt"
++    store.close()
 diff --git a/tests/risk_fixtures.py b/tests/risk_fixtures.py
-index ee298a2..cea2146 100644
+index ee298a2..dc43881 100644
 --- a/tests/risk_fixtures.py
 +++ b/tests/risk_fixtures.py
-@@ -96,7 +96,8 @@ def build_monitor(cfg, sink, *, account: str = "dev_paper",
+@@ -96,11 +96,13 @@ def build_monitor(cfg, sink, *, account: str = "dev_paper",
      rb = cfg.platform_rules.accounts[account]
      from config.account_doctrine import compose
      doctrine = compose(cfg.guardrails, rb)
@@ -2300,11 +4130,36 @@ index ee298a2..cea2146 100644
      g = Guardrails(
          cfg.guardrails, cfg.system.risk, series, sink, log,
          taper_start=taper_start if taper_start is not None else doctrine.taper_start_fraction,
+-        entry_halt=entry_halt if entry_halt is not None else doctrine.entry_halt_fraction)
++        entry_halt=entry_halt if entry_halt is not None else doctrine.entry_halt_fraction,
++        session_boundaries=cfg.system.session_boundaries)
+     alpha = mk_alpha(cfg.system.risk)
+     mon = RiskMonitor(cfg.system.risk, cfg.guardrails, g, alpha, sink,
+                       cfg.instruments.clusters, "s1", log, store=store)
 diff --git a/tests/unit/test_execution.py b/tests/unit/test_execution.py
-index 509061b..16be466 100644
+index 509061b..fd344da 100644
 --- a/tests/unit/test_execution.py
 +++ b/tests/unit/test_execution.py
-@@ -38,7 +38,8 @@ def exec_cfg(**overrides) -> ExecutionConfig:
+@@ -18,16 +18,15 @@ from core.data.errors import DataQualityError
+ from core.execution import orchestrator as orch_mod
+ from core.execution.fragmenter import plan
+ from core.execution.orchestrator import ExecutionOrchestrator
++from core.execution.attach import AttachHalt, verify_attach
+ from core.execution.venue import (
+-    AttachHalt,
+     CapabilityDescriptor,
+     FillReportStore,
+     FillStatus,
+     MockExecutionFace,
+-    VenueQuality,
+     slippage_bps,
+-    verify_attach,
+ )
++from core.execution.venue_quality import VenueQuality
+ from core.governor.portfolio_types import SizedOrder
+ from tests.optimizer_fixtures import CapturingLogger
+ 
+@@ -38,15 +37,16 @@ def exec_cfg(**overrides) -> ExecutionConfig:
      base = dict(fragment_threshold_lots=1.0, fragment_size_jitter=(0.85, 1.15),
                  fragment_time_jitter_s=(0.5, 3.0), min_fragment_lots=0.10,
                  vwap_threshold_lots=5.0, vwap_window_s=300, fast_decay_seconds=30,
@@ -2314,6 +4169,46 @@ index 509061b..16be466 100644
      base.update(overrides)
      return ExecutionConfig(**base)
  
+ 
+ def mk_order(units="250000", action="open", instrument="EUR_USD",
+-             order_id="ord-1") -> SizedOrder:
++             order_id="ord-1", direction=1) -> SizedOrder:
+     return SizedOrder(
+-        order_id=order_id, signal_id="sig-1", instrument=instrument, direction=1,
++        order_id=order_id, signal_id="sig-1", instrument=instrument, direction=direction,
+         size_units=Decimal(units), entry_price=1.10, stop_loss=1.09,
+         take_profit=1.12, reason="formula",
+         factors_snapshot=MappingProxyType({}), sized_at=T0,
+@@ -180,13 +180,26 @@ async def test_full_fill_lifecycle_and_store(tmp_path) -> None:
+ 
+ 
+ async def test_frozen_blocks_opens_allows_closes(tmp_path) -> None:
+-    orch, log, _, _ = mk_orchestrator(tmp_path)
++    # Reduce-only closes (builder F1) made this STRICTER: the freeze admits only them. A
++    # "close" into a flat venue used to FILL (opening a position during a flatten);
++    # it is now REJECTED, and only a close of a position the venue holds goes through.
++    face = MockExecutionFace()
++    orch, log, _, _ = mk_orchestrator(tmp_path, faces={"mock": face})
+     orch.set_freeze(True, "risk_flatten")
+     assert await orch.submit(mk_order("100000"), valid_for_seconds=300) == ()
+     assert log.events("EXEC_FROZEN_REJECT")
+-    closes = await orch.submit(mk_order("100000", action="close"),
++    flat = await orch.submit(mk_order("100000", action="close", order_id="c-flat"),
++                             valid_for_seconds=300)
++    assert [r.status for r in flat] == [FillStatus.REJECTED]        # nothing to close
++    assert await face.open_positions() == () and log.events("EXEC_CLOSE_REFUSED")
++    orch.set_freeze(False, "test")
++    await orch.submit(mk_order("100000", order_id="o-long"), valid_for_seconds=300)
++    orch.set_freeze(True, "risk_flatten")
++    closes = await orch.submit(mk_order("100000", action="close", order_id="c-long"),
+                                valid_for_seconds=300)
+-    assert closes and closes[0].status is FillStatus.FILLED   # a flatten can close
++    assert [r.status for r in closes] == [FillStatus.FILLED]         # a flatten can close
++    assert closes[0].direction == -1                                 # by trading the other side
++    assert await face.open_positions() == ()                         # and the venue is FLAT
+ 
+ 
+ async def test_capability_reject_unknown_instrument(tmp_path) -> None:
 diff --git a/tests/unit/test_fx_clock.py b/tests/unit/test_fx_clock.py
 index 2282b12..be181e3 100644
 --- a/tests/unit/test_fx_clock.py
@@ -2340,10 +4235,27 @@ index 2282b12..be181e3 100644
      # config/calendars.py's Zone literal must never name a zone fx_clock cannot resolve
      from typing import get_args
 diff --git a/tests/unit/test_governor.py b/tests/unit/test_governor.py
-index 780e3b4..724c26e 100644
+index 780e3b4..219ca13 100644
 --- a/tests/unit/test_governor.py
 +++ b/tests/unit/test_governor.py
-@@ -186,9 +186,10 @@ def test_weekend_entry_buffer_blocks_no_weekend_accounts() -> None:
+@@ -41,7 +41,7 @@ def mk_portfolio(**overrides) -> PortfolioState:
+     return PortfolioState(**base)
+ 
+ 
+-def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0,
++def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0, holidays=(),
+                 **cfg_overrides) -> tuple[CapitalGovernor, CapturingLogger]:
+     log = CapturingLogger()
+     cfg = dict(marginal_alpha_window=50, marginal_alpha_min_trades=20,
+@@ -66,6 +66,7 @@ def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0,
+                             ZonedTime(zone="America/New_York", at="08:00")],
+         week_close=_NY_ROLL,
+         week_open=_NY_ROLL,
++        holidays=holidays,
+         scalp_horizon_s=900,
+         atr_period=14,
+         blackout=blackout or (lambda instrument, now: False),
+@@ -186,9 +187,10 @@ def test_weekend_entry_buffer_blocks_no_weekend_accounts() -> None:
      sig = mk_signal(generated_at=FRIDAY_2100)
      order = gov.allocate(sig, mk_portfolio(), mk_regime(), FRIDAY_2100)
      assert order.size_units == 0 and order.reason == "weekend_ban"
@@ -2356,7 +4268,7 @@ index 780e3b4..724c26e 100644
      # same account far from the close (Wednesday): sized
      wed = datetime(2026, 7, 8, 21, 0, tzinfo=timezone.utc)
      sig_wed = mk_signal(generated_at=wed)
-@@ -477,6 +478,22 @@ def test_gap0052_registry_rebuilds_from_portfolio_positions() -> None:
+@@ -477,6 +479,22 @@ def test_gap0052_registry_rebuilds_from_portfolio_positions() -> None:
      assert len(log2.events("GROUP_REBUILD_ORPHAN")) == 1
  
  
@@ -2379,8 +4291,81 @@ index 780e3b4..724c26e 100644
  def test_gap0053_weekend_ban_covers_the_whole_closed_window() -> None:
      no_weekend = mk_rulebook(weekend_holding_allowed=False)
      gov, _ = mk_governor(rulebook=no_weekend)
+diff --git a/tests/unit/test_holiday_closures.py b/tests/unit/test_holiday_closures.py
+new file mode 100644
+index 0000000..c7bb5c5
+--- /dev/null
++++ b/tests/unit/test_holiday_closures.py
+@@ -0,0 +1,67 @@
++"""The pre-close entry ban and the flatten key on EVERY closure of two hours or more,
++holidays included — not only the Friday close (audit X5).
++
++FTMO forbids opening a trade "two hours or less before a relevant financial market is
++closed for at least two hours" (Forbidden Trading Practices) and, on a Standard account,
++requires closing before the weekend "or if the rollover (market break) lasts longer than 2
++hours"; its holiday hours close FX all day on Dec 25 and Jan 1. In 2026 both fall on a
++FRIDAY, so FX's last close before a three-day closure is THURSDAY 17:00 New York. The
++regression cases are the audit's repro (`r5_holiday_closures.py`)."""
++
++from __future__ import annotations
++
++from datetime import date, datetime, timedelta, timezone
++from decimal import Decimal
++
++from core.governor.portfolio_types import Position
++from core.signals.signal_types import StrategyType
++from tests.risk_fixtures import load_cfg
++from tests.signals_fixtures import mk_regime
++from tests.unit.test_governor import mk_governor, mk_portfolio, mk_rulebook
++from tests.unit.test_signal_types import mk_signal
++
++UTC = timezone.utc
++XMAS_EVE_1600_NY = datetime(2026, 12, 24, 21, 0, tzinfo=UTC)     # Thu, 1 h before the close
++NYE_1630_NY = datetime(2026, 12, 31, 21, 30, tzinfo=UTC)         # Thu, 30 min before it
++NEW_YEAR_1530_NY = datetime(2027, 1, 1, 20, 30, tzinfo=UTC)      # Fri, market shut ~22 h
++
++
++def _holidays() -> list[date]:
++    return load_cfg().instruments.calendars["fx_default"].holidays
++
++
++def _pos(at: datetime) -> Position:
++    return Position(instrument="EUR_USD", direction=1, size_units=Decimal("1000"),
++                    entry_price=1.10, stop_loss=1.09, take_profit=None, opened_at=at,
++                    strategy_type=StrategyType.TREND, param_set_id="ps-1", group_id=None)
++
++
++def test_the_shipped_fx_calendar_declares_the_year_end_closures() -> None:
++    assert {date(2026, 12, 25), date(2027, 1, 1)} <= set(_holidays())
++
++
++def test_no_entry_opens_in_the_two_hours_before_a_holiday_closure() -> None:
++    gov, _ = mk_governor(holidays=_holidays())                  # even a Swing account
++    for at in (XMAS_EVE_1600_NY, NYE_1630_NY):
++        assert gov.allocate(mk_signal(generated_at=at), mk_portfolio(), mk_regime(),
++                            at).reason == "weekend_ban"
++    earlier = XMAS_EVE_1600_NY - timedelta(hours=3)               # 13:00 NY: well before
++    assert gov.allocate(mk_signal(generated_at=earlier), mk_portfolio(), mk_regime(),
++                        earlier).reason == "formula"
++
++
++def test_a_no_holding_account_is_flattened_before_a_holiday_closure() -> None:
++    gov, log = mk_governor(rulebook=mk_rulebook(weekend_holding_allowed=False),
++                           holidays=_holidays())
++    closes = gov.weekend_flatten(mk_portfolio(open_positions=(_pos(XMAS_EVE_1600_NY),)),
++                                 XMAS_EVE_1600_NY)
++    assert [(c.instrument, c.action) for c in closes] == [("EUR_USD", "close")]
++    assert log.events("WEEKEND_FLATTEN")
++
++
++def test_a_position_still_open_inside_a_holiday_closure_is_surfaced() -> None:
++    gov, log = mk_governor(rulebook=mk_rulebook(weekend_holding_allowed=False),
++                           holidays=_holidays())
++    gov.weekend_flatten(mk_portfolio(open_positions=(_pos(NEW_YEAR_1530_NY),)),
++                        NEW_YEAR_1530_NY)
++    assert log.events("WEEKEND_FLATTEN_INCOMPLETE")               # the market is SHUT
 diff --git a/tests/unit/test_module_budget.py b/tests/unit/test_module_budget.py
-index a4cb9e9..372ec18 100644
+index a4cb9e9..4c4d4c3 100644
 --- a/tests/unit/test_module_budget.py
 +++ b/tests/unit/test_module_budget.py
 @@ -22,15 +22,14 @@ PRODUCTION = ["core", "monitoring", "config", "scripts", "tests/backtest"]
@@ -2391,21 +4376,21 @@ index a4cb9e9..372ec18 100644
 +    "config/schemas.py": 581,                   # 702 → 622: calendars → config/calendars.py (P12D-10); → 581: rulebook → config/rulebook.py (P12D-54)
      "core/signals/agon.py": 506,
 -    "core/governor/capital_governor.py": 448,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22)
-+    "core/governor/capital_governor.py": 447,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22); 447 (P12D-58)
++    "core/governor/capital_governor.py": 437,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22); 447 (P12D-58); 437: exposure caps → exposure.py
      "scripts/download_histdata.py": 400,        # 456 → 400 after scripts/dl_common.py extraction
      "core/regime/nvma.py": 395,
      "core/signals/provenance.py": 391,
 -    "core/risk/monitor.py": 378,
 -    "core/execution/venue.py": 378,
 -    "core/risk/guardrails.py": 313,
-+    "core/risk/monitor.py": 368,                # 378 → 368: usd factor → usd_conversion.py (P12D-55)
-+    "core/execution/venue.py": 342,             # 378 → 342: FillReportStore → fill_store.py (P12D-57)
++    "core/risk/monitor.py": 343,                # 378 → 368: usd factor → usd_conversion.py (P12D-55); 343: VaR/cluster → exposure_metrics.py
++    "core/execution/venue.py": 318,             # 378 → 342: FillReportStore → fill_store.py (P12D-57); 318: attach, quality moved out
  }
  
  
 diff --git a/tests/unit/test_platform_daily_rules.py b/tests/unit/test_platform_daily_rules.py
 new file mode 100644
-index 0000000..4843c59
+index 0000000..8027f17
 --- /dev/null
 +++ b/tests/unit/test_platform_daily_rules.py
 @@ -0,0 +1,195 @@
@@ -2580,7 +4565,7 @@ index 0000000..4843c59
 +    store.save_restrictive_state(alpha_armed=False, taper_factor=1.0, anchors=anchors)
 +    sink2 = RecordingSink()
 +    mon2, _, _, _ = _monitor(ftmo_rulebook(100_000.0), sink2, store=store)
-+    restore_on_boot(store, mon2)
++    restore_on_boot(store, mon2, DAY2_RESET + timedelta(hours=2))
 +    snap = mon2.evaluate(acct(98_000.0, balance=102_000.0), DAY2_RESET + timedelta(hours=2))
 +    rules = {s.rule_key: s.measured_pct for s in snap.platform_drawdown}
 +    assert rules[DAILY] == pytest.approx(4.0)          # 102,000 day anchor, 5% of 100k
@@ -2606,7 +4591,7 @@ index 0000000..4843c59
 +        assert all(r.type != "daily" and r.limit_of == "anchor" for r in rb.drawdown_rules)
 diff --git a/tests/unit/test_restart_anchors.py b/tests/unit/test_restart_anchors.py
 new file mode 100644
-index 0000000..eea2c77
+index 0000000..800f319
 --- /dev/null
 +++ b/tests/unit/test_restart_anchors.py
 @@ -0,0 +1,135 @@
@@ -2649,11 +4634,11 @@ index 0000000..eea2c77
 +    return snap, sink
 +
 +
-+def _restart(cfg, store):
++def _restart(cfg, store, now=T0 + timedelta(minutes=40)):
 +    """A fresh process on the same store: nothing in memory survives."""
 +    sink = RecordingSink()
 +    mon, _, _, log = build_monitor(cfg, sink, account="ftmo", store=store)
-+    restore_on_boot(store, mon)
++    restore_on_boot(store, mon, now)
 +    return mon, sink, log
 +
 +
@@ -2745,6 +4730,42 @@ index 0000000..eea2c77
 +    with pytest.raises(DataQualityError):
 +        build_drawdown_series(cfg.guardrails, [twin, twin.model_copy()], "x",
 +                              initial_capital=None)
+diff --git a/tests/unit/test_store_durability.py b/tests/unit/test_store_durability.py
+new file mode 100644
+index 0000000..34639ec
+--- /dev/null
++++ b/tests/unit/test_store_durability.py
+@@ -0,0 +1,30 @@
++"""The halt ledger, the anchors and the fill log survive a power loss (audit X4).
++
++SQLite's own documentation: FULL "is not necessarily durable across a power loss in
++rollback mode", while "FULL is atomic, consistent, isolated, and durable (ACID) in WAL
++mode". Both stores that carry restart-critical state open in WAL with synchronous=FULL
++through core/data/sqlite_wal.open_store."""
++
++from __future__ import annotations
++
++from core.execution.fill_store import FillReportStore
++from core.risk.store import RiskStore
++
++FULL = 2
++
++
++def _mode(conn) -> tuple[str, int]:
++    return (conn.execute("PRAGMA journal_mode").fetchone()[0],
++            conn.execute("PRAGMA synchronous").fetchone()[0])
++
++
++def test_the_risk_store_is_wal_with_full_sync(tmp_path) -> None:
++    store = RiskStore(tmp_path / "risk.db")
++    assert _mode(store._conn) == ("wal", FULL)
++    store.close()
++
++
++def test_the_fill_log_is_wal_with_full_sync(tmp_path) -> None:
++    store = FillReportStore(tmp_path / "fills.db")
++    assert _mode(store._conn) == ("wal", FULL)
++    store.close()
 diff --git a/tests/unit/test_venue_limits.py b/tests/unit/test_venue_limits.py
 new file mode 100644
 index 0000000..40f29eb
@@ -2825,10 +4846,10 @@ index 0000000..40f29eb
 +        assert sum(f.units for f in fp.fragments) == Decimal("437000")
 +        assert all(f.units % step == 0 and f.units >= step for f in fp.fragments)
 diff --git a/tests/unit/test_watchdog.py b/tests/unit/test_watchdog.py
-index c1af526..1ef1382 100644
+index c1af526..422c397 100644
 --- a/tests/unit/test_watchdog.py
 +++ b/tests/unit/test_watchdog.py
-@@ -184,7 +184,8 @@ def test_heartbeat_writer_atomic_and_readable(tmp_path) -> None:
+@@ -184,9 +184,11 @@ def test_heartbeat_writer_atomic_and_readable(tmp_path) -> None:
      from core.risk.alpha_decay import AlphaDecayDetector
      log = CapturingLogger()
      rb = cfg.platform_rules.accounts["dev_paper"]
@@ -2836,5 +4857,87 @@ index c1af526..1ef1382 100644
 +    series = build_drawdown_series(cfg.guardrails, rb.drawdown_rules, "dev_paper",
 +                                   initial_capital=rb.initial_capital)
      g = Guardrails(cfg.guardrails, risk_cfg, series, _NullSink(), log,
-                    taper_start=0.60, entry_halt=0.80)
+-                   taper_start=0.60, entry_halt=0.80)
++                   taper_start=0.60, entry_halt=0.80,
++                   session_boundaries=cfg.system.session_boundaries)
      alpha = AlphaDecayDetector(recent_window=50, min_trades=30,
+                                baseline_min_trades=50, sharpe_mult=0.5,
+                                recovery_trades=20, recovery_mult=0.8)
+diff --git a/tests/unit/test_weekend_flatten.py b/tests/unit/test_weekend_flatten.py
+new file mode 100644
+index 0000000..f28a1a1
+--- /dev/null
++++ b/tests/unit/test_weekend_flatten.py
+@@ -0,0 +1,72 @@
++"""The weekend flatten (master §9.5: on a no-weekend-holding account, "positions flattened
++before the ban window by policy, surfaced if impossible"). It starts with the pre-close
++entry ban (`weekend_entry_buffer_s`, 2 h) and emits reduce-only closes naming each open
++position — its own side and size (the close convention built in stage 7)."""
++
++from __future__ import annotations
++
++from datetime import datetime, timedelta, timezone
++from decimal import Decimal
++
++import pytest
++
++from core.governor.portfolio_types import Position
++from core.signals.signal_types import StrategyType
++from tests.signals_fixtures import T0, mk_regime
++from tests.unit.test_governor import _pair_signals, mk_governor, mk_portfolio, mk_rulebook
++
++NO_WEEKEND = dict(weekend_holding_allowed=False)
++
++
++def _pos(instrument="EUR_USD", direction=1, units="1000", group_id=None, price=1.10):
++    return Position(instrument=instrument, direction=direction, size_units=Decimal(units),
++                    entry_price=price, stop_loss=price * (0.99 if direction == 1 else 1.01),
++                    take_profit=None, opened_at=T0, strategy_type=StrategyType.TREND,
++                    param_set_id="ps-1", group_id=group_id)
++
++
++def _close(month: int) -> datetime:                        # Friday 17:00 New York
++    return (datetime(2026, 7, 10, 21, tzinfo=timezone.utc) if month == 7
++            else datetime(2026, 1, 9, 22, tzinfo=timezone.utc))
++
++
++@pytest.mark.parametrize("month", [7, 1])                  # EDT and EST
++def test_flatten_starts_with_the_entry_ban_and_names_each_position(month) -> None:
++    gov, log = mk_governor(rulebook=mk_rulebook(**NO_WEEKEND))
++    book = mk_portfolio(open_positions=(_pos(), _pos("USD_JPY", -1, "2500", price=150.0)))
++    ban = _close(month) - timedelta(hours=2)
++    assert gov.weekend_flatten(book, ban - timedelta(seconds=1)) == ()
++    closes = gov.weekend_flatten(book, ban)
++    assert [(c.instrument, c.direction, c.size_units, c.action, c.reason) for c in closes] == [
++        ("EUR_USD", 1, Decimal("1000"), "close", "weekend_flatten"),
++        ("USD_JPY", -1, Decimal("2500"), "close", "weekend_flatten")]
++    assert log.events("WEEKEND_FLATTEN")[0]["data"]["instruments"] == ["EUR_USD", "USD_JPY"]
++
++
++def test_an_account_that_may_hold_over_the_weekend_is_never_flattened() -> None:
++    gov, _ = mk_governor()                                  # weekend holding allowed
++    book = mk_portfolio(open_positions=(_pos(),))
++    assert gov.weekend_flatten(book, _close(7) - timedelta(minutes=30)) == ()
++    assert gov.weekend_flatten(book, _close(7) + timedelta(hours=5)) == ()
++
++
++def test_a_position_still_open_after_the_close_is_surfaced() -> None:
++    gov, log = mk_governor(rulebook=mk_rulebook(**NO_WEEKEND))
++    book = mk_portfolio(open_positions=(_pos(),))
++    closes = gov.weekend_flatten(book, _close(7) + timedelta(minutes=1))
++    assert len(closes) == 1                                 # still tried, every tick
++    assert log.events("WEEKEND_FLATTEN_INCOMPLETE")[0]["data"]["instruments"] == ["EUR_USD"]
++    assert gov.weekend_flatten(mk_portfolio(), _close(7) + timedelta(minutes=2)) == ()
++
++
++def test_both_legs_of_a_pair_are_flattened_and_the_group_retired() -> None:
++    gov, _ = mk_governor(rulebook=mk_rulebook(**NO_WEEKEND))
++    a, b = gov.allocate_group(_pair_signals(), mk_portfolio(), mk_regime(), T0)
++    assert gov.open_groups() == (a.group_id,)
++    book = mk_portfolio(open_positions=tuple(
++        _pos(o.instrument, o.direction, str(o.size_units), o.group_id, o.entry_price)
++        for o in (a, b)))
++    closes = gov.weekend_flatten(book, _close(7) - timedelta(hours=1))
++    assert {(c.instrument, c.group_id) for c in closes} == {(a.instrument, a.group_id),
++                                                           (b.instrument, b.group_id)}
++    assert gov.open_groups() == ()                          # never one leg alone

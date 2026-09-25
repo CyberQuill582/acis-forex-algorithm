@@ -1,3 +1,9 @@
+76f2ce7 2026-09-25 07:01:38 +0300 Audits F6 + E7: no bare NaN in any JSON the backtest writes (RFC 8259)
+4b1e723 2026-09-25 06:48:52 +0300 Audit E4: report the gate's SR0 hurdle; drop the unfaithful "oracle DSR"
+11fbe54 2026-09-25 06:37:15 +0300 Audit E2: a planted refusal only by the DSR gate is GATE-LIMITED, exit 6
+7d1d972 2026-09-25 06:25:40 +0300 Audits E3 + F4: no falsification verdict without planted and a control
+9dd274d 2026-09-25 06:16:41 +0300 Audit F1 + E1: a full-scale positive-control test, and graded rungs near §14
+3412f54 2026-09-25 05:14:46 +0300 Audit F2: the oracle keeps weekend-flat and min-hold rules; controls refused by §14
 039a687 2026-09-25 00:48:27 +0300 Audit E9: the oracle sizes one NAV of USD notional per instrument
 bb18730 2026-09-25 00:42:50 +0300 Audit F5 + F9: a neighbour's actual direction; the registry records neighbours
 b842214 2026-09-25 00:38:40 +0300 Audit E6: the plateau step is 10% of each gene's RANGE, not of its value

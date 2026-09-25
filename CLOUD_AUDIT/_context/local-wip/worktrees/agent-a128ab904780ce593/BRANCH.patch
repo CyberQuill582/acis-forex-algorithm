@@ -823,53 +823,122 @@ index 0f03d10..8793a1d 100644
  
      def _train_fitness(
          self,
+diff --git a/scripts/cost_stress_ladder.py b/scripts/cost_stress_ladder.py
+index 751cf87..231126e 100644
+--- a/scripts/cost_stress_ladder.py
++++ b/scripts/cost_stress_ladder.py
+@@ -24,7 +24,6 @@ data/validation/cost_stress/<run id>/{ladder.json,rung_*.json}.
+ from __future__ import annotations
+ 
+ import argparse
+-import json
+ import math
+ import sys
+ from concurrent.futures import ProcessPoolExecutor, as_completed
+@@ -34,7 +33,7 @@ from pathlib import Path
+ ROOT = Path(__file__).resolve().parent.parent
+ sys.path.insert(0, str(ROOT))
+ from config.schemas import load_config  # noqa: E402
+-from tests.backtest.oos_runner import train_years  # noqa: E402
++from tests.backtest.oos_runner import strict_json, train_years  # noqa: E402
+ from tests.backtest.synthetic_grade import FIRST_MID, START, grade, label_year, plan  # noqa: E402
+ from tests.backtest.synthetic_market import KINDS, MarketSpec  # noqa: E402
+ 
+@@ -94,6 +93,15 @@ def verdict(rows: list[dict], bar: float) -> str:
+             "venue choice can rescue this")
+ 
+ 
++def ladder_document(*, kind: str, account: str, folds: int, days: int, bar: float, quick: bool,
++                    rows: list[dict]) -> str:
++    """ladder.json, as strict RFC 8259 JSON (audits F6/E7): a rung whose §14 duration band is
++    empty has avg_duration_s NaN, and a run with no Sharpe has dsr NaN — both are written null."""
++    return strict_json({"kind": kind, "account": account, "folds": folds, "days": days, "bar": bar,
++                        "quick": quick, "verdict": verdict(rows, bar),
++                        "cost_decomposition": decompose(rows), "rungs": rows})
++
++
+ def main() -> int:
+     cfg = load_config(ROOT / "config")
+     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+@@ -150,10 +158,9 @@ def main() -> int:
+ 
+     rows.sort(key=lambda r: (r["spread_floor"], r["cost_stress"]))
+     line = verdict(rows, a.bar)
+-    (out / "ladder.json").write_text(json.dumps(
+-        {"kind": a.kind, "account": a.account, "folds": len(folds), "days": days,
+-         "bar": a.bar, "quick": a.quick, "verdict": line, "cost_decomposition": decompose(rows),
+-         "rungs": rows}, indent=1), encoding="utf-8")
++    (out / "ladder.json").write_text(ladder_document(
++        kind=a.kind, account=a.account, folds=len(folds), days=days, bar=a.bar, quick=a.quick,
++        rows=rows), encoding="utf-8")
+     print("\n" + ("quick run: a shape check only — under two graded years nothing can pass, "
+                   "so no verdict" if a.quick else line))
+     print("ladder:", out / "ladder.json")
 diff --git a/scripts/falsify_engine.py b/scripts/falsify_engine.py
-index 93c7da6..9101e0b 100644
+index 93c7da6..b432bed 100644
 --- a/scripts/falsify_engine.py
 +++ b/scripts/falsify_engine.py
-@@ -3,16 +3,25 @@
+@@ -3,11 +3,32 @@
      python scripts/falsify_engine.py --quick         # 10 weeks, 3 short folds: a shape check, never a verdict
      python scripts/falsify_engine.py --workers 4     # THE run: over two graded years per market
  
 -Each market (tests/backtest/synthetic_market.py) is labelled, then graded by the real
 +Stage 1 (GAP-P12D-37): the ORACLE positive control (tests/backtest/oracle.py) is graded on
-+every market with the same folds, account and declared costs. The engine's verdict is VOID,
-+and the engine is not run (exit 4), unless the harness recognises the oracle on planted (every
-+non-DSR clause of `passed` met) and refuses it on null and permuted. A quick run only prints
-+this stage: its graded span is too short for any verdict.
++every market with the same folds, account and declared costs, plus two graded RUNGS of it on
++planted (audit E1: wrong on a calibrated share of episodes, `oracle.RUNGS`), one just above the
++§14 cut-offs and one just below. The engine's verdict is VOID, and the engine is not run (exit 4),
++unless the harness passes the perfect oracle and the near-pass rung (every non-DSR clause of
++`passed` met) and refuses the near-fail rung, null and permuted by a §14 row. A quick run only
++prints this stage: its graded span is too short for any verdict.
 +
 +Stage 2: each market (tests/backtest/synthetic_market.py) is labelled, then graded by the real
  walk-forward (`run_walk_forward`: production config, account, costs and gates). The expected
  answers: null and permuted must NOT pass; planted MUST pass. Writes
 -data/validation/falsification/<run id>/<kind>.json. Exit 0 only when all three hold. A quick
 -run exits 3: its graded span is under the two years §14 demands, so nothing can pass by design.
-+data/validation/falsification/<run id>/<kind>.json (and oracle_<kind>.json,
-+oracle_deflation.json: the Deflated Sharpe the ratified gate gives the oracle under each engine
-+run's own selection set). Exit 0 only when all three hold. A quick run exits 3: its graded
-+span is under the two years §14 demands, so nothing can pass by design.
++data/validation/falsification/<run id>/<kind>.json (and oracle_<kind>.json). For each engine
++run it prints the per-trade SR0 HURDLE the ratified gate demands of that run's selected strategy
++(audit E4: a hurdle, never "the oracle's Deflated Sharpe" — the oracle is not in the trial set,
++and ~5-trade holdout Sharpes are not commensurate with a 2,600-trade record).
++
++Exit codes:
++  0  held: planted passed and every graded control did not (only the markets graded are named)
++  1  FALSIFICATION FAILED: a wrong answer on some market
++  2  refused: an enabled instrument has no synthetic first mid
++  3  quick run: a shape check, never a verdict
++  4  VERDICT VOID: the oracle positive control failed (stage 1); the engine never ran
++  5  NO VERDICT: --kinds lacks planted, or has no control (audits E3/F4); nothing ran
++  6  GATE-LIMITED: every control was refused and planted met every non-DSR clause of `passed`,
++     failing ONLY the ratified trial-count / Deflated Sharpe gate (audit E2). While GAP-P12D-33/37
++     is open that refusal is uninterpretable, so it is reported as the gate's, NOT the engine's
  """
  
  from __future__ import annotations
- 
- import argparse
-+import json
- import math
- import sys
- from concurrent.futures import ProcessPoolExecutor, as_completed
-@@ -22,8 +31,11 @@ from pathlib import Path
- ROOT = Path(__file__).resolve().parent.parent
+@@ -23,7 +44,8 @@ ROOT = Path(__file__).resolve().parent.parent
  sys.path.insert(0, str(ROOT))
  from config.schemas import load_config  # noqa: E402
-+from tests.backtest.deflated_sharpe import deflated_sharpe  # noqa: E402
  from tests.backtest.oos_runner import train_years  # noqa: E402
 -from tests.backtest.synthetic_grade import FIRST_MID, START, grade, label_year, plan  # noqa: E402
-+from tests.backtest.oracle import void_reasons  # noqa: E402
-+from tests.backtest.report import DSR_MIN  # noqa: E402
++from tests.backtest.oracle import RUNGS, void_reasons  # noqa: E402
 +from tests.backtest.synthetic_grade import FIRST_MID, START, grade, label_year, oracle_row, plan  # noqa: E402
  from tests.backtest.synthetic_market import KINDS, MarketSpec  # noqa: E402
  
  EXPECT_PASS = {"null": False, "planted": True, "permuted": False}
-@@ -54,8 +66,21 @@ def main() -> int:
+@@ -40,6 +62,13 @@ def main() -> int:
+     ap.add_argument("--kinds", nargs="+", choices=KINDS, default=list(KINDS))
+     ap.add_argument("--workers", type=int, default=2)
+     a = ap.parse_args()
++    if not a.quick and ("planted" not in a.kinds or set(a.kinds) == {"planted"}):
++        # audits E3/F4: without planted there is no positive control and no expected pass, so a
++        # dead grader would "hold" on the controls alone; without a control, a grader that passes
++        # everything would "hold" on planted alone
++        print(f"NO VERDICT: --kinds {' '.join(a.kinds)} — a falsification verdict needs planted (the "
++              "positive control and the one expected pass) AND at least one of null / permuted")
++        return 5
+     if a.quick:
+         a.train_days, a.test_days, a.graded_days = 28, 12, 36
+     folds = plan(a.train_days, a.test_days, math.ceil(a.graded_days / a.test_days))
+@@ -54,8 +83,24 @@ def main() -> int:
      (out / "logs").mkdir(parents=True, exist_ok=True)
      print(f"{len(folds)} folds, {days} days, {len(a.kinds)} markets -> {out}", flush=True)
  
@@ -878,11 +947,14 @@ index 93c7da6..9101e0b 100644
      with ProcessPoolExecutor(max_workers=a.workers) as ex:
 +        # stage 1 (GAP-P12D-37): no engine verdict means anything until the grader recognises
 +        # a strategy KNOWN to be good, and refuses the same logic where it knows nothing
-+        for fut in as_completed([ex.submit(oracle_row, specs[k], out, a.account, folds, ROOT)
-+                                 for k in a.kinds]):
++        jobs = [ex.submit(oracle_row, specs[k], out, a.account, folds, ROOT) for k in a.kinds]
++        if "planted" in specs:          # audit E1: rungs just above and just below the §14 cut-offs
++            jobs += [ex.submit(oracle_row, specs["planted"], out, a.account, folds, ROOT,
++                               sign_error=p, tag=tag) for tag, p in RUNGS.items()]
++        for fut in as_completed(jobs):
 +            r = fut.result()
 +            oracle[r["kind"]] = r
-+            print(f"  oracle {r['kind']:8s} trades={r['trades']} net={float(r['net_pnl']):,.2f} "
++            print(f"  oracle {r['kind']:17s} trades={r['trades']} net={float(r['net_pnl']):,.2f} "
 +                  f"sharpe={r['sharpe']:.2f} psr={r['psr']:.3f} non-DSR failures={r['non_dsr_failures']} "
 +                  f"({r['seconds']:,.0f} s)", flush=True)
 +        void = void_reasons({k: r["non_dsr_failures"] for k, r in oracle.items()})
@@ -892,21 +964,98 @@ index 93c7da6..9101e0b 100644
          labels = [ex.submit(label_year, specs[k], i, y, out, ROOT)
                    for k in a.kinds for i in instruments for y in train_years(folds)]
          for fut in as_completed(labels):
-@@ -69,6 +94,14 @@ def main() -> int:
+@@ -69,14 +114,30 @@ def main() -> int:
                    f"sharpe={r['sharpe']:.2f} dsr={r['dsr']} trials={r['trials']} "
                    f"champions={r['champions']} failed={r['failed']} ({r['seconds']:,.0f} s)", flush=True)
  
-+    # what the ratified gate says about the oracle had it been the strategy each run selected
-+    deflation = {k: deflated_sharpe(oracle[k]["trade_returns"], r["trial_sharpes"], r["trials"])
-+                 for k, r in results.items()}
-+    for k, dsr in sorted(deflation.items()):
-+        print(f"  oracle deflated by the {k} run's {results[k]['trials']} trials: DSR={dsr:.4f} "
-+              f"(the gate needs {DSR_MIN})")
-+    (out / "oracle_deflation.json").write_text(json.dumps(deflation, indent=1), encoding="utf-8")
++    for k, r in sorted(results.items()):
++        print(f"  {k}: the ratified gate's per-trade SR0 hurdle over this run's {r['trials']} trials "
++              f"= {r['sr0_hurdle']:.3f} (a hurdle the selected strategy's per-trade Sharpe must clear; "
++              "not a Deflated Sharpe of anything)")
 +
      if a.quick:
          print("quick run: a shape check only — under two graded years nothing can pass, so no verdict")
          return 3
+     wrong = sorted(k for k, r in results.items() if r["passed"] != EXPECT_PASS[k])
++    planted = results["planted"]
++    if wrong == ["planted"] and not planted["non_dsr_failed"]:
++        # audit E2: every other clause of `passed` held, so the only refusal is the ratified
++        # trial-count / Deflated Sharpe gate (GAP-P12D-33/37) — that says nothing about the engine
++        print(f"GATE-LIMITED — planted met every non-DSR clause of passed and failed only the "
++              f"trial-count / Deflated Sharpe gate (dsr={planted['dsr']}, trials={planted['trials']}; "
++              "GAP-P12D-33/37): uninterpretable, NOT an engine verdict")
++        return 6
+     if wrong:
+-        print("FALSIFICATION FAILED — wrong answer on:", ", ".join(wrong))
++        print("FALSIFICATION FAILED — wrong answer on:", ", ".join(wrong),
++              f"(planted's non-DSR failures: {planted['non_dsr_failed']})" if "planted" in wrong else "")
+         return 1
+-    print("falsification held: null and permuted fail, planted passes")
++    controls = [k for k in sorted(results) if k != "planted"]
++    print(f"falsification held on the markets graded in this run: planted passed; "
++          f"{', '.join(controls)} did not")
+     return 0
+ 
+ 
+diff --git a/scripts/run_data_validation.py b/scripts/run_data_validation.py
+index 6e7832a..1610fcc 100644
+--- a/scripts/run_data_validation.py
++++ b/scripts/run_data_validation.py
+@@ -12,7 +12,6 @@ report.md listing every flag first. It never edits or averages the data (C-BT-9)
+ from __future__ import annotations
+ 
+ import argparse
+-import json
+ import sys
+ import time
+ from collections import defaultdict
+@@ -24,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
+ sys.path.insert(0, str(ROOT))
+ sys.path.insert(0, str(ROOT / "scripts"))
+ from tests.backtest.bi5 import SYMBOLS  # noqa: E402
++from tests.backtest.oos_runner import strict_json  # noqa: E402
+ from tests.backtest.validation_checks import (  # noqa: E402
+     TRIANGLE, day_metrics, summarise_instrument_year, summarise_triangle, triangle_samples)
+ from tests.backtest.validation_gold import gold_day, second_wednesday, summarise_gold  # noqa: E402
+@@ -136,7 +136,7 @@ def main() -> int:
+               "seconds": round(time.perf_counter() - t0, 1),
+               "instrument_years": summaries, "triangle": triangle, "gold": gold}
+     OUT.mkdir(parents=True, exist_ok=True)
+-    (OUT / "report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
++    (OUT / "report.json").write_text(strict_json(report), encoding="utf-8")   # RFC 8259 (F6/E7)
+     (OUT / "report.md").write_text(_md(report), encoding="utf-8")
+     n_flags = (sum(len(s["flags"]) for s in summaries) + sum(len(t["flags"]) for t in triangle)
+                + sum(len(g["flags"]) for g in gold))
+diff --git a/tests/backtest/book.py b/tests/backtest/book.py
+index a7f5c0f..1965f90 100644
+--- a/tests/backtest/book.py
++++ b/tests/backtest/book.py
+@@ -4,8 +4,9 @@ A backtest IS a runtime, so the position layer the fast-loop GAPs (0075/0091b/00
+ deferred lives here. Invariants:
+ 
+   * An order fills at its `entry_price`. A position closes on a stop or target touch, an
+-    opposite-direction order (reverse), or the max hold. A same-side repeat is ignored
+-    (GAP-0075: the loop re-sizes every tradeable tick).
++    opposite-direction order (reverse), an `action="close"` order (at the tick's mid; nothing
++    to close is a no-op), or the max hold. A same-side repeat is ignored (GAP-0075: the loop
++    re-sizes every tradeable tick).
+   * PnL is Decimal: gross minus the instrument's OWN C8 friction — one cost model per
+     instrument, because costs are in price units and prices differ by scale (EUR/USD
+     ~1.1, USD/JPY ~150; GAP-P12D-19) — plus financing on every real 17:00-New-York
+@@ -94,6 +95,13 @@ class PositionModel:
+         `regime` is the regime active when the loop opened the order (GAP-P12D-31), so a
+         run can say which regime made or lost the money."""
+         existing = book.open_by_inst.get(order.instrument)
++        if order.action == "close":
++            # a flatten fills at THIS tick's mid, as a max-hold close does — never at the order's
++            # entry_price (a Governor close carries its leg's original entry price)
++            if existing is not None:
++                book.book_close(self.close_at(existing, st.mid, st.timestamp, "close", book, st.spread),
++                                order.instrument)
++            return
+         if existing is not None:
+             if existing.direction == order.direction:
+                 return                                   # same-side dedup (GAP-0075)
 diff --git a/tests/backtest/evolve_step.py b/tests/backtest/evolve_step.py
 index 6d887c6..4b34a38 100644
 --- a/tests/backtest/evolve_step.py
@@ -958,42 +1107,21 @@ index 6d887c6..4b34a38 100644
              candidates.append(entry)
          if best_params is not None:
 diff --git a/tests/backtest/harness.py b/tests/backtest/harness.py
-index 111db76..412b56a 100644
+index 111db76..224a972 100644
 --- a/tests/backtest/harness.py
 +++ b/tests/backtest/harness.py
-@@ -74,6 +74,11 @@ class FoldData:
- EvolveFn = Callable[[object, FoldData], "Mapping | None"]
- 
- 
-+def per_trade_returns(trades: Iterable[ClosedTrade]) -> list[float]:
-+    """The graded per-trade return, pnl / USD notional: the series the Deflated Sharpe reads."""
-+    return [float(t.pnl / t.notional_usd) for t in trades if t.notional_usd]
-+
-+
- def refuse_lookahead(record: Mapping, fold: Fold) -> None:
-     """GAP-P12D-28: an evolution record may not cite a bar that opens at or after its fold's
-     train end — that bar's price belongs to the embargo or the test window. It checks the
-@@ -114,6 +119,11 @@ class Backtest:
+@@ -114,6 +114,11 @@ class Backtest:
          """The ParamLibrary `PositionGate` in a backtest: this book is the position layer."""
          return len(self._active.open_by_inst) if self._active is not None else 0
  
 +    def graded_trades(self) -> tuple[ClosedTrade, ...]:
 +        """The last run's out-of-sample closed trades, read-only (the oracle positive control
-+        re-deflates them against another run's trial set, GAP-P12D-37)."""
++        reports their net PnL, GAP-P12D-37)."""
 +        return tuple(self._active.trades) if self._active is not None else ()
 +
      def portfolio_state(self) -> PortfolioState:
          """The Governor's `portfolio_fn` in a replay (GAP-P12D-21): the real snapshot."""
          book = self._active or BookState()
-@@ -217,7 +227,7 @@ class Backtest:
-         # GAP-P12D-25: every candidate champion's holdout per-trade Sharpe is a trial
-         trials = [s for r in evolution for s in r.get("trial_sharpes", ()) if s is not None]
-         n_trials = len(trials) + min_trials if len(trials) >= 2 else len(trials)
--        trade_returns = [float(t.pnl / t.notional_usd) for t in oos.trades if t.notional_usd]
-+        trade_returns = per_trade_returns(oos.trades)
-         oos_returns = _returns_from_equity(oos.equity)
-         caveats = (
-             "tick backtest cannot fully reproduce live microstructure (GAP-0001)",
 diff --git a/tests/backtest/metrics.py b/tests/backtest/metrics.py
 index 9fb0483..57cabd3 100644
 --- a/tests/backtest/metrics.py
@@ -1019,20 +1147,37 @@ index 9fb0483..57cabd3 100644
      return sum(t.duration_s for t in sel) / len(sel)
  
  
+diff --git a/tests/backtest/oos_runner.py b/tests/backtest/oos_runner.py
+index 7b682f2..de7ca4a 100644
+--- a/tests/backtest/oos_runner.py
++++ b/tests/backtest/oos_runner.py
+@@ -160,5 +160,12 @@ def _plain(v):
+     return v
+ 
+ 
++def strict_json(value, *, sort_keys: bool = False) -> str:
++    """RFC 8259 JSON (audits F6/E7: "NaN and Infinity are not permitted"): `_plain` maps every
++    non-finite float to null, and `allow_nan=False` makes any that slips past RAISE rather than
++    write a bare NaN a strict parser rejects."""
++    return json.dumps(_plain(value), indent=1, sort_keys=sort_keys, allow_nan=False)
++
++
+ def report_json(report: ValidationReport) -> str:
+-    return json.dumps(_plain(report), indent=1, sort_keys=True)
++    return strict_json(report, sort_keys=True)
 diff --git a/tests/backtest/oracle.py b/tests/backtest/oracle.py
 new file mode 100644
-index 0000000..3f8f284
+index 0000000..b1f7a94
 --- /dev/null
 +++ b/tests/backtest/oracle.py
-@@ -0,0 +1,198 @@
+@@ -0,0 +1,148 @@
 +"""The oracle positive control (GAP-P12D-37): a strategy KNOWN to be good, graded by the SAME
-+harness, book, C8 cost map, metrics and §14 report as the engine.
++harness, book, C8 cost map, metrics and §14 report as the engine. Its decisions (what, when,
++how much, and the account rules it keeps) live in oracle_loop.py; this module grades it.
 +
-+The oracle knows the planted episode state perfectly (`SyntheticMarket.episode_sign`): on every
-+graded tick it holds one NAV of USD notional (`NOTIONAL_FRACTION`) per instrument in the direction
-+of the episode in force and reverses the moment the state changes. It never sees the noise and never sees the NEXT episode, so its edge
-+is exactly the planted edge. On null and permuted it holds the SAME signs, which move no price
-+there: knowing the sign of a zero drift is worthless.
++The oracle knows the planted episode state perfectly and nothing else, so its edge is exactly the
++planted edge. On null and permuted it holds the SAME signs, which move no price there: knowing the
++sign of a zero drift is worthless.
 +
 +Invariants:
 +  * The path is the engine's (`oos_runner.run_walk_forward`): the production config's C8 cost
@@ -1043,10 +1188,9 @@ index 0000000..3f8f284
 +    because nothing downstream of the oracle reads what it adds. `OracleTick` carries ONLY the
 +    fields the harness and book read, identical to the factory's (`test_oracle_ticks_equal_the
 +    _factory_path`), so a future read of any other field fails loudly, never on a fake value.
-+  * Warm-up ticks decide nothing (`observe_only`), as for the engine; the book still manages
-+    an open position through them.
-+  * The position is re-asserted at the first graded tick of each UTC day, so a max-hold close
-+    (48 h, and every weekend) is re-opened rather than leaving the oracle flat.
++  * The oracle obeys the account's evaluable rules (oracle_loop.py, audit F2). So a rule
++    violation on ANY market means the oracle or the rule model is broken, and a control
++    (null, permuted) counts as refused only by a §14 row, never by a rule or a sample floor.
 +  * The oracle selects nothing, so its honest trial record is EMPTY. The ratified gate needs
 +    >= 2 trials, so `passed` is False BY CONSTRUCTION; `non_dsr_failures` is every OTHER clause
 +    of `report.build_report`'s `passed`, which is what a positive control must clear. Nothing
@@ -1059,36 +1203,21 @@ index 0000000..3f8f284
 +from dataclasses import dataclass
 +from datetime import datetime, timedelta
 +from decimal import Decimal
-+from types import MappingProxyType
 +from typing import Iterator, Mapping, Sequence
 +
 +from config.account_doctrine import guardrail_hash
 +from config.schemas import AcisConfig
-+from core.governor.portfolio_types import SizedOrder
 +from tests.backtest.data_loader import BacktestDataLoader
 +from tests.backtest.evolve_step import cost_model
-+from tests.backtest.harness import Backtest, FoldData, per_trade_returns
-+from tests.backtest.money import quote_to_account
++from tests.backtest.harness import Backtest, FoldData
++from tests.backtest.oracle_loop import OracleLoop, OracleTick
 +from tests.backtest.report import _MIN_FOLDS, _MIN_TRADES, _MIN_YEARS, ValidationReport
 +from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, synthetic_spx
 +from tests.backtest.walk_forward import Fold
 +
-+NOTIONAL_FRACTION = Decimal("1")       # USD notional per instrument, as a fraction of NAV (E9)
-+STRATEGY = "ORACLE"                    # graded inside the §14 duration band (no carve-out)
 +CAVEAT = ("ORACLE positive control: the decision layers are replaced by perfect knowledge of "
 +          "the planted episode state; it selects nothing, so its trial record is empty and the "
 +          "ratified gate (>= 2 trials) cannot pass it (GAP-P12D-37)")
-+
-+
-+@dataclass(frozen=True)
-+class OracleTick:
-+    """The MarketState fields the harness and book read — and nothing it would have to invent."""
-+    timestamp: datetime
-+    instrument: str
-+    bid: float
-+    ask: float
-+    spread: float
-+    mid: float
 +
 +
 +def oracle_ticks(cfg: AcisConfig, loader: BacktestDataLoader, source: str,
@@ -1104,75 +1233,22 @@ index 0000000..3f8f284
 +                         mid=float((raw.bid + raw.ask) / 2.0))
 +
 +
-+class _NoParams:
-+    """The ParamLibrary stand-in: the oracle stages nothing, so a boundary promotes nothing."""
-+
-+    def on_boundary(self, now: datetime) -> list[str]:
-+        return []
-+
-+
-+class _Orders:
-+    def __init__(self) -> None:
-+        self.orders: list[SizedOrder] = []
-+        self.strategy_of: dict[str, str] = {}
-+        self.regime_of: dict[str, str] = {}
-+
-+
-+class OracleLoop:
-+    """The loop surface `Backtest` drives: `on_state`, `observe_only`, `book`, `params`."""
-+
-+    def __init__(self, market: SyntheticMarket, nav: Decimal) -> None:
-+        self.book = _Orders()
-+        self.params = _NoParams()
-+        self._market = market
-+        self._notional = nav * NOTIONAL_FRACTION
-+        self._last: dict[str, float] = {}                   # every instrument's last mid (crosses)
-+        self._held: dict[str, tuple[int, object]] = {}      # instrument -> (sign, UTC day)
-+
-+    def units(self, instrument: str, mid: float) -> Decimal:
-+        """Whole units whose USD notional is `NOTIONAL_FRACTION` of NAV (audit E9: a fixed unit
-+        count made gold 10,000 oz = $18M on a $10k account), converted exactly as the book books
-+        PnL (`money.quote_to_account`)."""
-+        usd_per_unit = Decimal(str(mid)) * quote_to_account(instrument, mid, self._last)
-+        return Decimal(int(self._notional / usd_per_unit))
-+
-+    def observe_only(self, st: OracleTick) -> None:
-+        self._last[st.instrument] = st.mid                  # warm-up decides nothing
-+
-+    def on_state(self, st: OracleTick) -> None:
-+        self._last[st.instrument] = st.mid
-+        sign = int(self._market.episode_sign(st.instrument, st.timestamp))
-+        key = (sign, st.timestamp.date())
-+        if self._held.get(st.instrument) == key:
-+            return                                          # same episode, same day: hold
-+        self._held[st.instrument] = key
-+        oid = f"oracle-{len(self.book.orders)}"
-+        self.book.orders.append(SizedOrder(
-+            order_id=oid, signal_id=oid, instrument=st.instrument, direction=sign,
-+            size_units=self.units(st.instrument, st.mid), entry_price=st.mid,
-+            # a stop no planted episode reaches: the oracle exits by reversing, never by stop
-+            stop_loss=st.mid * (0.5 if sign > 0 else 2.0), take_profit=None,
-+            reason="oracle: the planted episode in force",
-+            factors_snapshot=MappingProxyType({"strategy_type": STRATEGY}),
-+            sized_at=st.timestamp, param_set_id="oracle"))
-+        self.book.strategy_of[oid] = STRATEGY
-+
-+
 +@dataclass(frozen=True)
 +class OracleGrade:
 +    kind: str
 +    report: ValidationReport
-+    trade_returns: tuple[float, ...]        # pnl / USD notional, the Deflated Sharpe's series
 +    net_pnl: Decimal
 +
 +
 +def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequence[Fold], logger,
-+                 *, instruments: Sequence[str] | None = None) -> OracleGrade:
++                 *, instruments: Sequence[str] | None = None, sign_error: float = 0.0) -> OracleGrade:
++    """`sign_error` > 0 grades a weaker rung of the same oracle (oracle_loop.py, audit E1)."""
 +    market = SyntheticMarket(spec)
 +    insts = sorted(instruments if instruments is not None else cfg.instruments.enabled)
 +    specs = cfg.instruments.instruments
++    rulebook = cfg.platform_rules.accounts[account]
 +    bt = Backtest(account=account, cost_models={i: cost_model(cfg, i) for i in insts},
-+                  rulebook=cfg.platform_rules.accounts[account],
++                  rulebook=rulebook,
 +                  swap_conventions={i: specs[i].swap_convention for i in insts},
 +                  session_boundaries=cfg.system.session_boundaries, clusters=cfg.instruments.clusters)
 +    loader = BacktestDataLoader({market.name: market}, logger)
@@ -1182,14 +1258,15 @@ index 0000000..3f8f284
 +
 +    limits = guardrail_hash(cfg.guardrails)
 +    report = bt.run(
-+        loop=OracleLoop(market, nav=bt.portfolio_state().nav),
++        loop=OracleLoop(market, nav=bt.portfolio_state().nav, rulebook=rulebook,
++                        flat_before=[f.test_end for f in folds], sign_error=sign_error),
 +        folds=[FoldData(f, stream(f.test_start, f.test_end), warmup_states=stream(f.train_end, f.test_start))
 +               for f in folds],
 +        evolve_fn=lambda lp, fd: {"fold": fd.fold.index, "champions": 0, "trial_sharpes": [], "regimes": {}},
 +        spx_closes=synthetic_spx(spec.start, spec.days), guardrail_hash=limits,
 +        expected_guardrail_hash=limits, extra_caveats=(CAVEAT,))
 +    trades = bt.graded_trades()
-+    return OracleGrade(kind=spec.kind, report=report, trade_returns=tuple(per_trade_returns(trades)),
++    return OracleGrade(kind=spec.kind, report=report,
 +                       net_pnl=sum((t.pnl for t in trades), Decimal("0")))
 +
 +
@@ -1210,21 +1287,208 @@ index 0000000..3f8f284
 +    return tuple(out)
 +
 +
++# What stage 1 expects of each oracle it grades: the perfect oracle and the rung just above the
++# §14 cut-offs must PASS every non-DSR clause; the rung just below them, and every control, must be
++# REFUSED by a §14 row (audit E1: power near the cut-off, not only against an overwhelming edge).
++EXPECTED = {"planted": "pass", "planted-near-pass": "pass", "planted-near-fail": "refuse",
++            "null": "refuse", "permuted": "refuse"}
++# The rungs' per-episode sign-error rates, calibrated on the falsification default plan
++# (plan(60, 30, 25), the 20 s tape, dev_paper). Profit factor (1.4) binds first for this trade
++# structure: near-pass 0.42 graded PF 1.593 on EUR_USD + USD_JPY, every clause met; near-fail
++# 0.46 graded PF 1.251 (EUR_USD) and 1.316 (USD_JPY), so the pooled PF lies between them
++# (the oracle decides per instrument), failing that row alone.
++RUNGS = {"planted-near-pass": 0.42, "planted-near-fail": 0.46}
++
++
 +def void_reasons(failures: Mapping[str, Sequence[str]]) -> list[str]:
-+    """Why an engine falsification verdict is VOID (GAP-P12D-37): the harness must recognise
-+    the oracle on planted (no non-DSR failure) and refuse it wherever its knowledge is
-+    worthless (null, permuted: at least one). `failures` maps market kind -> the oracle's
-+    `non_dsr_failures` on that market."""
++    """Why an engine falsification verdict is VOID (GAP-P12D-37). `failures` maps an `EXPECTED`
++    key -> that oracle's `non_dsr_failures`. A "pass" oracle must show no failure at all; a
++    "refuse" oracle must be refused BY A §14 ROW (audit F2: a refusal by a rule violation or a
++    sample floor proves nothing about the grade). The oracle keeps the account's rules, so a rule
++    violation on any market voids the run by itself."""
 +    out = []
 +    for kind, fails in sorted(failures.items()):
-+        if kind == "planted" and fails:
-+            out.append(f"the planted oracle failed: {', '.join(fails)}")
-+        elif kind != "planted" and not fails:
-+            out.append(f"the {kind} oracle cleared every non-DSR clause: the grader cannot tell "
-+                       "knowledge of a zero drift from an edge")
++        broken = [f for f in fails if f.startswith("rule violation")]
++        if broken:
++            out.append(f"the {kind} oracle broke the account's rules ({', '.join(broken)}): it is "
++                       "built to keep them, so the oracle or the rule model is wrong")
++        if EXPECTED[kind] == "pass" and fails:
++            out.append(f"the {kind} oracle failed: {', '.join(fails)}")
++        elif EXPECTED[kind] == "refuse" and not any(f.startswith("section-14") for f in fails):
++            out.append(f"the {kind} oracle was not refused by any section-14 row "
++                       f"({', '.join(fails) or 'it cleared every non-DSR clause'}): the grader "
++                       "cannot tell it from an edge")
 +    return out
+diff --git a/tests/backtest/oracle_loop.py b/tests/backtest/oracle_loop.py
+new file mode 100644
+index 0000000..b3b537a
+--- /dev/null
++++ b/tests/backtest/oracle_loop.py
+@@ -0,0 +1,162 @@
++"""The oracle's decision side (GAP-P12D-37): what it trades, when, and how much. Grading lives in
++oracle.py.
++
++Mental model:
++  * On every graded tick the oracle wants to hold one NAV of USD notional (`NOTIONAL_FRACTION`,
++    audit E9) per instrument in the direction of the planted episode IN FORCE
++    (`SyntheticMarket.episode_sign`): never the next episode, never the noise.
++  * It re-asserts at the first graded tick of each UTC day, so a max-hold close does not leave it
++    flat, and reverses when the episode changes.
++  * A graded RUNG (audit E1) is the same oracle wrong on a fixed share of whole episodes
++    (`sign_error`): a weaker, known edge on the SAME tape, so the harness can be asked to pass a
++    rung just above the §14 cut-offs and refuse one just below them. `sign_error = 0` is perfect.
++  * It OBEYS the account's evaluable §9.5 rules (audit F2), so a refusal of it can only come from
++    the grade, never from a rule it could have kept:
++      - weekend-flat accounts: it opens nothing in the `min_hold + FLATTEN_LEAD` before Friday's
++        rollover and closes every position `FLATTEN_LEAD` before it (the harness books a hold
++        across that rollover as `weekend_holding`). It does the same before each fold's test end
++        (`flat_before`): the harness then carries open positions through the observe-only embargo,
++        where no strategy can act and which always spans a weekend;
++      - `min_hold_seconds`: it never reverses or closes a position younger than that.
++    News blackouts are enforced by the Governor, which the oracle bypasses; with no event
++    calendar they never apply (GAP-P12D-03). No other rule is evaluable from closed trades.
++  * Warm-up ticks decide nothing (`observe_only`), as for the engine.
++"""
++
++from __future__ import annotations
++
++import bisect
++import hashlib
++from dataclasses import dataclass
++from datetime import datetime, timedelta
++from decimal import Decimal
++from types import MappingProxyType
++from typing import Sequence
++
++from config.schemas import AccountRulebook
++from core.data.fx_clock import rollover_utc
++from core.governor.portfolio_types import SizedOrder
++from tests.backtest.money import quote_to_account
++from tests.backtest.synthetic_market import SyntheticMarket
++
++NOTIONAL_FRACTION = Decimal("1")       # USD notional per instrument, as a fraction of NAV (E9)
++FLATTEN_LEAD = timedelta(minutes=30)   # weekend-flat accounts: flat this long before Friday's roll
++STRATEGY = "ORACLE"                    # graded inside the §14 duration band (no carve-out)
++
++
++@dataclass(frozen=True)
++class OracleTick:
++    """The MarketState fields the harness and book read — and nothing it would have to invent."""
++    timestamp: datetime
++    instrument: str
++    bid: float
++    ask: float
++    spread: float
++    mid: float
++
++
++class _NoParams:
++    """The ParamLibrary stand-in: the oracle stages nothing, so a boundary promotes nothing."""
++
++    def on_boundary(self, now: datetime) -> list[str]:
++        return []
++
++
++class _Orders:
++    def __init__(self) -> None:
++        self.orders: list[SizedOrder] = []
++        self.strategy_of: dict[str, str] = {}
++        self.regime_of: dict[str, str] = {}
++
++
++class OracleLoop:
++    """The loop surface `Backtest` drives: `on_state`, `observe_only`, `book`, `params`."""
++
++    def __init__(self, market: SyntheticMarket, nav: Decimal, rulebook: AccountRulebook | None = None,
++                 flat_before: Sequence[datetime] = (), sign_error: float = 0.0) -> None:
++        if not 0.0 <= sign_error < 0.5:
++            raise ValueError("sign_error must be in [0, 0.5): at 0.5 the oracle knows nothing")
++        self.book = _Orders()
++        self.params = _NoParams()
++        self._market = market
++        self._sign_error = sign_error
++        self._notional = nav * NOTIONAL_FRACTION
++        self._weekend_flat = rulebook is not None and not rulebook.weekend_holding_allowed
++        self._fold_ends = sorted(flat_before)
++        self._min_hold = timedelta(seconds=rulebook.min_hold_seconds if rulebook else 0)
++        self._last: dict[str, float] = {}                   # every instrument's last mid (crosses)
++        self._held: dict[str, tuple[int, object]] = {}      # instrument -> (sign, UTC day)
++        self._opened: dict[str, datetime] = {}              # instrument -> time of its last open
++
++    def units(self, instrument: str, mid: float) -> Decimal:
++        """Whole units whose USD notional is `NOTIONAL_FRACTION` of NAV (audit E9: a fixed unit
++        count made gold 10,000 oz = $18M on a $10k account), converted exactly as the book books
++        PnL (`money.quote_to_account`)."""
++        usd_per_unit = Decimal(str(mid)) * quote_to_account(instrument, mid, self._last)
++        return Decimal(int(self._notional / usd_per_unit))
++
++    def _zone(self, now: datetime) -> str | None:
++        """"flatten" or "wind_down" before the next deadline — Friday's rollover, or the fold's
++        test end — on a weekend-flat account, else None."""
++        if not self._weekend_flat:
++            return None
++        deadlines = [rollover_utc(now.date())] if now.weekday() == 4 else []
++        k = bisect.bisect_right(self._fold_ends, now)
++        deadlines += self._fold_ends[k:k + 1]
++        upcoming = [d for d in deadlines if d > now]
++        if not upcoming:
++            return None
++        cutoff = min(upcoming)
++        if now >= cutoff - FLATTEN_LEAD:
++            return "flatten"
++        return "wind_down" if now >= cutoff - FLATTEN_LEAD - self._min_hold else None
++
++    def _young(self, instrument: str, now: datetime) -> bool:
++        opened = self._opened.get(instrument)
++        return opened is not None and now - opened < self._min_hold
++
++    def observe_only(self, st: OracleTick) -> None:
++        self._last[st.instrument] = st.mid                  # warm-up decides nothing
++
++    def on_state(self, st: OracleTick) -> None:
++        inst, now = st.instrument, st.timestamp
++        self._last[inst] = st.mid
++        sign, zone, held = self.sign(inst, now), self._zone(now), self._held.get(inst)
++        if zone == "flatten":
++            if held is not None:                            # opened before the wind-down: old enough
++                self._order(st, held[0], "close")
++                del self._held[inst]
++            return
++        if held == (sign, now.date()):
++            return                                          # same episode, same day: hold
++        flipping = held is not None and held[0] != sign
++        if flipping and self._young(inst, now):
++            return                                          # min hold: keep the old side a while
++        if zone == "wind_down":                             # never open this close to the weekend
++            if flipping:
++                self._order(st, held[0], "close")
++                del self._held[inst]
++            return
++        self._order(st, sign, "open")
++        self._held[inst], self._opened[inst] = (sign, now.date()), now
++
++    def sign(self, instrument: str, now: datetime) -> int:
++        """The episode in force's sign, WRONG on a fixed `sign_error` share of episodes: a graded
++        rung (audit E1). Which episodes are wrong is a hash of (instrument, episode start), so the
++        rung is deterministic and its errors fall on whole episodes, as a real filter's would."""
++        ep = self._market.episode_at(instrument, now)
++        digest = hashlib.sha256(f"{instrument}|{ep.start}".encode()).digest()
++        wrong = int.from_bytes(digest[:8], "big") / 2 ** 64 < self._sign_error
++        return -int(ep.sign) if wrong else int(ep.sign)
++
++    def _order(self, st: OracleTick, sign: int, action: str) -> None:
++        oid = f"oracle-{len(self.book.orders)}"
++        self.book.orders.append(SizedOrder(
++            order_id=oid, signal_id=oid, instrument=st.instrument, direction=sign,
++            size_units=self.units(st.instrument, st.mid), entry_price=st.mid,
++            # a stop no planted episode reaches: the oracle exits by reversing or closing, never by stop
++            stop_loss=st.mid * (0.5 if sign > 0 else 2.0), take_profit=None,
++            reason=f"oracle: {action} on the planted episode in force",
++            factors_snapshot=MappingProxyType({"strategy_type": STRATEGY}),
++            sized_at=st.timestamp, param_set_id="oracle", action=action))
++        self.book.strategy_of[oid] = STRATEGY
 diff --git a/tests/backtest/synthetic_grade.py b/tests/backtest/synthetic_grade.py
-index f42a69e..5a93d27 100644
+index f42a69e..54a0f93 100644
 --- a/tests/backtest/synthetic_grade.py
 +++ b/tests/backtest/synthetic_grade.py
 @@ -2,7 +2,8 @@
@@ -1237,7 +1501,7 @@ index f42a69e..5a93d27 100644
    * `scripts/cost_stress_ladder.py` — how much of a graded edge is friction?
  One path, so a ladder rung and a falsification run differ in exactly ONE input — the run's
  cost map — and in nothing else.
-@@ -24,11 +25,13 @@ from decimal import Decimal
+@@ -24,11 +25,14 @@ from decimal import Decimal
  from datetime import datetime, timedelta, timezone
  from pathlib import Path
  
@@ -1245,47 +1509,58 @@ index f42a69e..5a93d27 100644
  from config.schemas import AcisConfig, load_config
  from core.data.jsonl_logging import JsonlEventLogger
  from tests.backtest.data_loader import BacktestDataLoader
++from tests.backtest.deflated_sharpe import sharpe_threshold
  from tests.backtest.oos_plan import EMBARGO
  from tests.backtest.oos_runner import RunInputs, report_json, run_walk_forward
 +from tests.backtest.oracle import grade_oracle, non_dsr_failures
  from tests.backtest.regime_labels import LabelledBarCache, LabelSpec, label_instrument_year
  from tests.backtest.replay_logging import ReplayEventLogger
  from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, synthetic_spx
-@@ -81,6 +84,22 @@ def label_year(spec: MarketSpec, instrument: str, year: int, out: Path,
+@@ -81,6 +85,24 @@ def label_year(spec: MarketSpec, instrument: str, year: int, out: Path,
      return spec.kind, instrument, year, n, time.perf_counter() - t0
  
  
-+def oracle_row(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Path) -> dict:
++def oracle_row(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Path, *,
++               sign_error: float = 0.0, tag: str | None = None) -> dict:
 +    """Stage 1 of a falsification verdict (GAP-P12D-37): the oracle positive control on this
-+    market, with the SAME folds, account and declared costs the engine is graded on. Runs in a
-+    worker process, so it reloads the config."""
-+    t0, cfg = time.perf_counter(), load_config(root / "config")
-+    log = run_logger(out, f"oracle_{spec.kind}", "backtest", 200)
-+    g = grade_oracle(spec, cfg, account, folds, log)
++    market, with the SAME folds, account and declared costs the engine is graded on; a
++    `sign_error` rung under its own `tag` (audit E1). Runs in a worker process, so it reloads
++    the config."""
++    t0, cfg, tag = time.perf_counter(), load_config(root / "config"), tag or spec.kind
++    log = run_logger(out, f"oracle_{tag}", "backtest", 200)
++    g = grade_oracle(spec, cfg, account, folds, log, sign_error=sign_error)
 +    log.close()
-+    (out / f"oracle_{spec.kind}.json").write_text(report_json(g.report), encoding="utf-8")
++    (out / f"oracle_{tag}.json").write_text(report_json(g.report), encoding="utf-8")
 +    oos = g.report.out_of_sample
-+    return {"kind": spec.kind, "trades": oos.n_trades, "net_pnl": str(g.net_pnl),
++    return {"kind": tag, "sign_error": sign_error, "trades": oos.n_trades, "net_pnl": str(g.net_pnl),
 +            "sharpe": oos.annual_sharpe, "psr": g.report.deflated_sharpe,
 +            "non_dsr_failures": list(non_dsr_failures(g.report, guardrail_hash(cfg.guardrails))),
-+            "trade_returns": list(g.trade_returns), "seconds": time.perf_counter() - t0}
++            "seconds": time.perf_counter() - t0}
 +
 +
  def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Path, *,
            tag: str | None = None, cost_stress: float = 1.0, spread_floor: float = 0.0) -> dict:
      """Grade one synthetic market with the production config, account, gates and cost map.
-@@ -106,6 +125,9 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
+@@ -106,9 +128,17 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
              # their net PnLs sum to the run's net PnL exactly (Decimal, no re-derivation)
              "net_pnl": str(sum((v.net_pnl for v in report.per_strategy.values()), Decimal("0"))),
              "dsr": report.deflated_sharpe, "trials": report.trial_count,
-+            # the selection set the DSR deflated by: stage 1 re-deflates the oracle against it
-+            "trial_sharpes": [s for r in report.in_sample_evolution
-+                              for s in r.get("trial_sharpes", ()) if s is not None],
++            # the per-trade SR0 the ratified gate demands of this run's selection (audit E4: a
++            # HURDLE; the DSR's own trial filter and N, deflated_sharpe.sharpe_threshold)
++            "sr0_hurdle": sharpe_threshold([s for r in report.in_sample_evolution
++                                            for s in r.get("trial_sharpes", ()) if s is not None],
++                                           report.trial_count),
              "champions": [r["champions"] for r in report.in_sample_evolution],
              "per_strategy": {k: {"n_trades": v.n_trades, "net_pnl": str(v.net_pnl),
                                   "win_rate": v.win_rate, "profit_factor": v.profit_factor}
+                              for k, v in report.per_strategy.items()},
+             "failed": sorted(k for k, ok in report.targets_met.items() if not ok),
++            # every clause of `passed` but the trial count and the DSR (audit E2): empty while
++            # passed is False means the run failed ONLY the ratified DSR gate
++            "non_dsr_failed": list(non_dsr_failures(report, guardrail_hash(cfg.guardrails))),
+             "seconds": time.perf_counter() - t0}
 diff --git a/tests/backtest/synthetic_market.py b/tests/backtest/synthetic_market.py
-index 564e225..a43265e 100644
+index 564e225..c8eefef 100644
 --- a/tests/backtest/synthetic_market.py
 +++ b/tests/backtest/synthetic_market.py
 @@ -10,10 +10,16 @@ Three kinds, generated deterministically from one `MarketSpec`:
@@ -1366,7 +1641,7 @@ index 564e225..a43265e 100644
  
  
  class SyntheticMarket(TickSource):
-@@ -92,10 +122,31 @@ class SyntheticMarket(TickSource):
+@@ -92,10 +122,34 @@ class SyntheticMarket(TickSource):
          self._first = dict(spec.prices)
          self._returns: dict[str, array] = {}
          self._log_mid: dict[str, array] = {}
@@ -1382,13 +1657,16 @@ index 564e225..a43265e 100644
 +            raise ValueError(f"{ts.isoformat()} is not a weekday tick of this market")
 +        return (d // 7 * 5 + d % 7) * spec.ticks_per_day + int(offset) // spec.tick_seconds
 +
-+    def episode_sign(self, instrument: str, ts: datetime) -> float:
-+        """The sign of the planted episode containing the return that produced the tick at
-+        `ts`: the state IN FORCE now, never the next one (no foresight of a change). On null
-+        and permuted the same schedule exists but moves no price."""
++    def episode_at(self, instrument: str, ts: datetime) -> Episode:
++        """The planted episode containing the return that produced the tick at `ts`: the state IN
++        FORCE now, never the next one (no foresight of a change). On null and permuted the same
++        schedule exists but moves no price."""
 +        self.returns(instrument)                             # the schedule comes with the returns
 +        k = bisect.bisect_right(self._starts[instrument], self.index_of(ts)) - 1
-+        return self._schedule[instrument][k].sign
++        return self._schedule[instrument][k]
++
++    def episode_sign(self, instrument: str, ts: datetime) -> float:
++        return self.episode_at(instrument, ts).sign
  
      def returns(self, instrument: str) -> array:
          if instrument not in self._returns:                  # built on first use, per instrument
@@ -1482,10 +1760,10 @@ index 523082f..a6886b4 100644
  def test_rolling_var_breach_rate_second_breach_and_divisors() -> None:
 diff --git a/tests/backtest/test_oracle_control.py b/tests/backtest/test_oracle_control.py
 new file mode 100644
-index 0000000..af10a52
+index 0000000..94ada1b
 --- /dev/null
 +++ b/tests/backtest/test_oracle_control.py
-@@ -0,0 +1,195 @@
+@@ -0,0 +1,267 @@
 +"""The oracle positive control (GAP-P12D-37): the harness must RECOGNISE a strategy known to be
 +good, and must REFUSE the same logic where its knowledge is worthless.
 +
@@ -1499,7 +1777,6 @@ index 0000000..af10a52
 +from __future__ import annotations
 +
 +import importlib.util
-+import json
 +import math
 +import sys
 +from concurrent.futures import ThreadPoolExecutor
@@ -1513,8 +1790,8 @@ index 0000000..af10a52
 +from config.schemas import load_config
 +from tests.backtest.data_loader import BacktestDataLoader
 +from tests.backtest.money import quote_to_account
-+from tests.backtest.oracle import (NOTIONAL_FRACTION, STRATEGY, OracleLoop, OracleTick, grade_oracle,
-+                                   non_dsr_failures, oracle_ticks, void_reasons)
++from tests.backtest.oracle import grade_oracle, non_dsr_failures, oracle_ticks, void_reasons
++from tests.backtest.oracle_loop import NOTIONAL_FRACTION, STRATEGY, OracleLoop, OracleTick
 +from tests.backtest.synthetic_grade import FIRST_MID, START, plan
 +from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, episodes
 +from tests.backtest.test_metrics_and_grader import GH, _block, _report
@@ -1603,23 +1880,34 @@ index 0000000..af10a52
 +    assert non_dsr_failures(_report(trial_count=0, deflated_sharpe=float("nan")), GH) == ()
 +
 +
-+def test_void_reasons_need_planted_recognised_and_every_control_refused() -> None:
++def test_void_reasons_need_planted_recognised_and_every_control_refused_by_a_section_14_row() -> None:
 +    assert void_reasons({"planted": (), "null": ("section-14 win_rate",),
 +                         "permuted": ("section-14 annual_sharpe",)}) == []
 +    assert "planted oracle failed" in void_reasons({"planted": ("section-14 avg_duration",)})[0]
-+    assert "null oracle cleared" in void_reasons({"planted": (), "null": ()})[0]
++    assert "not refused by any section-14 row" in void_reasons({"planted": (), "null": ()})[0]
++    # audit F2: a control refused only by a sample floor or a rule is not refused by the grade,
++    # and an oracle that breaks a rule it is built to keep voids the run by itself
++    floor_only = void_reasons({"planted": (), "null": ("12 trades < 30",)})
++    assert len(floor_only) == 1 and "not refused by any section-14 row" in floor_only[0]
++    ruled = void_reasons({"planted": (), "null": ("section-14 win_rate", "rule violation weekend_holding")})
++    assert len(ruled) == 1 and "null oracle broke the account's rules" in ruled[0]
 +
 +
-+def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: list):
++def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: list, engine: dict | None = None):
 +    """scripts/falsify_engine.py with the heavy stages stubbed: threads, not processes, and its
 +    ROOT moved to `tmp_path` so no run directory is written under any data/."""
 +    spec = importlib.util.spec_from_file_location("falsify_engine", ROOT / "scripts" / "falsify_engine.py")
 +    mod = importlib.util.module_from_spec(spec)
 +    spec.loader.exec_module(mod)
 +
-+    def oracle_row(s, out, account, folds, root):
-+        return {"kind": s.kind, "trades": 40, "net_pnl": "1", "sharpe": 9.0, "psr": 1.0,
-+                "non_dsr_failures": oracle_failures[s.kind], "trade_returns": [0.01, 0.02, 0.015], "seconds": 0}
++    rung_defaults = {"planted-near-pass": [], "planted-near-fail": ["section-14 profit_factor"]}
++
++    def oracle_row(s, out, account, folds, root, *, sign_error=0.0, tag=None):
++        kind = tag or s.kind
++        calls.append(("oracle", kind))
++        fails = oracle_failures[kind] if kind in oracle_failures else rung_defaults[kind]
++        return {"kind": kind, "trades": 40, "net_pnl": "1", "sharpe": 9.0, "psr": 1.0,
++                "non_dsr_failures": fails, "seconds": 0}
 +
 +    def label_year(s, instrument, year, out, root):
 +        calls.append(("label", s.kind))
@@ -1627,16 +1915,24 @@ index 0000000..af10a52
 +
 +    def grade(s, out, account, folds, root):
 +        calls.append(("grade", s.kind))
-+        return {"kind": s.kind, "passed": s.kind == "planted", "trades": 40, "sharpe": 0.0, "dsr": 0.0,
-+                "trials": 4, "trial_sharpes": [0.1, 0.2, 0.3, 0.4], "champions": [], "failed": [], "seconds": 0}
++        passed, non_dsr = (engine or {}).get(s.kind, (s.kind == "planted", [] if s.kind == "planted"
++                                                                             else ["section-14 win_rate"]))
++        return {"kind": s.kind, "passed": passed, "trades": 40, "sharpe": 0.0, "dsr": 0.0,
++                "trials": 4, "sr0_hurdle": 0.345, "champions": [], "failed": [],
++                "non_dsr_failed": non_dsr, "seconds": 0}
 +
 +    monkeypatch.setattr(mod, "ROOT", tmp_path)
 +    monkeypatch.setattr(mod, "load_config", lambda path: cfg)
 +    for name, fn in (("oracle_row", oracle_row), ("label_year", label_year), ("grade", grade),
 +                     ("ProcessPoolExecutor", ThreadPoolExecutor)):
 +        monkeypatch.setattr(mod, name, fn)
-+    monkeypatch.setattr(sys, "argv", ["falsify_engine.py", "--kinds", *oracle_failures])
++    kinds = [k for k in oracle_failures if k in ("planted", "null", "permuted")]
++    monkeypatch.setattr(sys, "argv", ["falsify_engine.py", "--kinds", *kinds])
 +    return mod
++
++
++def _engine_calls(calls: list) -> list:
++    return [c for c in calls if c[0] != "oracle"]
 +
 +
 +def test_a_failed_oracle_voids_the_verdict_before_any_engine_compute(monkeypatch, tmp_path, cfg, capsys) -> None:
@@ -1644,19 +1940,73 @@ index 0000000..af10a52
 +    mod = _falsify_script(monkeypatch, tmp_path, cfg,
 +                          {"planted": ["section-14 avg_duration"], "null": ["section-14 win_rate"]}, calls)
 +    assert mod.main() == 4
-+    assert calls == []                                                     # the engine never ran
++    assert _engine_calls(calls) == []                                      # the engine never ran
 +    assert "VERDICT VOID" in capsys.readouterr().out
 +
 +
-+def test_a_recognised_oracle_hands_over_to_the_unchanged_engine_stage(monkeypatch, tmp_path, cfg) -> None:
++def test_a_near_fail_rung_the_harness_passes_voids_the_verdict(monkeypatch, tmp_path, cfg, capsys) -> None:
++    """Audit E1: stage 1 grades both rungs whenever planted runs, and a grader that passes the rung
++    just below the cut-offs has no power there, so no engine verdict is given."""
++    calls: list = []
++    mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"],
++                                                       "planted-near-fail": []}, calls)
++    assert mod.main() == 4
++    assert {c[1] for c in calls if c[0] == "oracle"} == {"planted", "null", "planted-near-pass",
++                                                         "planted-near-fail"}
++    assert _engine_calls(calls) == [] and "planted-near-fail oracle was not refused" in capsys.readouterr().out
++
++
++@pytest.mark.parametrize("kinds", [("null", "permuted"), ("planted",)])
++def test_no_verdict_without_the_positive_control_and_a_control(monkeypatch, tmp_path, cfg, capsys, kinds) -> None:
++    """Audits E3/F4: `--kinds null permuted` used to exit 0 and print "planted passes" for a market
++    that never ran — a dead grader "held". Without planted, or without any control, nothing runs."""
++    calls: list = []
++    mod = _falsify_script(monkeypatch, tmp_path, cfg, {k: ["section-14 win_rate"] for k in kinds}, calls)
++    assert mod.main() == 5
++    assert calls == [] and "NO VERDICT" in capsys.readouterr().out
++
++
++def test_the_held_message_names_only_the_markets_graded(monkeypatch, tmp_path, cfg, capsys) -> None:
++    calls: list = []
++    mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"]}, calls)
++    assert mod.main() == 0
++    held = [line for line in capsys.readouterr().out.splitlines() if "falsification held" in line]
++    assert held == ["falsification held on the markets graded in this run: planted passed; null did not"]
++
++
++def test_a_planted_refusal_only_by_the_dsr_gate_is_gate_limited_not_an_engine_failure(
++        monkeypatch, tmp_path, cfg, capsys) -> None:
++    """Audit E2: stage 1 excludes the DSR clauses, so a planted run that met every other clause of
++    `passed` and failed only the (open, GAP-P12D-33/37) DSR gate was reported as the engine's
++    failure. It is GATE-LIMITED: its own exit code and message."""
++    calls: list = []
++    mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"]}, calls,
++                          engine={"planted": (False, [])})
++    assert mod.main() == 6
++    out = capsys.readouterr().out
++    assert "GATE-LIMITED" in out and "NOT an engine verdict" in out and "FALSIFICATION FAILED" not in out
++    # a planted run that ALSO failed a non-DSR clause is the engine's failure, and so is a passing control
++    for engine in ({"planted": (False, ["section-14 profit_factor"])}, {"null": (True, [])}):
++        mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"]},
++                              calls, engine=engine)
++        assert mod.main() == 1 and "FALSIFICATION FAILED" in capsys.readouterr().out
++
++
++def test_a_recognised_oracle_hands_over_to_the_unchanged_engine_stage(monkeypatch, tmp_path, cfg, capsys) -> None:
++    """Audit E4: the run reports each engine run's per-trade SR0 HURDLE, labelled as one; it no
++    longer writes `oracle_deflation.json`, which was not a faithful Deflated Sharpe (the oracle is
++    not in the trial set, and ~5-trade holdout Sharpes are not commensurate with its record)."""
 +    calls: list = []
 +    mod = _falsify_script(monkeypatch, tmp_path, cfg,
 +                          {"planted": [], "null": ["section-14 win_rate"]}, calls)
 +    assert mod.main() == 0                                                 # planted passed, null did not
 +    assert {c for c in calls if c[0] == "grade"} == {("grade", "planted"), ("grade", "null")}
 +    run = next((tmp_path / "data" / "validation" / "falsification").iterdir())
-+    deflation = json.loads((run / "oracle_deflation.json").read_text(encoding="utf-8"))
-+    assert set(deflation) == {"planted", "null"} and all(0.0 <= v <= 1.0 for v in deflation.values())
++    assert not (run / "oracle_deflation.json").exists()
++    out = capsys.readouterr().out
++    assert "oracle deflated" not in out and "DSR=" not in out
++    hurdles = [line for line in out.splitlines() if "SR0 hurdle" in line]
++    assert len(hurdles) == 2 and all("= 0.345 (a hurdle" in line for line in hurdles)
 +
 +
 +def test_the_harness_recognises_the_oracle_on_planted_and_refuses_it_on_null(cfg) -> None:
@@ -1681,6 +2031,255 @@ index 0000000..af10a52
 +    assert null.report.deflated_sharpe < 0.95, null.report.deflated_sharpe   # no significant edge
 +    assert null.net_pnl < planted.net_pnl / 10
 +    assert any(f.startswith("section-14") for f in non_dsr_failures(null.report, guardrail_hash(cfg.guardrails)))
+diff --git a/tests/backtest/test_oracle_full_scale.py b/tests/backtest/test_oracle_full_scale.py
+new file mode 100644
+index 0000000..c6bbd54
+--- /dev/null
++++ b/tests/backtest/test_oracle_full_scale.py
+@@ -0,0 +1,81 @@
++"""The oracle positive control at FULL fold scale on a coarse tape (audits F1, F2, E1).
++
++The falsification plan's fold count (25 folds, > 2 graded years) on a 300 s tape grades in seconds,
++so the suite can pin what stage 1 of `scripts/falsify_engine.py` would decide, instead of learning
++it after ~20 minutes of compute and a VOID. One instrument (EUR_USD); the account varies per test.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++import pytest
++
++from config.account_doctrine import guardrail_hash
++from config.schemas import load_config
++from tests.backtest.oracle import grade_oracle, non_dsr_failures, void_reasons
++from tests.backtest.report import PROFIT_FACTOR_MIN
++from tests.backtest.synthetic_grade import START, plan
++from tests.backtest.synthetic_market import MarketSpec
++from tests.optimizer_fixtures import CapturingLogger
++
++ROOT = Path(__file__).resolve().parents[2]
++FOLDS = plan(1, 30, 25)                                   # the falsification fold count, short trains
++DAYS = (FOLDS[-1].test_end - START).days
++
++
++@pytest.fixture(scope="module")
++def cfg():
++    return load_config(ROOT / "config")
++
++
++def _grade(cfg, kind: str, account: str, sign_error: float = 0.0):
++    spec = MarketSpec(kind, START, DAYS, (("EUR_USD", 1.10),), tick_seconds=300)
++    return grade_oracle(spec, cfg, account, FOLDS, CapturingLogger(), instruments=["EUR_USD"],
++                        sign_error=sign_error)
++
++
++def test_the_planted_oracle_clears_every_non_dsr_clause_at_full_fold_scale(cfg) -> None:
++    """Audit F1: the 2-fold positive control asserted net > 0 and a Sharpe, so a §14 change only
++    the full-scale oracle cannot meet (e.g. DURATION_MAX_S = 4 h against its ~7 h holds) left the
++    whole suite green and would VOID every real stage-1 run. Here the full fold count grades."""
++    hash_ = guardrail_hash(cfg.guardrails)
++    fails = {k: non_dsr_failures(_grade(cfg, k, "dev_paper").report, hash_) for k in ("planted", "null")}
++    assert fails["planted"] == (), fails["planted"]
++    assert void_reasons(fails) == []
++
++
++# the rungs for THIS tape (coarse, one instrument); the falsification tape has its own (oracle.RUNGS)
++COARSE_RUNGS = {"planted-near-pass": 0.42, "planted-near-fail": 0.45}
++
++
++def test_the_harness_passes_a_rung_just_above_the_cut_offs_and_refuses_one_just_below(cfg) -> None:
++    """Audit E1: the perfect oracle clears §14 by a mile (PF ~13 here), so it says nothing about
++    the harness's power near the decision level. Two weaker rungs of the SAME oracle — wrong on
++    42% / 45% of whole episodes — bracket the binding cut-off (profit factor 1.4 for this trade
++    structure; the Sharpe cut is never binding first): the harness must pass the one above and
++    refuse the one below, by that §14 row, not by a rule or a floor."""
++    hash_ = guardrail_hash(cfg.guardrails)
++    grades = {k: _grade(cfg, "planted", "dev_paper", p) for k, p in COARSE_RUNGS.items()}
++    fails = {k: non_dsr_failures(g.report, hash_) for k, g in grades.items()}
++    assert fails["planted-near-pass"] == ()
++    assert fails["planted-near-fail"] == ("section-14 profit_factor",)
++    pf = {k: g.report.out_of_sample.profit_factor for k, g in grades.items()}
++    cut = PROFIT_FACTOR_MIN                                               # the ratified §14 value, one source
++    assert cut < pf["planted-near-pass"] < cut + 0.2 and cut - 0.2 < pf["planted-near-fail"] < cut, pf
++    assert void_reasons(fails) == []
++
++
++def test_on_a_weekend_flat_min_hold_account_the_oracle_keeps_the_rules_and_the_grade_decides(cfg) -> None:
++    """Audit F2: on prop_demo (weekend holding forbidden, 60 s minimum hold) every stage-1 run used
++    to VOID on `weekend_holding`, and null was "refused" by that rule whatever its metrics. Now no
++    oracle breaks a rule, planted clears every non-DSR clause, and null is refused by §14 rows."""
++    rulebook = cfg.platform_rules.accounts["prop_demo"]
++    assert not rulebook.weekend_holding_allowed and rulebook.min_hold_seconds > 0   # fixture precondition
++    hash_ = guardrail_hash(cfg.guardrails)
++    planted, null = _grade(cfg, "planted", "prop_demo"), _grade(cfg, "null", "prop_demo")
++    assert planted.report.rule_violations == () and null.report.rule_violations == ()
++    fails = {"planted": non_dsr_failures(planted.report, hash_), "null": non_dsr_failures(null.report, hash_)}
++    assert fails["planted"] == ()
++    assert fails["null"] and all(f.startswith("section-14") for f in fails["null"])
++    assert void_reasons(fails) == []
+diff --git a/tests/backtest/test_oracle_loop.py b/tests/backtest/test_oracle_loop.py
+new file mode 100644
+index 0000000..0d7c2be
+--- /dev/null
++++ b/tests/backtest/test_oracle_loop.py
+@@ -0,0 +1,91 @@
++"""The oracle keeps the account's evaluable rules (audit F2), and the book honours a close order.
++
++On a weekend-flat account (FTMO, prop_demo) the harness books any hold across Friday's rollover as
++`weekend_holding`, and every stage-1 run VOIDed whatever the grade did, while null and permuted were
++"refused" by that same rule, vacuously. The oracle now flattens before the weekend and never
++reverses or closes a position younger than `min_hold_seconds`.
++"""
++
++from __future__ import annotations
++
++import dataclasses
++from datetime import datetime, timedelta, timezone
++from decimal import Decimal
++
++from config.schemas import AccountRulebook, NewsRules
++from core.data.fx_clock import rollover_utc
++from tests.backtest.book import BookState, PositionModel
++from tests.backtest.oracle_loop import FLATTEN_LEAD, OracleLoop, OracleTick
++from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, episodes
++from tests.backtest.test_harness_regressions import _ms, _order
++from tests.optimizer_fixtures import TEST_COSTS
++
++UTC = timezone.utc
++START = datetime(2014, 1, 6, tzinfo=UTC)                     # a Monday
++FRIDAY = datetime(2014, 1, 10, tzinfo=UTC)
++PRICES = (("EUR_USD", 1.10),)
++
++
++def _rulebook(**over) -> AccountRulebook:
++    base = dict(platform="dev", news=NewsRules(restricted=False), min_hold_seconds=60, max_lots=None,
++                weekend_holding_allowed=False, drawdown_rules=[])
++    return AccountRulebook(**{**base, **over})
++
++
++def _tick(ts: datetime, mid: float = 1.10) -> OracleTick:
++    return OracleTick(ts, "EUR_USD", mid - 2e-5, mid + 2e-5, 4e-5, mid)
++
++
++def _actions(loop: OracleLoop) -> list[tuple[str, datetime]]:
++    return [(o.action, o.sized_at) for o in loop.book.orders]
++
++
++def test_a_weekend_flat_oracle_is_flat_before_fridays_rollover_and_reopens_after_it() -> None:
++    loop = OracleLoop(SyntheticMarket(MarketSpec("planted", START, 14, PRICES)), Decimal("10000"), _rulebook())
++    cutoff = rollover_utc(FRIDAY.date())                              # 22:00 UTC in January (EST)
++    flat_at = cutoff - FLATTEN_LEAD
++    for ts in (cutoff - timedelta(hours=1), flat_at - timedelta(seconds=20), flat_at,
++               flat_at + timedelta(minutes=10), START + timedelta(days=7)):
++        loop.on_state(_tick(ts))
++    assert [a for a, _ in _actions(loop)] == ["open", "close", "open"]
++    assert _actions(loop)[1][1] == flat_at and _actions(loop)[2][1] == START + timedelta(days=7)
++    allowed = OracleLoop(SyntheticMarket(MarketSpec("planted", START, 14, PRICES)), Decimal("10000"),
++                         _rulebook(weekend_holding_allowed=True))
++    for ts in (cutoff - timedelta(hours=1), flat_at):
++        allowed.on_state(_tick(ts))
++    assert [a for a, _ in _actions(allowed)] == ["open"]              # weekend allowed: it holds
++
++
++def test_nothing_opens_in_the_wind_down_before_the_flatten() -> None:
++    """A position opened in the last `min_hold` before the flatten would be closed too young."""
++    loop = OracleLoop(SyntheticMarket(MarketSpec("planted", START, 14, PRICES)), Decimal("10000"), _rulebook())
++    flat_at = rollover_utc(FRIDAY.date()) - FLATTEN_LEAD
++    loop.on_state(_tick(flat_at - timedelta(seconds=40)))             # inside the 60 s wind-down
++    loop.on_state(_tick(flat_at))
++    assert loop.book.orders == []
++
++
++def test_a_flip_waits_until_the_position_is_min_hold_old() -> None:
++    market = SyntheticMarket(MarketSpec("planted", START, 7, PRICES))
++    ticks = list(market.load("EUR_USD", START, START + timedelta(hours=20)))
++    flip = next(ep.start for a, ep in zip(episodes(market.spec, 0), episodes(market.spec, 0)[1:])
++                if ep.sign != a.sign)                                  # first sign change (20 s ticks)
++    loop = OracleLoop(market, Decimal("10000"), _rulebook(weekend_holding_allowed=True))
++    for t in ticks[flip - 1:flip + 3]:                                # opened 20 s before the flip
++        loop.on_state(_tick(t.event_time))
++    opened, reversed_ = loop.book.orders
++    assert reversed_.direction == -opened.direction
++    assert reversed_.sized_at - opened.sized_at == timedelta(seconds=60)   # not at 20 s or 40 s
++
++
++def test_the_book_closes_on_a_close_order_at_the_ticks_mid_and_ignores_one_with_nothing_open() -> None:
++    model, book = PositionModel(costs={"EUR_USD": TEST_COSTS}, max_hold_s=86400), BookState()
++    t0 = datetime(2026, 1, 6, 10, tzinfo=UTC)
++    model.apply_order(_order(t0, 1, 1.10, 1.05, None), _ms(t0, 1.10), book)
++    close = dataclasses.replace(_order(t0 + timedelta(hours=1), 1, 1.10, 1.05, None), action="close")
++    model.apply_order(close, _ms(t0 + timedelta(hours=1), 1.12), book)
++    (trade,) = book.trades
++    assert book.open_by_inst == {} and trade.exit_ts == t0 + timedelta(hours=1)
++    assert trade.pnl > Decimal("19")                                  # filled at 1.12, not the order's 1.10
++    model.apply_order(close, _ms(t0 + timedelta(hours=2), 1.13), book)
++    assert len(book.trades) == 1 and book.open_by_inst == {}          # nothing open: a no-op
+diff --git a/tests/backtest/test_strict_json.py b/tests/backtest/test_strict_json.py
+new file mode 100644
+index 0000000..cf3259b
+--- /dev/null
++++ b/tests/backtest/test_strict_json.py
+@@ -0,0 +1,59 @@
++"""No bare NaN in any JSON the backtest writes (audits F6/E7).
++
++RFC 8259 §6: "Numeric values that cannot be represented in the grammar below (such as Infinity and
++NaN) are not permitted." Python's `json.dumps` writes them by default. After the empty-mean fix
++(GAP-P12D-38) a rung whose §14 duration band is empty carries avg_duration_s NaN, and ladder.json
++wrote it as a bare `NaN`. Every writer now goes through `oos_runner.strict_json`, and these tests
++parse the output with a parser that REFUSES the non-standard constants.
++"""
++
++from __future__ import annotations
++
++import json
++import math
++import sys
++from decimal import Decimal
++from pathlib import Path
++
++import pytest
++
++from tests.backtest.oos_runner import report_json, strict_json
++from tests.backtest.test_metrics_and_grader import _block, _report
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
++from cost_stress_ladder import ladder_document  # noqa: E402
++
++
++def _strict(text: str):
++    def refuse(token: str):
++        raise ValueError(f"non-RFC-8259 constant {token}")
++    return json.loads(text, parse_constant=refuse)
++
++
++def test_strict_json_writes_every_non_finite_float_as_null() -> None:
++    value = {"a": math.nan, "b": [math.inf, -math.inf, 1.5], "c": {"d": math.nan}, "e": Decimal("1.25")}
++    assert _strict(strict_json(value)) == {"a": None, "b": [None, None, 1.5], "c": {"d": None}, "e": "1.25"}
++    with pytest.raises(ValueError, match="non-RFC-8259"):
++        _strict(json.dumps({"a": math.nan}))                       # what the default writer produced
++
++
++def _row(stress: float, net: str) -> dict:
++    return {"kind": "planted", "tag": f"rung_{stress:g}x", "cost_stress": stress, "spread_floor": 0.0,
++            "passed": False, "trades": 40, "sharpe": math.nan, "profit_factor": math.inf, "win_rate": 1.0,
++            "avg_duration_s": math.nan, "max_drawdown_pct": 0.0, "net_pnl": net, "dsr": math.nan,
++            "trials": 0, "failed": ["avg_duration"], "seconds": 1.0}
++
++
++def test_the_ladder_document_is_strict_json_even_when_the_duration_band_is_empty() -> None:
++    text = ladder_document(kind="planted", account="dev_paper", folds=25, days=985, bar=2.0, quick=False,
++                           rows=[_row(1.0, "-5.0"), _row(2.0, "-7.0")])
++    doc = _strict(text)
++    assert doc["rungs"][0]["avg_duration_s"] is None and doc["rungs"][0]["dsr"] is None
++    assert doc["rungs"][0]["profit_factor"] is None and doc["verdict"].startswith("NO EDGE TO STRESS")
++
++
++def test_a_validation_report_with_non_finite_metrics_is_strict_json() -> None:
++    report = _report(out_of_sample=_block(avg_trade_duration_s=math.nan, profit_factor=math.inf),
++                     deflated_sharpe=math.nan)
++    doc = _strict(report_json(report))
++    assert doc["out_of_sample"]["avg_trade_duration_s"] is None and doc["deflated_sharpe"] is None
 diff --git a/tests/backtest/test_zero_duration_artifacts.py b/tests/backtest/test_zero_duration_artifacts.py
 new file mode 100644
 index 0000000..2f99168

@@ -1,7 +1,7 @@
 # SNAPSHOT — acis
 
-- **Built:** 2026-09-25T01:57:48Z (2026-09-25 04:57 EAST) by `cloud-handoff/cloud_sync.sh` on the owner's laptop.
-- **Code under review:** branch `main` at commit `6a58e89f93c5b66754e8b5a6f287e12cf25ad051` — "Governance gate green again on main; BUILDER-3 verified; GAP-P12D-74/75 filed".
+- **Built:** 2026-09-25T07:06:10Z (2026-09-25 10:06 EAST) by `cloud-handoff/cloud_sync.sh` on the owner's laptop.
+- **Code under review:** branch `main` at commit `f77a583c2f592edc9d05ea3740ed515be88dc36c` — "BUILDER-2 internal audit triaged: register bypass reproduced (L1-L5), sweep blind spots; fixes await the owner's go".
   This branch's parent chain contains that commit; review the code *as of that commit*.
 - **The local side has NOT stopped.** Another Claude Code instance may keep committing after this
   moment. State the base commit in your reports; the owner reconciles later.

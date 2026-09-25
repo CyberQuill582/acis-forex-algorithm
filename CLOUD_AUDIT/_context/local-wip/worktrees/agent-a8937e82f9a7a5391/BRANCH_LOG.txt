@@ -1,3 +1,7 @@
+5d96570 2026-09-25 06:01:27 +0300 BUILDER-2 report: leakage suite T1/T2/T7, look register, T6 (GAP-P12D-64/65)
+1cd13d4 2026-09-25 05:33:40 +0300 Leakage suite: a 60 s default tape, so the reference stays non-vacuous under T6
+e51e5cc 2026-09-25 05:17:47 +0300 T6: a bar that opens through the stop exits at the open (GAP-P12D-65, stage 5)
+97591b2 2026-09-25 05:09:22 +0300 The look register: every grade writes its line first (GAP-P12D-64, stage 4)
 62163fe 2026-09-25 00:45:40 +0300 Leakage suite: --out, and short variant directories (Windows MAX_PATH)
 341115c 2026-09-25 00:43:20 +0300 T7: the leakage guard bites (GAP-P12D-65, stage 3)
 e6293c4 2026-09-25 00:41:33 +0300 Structural leakage suite T1 + T2 at every decision point (GAP-P12D-65, stages 1-2)

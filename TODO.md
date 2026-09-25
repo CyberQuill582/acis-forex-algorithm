@@ -53,10 +53,38 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - BUILDER-3: `.claude/worktrees/agent-a9e00713d15bb5082`, branch `worktree-agent-a9e00713d15bb5082`.
 - **2026-09-25, just after midnight:** all five were cut off by the session limit, and all five were RESUMED with `SendMessage` after the reset, per the owner's directive. None was relaunched.
 
+**OWNER DIRECTIVE (2026-09-25): NO agent launches unless the owner explicitly asks for them.** It is recorded in CLAUDE.md and in memory.
+- **Why:** credits.
+- **New work counts as a launch.** Sending an existing agent new work needs the owner's go.
+- **Resuming is allowed.** Resuming an approved agent's interrupted, in-flight task is permitted.
+- **Due audits and builds** are listed here as ASKS, never launched. **The session must ASK the owner explicitly** (one standalone question: what, why, how big, and the cheaper alternative), because the owner cannot track when a launch is due.
+
+**OWNER ANSWER (2026-09-25, asked explicitly): "Let all four finish".** BUILDER (audit fixes), BUILDER-3 (safety fixes) and the two audits of the BUILDER-2 branch run to completion. After them, launch NOTHING further without an explicit ask.
+
 **OWNER DIRECTIVES (2026-09-24, before sleeping):**
 - (1) "let them continue". The night run goes on.
 - (2) **Audits are ONLY the constitution's two per phase.** No extra audit agents unless the owner asks. It is recorded in CLAUDE.md's audit section and in memory.
 - (3) **After a session-limit reset, RESUME the running agents with `SendMessage`; NEVER relaunch them.** Their handles are listed above.
+
+**2026-09-25 morning: the laptop lost power at 00:40** ([[GAP-P12D-76]]; Kernel-Power 41, `BugcheckCode=0`: a power loss, not a crash). BUILDER, BUILDER-2 and BUILDER-3 had stopped mid-stage, and each was RESUMED with `SendMessage`, never relaunched. Each was told to check its uncommitted files (`py_compile` + a full diff read) before building on them. Their committed stages were all intact, and main was clean at `6a58e89`.
+- [ ] **OWNER:** decide where the demo engine runs. The recommendation is a small non-US Linux VPS, not this laptop. Also check the charger, mains and battery health, and make the second tick-set copy ([[GAP-P12D-50]]).
+
+**BUILDER-2 IS IN (2026-09-25):** branch `worktree-agent-a8937e82f9a7a5391`, head `5d96570`. BUILT, PENDING AUDIT; author's count 864 passed, 6 skipped.
+- [x] Stages 1–3: the structural leakage suite (T1 truncation, T2 future-perturbation at EVERY decision point, T7 controls proving the guard bites) ([[GAP-P12D-65]]).
+- [x] Stage 4: the look register. Every real-data grade writes its line first, and `run_walk_forward` refuses without it ([[GAP-P12D-64]]).
+- [x] Stage 5: T6. A bar that opens through the stop exits at the open.
+- [ ] Stage 6 (T4 config provenance, T8 decision-time accessor) was not built.
+- **Lead pre-check:** `report.py` gains only an informational `look` field, and `passed` is byte-identical. No guard, spec or ledger file is touched.
+- **Pre-existing leak paths it found** are filed as [[GAP-P12D-82]], with delegated decisions on F1/F2/F3/F5, built after the merges.
+- [ ] **The constitution's TWO audits of the BUILDER-2 branch are RUNNING** (pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`; [[GAP-P12D-83]]):
+  - AUDIT-INTERNAL `a2c3bcf53066dd551`;
+  - AUDIT-EXTERNAL `a9d24cf88c3353a04`.
+- **Merge protocol (the lead does it in the main session, with no new agents; each merge needs the owner's explicit go):**
+  - **Order:** (1) BUILDER, after its fixes are verified; (2) BUILDER-2, RE-MERGED onto BUILDER's final head, because it stacks on the old `9b9ec80` snapshot and BUILDER has added commits since; (3) BUILDER-3.
+  - **Measured file overlap (2026-09-25):** BUILDER ∩ BUILDER-2 = `tests/backtest/oracle.py` and `synthetic_grade.py`; BUILDER-3 overlaps neither.
+  - **After EACH merge, before the next:** the full suite, `python scripts/governance_gate.py --session` and `ledger_check`, all on the COMBINED tree.
+  - **FIRST change after the merges:** fix [[GAP-P12D-84]] (the graded book fills gapped stops at the stop, pre-existing on main). It is deferred only because the BUILDER branch edits the same file.
+  - **Watch the behavioural interaction.** BUILDER-3's always-on pre-close ban, weekend flatten and lot rounding act on code that BUILDER's oracle and BUILDER-2's leakage suite exercise. Anything that passes alone but fails combined is a finding, fixed before the next merge.
 
 **BUILDER-3 IS IN (2026-09-25):** branch `worktree-agent-a9e00713d15bb5082`, BUILT, PENDING AUDIT. The lead re-ran the suite on it: **842 passed, 6 skipped**.
 - [x] Stage 1: drawdown anchors and the taper persist across restarts ([[GAP-P12D-55]]).
@@ -69,7 +97,29 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - [[GAP-P12D-75]]: a restart silently clears every explicit HALT. Critical.
   - The governance gate was RED on main from comment shape; that is FIXED by the lead (comment-only, proven code-identical by AST).
 - [ ] **DELEGATED:** BUILDER-3 fixes [[GAP-P12D-75]] (restore halts at boot) and [[GAP-P12D-74]] (reduce-only close semantics) on its branch.
-- [ ] Then the constitution's TWO audits of the BUILDER-3 branch, then a merge on the owner's go.
+- [x] 2026-09-25: BUILDER-3 finished stages 6 (halts restored at boot, [[GAP-P12D-75]]), 7 (reduce-only closes, [[GAP-P12D-74]]) and 5 (weekend flatten). Head `d8361a7`, 11 commits, 35 files; no guard, spec or ledger file touched. Author's count: 856 passed, 6 skipped.
+- [ ] **The constitution's TWO audits of the BUILDER-3 branch are RUNNING** (launched 2026-09-25; pinned brief `AUDIT_BRIEF_BUILDER3_2026-09-25.md`):
+  - AUDIT-INTERNAL `a253f98af675aef1f`: its top priority is finding any input where the branch is LOOSER than main;
+  - AUDIT-EXTERNAL `a137391bac5f1cb52`: FTMO/E8 rules, reduce-only semantics in real venue APIs, crash-safe persistence.
+
+  Reports: AUDIT_BUILDER3_BRANCH_{INTERNAL,EXTERNAL}_2026-09-25.md in archive/. Then triage, then merge on the owner's go.
+- **EXTERNAL audit IN (2026-09-25).** It found two BLOCKING defects, both reproduced by the lead:
+  - [[GAP-P12D-78]]: a stale restored session halt means a restart makes the next day's breach NOT halt. Looser than main.
+  - [[GAP-P12D-79]]: one failed ledger write loses the equity breaker.
+
+  The rest is in [[GAP-P12D-77]].
+- **INTERNAL audit IN (2026-09-25).** The branch is NOT tightening-only. Also reproduced by the lead:
+  - [[GAP-P12D-80]]: **PRE-EXISTING ON MAIN**, the engine's daily-loss halt fires only ONCE per process;
+  - [[GAP-P12D-81]]: lot rounding orphans a pair leg.
+- [ ] **ONE consolidated fix list was sent to BUILDER-3** (2026-09-25). The merge waits for:
+  - [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-80]] and [[GAP-P12D-81]] fixed and verified by the lead;
+  - the atomic close intent (X3/F4);
+  - WAL durability;
+  - bans and flattens on holiday closures;
+  - close backoff;
+  - the owner's go.
+  - DELEGATED: restart-invariance (F3) is accepted as the property.
+- [ ] **Not wired yet:** production must route halts and MCP controls through the new halt-recording layer, call the resume-clear, and call the weekend flatten each tick. All three wait on the three-loop runtime ([[GAP-0091b]]).
 
 **ACIS-13 DRAFTED (2026-09-25, SPEC-AUTHOR): `specs/ACIS-13-VENUE_ADAPTERS.md` v0.1, a DRAFT, NOT LOCKED.**
 - **What it covers.** The cTrader Open API adapter comes first. It has an 11-step attach protocol with re-attach when an account churns, and 16 invariants (C-VEN-1..16). There are 42 quoted facts in Appendix A and 18 open questions in Appendix B.

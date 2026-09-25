@@ -1,3 +1,13 @@
+4b5f150 2026-09-25 10:03:02 +0300 Governor: the pre-close ban and the flatten key on every closure of 2 h or more (audit X5)
+4e1e9be 2026-09-25 06:55:26 +0300 Stores: the halt ledger, anchors and fill log are power-loss durable (audit X4)
+ab4b6df 2026-09-25 06:47:55 +0300 Execution: the close intent crosses the face boundary as the venue's atomic close (audits X3/F4)
+2efb7bb 2026-09-25 06:36:35 +0300 Execution: a pair group is both legs or neither (GAP-P12D-81, audit F11)
+6826085 2026-09-25 06:24:09 +0300 Risk: the daily session halt fires every day, and a lapsed one is never re-latched (GAP-P12D-80 + GAP-P12D-78, audits F2/F1/X1)
+be59c96 2026-09-25 06:11:23 +0300 Risk: the guard acts first; recording never gates it (GAP-P12D-79, audit F0/X2)
+d8361a7 2026-09-25 05:17:21 +0300 BUILDER-3 report: stage 5 built (weekend flatten through the reduce-only close path)
+f23e73d 2026-09-25 05:15:51 +0300 Governor: no-weekend-holding accounts are flattened before the weekend (master §9.5, stage 5)
+2c138e2 2026-09-25 05:07:46 +0300 BUILDER-3 report: stages 6-7 (halts restored at boot; reduce-only closes) and the close convention draft
+16150bb 2026-09-25 05:06:26 +0300 Execution: a close is REDUCE-ONLY and trades the opposite side (GAP-P12D-74, stage 7)
 34d3f77 2026-09-25 00:52:43 +0300 Risk: explicit HALTs survive a restart until a human resumes (GAP-P12D-75, stage 6)
 786b748 2026-09-25 00:29:59 +0300 BUILDER-3 report: prop-account tightening batch, stages 1-4 built, stage 5 designed
 272e2f6 2026-09-25 00:29:45 +0300 Execution: only a close that truly shrinks the position passes a spent budget (GAP-P12D-57, stage 2b)

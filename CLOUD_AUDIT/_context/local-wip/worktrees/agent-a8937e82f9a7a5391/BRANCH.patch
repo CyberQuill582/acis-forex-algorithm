@@ -1,3 +1,244 @@
+diff --git a/BUILDER2_REPORT_2026-09-24.md b/BUILDER2_REPORT_2026-09-24.md
+new file mode 100644
+index 0000000..91be6d5
+--- /dev/null
++++ b/BUILDER2_REPORT_2026-09-24.md
+@@ -0,0 +1,235 @@
++# BUILDER-2 report — the no-ratification "D" batch (2026-09-24/25)
++
++**Branch** `worktree-agent-a8937e82f9a7a5391` · **worktree** `acis/.claude/worktrees/agent-a8937e82f9a7a5391`
++**Base** `bdd3a75` (fast-forwarded from `7695ed0`), plus the BUILDER branch merged (`9b9ec80`, merge `577d882`).
++**Authority** the owner's ratification in chat, "i ratify the whole of step 1". The work covers:
++- GAP-P12D-65, the structural leakage suite;
++- GAP-P12D-64, the look register;
++- T6, the gap-through exit.
++
++It follows the VALIDATOR's §3/§5/§7 (`archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md`).
++
++**Untouched:** every threshold and gate, `ACIS_SPEC.md` and `specs/`, `KNOWN_GAPS.md` and `TODO.md`, the guardrail and platform configs, and `data/`. Drafts that belong in those files are in §7 below.
++
++**Every stage is BUILT — PENDING AUDIT.**
++
++| stage | commit | tests | A16 cases |
++|---|---|---|---|
++| 1+2 T2 + T1 | `e6293c4` (+ `62163fe` path fix, `1cd13d4` 60 s default tape) | 6 component sweeps, 7 script smoke tests, 2 `Trade` pins | 4, all red for their stated reason |
++| 3 T7 | `341115c` | 8 controls | 4, all red |
++| 4 look register | `97591b2` | 5 register tests, plus 2 updated runner tests | 4, all red |
++| 5 T6 | `e51e5cc` | 8 gap tests (4 × long/short) | 2, all red; 5 hand mutants all killed |
++| 6 T4 / T8 | not built | — | — (see §6) |
++
++- **Suite:** 828 passed / 6 skipped at setup, then 856 / 6 after stage 4 and **864 / 6 after stage 5** (+36 tests).
++- **Ledger:** `scripts/ledger_check.py` reports 204 entries and 0 violations.
++- **Module budget:** green. Every new module is under 300 lines (the largest is 169) and opens with a mental model. `fitness.py` is 282 lines.
++- **Power cut:** a power cut hit during stage 4. All uncommitted files were re-verified (py_compile, the JSON parses, every diff read end to end). The stage-4 suite and all four stage-4 A16 cases were then re-run before committing.
++
++Falsification (A16) used the constitution's engine, `node specs_constitution/checks/falsify.mjs --root . --only <id>`: it reverts one guard, requires the named test to go red, then restores the file with a sha256 check. All 14 new cases are registered in `falsify.cases.json` as single-line anchors. The red failure lines below come from re-running each mutation with `--tb=line`; each file was restored and `git status` confirmed clean after every run.
++
++## 1. Stages 1–2: T2 future-perturbation and T1 truncation, at every decision point
++
++**Design** (`tests/backtest/leakage.py`, with the mental model in its docstring). Every decision carries two stamps:
++- a **horizon**, the latest datum it may use;
++- an **emission**, when the system can first produce it.
++
++The two tests use them differently:
++- **T2** perturbs every datum at or after the cut, and compares the decisions whose *horizon* precedes the cut.
++- **T1** deletes every datum at or after the cut, and compares the decisions *emitted* before it.
++
++Emission is needed because a bar whose completing tick was deleted is legitimately never emitted.
++
++The perturbation reverses, negates and doubles every later return. Every later price moves, and so does the future's scale, which catches whole-sample statistics. Comparison is byte-identical: a multiset of `(kind, repr(payload))`. Random uuid4 ids are stripped, and group membership is kept as an ordinal.
++
++**Component sweeps** (`tests/backtest/test_leakage_components.py`, ~15 s). There is one cut per decision point, never a sample.
++
++| component | tape | cuts | notes |
++|---|---|---|---|
++| `BarAggregator` (60 s) | 160 irregular ticks | every tick | |
++| `DailyBarAggregator` | 150 ticks, 2400–10800 s gaps | every tick | |
++| regime labeller | real factory + NVMA, 130 ticks | every tick | schema-minimum windows (hurst 100); window lengths do not change causality |
++| AGON | two instruments, 64 ticks each | every tick | crosses the 21:00 UTC rollover so a live daily bar forms; regime schedule and tick rate are perturbed too |
++| `fitness.trade_path` | 240 bars | every open **and** every close (479 cuts) | the half-bar cut is what makes T1 able to see a next-close peek |
++| `evolve_fold` | cache holding bars after the train end | at the train end, and +1 h | |
++
++Each sweep also asserts how many decisions it compared (up to 18,499 per test), so a green result cannot come from an empty run.
++
++**Observable.** `simulate_trades` returns PnLs, which cannot show *when* a decision was taken. `fitness.trade_path` now returns `Trade(signal_bar, direction, entry_price, exit_bar, exit_price, pnl, marked)`, and `simulate_trades` is its PnLs, with behaviour unchanged. Every field is pinned in `tests/unit/test_fitness_exits.py::test_the_trade_path_records_when_each_decision_was_taken`, which is in the mutation gate's test set.
++
++**Engine level** (`scripts/leakage_suite.py`, `tests/backtest/leakage_engine.py`, `tests/backtest/leakage_markets.py`).
++
++What the script runs:
++- **Stage 1: the T7 controls.** The oracle positive control runs through the REAL harness (Backtest, book, C8 costs), once honest and once with a next-tick peek. If T1 and T2 do not both catch the peek, the run is VOID (exit 4) and the engine is never run.
++- **Stage 2: the production path.** Labeller, evolve_fold, NVMA, AGON, Governor and book run through `run_walk_forward`, unmodified. The only addition is a tap that wraps `build_paper_loop` for one run.
++- **The sweep.** One cut per decision day, for each of T2 and T1. Each variant gets a fresh directory, so no label cache is shared.
++- **Exit codes:** 0 clean, 1 leak, 5 VACUOUS (the reference staged nothing or ordered nothing).
++
++How the data is changed: `PerturbedMarket` changes the future at the SOURCE (`returns`), so side channels see it too. That is pinned by `test_the_market_variants_leave_the_past_bit_identical_and_change_every_later_tick`.
++
++Wiring and defaults:
++- It is wired like the other slow gates (A16), with a fast smoke test: `tests/backtest/test_leakage_suite.py`. Stage 1 runs for real there; stage 2 is stubbed.
++- The default tape is 12/2/3 (train days / test days / folds) over 24 days. It was first probed at 5-minute ticks (10,222 labels, 4,560 regimes, 3 evolution records, and 3 signals, orders and trades each). After T6 that tape is VACUOUS (§5), so the default is now 60 s ticks: 51,118 labels, 22,800 regimes, 3 evolution records, 1 champion, and 20 signals, orders and trades each.
++- `--out` keeps run paths short under Windows MAX_PATH. The first real run died with WinError 206; fixed in `62163fe`.
++
++**Red lines (stage 1–2 A16 cases):**
++
++| mutation | red line |
++|---|---|
++| bar close = the completing tick (`core/data/bars.py`) | `T2 future-perturbation: 159 cuts, 4390 decisions compared, 57 violating cut(s)` (T1: no violation) |
++| label read after the completing tick (`regime_labels.py`) | `T2 …: 129 cuts, 18499 decisions compared, 35 violating cut(s)` (T1: no violation) |
++| fitness cross decided on `ema[i+1]` | `T2 … at cut 50.5: 2 decision(s) lost [signal@49.5: (49, 1); fill@50.0: …]` |
++| evolution window `train_end + 2h` (`evolve_step.py`) | `T1 truncation: 2 cuts, 2 decisions compared, 2 …` |
++
++A further ad-hoc mutation fed AGON the next tick's mid; it gave `T2 …: 63 cuts, 3639 decisions compared, 63 violating cut(s)`.
++
++**Engine-level evidence run** (2026-09-25; `python scripts/leakage_suite.py --workers 2`, from a clean `git archive 97591b2` snapshot at 5-minute ticks):
++- **Stage 1 held.** The honest oracle was clean under T2 and T1 (6 cuts, 55 decisions each). The next-tick peek was caught by T2 (2 violating cuts, 1,723 decisions) and by T1 (1 cut).
++- **Reference:** 10,222 labels, 4,560 regimes, 3 evolution records, and 3 signals, orders and trades each (114 s).
++- **Result:** `T2 future-perturbation: 17 cuts, 102998 decisions compared, no violation`; `T1 truncation: 17 cuts, 102961 decisions compared, no violation`; verdict "clean". Total wall time was about 33 min.
++- **Exit codes, as run:**
++  - the first attempt died at MAX_PATH (fixed in `62163fe`);
++  - a rerun was lost to the power cut;
++  - a run on the post-T6 snapshot `e51e5cc` at 5-minute ticks correctly exited 5 (VACUOUS: no champion, no order; §5).
++
++That leaves one gap in the evidence: a full sweep at the new 60 s default on the final code (1.5–2 h) was **not** run. The final code's reference at 60 s was probed as non-vacuous. T6's own causality is covered by the every-open-and-close component sweep, which is green on the final code.
++
++**Costs.**
++- The component sweeps take about 15 s.
++- The script's controls take about 3 s.
++- One engine variant takes about 90–100 s at 5-minute ticks, and about 5–7 min at the 60 s default.
++- A full day-grid sweep is 34 variants (17 cuts × 2 tests): about 30 min with 2 workers at 5-minute ticks, about 1.5–2 h at 60 s.
++- The NVMA classify cost (~3 ms each, production windows) bounds everything.
++
++**Residuals (for the ledger):**
++- **R1 — the engine grid is a day.** A sub-day peek is caught there only where it crosses midnight; this is pinned by `test_a_daily_grid_cannot_see_a_sparse_intraday_peek`. Per-decision coverage exists only for the swept components. The Governor and the harness book are covered end to end, but only at the day grid. `--step-hours` refines the grid at linear cost.
++- **R2 — the component NVMA sweep uses schema-minimum windows.** The engine run uses production windows.
++- **R3 — the engine sweep uses a small optimizer by default** (population 8, generations 8, minimum bars 100, minimum trades 5), so a short tape stages anything at all. `--production-optimizer` exists, and exits VACUOUS on a short tape.
++- **R4 — the channel T1 cannot see.** A peek that is emitted together with the datum it peeks at is invisible to T1 by construction. T2 catches it; see §3.
++
++## 2. Findings surfaced by stages 1–2 (not fixed; each needs an owner or ledger decision)
++
++- **F1 — the fitness fill pays the entry bar's CLOSING spread.** `trade_path` charges `per_side_cost(bars[i+1].spread)` for a fill at bar i+1's OPEN. `LabelledBar.spread` is the spread at the bar's closing tick (`core/data/bars.py`), so the fill's cost uses a datum from after the fill: a small cost look-ahead, which could flatter or penalise. It is already pinned exactly by the existing exit tests (e.g. `test_a_trade_open_at_the_window_end_is_marked_at_the_last_close`). The leakage suite deliberately keeps the cost out of the fill decision so as not to false-alarm. **Proposal:** charge the signal bar's closing spread, the latest spread known at decision time. That changes fitness numbers, so it is not tightening-only. It is a T5-class convention decision.
++- **F2 — QIEA's `fitness_window` bounds only the start of the span.** QIEA evolves on any bar after `now` that a caller hands it. The production caller never does: `LabelledBarCache.history(end=train_end)`, checked afterwards by `refuse_lookahead` and now by the evolution sweep. The fix is a one-line tightening in `core/optimizer/qiea.py`: keep only `b.ts + bar_seconds <= now`. This is the T8 precursor.
++- **F3 — materialising the tick stream leaks the future into NVMA.** NVMA's session medians are a live callback into the `MarketStateFactory`, so a caller that does `list(market_states(...))` before labelling hands NVMA end-of-tape medians. Every current path is lazy. I found it in my own timing script. T8 (an accessor) would make it structural.
++- **F5 — regime-sliced fitness windows are full of synthetic gaps** (surfaced by T6, see §5). QIEA evolves each regime on that regime's bars only, concatenated across time, so every junction between two regime stretches is a price jump the fitness simulator treats as one bar to the next. Before T6 a stop crossed at a junction filled at the stop price (optimistic); now it fills at the open after the jump, which is realistic for the series as simulated, but the series itself is an artefact. Measured on the leakage tape at 5-minute ticks: the one marginal champion that cleared C9 before T6 no longer does. **Owner/[spec]:** simulate each contiguous stretch separately (flat at every junction), or accept and declare it.
++- **F4 — two portability notes:**
++  - `scripts/governance_gate.py` resolves the checks folder as `REPO.parent / "specs_constitution"`, which is wrong inside a `.claude/worktrees/*` checkout;
++  - the three pre-existing multi-line A16 guardrail cases cannot match on a CRLF checkout (this worktree). The main tree is LF and unaffected.
++
++## 3. Stage 3: T7, the guard bites (`tests/backtest/test_leakage_controls.py`, ~10–14 s)
++
++- **Instrument tests.** The perturbation moves every later price and doubles the future's scale. The market variants leave the past bit-identical and cut the side channels too. A decision cannot be stamped as emitted before its own horizon.
++- **A centered EMA inside the real fitness simulator** (reading the next close): caught by BOTH T1 and T2.
++- **A 5% sparse peek** (1 bar in 20; fast EMA += 3 × the next return): caught by both, but only at 6 of 479 cuts (T2) and 1 of 479 (T1). The test asserts that the violating fraction is under 5%. A 30-cut random sample would catch it about 31% (T2) or 6% (T1) of the time: the VALIDATOR's point, reproduced.
++- **A labeller that reads the completing tick:** T2 catches it and T1 is blind to it, which is why both tests exist. The honest labeller at the same every-tick cadence raises nothing.
++- **Through the real harness:** the next-tick-peek oracle is caught by T1 and T2, and the honest oracle raises nothing (55 decisions compared, 6 cuts).
++- **Pinned limitation (R1):** the daily grid cannot see a peek on 1 tick in 20.
++
++**Red lines (A16, blinding the instrument itself):**
++
++| mutation | red line |
++|---|---|
++| T2 compares reference to reference | `('T2 future-perturbation: 479 cuts, 7647 decisions compared, no violation', 'T1 …')` |
++| T1 compares reference to reference | `(…, 'T1 truncation: 479 cuts, 7636 decisions compared, no violation')` |
++| `perturb_returns` returns its input | `E assert False` (the "every later price moved" assertion) |
++| `PerturbedMarket` keeps the base returns | `('T2 future-perturbation: 6 cuts, 1723 decisions compared, no violation', …)` |
++
++## 4. Stage 4: the look register (GAP-P12D-64)
++
++**What a look is** (`tests/backtest/look_register.py`). There is one exclusively created file per look, `<register>/<seq:06d>.json`, opened with `open("x")` in the `HoldoutGuard.begin_final` pattern:
++- a number already claimed is skipped, never overwritten;
++- no code path deletes a look.
++
++Each line records:
++- the registration timestamp;
++- the git commit, plus a dirty-tree flag;
++- a sha256 of the full config;
++- the hypothesis family;
++- the data tier, derived and never claimed. A source that is not a declared real source (`dukascopy`, `histdata`) is tier 0, synthetic. Real data is tiered by its test windows: exploration before 2012, validation 2012–2023, holdout 2024–25, forward from 2026. A window that straddles two tiers is refused.
++- the source, instruments, and date span;
++- what changed since the family's previous look. This is required for a real re-look, and the line names that previous look's id, commit and config hash.
++- the operator.
++
++**The refusal.** `oos_runner.run_walk_forward` calls `verify_look` first, before any compute. A grade is refused unless its `Look` is:
++- on disk, exactly as registered;
++- for exactly this run: the same source, instruments, fold span, config hash and tier.
++
++A hand-built `Look`, or one registered for another run, is refused. `RunInputs.look` is a required field, so no caller can forget it. The report gains `look = {look_id, family, tier, family_looks}`: the per-family look counts, by tier.
++
++**Every entry point:**
++- `scripts/run_oos_validation.py` is the only real-data grader. It requires `--family`, and takes `--changed` and `--operator`. It writes the line before the holdout marker and before the grade. It prints the per-family counts, and they go into `report.json`.
++- The synthetic callers register tier-0 looks: `synthetic_grade.grade` (behind `falsify_engine` and the cost ladder) and the leakage engine.
++- `grade_oracle` and the scripted `Backtest.run` tests are harness self-tests on synthetic tapes. They do not go through `run_walk_forward` and do not register.
++
++**No threshold or gate changed.**
++- `git diff` on `report.py` shows only one import and one new field, `look: Mapping = field(default_factory=dict)`, commented "no clause of `passed` reads it".
++- `build_report`, `grade_out_of_sample`, `DSR_MIN`, `_MIN_*` and the `passed` expression are byte-identical.
++- `oos_runner` attaches the look with `dataclasses.replace` after `build_report` has computed `passed`.
++
++**Red lines (A16):**
++
++| mutation | red line |
++|---|---|
++| verification bypassed | `AttributeError: 'NoneType' object has no attribute 'has'` (the grade ran into the engine instead of refusing) |
++| `open("x")` → `open("w")` | `assert ('000001', '000003') == ('000001', '000004')` (a claimed number was overwritten) |
++| tier forced to synthetic | `assert 0 == 2` |
++| what-changed not required | `Failed: DID NOT RAISE LookRefused` |
++
++**Costs:** negligible (one small file per grade, one git call).
++
++**Residuals:**
++- **R5.** The register COUNTS looks. Deflating by them is the VALIDATOR's option B/C (GAP-P12D-33), which is the owner's decision.
++- **R6.** Nothing yet stops someone grading real data outside `run_walk_forward`, for example a new script that drives `Backtest.run` directly. The contract is enforced at `run_walk_forward` only.
++- **R7.** Each synthetic run keeps its own register under its run directory, so tier-0 counts are per run, by design.
++
++## 5. Stage 5: T6, the gap-through exit
++
++**The fix** (`core/optimizer/fitness.py`). A long stopped out exits at `min(bar.open, sl)`, a short at `max(bar.open, sl)`. It tightens only:
++- a stop touched intrabar still fills at the stop;
++- stop-before-target holds on a gap bar, even when the bar's range later reaches the target;
++- a bar that opens BEYOND the target still fills at the target, never at the better open.
++
++**Tests** (`tests/unit/test_fitness_exits.py`, in the mutation gate's test set), each hand-worked, long and short:
++- `…_opens_through_the_stop_exits_at_the_open_not_the_stop` pins the whole `Trade` and the PnL;
++- `…_opens_exactly_at_the_stop_exits_at_the_stop`;
++- `…_gap_through_the_stop_is_not_rescued_by_a_rally_to_the_target`;
++- `…_gap_through_the_target_is_not_credited`.
++
++The gap bar's close differs from its open, so reading the wrong price cannot pass.
++
++**Pinned exactly (mutation scope).** Five hand mutants were all killed:
++- `bar.open` → `bar.close`, long and short;
++- min ↔ max, long and short;
++- the target credited at the open.
++
++**Red before the fix:** `assert (52, 1.092805249724446) == (52, 1.0923568246417799)`, the exit at the stop instead of the gapped open. **A16:** reverting either direction gives `AssertionError: assert Trade(signal_... marked=False) == Trade(...)`.
++
++**Costs:** none measurable.
++
++**Residual:** fitness scores change wherever bars gap through stops, so champions selected before and after `e51e5cc` are not comparable. This is expected, and tightening only.
++
++The effect is larger than "slightly" wherever bars hold one tick: at 5-minute ticks every 60 s bar is O = H = L = C, so every stop exit is a gap exit. On that tape the leakage suite's reference went from one champion to none and exited 5 (VACUOUS) rather than report a clean sweep over nothing. `1cd13d4` moves the script's default to 60 s ticks, which stages a champion and places 20 orders under T6 (probed). See F5 for why the junctions matter.
++
++**Draft ACIS-03 §6.1 wording** (for the lead; `specs/` untouched). Replace "exit intrabar at ATR-multiple SL/TP (SL checked before TP on the same bar — conservative)" with:
++
++> exit intrabar at ATR-multiple SL/TP (SL checked before TP on the same bar — conservative); **a bar that opens through the stop exits at that open, the first price after the gap, and a bar that opens beyond the target still exits at the target (v1.x, GAP-P12D-65 T6 — tightening only)**
++
++## 6. Stage 6 (T4 / T8): not built
++
++It was skipped deliberately. The power cut cost the session its margin, and the engine evidence run had the better claim on the remaining compute.
++
++Concrete next steps:
++- **T8:** a decision-time accessor on `LabelledBarCache`, e.g. `bars_until(instrument, end)`, used by `oos_runner`'s TSMOM seeding, which today reads whole years and filters by `train_end` itself. Then a lint test that forbids `cache.read(` outside `regime_labels.py` and the leakage extractor, plus F2's `fitness_window` upper bound.
++- **T4:** a `calibrated_on: {start, end}` field on calibrated config values, and a check in `HoldoutGuard.check_development` / `begin_final` that refuses a fold whose test window overlaps one.
++
++## 7. For the lead (ledger items to write; `KNOWN_GAPS.md` untouched)
++
++- **GAP-P12D-65:**
++  - T1, T2 and T7 are built, with commits and tests as above;
++  - T6 is built;
++  - T3, T4, T5 and T8 remain open;
++  - residuals R1–R4;
++  - findings F1–F3 need IDs.
++- **GAP-P12D-64:** the register is built (`97591b2`), with residuals R5–R7. The [spec] half (raising the gate per look) stays with the owner.
++- **F4:** two small tooling tickets: the gate path inside worktrees, and CRLF-proof A16 anchors.
 diff --git a/BUILDER_REPORT_2026-09-24.md b/BUILDER_REPORT_2026-09-24.md
 new file mode 100644
 index 0000000..51542e2
@@ -542,7 +783,7 @@ index 0000000..5020095
 +- Ledger: 187 entries, 0 violations.
 +- Everything is **BUILT — PENDING AUDIT**.
 diff --git a/core/optimizer/fitness.py b/core/optimizer/fitness.py
-index 45089de..beead95 100644
+index 45089de..90693ed 100644
 --- a/core/optimizer/fitness.py
 +++ b/core/optimizer/fitness.py
 @@ -79,6 +79,19 @@ def atr_series(bars: Sequence[LabelledBar], period: int) -> list[float]:
@@ -586,7 +827,7 @@ index 45089de..beead95 100644
      warm up on the full window, but new entries are only permitted from that
      index on — no lookahead, and no artificial indicator starvation in the tail.
      `atr_period` is the declared signals.atr_period (GAP-0071)."""
-@@ -101,11 +126,11 @@ def simulate_trades(
+@@ -101,33 +126,35 @@ def simulate_trades(
      rsi = rsi_series(closes, params.rsi_period)
      atr = atr_series(bars, atr_period)
  
@@ -600,7 +841,26 @@ index 45089de..beead95 100644
  
      for i in range(warmup, n):
          bar = bars[i]
-@@ -127,7 +152,7 @@ def simulate_trades(
+         if direction != 0:
+             bars_held += 1
+             exit_mid: float | None = None
+-            # SL checked before TP on the same bar — conservative (§6.1)
++            # SL checked before TP on the same bar — conservative (§6.1). A bar that OPENS
++            # through the stop fills at that open, the first price after the gap (T6,
++            # GAP-P12D-65); a gap through the target still fills at the target, never better.
+             if direction > 0:
+                 if bar.low <= sl:
+-                    exit_mid = sl
++                    exit_mid = min(bar.open, sl)
+                 elif bar.high >= tp:
+                     exit_mid = tp
+             else:
+                 if bar.high >= sl:
+-                    exit_mid = sl
++                    exit_mid = max(bar.open, sl)
+                 elif bar.low <= tp:
+                     exit_mid = tp
+             if exit_mid is None and bars_held >= params.max_holding_periods:
                  exit_mid = bar.close
              if exit_mid is not None:
                  pnl = direction * (exit_mid - entry_mid) - entry_cost - costs.per_side_cost(bar.spread)
@@ -609,7 +869,7 @@ index 45089de..beead95 100644
                  direction = 0
              continue
          if i + 1 >= n:
-@@ -148,16 +173,15 @@ def simulate_trades(
+@@ -148,16 +175,15 @@ def simulate_trades(
          entry_cost = costs.per_side_cost(entry_bar.spread)
          sl = entry_mid - direction * params.atr_multiplier_sl * a
          tp = entry_mid + direction * params.atr_multiplier_tp * a
@@ -844,10 +1104,10 @@ index 0f03d10..6446a0c 100644
          self,
          genes: dict[str, float | int],
 diff --git a/falsify.cases.json b/falsify.cases.json
-index 9eb82f9..59dcdbb 100644
+index 9eb82f9..52faced 100644
 --- a/falsify.cases.json
 +++ b/falsify.cases.json
-@@ -33,6 +33,70 @@
+@@ -33,6 +33,118 @@
        "mutation": "        self._instruments_halted.clear()\n        self._session_halted = False\n        self._equity_flattened = True",
        "test": "python -m pytest tests/unit/test_guardrails.py -q -x -p no:cacheprovider",
        "expect": "test_equity_breaker_re_fires_after_human_rearm"
@@ -915,6 +1175,54 @@ index 9eb82f9..59dcdbb 100644
 +      "mutation": "            self._variant[instrument] = (array(\"d\", base)",
 +      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k harness_level",
 +      "expect": "test_the_harness_level_controls_honest_oracle_clean_and_next_tick_peek_caught"
++    },
++    {
++      "id": "GAP-P12D-64 no grade without its look-register line",
++      "file": "tests/backtest/oos_runner.py",
++      "anchor": "    family_looks = verify_look(inp.look, cfg=cfg, source=inp.source, instruments=instruments,",
++      "mutation": "    family_looks = {} if True else verify_look(inp.look, cfg=cfg, source=inp.source, instruments=instruments,",
++      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k refuses_before_any_compute",
++      "expect": "test_the_grade_refuses_before_any_compute_without_its_own_line"
++    },
++    {
++      "id": "GAP-P12D-64 a look line is created exclusively, never overwritten",
++      "file": "tests/backtest/look_register.py",
++      "anchor": "                with path.open(\"x\", encoding=\"utf-8\") as f:           # the line is the claim",
++      "mutation": "                with path.open(\"w\", encoding=\"utf-8\") as f:           # the line is the claim",
++      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k exclusively_created",
++      "expect": "test_each_look_is_one_exclusively_created_file_and_nothing_is_overwritten"
++    },
++    {
++      "id": "GAP-P12D-64 the data tier is derived from the source and dates",
++      "file": "tests/backtest/look_register.py",
++      "anchor": "    if source not in REAL_SOURCES:",
++      "mutation": "    if True:",
++      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k tier_is_derived",
++      "expect": "test_the_tier_is_derived_from_the_data_never_claimed"
++    },
++    {
++      "id": "GAP-P12D-64 a real re-look must say what changed",
++      "file": "tests/backtest/look_register.py",
++      "anchor": "        if tier > 0 and previous is not None and not changed.strip():",
++      "mutation": "        if False:",
++      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k say_what_changed",
++      "expect": "test_a_real_family_that_looked_before_must_say_what_changed"
++    },
++    {
++      "id": "GAP-P12D-65 T6 a long gapped through its stop exits at the open",
++      "file": "core/optimizer/fitness.py",
++      "anchor": "                    exit_mid = min(bar.open, sl)",
++      "mutation": "                    exit_mid = sl",
++      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k opens_through_the_stop",
++      "expect": "test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop"
++    },
++    {
++      "id": "GAP-P12D-65 T6 a short gapped through its stop exits at the open",
++      "file": "core/optimizer/fitness.py",
++      "anchor": "                    exit_mid = max(bar.open, sl)",
++      "mutation": "                    exit_mid = sl",
++      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k opens_through_the_stop",
++      "expect": "test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop"
      }
    ]
  }
@@ -1004,10 +1312,10 @@ index 93c7da6..9101e0b 100644
          return 3
 diff --git a/scripts/leakage_suite.py b/scripts/leakage_suite.py
 new file mode 100644
-index 0000000..6404ec4
+index 0000000..d8499a1
 --- /dev/null
 +++ b/scripts/leakage_suite.py
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,131 @@
 +"""The structural leakage suite, end to end (GAP-P12D-65): T1 and T2 over the REAL decision path.
 +
 +    python scripts/leakage_suite.py --controls-only     # stage 1 alone: seconds
@@ -1069,10 +1377,12 @@ index 0000000..6404ec4
 +    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
 +    ap.add_argument("--controls-only", action="store_true")
 +    ap.add_argument("--account", default=None)
-+    ap.add_argument("--train-days", type=int, default=12)   # 12/2/3 stages a champion and orders (probed)
++    ap.add_argument("--train-days", type=int, default=12)
 +    ap.add_argument("--test-days", type=int, default=2)
 +    ap.add_argument("--folds", type=int, default=3)
-+    ap.add_argument("--tick-seconds", type=int, default=300)
++    # 12/2/3 at 60 s stages a champion and 20 orders under T6 (probed 2026-09-25). At 300 s every
++    # 60 s bar is one tick, every stop is a gap-through, and the reference is VACUOUS.
++    ap.add_argument("--tick-seconds", type=int, default=60)
 +    ap.add_argument("--step-hours", type=int, default=24)
 +    ap.add_argument("--production-optimizer", action="store_true",
 +                    help="evolve with the production population (a short tape then usually stages nothing: VACUOUS)")
@@ -1137,6 +1447,81 @@ index 0000000..6404ec4
 +
 +if __name__ == "__main__":
 +    sys.exit(main())
+diff --git a/scripts/run_oos_validation.py b/scripts/run_oos_validation.py
+index 3bd2513..950cbd7 100644
+--- a/scripts/run_oos_validation.py
++++ b/scripts/run_oos_validation.py
+@@ -1,13 +1,16 @@
+ """Run the §14 out-of-sample walk-forward validation for one account (ACIS-09 §7, GAP-P12D-23).
+ 
+-    python scripts/run_oos_validation.py                                   # development plan, test years 2014–2023
+-    python scripts/run_oos_validation.py --first-test-year 2014 --last-test-year 2015
+-    python scripts/run_oos_validation.py --final-holdout                   # 2024–2025, ONCE, after the design is frozen
++    python scripts/run_oos_validation.py --family trend-v1                 # development plan, test years 2014–2023
++    python scripts/run_oos_validation.py --family trend-v1 --changed "gene ranges narrowed" \\
++        --first-test-year 2014 --last-test-year 2015
++    python scripts/run_oos_validation.py --family trend-v1 --changed "frozen" --final-holdout   # 2024–2025, ONCE
+ 
++Every run is a LOOK (GAP-P12D-64): its line goes into data/validation/looks/ BEFORE anything
++is graded — hypothesis family, tier, commit, config hash, what changed since the family's
++previous look — and the per-family look counts are printed and written into the report.
+ Needs the Dukascopy mirror (data/dukascopy), the labelled-bar cache for every training year
+ (scripts/build_labelled_bars.py) and data/macro (SPX closes + overnight rates). Writes
+ data/validation/oos/<run id>/report.json and prints the verdict with its caveats.
+-
+ A development run is never the final grade. Before any paid or long run, the pipeline itself
+ must be falsified on synthetic data (GAP-P12D-28).
+ """
+@@ -26,6 +29,7 @@ from config.schemas import load_config  # noqa: E402
+ from core.data.jsonl_logging import JsonlEventLogger  # noqa: E402
+ from tests.backtest.data_loader import BacktestDataLoader  # noqa: E402
+ from tests.backtest.financing import load_rate_table, make_financing  # noqa: E402
++from tests.backtest.look_register import LookRefused, LookRegister  # noqa: E402
+ from tests.backtest.oos_plan import DATA_START, HOLDOUT_END, HOLDOUT_START, HoldoutGuard, plan_folds  # noqa: E402
+ from tests.backtest.oos_runner import (RunInputs, load_spx_closes, missing_labels,  # noqa: E402
+                                        report_json, run_walk_forward)
+@@ -43,6 +47,9 @@ def main() -> int:
+     ap.add_argument("--first-test-year", type=int, default=2014)
+     ap.add_argument("--last-test-year", type=int, default=2023)
+     ap.add_argument("--final-holdout", action="store_true")
++    ap.add_argument("--family", required=True, help="the hypothesis family this look belongs to (GAP-P12D-64)")
++    ap.add_argument("--changed", default="", help="what changed since the family's previous look (required after its first)")
++    ap.add_argument("--operator", default=None, help="who ran it (default: the OS user)")
+     a = ap.parse_args()
+ 
+     folds = (plan_folds(HOLDOUT_START.year, HOLDOUT_END.year - 1) if a.final_holdout
+@@ -54,6 +61,15 @@ def main() -> int:
+         print("refused: labelled bars missing for", ", ".join(f"{i} {y}" for i, y in missing),
+               "— run scripts/build_labelled_bars.py first")
+         return 2
++    try:   # GAP-P12D-64: the line is written BEFORE any grade, and before the holdout's marker
++        look = LookRegister(ROOT / "data" / "validation" / "looks").register(
++            cfg=cfg, source=SOURCE, instruments=sorted(cfg.instruments.enabled), folds=folds,
++            family=a.family, changed=a.changed, operator=a.operator)
++    except LookRefused as exc:
++        print("refused:", exc)
++        return 2
++    print(f"look {look.look_id} registered: family {look.family}, tier {look.tier_name}, commit {look.git_commit}"
++          + (" (dirty tree)" if look.git_dirty else ""))
+     if a.final_holdout:
+         guard.begin_final(folds, config_hash=guardrail_hash(cfg.guardrails))   # graded ONCE
+     else:
+@@ -69,12 +85,14 @@ def main() -> int:
+         cfg=cfg, account=a.account, source=SOURCE,
+         loader=BacktestDataLoader({SOURCE: DukascopyTickSource(ROOT / "data" / "dukascopy")}, log),
+         cache=cache, folds=folds, spx_closes=load_spx_closes(macro / "spx_yahoo.csv"),
+-        financing=make_financing(load_rate_table(macro)), work_dir=out / "engine", logger=log))
++        financing=make_financing(load_rate_table(macro)), work_dir=out / "engine", logger=log, look=look))
+     log.close()
+     (out / "report.json").write_text(report_json(report), encoding="utf-8")
+     print(f"{'FINAL HOLDOUT' if a.final_holdout else 'development'} run {run_id}: "
+           f"passed={report.passed}  trades={report.out_of_sample.n_trades}  "
+           f"deflated_sharpe={report.deflated_sharpe}  trials={report.trial_count}")
++    for family, tiers in report.look["family_looks"].items():
++        print(f"  looks by family: {family}: " + ", ".join(f"{n} {t}" for t, n in tiers.items()))
+     for caveat in report.fidelity_caveats:
+         print("  caveat:", caveat)
+     print("report:", out / "report.json")
 diff --git a/tests/backtest/harness.py b/tests/backtest/harness.py
 index 111db76..412b56a 100644
 --- a/tests/backtest/harness.py
@@ -1322,10 +1707,10 @@ index 0000000..8f740a3
 +    return out
 diff --git a/tests/backtest/leakage_engine.py b/tests/backtest/leakage_engine.py
 new file mode 100644
-index 0000000..fde7e85
+index 0000000..8996d56
 --- /dev/null
 +++ b/tests/backtest/leakage_engine.py
-@@ -0,0 +1,166 @@
+@@ -0,0 +1,169 @@
 +"""The REAL decision path under the leakage checks (GAP-P12D-65): the labeller, evolution,
 +NVMA, AGON, the Governor and the book, exactly as `oos_runner.run_walk_forward` composes them.
 +
@@ -1362,6 +1747,7 @@ index 0000000..fde7e85
 +from tests.backtest.data_loader import BacktestDataLoader
 +from tests.backtest.leakage import Decision
 +from tests.backtest.leakage_markets import PerturbedMarket, TickClock, order_decisions, trade_decisions
++from tests.backtest.look_register import LookRegister
 +from tests.backtest.oos_runner import RunInputs, run_walk_forward, train_years
 +from tests.backtest.regime_labels import label_instrument_year
 +from tests.backtest.synthetic_grade import market_cache
@@ -1452,12 +1838,14 @@ index 0000000..fde7e85
 +        for year in train_years(folds):
 +            label_instrument_year(cfg=cfg, loader=loader, source=market.name, instrument=instrument,
 +                                  year=year, cache=cache, logger=log, data_start=spec.start)
++    look = LookRegister(work / "looks").register(cfg=cfg, source=market.name, instruments=instruments,
++                                                 folds=folds, family="synthetic:leakage", git=("n/a", False))
 +    tap = _Tap(oos_runner.build_paper_loop)
 +    with mock.patch.object(oos_runner, "build_paper_loop", tap.build):
 +        report = run_walk_forward(RunInputs(
 +            cfg=cfg, account=account, source=market.name, loader=loader, cache=cache, folds=folds,
 +            spx_closes=synthetic_spx(spec.start, spec.days), financing=None, work_dir=work / "engine",
-+            logger=log))
++            logger=log, look=look))
 +
 +    full = SyntheticMarket(spec)                   # emission stamps come from the FULL tape
 +    clocks = {i: TickClock(BacktestDataLoader({full.name: full}, log), full.name, i, spec.start, spec.end)
@@ -1766,6 +2154,176 @@ index 0000000..f62a387
 +            out.append(Decision(t.exit_bar + 0.5, t.exit_bar + 0.5, "exit",
 +                                (t.signal_bar, t.exit_bar, t.exit_price, t.pnl)))
 +    return out
+diff --git a/tests/backtest/look_register.py b/tests/backtest/look_register.py
+new file mode 100644
+index 0000000..a3c6a03
+--- /dev/null
++++ b/tests/backtest/look_register.py
+@@ -0,0 +1,164 @@
++"""The look register (GAP-P12D-64; archive/RESEARCH_VALIDATION_FIREWALL_2026-09-24.md §5.2-§5.5).
++
++Every re-scoring of a changed pipeline against the same history is another trial, and the
++uncounted ones are the false-positive channel: keeping the best of 5 uncounted revisions passes
++pure noise 9-19% of the time, the best of 20 21-37% (§5.2). So every grade is a LOOK, and its
++line is written BEFORE the grade runs.
++
++Invariants:
++  * Append-only, one file per look: <register>/<seq:06d>.json, created exclusively (open "x"),
++    the `oos_plan.HoldoutGuard.begin_final` pattern. Creating the file claims the number, so
++    two runs cannot share one and no look is overwritten. No code path deletes a look.
++  * `oos_runner.run_walk_forward` refuses to grade without a `Look` that is on disk,
++    byte-for-byte as registered, for THIS run: the same source, instruments, fold span and
++    config hash. A hand-built Look, or one registered for another run, is refused.
++  * The data tier is DERIVED, never claimed. A source that is not a declared real source
++    (sources.py) is tier 0, synthetic. Real data is tiered by its graded test windows:
++    1 exploration (before 2012), 2 validation (2012-2023), 3 holdout (2024-2025),
++    4 forward (2026 on). Test windows that straddle two tiers are refused.
++  * A real-data look by a family that has looked before must say what changed since; its line
++    names the previous look (id, commit, config hash) so the change can be checked.
++  * Counting only. Nothing here reads a threshold or touches a gate: the owner-ratified
++    Deflated Sharpe / `passed` gate is unchanged (raising it per look is option C, GAP-P12D-33).
++"""
++
++from __future__ import annotations
++
++import getpass
++import hashlib
++import json
++import subprocess
++from collections import Counter
++from dataclasses import asdict, dataclass
++from datetime import datetime, timezone
++from pathlib import Path
++from typing import Sequence
++
++from config.schemas import AcisConfig
++from tests.backtest.oos_plan import DATA_START, HOLDOUT_END, HOLDOUT_START
++from tests.backtest.sources import DukascopyTickSource, HistDataTickSource
++from tests.backtest.walk_forward import Fold
++
++REPO = Path(__file__).resolve().parents[2]
++REAL_SOURCES = frozenset({DukascopyTickSource.name, HistDataTickSource.name})
++TIER_NAMES = ("synthetic", "exploration", "validation", "holdout", "forward")
++
++
++class LookRefused(Exception):
++    """A grade without its registered look, or a look that cannot be registered honestly."""
++
++
++@dataclass(frozen=True)
++class Look:
++    look_id: str
++    path: str
++    registered_utc: str
++    git_commit: str
++    git_dirty: bool
++    config_hash: str
++    family: str
++    tier: int
++    tier_name: str
++    source: str
++    instruments: tuple[str, ...]
++    start: str                       # the first fold's train start
++    end: str                         # the last fold's test end
++    changed: str
++    previous: tuple[str, str, str] | None     # the family's previous look: (id, commit, config hash)
++    operator: str
++
++
++def config_hash(cfg: AcisConfig) -> str:
++    return hashlib.sha256(json.dumps(cfg.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
++
++
++def git_state(repo: Path = REPO) -> tuple[str, bool]:
++    """(HEAD commit, working tree dirty?) — ("unknown", True) when git cannot say."""
++    try:
++        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True)
++        dirty = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, check=True)
++    except (OSError, subprocess.CalledProcessError):
++        return "unknown", True
++    return head.stdout.strip(), bool(dirty.stdout.strip())
++
++
++def _window_tier(start: datetime, end: datetime) -> int:
++    bounds = ((1, datetime.min.replace(tzinfo=timezone.utc), DATA_START), (2, DATA_START, HOLDOUT_START),
++              (3, HOLDOUT_START, HOLDOUT_END), (4, HOLDOUT_END, datetime.max.replace(tzinfo=timezone.utc)))
++    for tier, lo, hi in bounds:
++        if lo <= start and end <= hi:
++            return tier
++    raise LookRefused(f"the test window {start.date()} -> {end.date()} straddles two data tiers")
++
++
++def data_tier(source: str, folds: Sequence[Fold]) -> int:
++    if source not in REAL_SOURCES:
++        return 0
++    tiers = {_window_tier(f.test_start, f.test_end) for f in folds}
++    if len(tiers) != 1:
++        raise LookRefused(f"one look grades one data tier; these folds span {sorted(TIER_NAMES[t] for t in tiers)}")
++    return tiers.pop()
++
++
++def _span(folds: Sequence[Fold]) -> tuple[str, str]:
++    return min(f.train_start for f in folds).isoformat(), max(f.test_end for f in folds).isoformat()
++
++
++class LookRegister:
++    def __init__(self, root: Path) -> None:
++        self.root = Path(root)
++
++    def looks(self) -> list[dict]:
++        return [json.loads(p.read_text(encoding="utf-8")) for p in sorted(self.root.glob("[0-9]*.json"))]
++
++    def family_counts(self) -> dict[str, dict[str, int]]:
++        counts: dict[str, Counter] = {}
++        for line in self.looks():
++            counts.setdefault(line["family"], Counter())[line["tier_name"]] += 1
++        return {f: dict(sorted(c.items())) for f, c in sorted(counts.items())}
++
++    def register(self, *, cfg: AcisConfig, source: str, instruments: Sequence[str], folds: Sequence[Fold],
++                 family: str, changed: str = "", operator: str | None = None,
++                 git: tuple[str, bool] | None = None) -> Look:
++        if not family.strip():
++            raise LookRefused("a look must name its hypothesis family")
++        tier = data_tier(source, folds)
++        prior = [x for x in self.looks() if x["family"] == family]
++        previous = (prior[-1]["look_id"], prior[-1]["git_commit"], prior[-1]["config_hash"]) if prior else None
++        if tier > 0 and previous is not None and not changed.strip():
++            raise LookRefused(f"family {family!r} last looked at {previous[0]}: say what changed since")
++        commit, dirty = git if git is not None else git_state()
++        start, end = _span(folds)
++        self.root.mkdir(parents=True, exist_ok=True)
++        seq = len(list(self.root.glob("[0-9]*.json"))) + 1
++        while True:
++            path = self.root / f"{seq:06d}.json"
++            look = Look(look_id=f"{seq:06d}", path=str(path),
++                        registered_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
++                        git_commit=commit, git_dirty=dirty, config_hash=config_hash(cfg), family=family,
++                        tier=tier, tier_name=TIER_NAMES[tier], source=source, instruments=tuple(sorted(instruments)),
++                        start=start, end=end, changed=changed.strip() or ("first look" if previous is None else ""),
++                        previous=previous, operator=operator or getpass.getuser())
++            try:
++                with path.open("x", encoding="utf-8") as f:           # the line is the claim
++                    json.dump(asdict(look), f, sort_keys=True)
++                return look
++            except FileExistsError:
++                seq += 1
++
++
++def verify_look(look: object, *, cfg: AcisConfig, source: str, instruments: Sequence[str],
++                folds: Sequence[Fold]) -> dict[str, dict[str, int]]:
++    """Refuse a grade unless `look` is registered on disk for exactly this run. Returns the
++    register's per-family look counts, for the report."""
++    if not isinstance(look, Look):
++        raise LookRefused("no registered look: a grade must write its look-register line first (GAP-P12D-64)")
++    path = Path(look.path)
++    if not path.exists() or json.loads(path.read_text(encoding="utf-8")) != json.loads(json.dumps(asdict(look))):
++        raise LookRefused(f"look {look.look_id} is not on disk as registered ({path})")
++    start, end = _span(folds)
++    expected = (source, tuple(sorted(instruments)), start, end, config_hash(cfg), data_tier(source, folds))
++    actual = (look.source, look.instruments, look.start, look.end, look.config_hash, look.tier)
++    if actual != expected:
++        raise LookRefused(f"look {look.look_id} was registered for another run: {actual} != {expected}")
++    return LookRegister(path.parent).family_counts()
 diff --git a/tests/backtest/metrics.py b/tests/backtest/metrics.py
 index 9fb0483..57cabd3 100644
 --- a/tests/backtest/metrics.py
@@ -1791,6 +2349,67 @@ index 9fb0483..57cabd3 100644
      return sum(t.duration_s for t in sel) / len(sel)
  
  
+diff --git a/tests/backtest/oos_runner.py b/tests/backtest/oos_runner.py
+index 7b682f2..a4c2ac4 100644
+--- a/tests/backtest/oos_runner.py
++++ b/tests/backtest/oos_runner.py
+@@ -16,6 +16,9 @@ command line around it (paths, holdout guard, report file). Invariants:
+     strategy families (GAP-P12D-25).
+   * With no historical event calendar, MACRO_EVENT never fires and news blackouts never
+     apply; the report says so (GAP-P12D-03).
++  * No grade without its look (GAP-P12D-64): `inp.look` must be a look-register line already
++    on disk for exactly this run (look_register.verify_look), checked BEFORE any compute; the
++    report carries the look and the register's per-family look counts.
+ """
+ 
+ from __future__ import annotations
+@@ -23,7 +26,7 @@ from __future__ import annotations
+ import csv
+ import json
+ import math
+-from dataclasses import dataclass, fields, is_dataclass
++from dataclasses import dataclass, fields, is_dataclass, replace
+ from datetime import date, datetime, timedelta
+ from decimal import Decimal
+ from pathlib import Path
+@@ -37,6 +40,7 @@ from tests.backtest.carry import FinancingRate
+ from tests.backtest.data_loader import BacktestDataLoader
+ from tests.backtest.evolve_step import cost_model, evolve_fold
+ from tests.backtest.harness import Backtest, FoldData
++from tests.backtest.look_register import verify_look
+ from tests.backtest.metrics import MetricBlock
+ from tests.backtest.regime_labels import LabelledBarCache
+ from tests.backtest.report import ValidationReport
+@@ -61,6 +65,7 @@ class RunInputs:
+     financing: FinancingRate | None
+     work_dir: Path
+     logger: object
++    look: object                  # a look_register.Look written for THIS run (GAP-P12D-64)
+     # GAP-P12D-46 cost-stress ladder — RUN properties, never instrument properties. 1.0 / 0.0
+     # is the declared world; anything else is recorded as a fidelity caveat so a stressed
+     # number can never be read as a declared-cost one.
+@@ -98,6 +103,8 @@ def stress_caveat(inp: RunInputs) -> tuple[str, ...]:
+ def run_walk_forward(inp: RunInputs) -> ValidationReport:
+     cfg = inp.cfg
+     instruments = sorted(cfg.instruments.enabled)
++    family_looks = verify_look(inp.look, cfg=cfg, source=inp.source, instruments=instruments,
++                               folds=inp.folds)       # GAP-P12D-64: the line exists BEFORE the grade
+     specs = cfg.instruments.instruments
+     # ONE cost map, both places (master §5 C8): selection (QIEA, via evolve_fold) and the
+     # graded book charge the same instances, so a stressed run cannot select cheap and grade
+@@ -138,8 +145,10 @@ def run_walk_forward(inp: RunInputs) -> ValidationReport:
+         extra_caveats=(NO_CALENDAR, *stress_caveat(inp)),
+         min_trials=sum(loop.provenance.attempts(f) for f in families))
+     inp.logger.event("BACKTEST_RUN", account=inp.account, folds=len(inp.folds), passed=report.passed,
+-                     period=[report.period[0].isoformat(), report.period[1].isoformat()])
+-    return report
++                     period=[report.period[0].isoformat(), report.period[1].isoformat()],
++                     look=inp.look.look_id, family=inp.look.family)
++    return replace(report, look={"look_id": inp.look.look_id, "family": inp.look.family,
++                                 "tier": inp.look.tier_name, "family_looks": family_looks})
+ 
+ 
+ def _plain(v):
 diff --git a/tests/backtest/oracle.py b/tests/backtest/oracle.py
 new file mode 100644
 index 0000000..0f579e6
@@ -1997,8 +2616,31 @@ index 0000000..0f579e6
 +            out.append(f"the {kind} oracle cleared every non-DSR clause: the grader cannot tell "
 +                       "knowledge of a zero drift from an edge")
 +    return out
+diff --git a/tests/backtest/report.py b/tests/backtest/report.py
+index 570200f..f112d8b 100644
+--- a/tests/backtest/report.py
++++ b/tests/backtest/report.py
+@@ -21,7 +21,7 @@ a relaxed-limit run CANNOT pass — provable by test.
+ from __future__ import annotations
+ 
+ import math
+-from dataclasses import dataclass
++from dataclasses import dataclass, field
+ from datetime import datetime, timedelta
+ from typing import Mapping, Sequence
+ 
+@@ -79,6 +79,9 @@ class ValidationReport:
+     # GAP-P12D-18: the in-sample transparency record — one evolution summary per fold
+     # (training windows are not replayed through the engine; `in_sample` is not graded)
+     in_sample_evolution: tuple[Mapping, ...]
++    # GAP-P12D-64: the look-register line this grade wrote first, and the register's
++    # per-family look counts. Informational: no clause of `passed` reads it.
++    look: Mapping = field(default_factory=dict)
+ 
+ 
+ def grade_out_of_sample(block: MetricBlock) -> dict[str, bool]:
 diff --git a/tests/backtest/synthetic_grade.py b/tests/backtest/synthetic_grade.py
-index f42a69e..ab5b263 100644
+index f42a69e..7fc1976 100644
 --- a/tests/backtest/synthetic_grade.py
 +++ b/tests/backtest/synthetic_grade.py
 @@ -2,7 +2,8 @@
@@ -2011,7 +2653,7 @@ index f42a69e..ab5b263 100644
    * `scripts/cost_stress_ladder.py` — how much of a graded edge is friction?
  One path, so a ladder rung and a falsification run differ in exactly ONE input — the run's
  cost map — and in nothing else.
-@@ -24,11 +25,13 @@ from decimal import Decimal
+@@ -24,11 +25,14 @@ from decimal import Decimal
  from datetime import datetime, timedelta, timezone
  from pathlib import Path
  
@@ -2019,13 +2661,14 @@ index f42a69e..ab5b263 100644
  from config.schemas import AcisConfig, load_config
  from core.data.jsonl_logging import JsonlEventLogger
  from tests.backtest.data_loader import BacktestDataLoader
++from tests.backtest.look_register import LookRegister
  from tests.backtest.oos_plan import EMBARGO
  from tests.backtest.oos_runner import RunInputs, report_json, run_walk_forward
 +from tests.backtest.oracle import grade_oracle, non_dsr_failures
  from tests.backtest.regime_labels import LabelledBarCache, LabelSpec, label_instrument_year
  from tests.backtest.replay_logging import ReplayEventLogger
  from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, synthetic_spx
-@@ -39,19 +42,21 @@ FIRST_MID = {"EUR_USD": 1.10, "GBP_USD": 1.30, "USD_JPY": 110.0, "AUD_USD": 0.75
+@@ -39,19 +43,21 @@ FIRST_MID = {"EUR_USD": 1.10, "GBP_USD": 1.30, "USD_JPY": 110.0, "AUD_USD": 0.75
               "USD_CHF": 0.95, "USD_CAD": 1.30, "NZD_USD": 0.70, "XAU_USD": 1800.0}
  
  
@@ -2052,7 +2695,7 @@ index f42a69e..ab5b263 100644
          folds.append(Fold(k, train_end - timedelta(days=train_days), train_end, test_start,
                            test_start + timedelta(days=test_days)))
      return folds
-@@ -81,6 +86,22 @@ def label_year(spec: MarketSpec, instrument: str, year: int, out: Path,
+@@ -81,6 +87,22 @@ def label_year(spec: MarketSpec, instrument: str, year: int, out: Path,
      return spec.kind, instrument, year, n, time.perf_counter() - t0
  
  
@@ -2075,7 +2718,24 @@ index f42a69e..ab5b263 100644
  def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Path, *,
            tag: str | None = None, cost_stress: float = 1.0, spread_floor: float = 0.0) -> dict:
      """Grade one synthetic market with the production config, account, gates and cost map.
-@@ -106,6 +127,9 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
+@@ -90,11 +112,15 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
+     t0, cfg, market = time.perf_counter(), load_config(root / "config"), SyntheticMarket(spec)
+     tag = tag or spec.kind
+     log = run_logger(out, f"run_{tag}", "backtest", 200)
++    look = LookRegister(out / "looks").register(      # tier 0: a synthetic look, still written first
++        cfg=cfg, source=market.name, instruments=sorted(cfg.instruments.enabled), folds=folds,
++        family=f"synthetic:{tag}")
+     report = run_walk_forward(RunInputs(
+         cfg=cfg, account=account, source=market.name,
+         loader=BacktestDataLoader({market.name: market}, log), cache=market_cache(cfg, out, market.name),
+         folds=folds, spx_closes=synthetic_spx(START, spec.days), financing=None,
+-        work_dir=out / "engine" / tag, logger=log, cost_stress=cost_stress, spread_floor=spread_floor))
++        work_dir=out / "engine" / tag, logger=log, look=look, cost_stress=cost_stress,
++        spread_floor=spread_floor))
+     log.close()
+     (out / f"{tag}.json").write_text(report_json(report), encoding="utf-8")
+     oos = report.out_of_sample
+@@ -106,6 +132,9 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
              # their net PnLs sum to the run's net PnL exactly (Decimal, no re-derivation)
              "net_pnl": str(sum((v.net_pnl for v in report.per_strategy.values()), Decimal("0"))),
              "dsr": report.deflated_sharpe, "trials": report.trial_count,
@@ -2200,6 +2860,42 @@ index 564e225..a43265e 100644
          return self._returns[instrument]
  
      def _path(self, instrument: str) -> array:
+diff --git a/tests/backtest/test_cost_stress.py b/tests/backtest/test_cost_stress.py
+index 3188c3b..81c0045 100644
+--- a/tests/backtest/test_cost_stress.py
++++ b/tests/backtest/test_cost_stress.py
+@@ -22,6 +22,7 @@ from core.data.errors import DataQualityError
+ from core.optimizer.costs import CostModel
+ from tests.backtest.book import BookState, OpenPos, PositionModel
+ from tests.backtest.data_loader import BacktestDataLoader
++from tests.backtest.look_register import LookRegister
+ from tests.backtest.oos_runner import RunInputs, run_walk_forward, stress_caveat
+ from tests.backtest.regime_labels import LabelledBarCache, LabelSpec
+ from tests.backtest.test_oos_runner import _Synthetic, _folds
+@@ -92,7 +93,7 @@ def test_the_book_charges_exactly_the_stressed_friction() -> None:
+ def test_a_stressed_run_declares_itself_and_a_declared_run_stays_silent(acis_config, tmp_path) -> None:
+     common = dict(cfg=acis_config, account="dev_paper", source="synthetic",
+                   loader=None, cache=None, folds=(), spx_closes={}, financing=None,
+-                  work_dir=tmp_path, logger=None)
++                  work_dir=tmp_path, logger=None, look=None)
+     assert stress_caveat(RunInputs(**common)) == ()
+     caveat, = stress_caveat(RunInputs(**common, cost_stress=2.0))
+     assert "COST-STRESS RUN" in caveat and "2.0" in caveat and "NOT a venue calibration" in caveat
+@@ -129,10 +130,13 @@ def test_selection_and_grading_hold_the_same_stressed_cost_map(tmp_path, acis_co
+         cache.write(instrument, 2014, shifted)
+ 
+     log = CapturingLogger()
++    look = LookRegister(tmp_path / "looks").register(
++        cfg=acis_config, source="synthetic", instruments=sorted(acis_config.instruments.enabled), folds=folds,
++        family="test:cost-stress", git=("test", False))
+     report = run_walk_forward(RunInputs(
+         cfg=acis_config, account="dev_paper", source="synthetic",
+         loader=BacktestDataLoader({"synthetic": _Synthetic()}, log), cache=cache, folds=folds,
+-        spx_closes={}, financing=None, work_dir=tmp_path / "engine", logger=log, cost_stress=3.0))
++        spx_closes={}, financing=None, work_dir=tmp_path / "engine", logger=log, look=look, cost_stress=3.0))
+ 
+     assert seen["book"] is seen["selection"]
+     assert all(c.stress == 3.0 for c in seen["book"].values())
 diff --git a/tests/backtest/test_evolve_step.py b/tests/backtest/test_evolve_step.py
 index 86a10b1..1c64779 100644
 --- a/tests/backtest/test_evolve_step.py
@@ -2754,6 +3450,147 @@ index 0000000..c31ec2b
 +    from tests.backtest.synthetic_market import MarketSpec
 +    cuts = decision_cuts(MarketSpec("null", START, 14, (("EUR_USD", 1.1),)))
 +    assert len(cuts) == 9 and all(c.weekday() < 5 and c.hour == 0 for c in cuts)   # 13 days, 4 weekend
+diff --git a/tests/backtest/test_look_register.py b/tests/backtest/test_look_register.py
+new file mode 100644
+index 0000000..7787149
+--- /dev/null
++++ b/tests/backtest/test_look_register.py
+@@ -0,0 +1,135 @@
++"""The look register (GAP-P12D-64): every grade writes its line FIRST, and the line counts.
++
++Re-scoring revisions against the same history is the false-positive channel (the best of 20
++uncounted revisions passes pure noise 21-37% of the time, VALIDATOR §5.2). The register counts
++looks; it changes no threshold and no gate.
++"""
++
++from __future__ import annotations
++
++import importlib.util
++import json
++import math
++import sys
++from dataclasses import replace
++from datetime import datetime, timedelta, timezone
++from pathlib import Path
++
++import pytest
++
++from config.schemas import load_config
++from tests.backtest.harness import NOT_REPLAYED
++from tests.backtest.look_register import LookRefused, LookRegister, config_hash, data_tier
++from tests.backtest.oos_plan import plan_folds
++from tests.backtest.oos_runner import RunInputs, run_walk_forward
++from tests.backtest.report import build_report
++from tests.backtest.test_oos_runner import _folds
++from tests.backtest.walk_forward import Fold
++
++UTC = timezone.utc
++ROOT = Path(__file__).resolve().parents[2]
++GIT = ("c0ffee", False)
++
++
++def _look(reg, cfg, source="synthetic", folds=None, family="f", **kw):
++    return reg.register(cfg=cfg, source=source, instruments=sorted(cfg.instruments.enabled),
++                        folds=folds if folds is not None else _folds(), family=family, git=GIT, **kw)
++
++
++def _fold(test_start: datetime, test_end: datetime) -> Fold:
++    return Fold(0, test_start - timedelta(days=730), test_start, test_start + timedelta(days=7), test_end)
++
++
++def test_each_look_is_one_exclusively_created_file_and_nothing_is_overwritten(tmp_path, acis_config) -> None:
++    reg = LookRegister(tmp_path / "looks")
++    first = _look(reg, acis_config)
++    squatter = tmp_path / "looks" / "000003.json"          # a number another run already claimed
++    squatter.write_text(json.dumps({"family": "other", "tier_name": "synthetic"}), encoding="utf-8")
++    before = squatter.read_bytes()
++    second = _look(reg, acis_config)
++    assert (first.look_id, second.look_id) == ("000001", "000004")
++    assert squatter.read_bytes() == before                 # claimed numbers are never overwritten
++    line = json.loads(Path(second.path).read_text(encoding="utf-8"))
++    assert line["git_commit"] == "c0ffee" and line["config_hash"] == config_hash(acis_config)
++    assert line["previous"] == ["000001", "c0ffee", config_hash(acis_config)]
++    assert set(line) >= {"registered_utc", "family", "tier_name", "instruments", "start", "end", "changed", "operator"}
++    assert reg.family_counts() == {"f": {"synthetic": 2}, "other": {"synthetic": 1}}
++
++
++def test_the_tier_is_derived_from_the_data_never_claimed() -> None:
++    assert data_tier("synthetic-planted", plan_folds(2014, 2015)) == 0
++    assert data_tier("dukascopy", plan_folds(2014, 2023)) == 2
++    assert data_tier("histdata", plan_folds(2024, 2025)) == 3
++    assert data_tier("dukascopy", [_fold(datetime(2010, 1, 1, tzinfo=UTC), datetime(2011, 1, 1, tzinfo=UTC))]) == 1
++    assert data_tier("dukascopy", [_fold(datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC))]) == 4
++    with pytest.raises(LookRefused, match="straddles"):
++        data_tier("dukascopy", [_fold(datetime(2023, 6, 1, tzinfo=UTC), datetime(2024, 6, 1, tzinfo=UTC))])
++    with pytest.raises(LookRefused, match="one data tier"):
++        data_tier("dukascopy", plan_folds(2023, 2023) + plan_folds(2024, 2024))
++
++
++def test_a_real_family_that_looked_before_must_say_what_changed(tmp_path, acis_config) -> None:
++    reg = LookRegister(tmp_path / "looks")
++    first = _look(reg, acis_config, source="dukascopy", folds=plan_folds(2014, 2015), family="trend-v1")
++    assert first.tier_name == "validation" and first.changed == "first look" and first.previous is None
++    with pytest.raises(LookRefused, match="say what changed"):
++        _look(reg, acis_config, source="dukascopy", folds=plan_folds(2014, 2015), family="trend-v1")
++    second = _look(reg, acis_config, source="dukascopy", folds=plan_folds(2014, 2015), family="trend-v1",
++                   changed="gene ranges narrowed")
++    assert second.previous == ("000001", "c0ffee", config_hash(acis_config))
++    _look(reg, acis_config, family="synthetic-again")
++    _look(reg, acis_config, family="synthetic-again")        # tier 0 re-looks need no account
++    with pytest.raises(LookRefused, match="name its hypothesis family"):
++        _look(reg, acis_config, family="  ")
++
++
++def _inputs(tmp_path, cfg, look, folds=None):
++    return RunInputs(cfg=cfg, account="dev_paper", source="synthetic", loader=None, cache=None,
++                     folds=folds if folds is not None else _folds(), spx_closes={}, financing=None,
++                     work_dir=tmp_path / "engine", logger=None, look=look)
++
++
++def test_the_grade_refuses_before_any_compute_without_its_own_line(tmp_path, acis_config) -> None:
++    reg = LookRegister(tmp_path / "looks")
++    good = _look(reg, acis_config)
++    other_folds = _look(reg, acis_config, folds=_folds()[:1])
++    other_source = _look(reg, acis_config, source="synthetic-null")
++    handmade = replace(good, look_id="999999", path=str(tmp_path / "looks" / "999999.json"))
++    cases = {None: "no registered look", handmade: "not on disk", other_folds: "another run",
++             other_source: "another run"}
++    for look, why in cases.items():
++        with pytest.raises(LookRefused, match=why):
++            run_walk_forward(_inputs(tmp_path, acis_config, look))
++    Path(good.path).write_text(Path(good.path).read_text(encoding="utf-8").replace("f", "g", 1), encoding="utf-8")
++    with pytest.raises(LookRefused, match="not on disk as registered"):
++        run_walk_forward(_inputs(tmp_path, acis_config, good))
++    assert not (tmp_path / "engine").exists()               # refused before the engine was built
++
++
++def test_the_real_data_script_writes_its_line_before_it_grades(monkeypatch, tmp_path) -> None:
++    spec = importlib.util.spec_from_file_location("run_oos_validation", ROOT / "scripts" / "run_oos_validation.py")
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    cfg = load_config(ROOT / "config")
++    seen: list = []
++
++    def grade(inp):
++        line = json.loads(Path(inp.look.path).read_text(encoding="utf-8"))    # on disk BEFORE the grade
++        seen.append(line)
++        report = build_report(account=inp.account, period=(datetime(2014, 1, 8, tzinfo=UTC),) * 2, n_folds=2,
++                              in_sample=NOT_REPLAYED, out_of_sample=NOT_REPLAYED, per_regime={},
++                              guardrail_hash="h", expected_guardrail_hash="h", var_breach_frequency=math.nan,
++                              rule_violations=(), fidelity_caveats=())
++        return replace(report, look={"look_id": inp.look.look_id, "family_looks": {line["family"]: {"validation": 1}}})
++    for name, fn in (("ROOT", tmp_path), ("load_config", lambda p: cfg), ("missing_labels", lambda *a: []),
++                     ("load_spx_closes", lambda p: {}), ("load_rate_table", lambda p: None),
++                     ("make_financing", lambda t: None), ("run_walk_forward", grade)):
++        monkeypatch.setattr(mod, name, fn)
++    monkeypatch.setattr(sys, "argv", ["run_oos_validation.py", "--first-test-year", "2014", "--last-test-year", "2015"])
++    with pytest.raises(SystemExit):                          # no family, no look, no grade
++        mod.main()
++    assert seen == [] and not (tmp_path / "data" / "validation" / "looks").exists()
++    monkeypatch.setattr(sys, "argv", sys.argv + ["--family", "trend-v1", "--operator", "owner"])
++    assert mod.main() == 0
++    assert seen[0]["family"] == "trend-v1" and seen[0]["tier_name"] == "validation" and seen[0]["operator"] == "owner"
++    assert mod.main() == 2 and len(seen) == 1                # a second look must say what changed
 diff --git a/tests/backtest/test_metrics_exact.py b/tests/backtest/test_metrics_exact.py
 index 523082f..a6886b4 100644
 --- a/tests/backtest/test_metrics_exact.py
@@ -2768,6 +3605,38 @@ index 523082f..a6886b4 100644
  
  
  def test_rolling_var_breach_rate_second_breach_and_divisors() -> None:
+diff --git a/tests/backtest/test_oos_runner.py b/tests/backtest/test_oos_runner.py
+index 1fe2d98..4da635c 100644
+--- a/tests/backtest/test_oos_runner.py
++++ b/tests/backtest/test_oos_runner.py
+@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
+ from core.data.normaliser import RawTick
+ from core.regime.regime_types import RegimeType
+ from tests.backtest.data_loader import BacktestDataLoader, TickSource
++from tests.backtest.look_register import LookRegister
+ from tests.backtest.oos_runner import RunInputs, missing_labels, report_json, run_walk_forward, train_years
+ from tests.backtest.regime_labels import LabelledBarCache, LabelSpec
+ from tests.backtest.walk_forward import Fold
+@@ -58,10 +59,12 @@ def test_the_runner_grades_two_folds_end_to_end(tmp_path, acis_config) -> None:
+     assert missing_labels(cache, instruments, folds) == [] and train_years(folds) == [2014]
+ 
+     log = CapturingLogger()
++    look = LookRegister(tmp_path / "looks").register(cfg=acis_config, source="synthetic", instruments=instruments,
++                                                     folds=folds, family="test:runner", git=("test", False))
+     report = run_walk_forward(RunInputs(
+         cfg=acis_config, account="dev_paper", source="synthetic",
+         loader=BacktestDataLoader({"synthetic": _Synthetic()}, log), cache=cache, folds=folds,
+-        spx_closes={}, financing=None, work_dir=tmp_path / "engine", logger=log))
++        spx_closes={}, financing=None, work_dir=tmp_path / "engine", logger=log, look=look))
+ 
+     assert report.account == "dev_paper" and report.n_folds == 2
+     assert [r["fold"] for r in report.in_sample_evolution] == [0, 1]
+@@ -70,3 +73,5 @@ def test_the_runner_grades_two_folds_end_to_end(tmp_path, acis_config) -> None:
+     assert len(log.events("BACKTEST_RUN")) == 1
+     loaded = json.loads(report_json(report))
+     assert loaded["account"] == "dev_paper" and loaded["n_folds"] == 2
++    assert loaded["look"] == {"look_id": "000001", "family": "test:runner", "tier": "synthetic",   # GAP-P12D-64
++                              "family_looks": {"test:runner": {"synthetic": 1}}}
 diff --git a/tests/backtest/test_oracle_control.py b/tests/backtest/test_oracle_control.py
 new file mode 100644
 index 0000000..442b761
@@ -3154,7 +4023,7 @@ index 0000000..a64f799
 +    _, champ, log = _evolve(zigzag_history(80), 1)                       # under fitness_min_bars
 +    assert champ is None and log.events("EVOLUTION_EVALUATIONS") == []
 diff --git a/tests/unit/test_fitness_exits.py b/tests/unit/test_fitness_exits.py
-index 934e3ba..d9c9ee6 100644
+index 934e3ba..a3d9b14 100644
 --- a/tests/unit/test_fitness_exits.py
 +++ b/tests/unit/test_fitness_exits.py
 @@ -14,7 +14,7 @@ from datetime import timedelta
@@ -3192,7 +4061,7 @@ index 934e3ba..d9c9ee6 100644
      return simulate_trades(PS, bars, TEST_COSTS, atr_period=ATR), entry, sl, tp
  
  
-@@ -104,6 +110,29 @@ def test_a_trade_open_at_the_window_end_is_marked_at_the_last_close(direction: i
+@@ -104,6 +110,81 @@ def test_a_trade_open_at_the_window_end_is_marked_at_the_last_close(direction: i
      assert pnls == [pytest.approx(step - _cost(0) - _cost(1), abs=1e-15)]
  
  
@@ -3217,6 +4086,58 @@ index 934e3ba..d9c9ee6 100644
 +    assert marked == Trade(signal_bar=i, direction=direction, entry_price=entry, exit_bar=len(bars) - 1,
 +                           exit_price=bars[-1].close, pnl=marked.pnl, marked=True)
 +    assert marked.pnl == pytest.approx(-_cost(0) - _cost(1), abs=1e-15)
++
++
++def _gap(direction: int, open_at, reach: float = 0.0):
++    """Entry, one quiet bar, then a bar that OPENS at `open_at(entry, sl, tp)` and stays within a
++    tenth of a band step of it — or also reaches `reach` band steps toward the target."""
++    bars, i, entry, sl, tp = _trade_bars(direction, lambda e, s, t: _quiet(e, s, t, 1))
++    o, step = open_at(entry, sl, tp), _band_step(entry, sl, tp)
++    near = (o + step / 10, o - step / 10)
++    far = tp + direction * reach * step
++    high, low = (max(near[0], far), near[1]) if direction > 0 else (near[0], min(near[1], far))
++    # the close differs from the open, so an exit at the wrong one of the two cannot pass
++    bars.append(LabelledBar(ts=bars[-1].ts + timedelta(minutes=1), open=o, high=high if reach else near[0],
++                            low=low if reach else near[1], close=o + direction * step / 20, spread=_spread(1),
++                            regime=bars[-1].regime))
++    first, = trade_path(PS, bars, TEST_COSTS, atr_period=ATR)
++    return first, i, entry, sl, tp, o
++
++
++@pytest.mark.parametrize("direction", [1, -1])
++def test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop(direction: int) -> None:
++    """T6 (GAP-P12D-65, VALIDATOR §7.3): the first price after the gap is the open. Filling at
++    the stop there would credit a price the market never offered — optimistic in selection,
++    while the tick book correctly fills at the gapped tick."""
++    t, i, entry, sl, tp, o = _gap(direction, lambda e, s, p: s - direction * 3 * _band_step(e, s, p))
++    assert direction * (o - sl) < 0                                     # beyond the stop, against us
++    assert t == Trade(signal_bar=i, direction=direction, entry_price=entry, exit_bar=i + 2, exit_price=o,
++                      pnl=t.pnl, marked=False)
++    assert t.pnl == pytest.approx(direction * (o - entry) - _cost(0) - _cost(1), abs=1e-15)
++
++
++@pytest.mark.parametrize("direction", [1, -1])
++def test_a_bar_that_opens_exactly_at_the_stop_exits_at_the_stop(direction: int) -> None:
++    t, i, entry, sl, tp, o = _gap(direction, lambda e, s, p: s)
++    assert (t.exit_bar, t.exit_price) == (i + 2, sl)
++    assert t.pnl == pytest.approx(direction * (sl - entry) - _cost(0) - _cost(1), abs=1e-15)
++
++
++@pytest.mark.parametrize("direction", [1, -1])
++def test_a_gap_through_the_stop_is_not_rescued_by_a_rally_to_the_target(direction: int) -> None:
++    """Stop before target (§6.1) holds on a gap bar: it exits at the gapped open even when the
++    same bar's range later reaches the target."""
++    t, i, entry, sl, tp, o = _gap(direction, lambda e, s, p: s - direction * 3 * _band_step(e, s, p), reach=1.0)
++    assert (t.exit_bar, t.exit_price) == (i + 2, o)
++
++
++@pytest.mark.parametrize("direction", [1, -1])
++def test_a_gap_through_the_target_is_not_credited(direction: int) -> None:
++    """Tightening only: a bar that opens BEYOND the target still fills at the target's price,
++    never at the better open."""
++    t, i, entry, sl, tp, o = _gap(direction, lambda e, s, p: p + direction * 3 * _band_step(e, s, p))
++    assert direction * (o - tp) > 0
++    assert (t.exit_bar, t.exit_price) == (i + 2, tp)
 +
 +
  @pytest.mark.parametrize("direction", [1, -1])

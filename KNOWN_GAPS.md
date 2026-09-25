@@ -144,6 +144,191 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-84: PRE-EXISTING ON MAIN — the graded backtest book fills a gapped-through stop AT THE STOP, not at the gap price, so every graded result flatters gap losses
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X1) in the BUILDER-2 branch audit. The lead VERIFIED it on main: tests/backtest/book.py `maybe_close` runs `if price <= pos.stop_loss: return self.close_at(pos, pos.stop_loss, …)`, so the fill is the stop level however far the tick has gapped past it. The auditor's reproduction: a gap to 1.0950 against a 1.0990 stop books −100 instead of −500 per 100k)
+- Area: tests/backtest/book.py `maybe_close` (the graded tick book behind every §14 grade, the falsification runs and the cost ladder); master §8.5's gap law (ACIS_SPEC.md "gap" / black-swan preparedness)
+- Description:
+  - **The mismatch with real venues.** Real venues fill a triggered stop at the first price equal to or worse than the trigger. OANDA's v20 docs: "filled … by the first price that is equal to or worse than the threshold"; backtrader fills gapped stops at the open.
+  - **What the book does instead.** It books the stop level exactly, so weekend gaps, news gaps and thin-liquidity jumps all land at the stop. Every graded result understates gap losses: the "false encouragement" class this project exists to prevent.
+  - **The selection side is now stricter than grading.** BUILDER-2's T6 made the selection-side fitness simulator fill gaps at the open.
+  - **An earlier test covered a different path.** The phase-9 "weekend gap through stop books loss at gap price" test exercises the Risk Monitor, not this graded book.
+- Justification: open. The fix is a TIGHTENING one-liner that fills at `min(price, stop)` for longs and `max(price, stop)` for shorts, pinned by hand-worked tests for a gap through the stop, falsified. It is DEFERRED until after the BUILDER branch merges, because that branch also edits tests/backtest/book.py and a fix on main now would conflict. It is the first change applied after the merges. Until then, any graded number is optimistic on gaps. The ladder's verdict (the engine loses, [[GAP-P12D-49]]) only gets worse, so no conclusion flips.
+- Linked: [[GAP-P12D-83]], [[GAP-P12D-65]], [[GAP-P12D-49]], [[GAP-0001]]
+
+## GAP-P12D-82: four latent look-ahead or artifact paths in the research instrument, found by the structural leakage suite (pre-existing on main)
+- Severity: medium · Likelihood: medium
+- Status: open (2026-09-25 — surfaced by BUILDER-2's T1/T2 leakage sweeps; see its branch report `BUILDER2_REPORT_2026-09-24.md` §2 and §5. Each has a named mechanism and `file:line` evidence. None leaks on the current production call paths, which the sweeps checked clean: 102,998 / 102,961 decisions compared)
+- Area: core/optimizer/fitness.py (`trade_path` costs), core/optimizer/qiea.py (`fitness_window`), the NVMA session-median callback via `MarketStateFactory`, the per-regime fitness windows (ACIS-03 §6)
+- Description:
+  1. **F1: the fitness fill pays the entry bar's CLOSING spread**, a datum from after the fill. It is a small cost look-ahead in selection.
+  2. **F2: QIEA's `fitness_window` bounds only the START of the span.** It would evolve on bars after `now` if a caller supplied them. The production caller does not, and `refuse_lookahead` plus the new sweep check it.
+  3. **F3: materialising the tick stream leaks end-of-tape session medians into NVMA.** Every current path is lazy; any `list(market_states(...))` before labelling would leak.
+  4. **F5: regime-sliced fitness windows are concatenated across time**, so every junction between two regime stretches is a synthetic price jump. After T6's gap-through exit it is no longer optimistic, but the series itself is an artifact.
+- Justification: open. **DELEGATED DECISIONS** (the lead's recommendations under the owner's delegation, recorded for review):
+  - **F2 [impl]:** the one-line tightening, keeping only `b.ts + bar_seconds <= now`. No ratification is needed.
+  - **F1 [spec, ACIS-03]:** charge the SIGNAL bar's closing spread, the latest known at decision time. This is the clean no-look-ahead convention.
+  - **F5 [spec, ACIS-03]:** simulate each contiguous regime stretch separately, flat at every junction.
+  - **F3 [impl]:** make it structural via the T8 decision-time accessor.
+
+  All four are built AFTER the three open branches merge, to avoid conflicts. F1 and F5 change fitness numbers, so they get an ACIS-03 amendment. The gene search space is unchanged, so no re-baseline is needed.
+- Linked: [[GAP-P12D-65]], [[GAP-P12D-64]], [[GAP-P12D-83]]
+
+## GAP-P12D-83: the dual audit of the BUILDER-2 branch (leakage suite, look register, T6)
+- Severity: medium · Likelihood: high
+- Status: open (2026-09-25 — the constitution's two lenses only, launched under the pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`. The branch `worktree-agent-a8937e82f9a7a5391` is at head `5d96570`, and BUILDER-2's own work sits on top of the BUILDER-branch merge `577d882`. Lead pre-checks: `report.py` gains only an informational `look` field and the `passed` gate is byte-identical; no guard, spec or ledger file is touched; the lead re-ran the full branch suite independently: 864 passed, 6 skipped, which matches the author)
+- Area: the BUILDER-2 branch — the leakage suite (T1/T2/T7), the look register and its `run_walk_forward` refusal, and T6 gap-through exits in `core/optimizer/fitness.py`
+- Description: BUILT, PENDING AUDIT.
+  - **EXTERNAL lens IN (2026-09-25, archive/AUDIT_BUILDER2_BRANCH_EXTERNAL_2026-09-25.md)**, every finding reproduced by the auditor:
+    - **X1:** pre-existing on main, and verified by the lead. It has its own entry, [[GAP-P12D-84]].
+    - **X2 (MED-HIGH):** `trade_path_decisions` stamps every exit at bar j+0.5, so a planted leak where a gap exit reads the bar's close gives 0 T1 and 0 T2 violations over 479 cuts. The detector is blind to re-stamped exits. T6's gap exit also pays the bar's CLOSING spread for a fill at the open, the exit-side twin of [[GAP-P12D-82]] F1.
+    - **X4 (MED): the register's completeness rests on caller diligence.**
+      - a look in a throwaway directory passes `verify_look`;
+      - deleting the latest line is undetectable;
+      - dirty-tree real-data looks are accepted;
+      - `dukascopy-mirror` counts as tier 0;
+      - renaming a family resets its history;
+      - one empty line, as after a power loss, breaks every later registration;
+      - it lives in git-ignored /data/;
+      - no per-look outcome is recorded, so the DSR and PBO trial variance cannot be derived.
+    - **X5/X7 (MED): honesty wording.** The suite's "clean: no decision depends on data after it" overclaims; an empirical detector certifies nothing by its silence (Fonseca). It also cites Gençay's "structural guardrail" for what is a two-run detector (T8 would be the structural one).
+    - **X3 (MED-LOW):** a bar that opens beyond the target and then touches the stop is booked as a stop.
+    - **X6/X8/X9 (LOW):** the labeller tape is too short to show F3; the engine grid is anchored at 00:00 UTC, not 17:00 New York; tier "forward" starts 2026-01, before the June-2026 model cutoff ([[GAP-P12D-66]]).
+    - **Honest negatives:** whole-tail statistic leaks are caught; exclusive create is atomic; looks survive crashed grades; T6's stop-at-open matches OANDA and backtrader.
+    - **The auditor's verdict:** a strict empirical detector for value look-ahead on price data, not a certificate.
+  - **INTERNAL lens IN (2026-09-25, archive/AUDIT_BUILDER2_BRANCH_INTERNAL_2026-09-25.md): "every guard can be made to miss"; NOT fit to merge until fixed.** Findings:
+    - **HIGH-1: the look register can be bypassed.** The lead REPRODUCED all five cases with `r_look_register.py`:
+      - L1: a validation-tier line in a temp dir grades to completion while the canonical register is untouched;
+      - L2: a source named `dukascopy` but keyed `synthetic` grades as tier 0;
+      - L3: one line serves three grades;
+      - L4: a hand-forged line on disk passes `verify_look`;
+      - L5: an empty file left by a power cut bricks the register with `JSONDecodeError`, which `run_oos_validation` does not catch.
+      The fix: pin ONE canonical register; derive the tier from the source OBJECT; CONSUME a line at grade time, so one line is one grade; hash-chain or otherwise make deletion and forgery detectable; tolerate or repair a truncated line and fail closed; record each look's outcome. This matches EXTERNAL X4.
+    - **MEDIUM-1:** a whole-file statistic memoised on the source name hides from both T1 and T2 (0/129 cuts, against 129/129 when recomputed), because `PerturbedMarket` keeps the reference's name and workers are reused. FIX: give each variant a distinct source name, in a fresh spawned process.
+    - **MEDIUM-2:** a gap exit reading its own bar's close passes the exhaustive fitness sweep, because every exit is stamped at j+0.5. This agrees with EXTERNAL X2. FIX: stamp at j.
+    - **MEDIUM-3:** the evolution sweep's T2 has never caught anything. Only T1 catches the author's own mutation and peeks of +5, +20 and +60 min. FIX: a T2 control that bites.
+    - **MEDIUM-4:** the AGON sweep cannot fail on a look-ahead in AGON's own code. With the perturbation switched off, the AGON sweep, the bar-builder sweep and every T7 control stay green. FIX: controls that bite.
+    - **LOW:** concurrent first-look registrations; the dirty flag counts untracked files and the commit is not re-checked at grade time; a bar opening beyond the target then touching the stop is booked as a stop (= X3); T6's ACIS-03 amendment is owed; the engine tap is not in the default suite.
+    - **Honest negatives:**
+      - the engine path catches a planted F3 leak (T2 −2,200, T1 −1,704 decisions), and the honest run is clean;
+      - the 60 s reference is not vacuous (51,118 labels, 20 orders);
+      - all 14 new falsification cases go red for their stated reasons;
+      - 10 of 10 T6 hand mutants were killed;
+      - `passed` is byte-identical;
+      - the export gives 864 passed, 6 skipped.
+  - **Status: BOTH LENSES IN; the fixes are not yet assigned.** Per the owner's 2026-09-25 rule, sending this list back to BUILDER-2 is a NEW launch and needs the owner's explicit go. The alternative is the lead fixing it in-session.
+- Justification: open until both lenses' findings are triaged and the branch merges on the owner's go. It merges AFTER the BUILDER branch, which it stacks on.
+- Linked: [[GAP-P12D-64]], [[GAP-P12D-65]], [[GAP-P12D-82]], [[GAP-P12D-72]]
+
+## GAP-P12D-81: lot-step rounding can orphan one leg of a pair group, leaving a naked directional position — on the BUILDER-3 branch, looser than main
+- Severity: high · Likelihood: medium
+- Status: open (2026-09-25 — found by AUDIT-INTERNAL (F11) in the BUILDER-3 branch audit. The lead REPRODUCED it with `r9_pair_leg_rounding.py`: with legs of 1,500 and 900 units, base `bdd3a75` fills both, while head `d8361a7` leaves only EUR_USD +1,000 at the venue, because the 900-unit leg is under the minimum lot and refused)
+- Area: the BUILDER-3 branch (lot rounding in execution); core/governor/capital_governor.py (atomic groups, §5.5 both-or-neither at min-leg); core/execution/orchestrator.py
+- Description: the new per-order lot rounding and minimum-lot refusal act on each leg independently. A pair group whose smaller leg rounds below the minimum loses that leg, and the surviving leg is a directional position the strategy never intended. That breaks master §5.5's atomic-group law (both legs or neither).
+- Justification: open and BLOCKING for the merge. FIX: group atomicity in execution. Rounding and minimum-lot checks run over the WHOLE group before any leg is sent, and if any leg would be refused or rounded to zero, the whole group is refused. Proof: a regression test mirroring the reproduction, falsified.
+- Linked: [[GAP-P12D-57]], [[GAP-P12D-77]], [[GAP-0049]]
+
+## GAP-P12D-80: PRE-EXISTING ON MAIN — the engine's daily-loss session halt fires at most once per process; the Guardrails latch is reset only by a human resume
+- Severity: critical · Likelihood: high
+- Status: open (2026-09-25 — found by AUDIT-INTERNAL (F2) in the BUILDER-3 branch audit. The lead REPRODUCED it on BOTH base `bdd3a75` (i.e. main) and the branch with `r2b_inprocess_latch.py`: within one process, the day-1 breach halts (`drawdown_halt`), but a 2.1% breach on day 3 does not (`formula`))
+- Area: core/risk/guardrails.py (`_session_halted`, reset only in `rearm()`, which is called on a human resume); master §8 (the daily-loss limit is SESSION-scoped and auto-clears at the boundary); ACIS-07
+- Description:
+  - **The latch outlives the halt.** The Governor's session halt auto-clears at the next session boundary, as §8 intends. But the Guardrails latch `_session_halted`, which stops the monitor from re-issuing, stays set until a human resume.
+  - **So in one process only the FIRST daily-loss breach ever halts.** Every later day's breach is silently ignored.
+  - **It is a guardrail that works once per process lifetime.** It went unseen because every test exercises a single breach, and the production runtime does not exist yet. It sits on main now, and the backtest harness's risk path would inherit it.
+  - **It is the root of the branch's [[GAP-P12D-78]].**
+- Justification: open and BLOCKING (a guardrail defect). The fix RESTORES the spec's own semantics and is tightening-only: the guard fires again on every day it is breached. **DELEGATED:** it is fixed on the BUILDER-3 branch, and raised to the owner as a HALT-semantics item: the session latch re-arms at the session boundary, exactly when the Governor's session halt auto-clears. Proof: an in-process multi-day breach test and a restart variant, falsified.
+- Linked: [[GAP-P12D-78]], [[GAP-P12D-77]], [[GAP-P12D-59]]
+
+## GAP-P12D-79: on the BUILDER-3 branch, one failed halt-ledger write during an equity-floor breach loses the equity breaker entirely — no halt, no freeze, never re-issued
+- Severity: critical · Likelihood: low
+- Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X2) in the dual audit of the BUILDER-3 branch. The lead REPRODUCED it on the branch export with the auditor's `r2_store_failure.py`. A `database is locked` error on the `halt_event` write during the equity-floor breach makes `evaluate` raise. Afterwards entries are allowed (`formula`), the orchestrator is not frozen, no halt row exists, and two further evaluates below the floor re-issue nothing. On main the equity breaker has no store dependency)
+- Area: the BUILDER-3 branch (the persistent halt sink and restore_on_boot); core/risk/guardrails.py (latch set before the sink call); master §8 (the equity breaker is unthrottleable and first)
+- Description:
+  - **Two ordering choices combine.** The Guardrails latch `_equity_flattened` is set BEFORE the sink call. The new persistent sink writes the ledger BEFORE it forwards to the Governor or execution. So any store failure (a lock from a second process such as the MCP plane, a full disk, an I/O error) swallows the flatten and the HALT, and the latch prevents any retry.
+  - **Why it is critical.** It is a NEW failure mode relative to main, on the single most important guard. The likelihood is low; the severity is that the guard silently does not fire.
+- Justification: open and BLOCKING for the merge.
+  - **The fix principle: the guard acts first, and recording can never gate it.** Forward the halt or flatten to the Governor and execution FIRST, then persist. If persisting fails, retry and alarm, and keep the halt in force in memory; never swallow it. Set the latch only after the action succeeded.
+  - **Proof:** regression tests that inject a store failure at each write and assert the halt and flatten still take effect, falsified per A16.
+- Linked: [[GAP-P12D-75]], [[GAP-P12D-77]], [[GAP-P12D-78]]
+
+## GAP-P12D-78: on the BUILDER-3 branch, a stale restored session-halt row latches the breaker, so after a restart the next day's 2% breach no longer halts — LOOSER than main
+- Severity: high · Likelihood: medium
+- Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X1). The lead REPRODUCED it on exports of base `bdd3a75` and branch head `d8361a7` with the auditor's `r1_stale_session_latch.py`:
+  - **base:** day-2 fresh 2% breach → `drawdown_halt`; still `drawdown_halt` after an in-session recovery.
+  - **branch:** → `formula_zero`, then `formula` (TRADING) after the recovery; the day-1 session row is still open)
+- Area: the BUILDER-3 branch (restore_on_boot, the persistent halt sink); core/risk/guardrails.py `_session_halted`; master §8 (the daily loss is session-scoped and auto-clears at the boundary)
+- Description:
+  - **The mechanism.** A SESSION halt auto-clears at the next session boundary in the Governor, but the branch's halt ledger keeps its row "uncleared", because only a human resume clears rows. At boot the row is restored, and Guardrails' `_session_halted` latch is set again. A NEW breach on a later day then finds the latch already set and issues no session halt.
+  - **The effect.** After a restart, a fresh daily-loss breach does not halt, and entries resume as soon as the taper allows.
+  - **Why it matters.** It breaks the tightening-only claim. The branch is looser than main in exactly the "restart" case it was built to harden.
+- Justification: open and BLOCKING for the merge.
+  - **The fix:** session-scoped halts must be restored WITH their expiry. A row whose session boundary has passed is closed as auto-expired, never re-latched. The restore must re-arm the Guardrails latches consistently with the restored state.
+  - **Proof:** a regression test mirroring the reproduction (restart the next trading day; a fresh breach halts; the halt survives an in-session recovery), falsified.
+- Linked: [[GAP-P12D-75]], [[GAP-P12D-77]], [[GAP-P12D-79]], [[GAP-P12D-59]]
+
+## GAP-P12D-77: the dual audit of the BUILDER-3 branch — findings and triage
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — the constitution's two lenses only. EXTERNAL is in (archive/AUDIT_BUILDER3_BRANCH_EXTERNAL_2026-09-25.md), and INTERNAL is running. Lead verification: the full branch suite re-run gives 856 passed, 6 skipped; X1 and X2 were reproduced)
+- Area: the BUILDER-3 branch `worktree-agent-a9e00713d15bb5082` (head `d8361a7`)
+- Description: triage of the EXTERNAL findings.
+  - **Each has its own entry:**
+    - X1 → [[GAP-P12D-78]], looser than main, blocking;
+    - X2 → [[GAP-P12D-79]], the equity breaker lost on a store failure, blocking.
+  - **X3 (HIGH; not looser than main, which doubled):** "reduce-only" is check-then-act in the engine, and the venue receives a plain opposite-side order. A stop filling in between, or two racing closes, leaves an unprotected opposite position. Real venues close atomically:
+    - cTrader `ProtoOAClosePositionReq` ("The unique ID of the position to close");
+    - OANDA `REDUCE_ONLY`;
+    - FIX PositionEffect(77)=C.
+
+    FIX: carry the close intent across the face boundary. The `ExecutionFace` contract gains a close-position operation (or a reduce-only flag) that the adapter maps to the venue's atomic close. That is an ACIS-06 amendment; fold it into the ACIS-13 review with [[GAP-P12D-70]]. The mock face must implement it atomically.
+  - **X4 (MED-HIGH):** the risk and fill stores run in the default rollback journal with `synchronous=FULL`, which SQLite documents as "not necessarily durable across a power loss". FIX: WAL + FULL via the existing `core/data/sqlite_wal.py` helper. It is live because of [[GAP-P12D-76]].
+  - **X5 (MEDIUM, reproduced by the auditor):** the pre-close ban and weekend flatten key only on the Friday close. FTMO binds at ANY closure of two hours or more (it closed FX on Dec 25 and Jan 1 in 2025). FIX: key on the calendar's next ≥2 h closure, holidays included ([[GAP-P12D-58]]).
+  - **Lower findings:**
+    - X6: failing closes are re-sent every tick with no backoff, though FTMO counts closes toward its request cap. FIX: backoff plus a close ceiling.
+    - X7: FTMO 1-Step's end-of-day trailing max loss has no safe encoding. RECORD: the rule type is owed before any 1-Step account.
+    - X8: stale FTMO page date. FIX the citation.
+    - X9: the resume fingerprint is 48 bits of unsalted SHA-256, an offline guessing oracle for a human-chosen token. FIX: HMAC or salted, and never a weaker form than the existing verifier ([[GAP-P10E-03]]).
+  - **Honest negatives, from the auditor:**
+    - FTMO 2-Step reproduces exactly (95k, 97k, 96k; static 90k);
+    - the Prague DST day boundaries fall while FX is closed (2025–27);
+    - the rolling 24-hour budget is at least as strict as a calendar cap;
+    - lot rounding is down-only;
+    - no guard, rulebook, spec or ledger file is touched.
+  - **Unconfirmed:** E8's rules (its help centre returned 403).
+- **INTERNAL lens IN (2026-09-25; archive/AUDIT_BUILDER3_BRANCH_INTERNAL_2026-09-25.md): the branch is NOT tightening-only.** Its F0 is X2, and its F1 is X1.
+  - **New entries, reproduced by the lead:**
+    - [[GAP-P12D-80]] (F2): PRE-EXISTING ON MAIN, the daily-loss halt fires once per process;
+    - [[GAP-P12D-81]] (F11): lot rounding orphans a pair leg.
+  - **F4:** the reduce-only close race. It confirms X3: two concurrent closes leave the venue SHORT 100k, and a hedging venue ends net short 200k. It is a BLOCKER before any demo or live attach.
+  - **F3 (DELEGATED DECISION):** a restart while the account is up now reads a later loss LOWER than main, because main re-anchors at the post-restart equity by accident. The branch is RESTART-INVARIANT and faithful to the firm's static rule, which anchors on initial capital. The lead ACCEPTS restart-invariance as the property, and the branch's claim is corrected from "tightening-only" to "restart-invariant; tightening elsewhere".
+  - **F6:** an `initial_capital` typo can disable the static rule. FIX: schema validation plus a test.
+  - **F5:** re-emitted closes are unbounded, and a restart forgets attempts. FIX: backoff, a ceiling, and persisted attempts (with X6).
+  - **F7:** restore-before-evaluate is only a convention. FIX: enforce it.
+  - **F8:** a Governor-only resume re-halts at the next restart. FIX: one human-resume path that clears the ledger rows.
+  - **F9, F10, F12 (Low):** fix them. F10 is the same as X9.
+  - **Honest negatives:**
+    - no halt clears without a non-blank token;
+    - rounding never rounds up;
+    - sequential closes on a netting venue never grow a position;
+    - with no restore or declared capital, the drawdown series matches base exactly;
+    - corrupt anchors fail closed;
+    - 20 of 21 mutants were killed.
+- Justification: open. ONE consolidated fix list went back to BUILDER-3 on 2026-09-25. The merge needs [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-80]] and [[GAP-P12D-81]] fixed with regression tests and verified by the lead, X3/F4 fixed or filed as an attach blocker, and the owner's go. The merge needs [[GAP-P12D-78]] and [[GAP-P12D-79]] fixed and verified by the lead, plus the owner's go.
+- Linked: [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-74]], [[GAP-P12D-75]], [[GAP-P12D-58]], [[GAP-P12D-76]], [[GAP-P12D-70]]
+
+## GAP-P12D-76: the development laptop keeps losing power abruptly — four hard power-offs in 13 days — so it cannot host the demo engine
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — measured by the lead from the Windows System log, read-only. The latest: an "unexpected" shutdown at 00:40:22 on 2026-09-25 (event 6008) and a reboot at 04:48 (Kernel-Power 41). Every event-41 record reads `BugcheckCode=0`, `PowerButtonTimestamp=0`, `LongPowerButtonPressDetected=false`: no crash, no button, a straight loss of power. Earlier ones: 2026-09-23 08:20, 2026-09-23 16:28 (during sleep), and 2026-09-12 23:51 (recorded in TODO.md). The battery now reads 100% on AC, which suggests mains drops that the battery cannot carry)
+- Area: infrastructure. The laptop holds the ONLY copy of the tick set ([[GAP-P12D-50]]) and is the only machine running ACIS work; the demo engine (Track A) needs an always-on host
+- Description:
+  - **The pattern.** The laptop drops power without warning roughly every few days. Last night it killed three running build agents mid-stage, leaving uncommitted, possibly truncated, files in their worktrees. They were resumed and told to verify file integrity first.
+  - **Why the demo cannot run here.** For a trading engine a power drop means: the fast loop and the §8.6 watchdog die TOGETHER, which defeats the watchdog's purpose; the feed goes stale; and a restart must reconcile against the venue. [[GAP-P12D-55]] and [[GAP-P12D-75]] exist because restarts are dangerous. Server-side stops still protect open positions, but a host that dies every few days makes every restart path a routine event, not an exception.
+  - **The data is at risk too.** Repeated hard power-offs also threaten the single copy of the 12 GB tick set.
+- Justification: open, owner-owned (hardware, and spend).
+  - **Recommendation:** run the demo engine on a small Linux VPS OUTSIDE the US, which FTMO requires. That is what the deployment gate (Docker + systemd + watchdog) was built for. Keep the laptop for development.
+  - **Also for the owner:** check the charger, the mains supply and the battery health (`powercfg /batteryreport` in an elevated shell). And make the second tick-set copy ([[GAP-P12D-50]]) sooner rather than later.
+- Linked: [[GAP-P12D-50]], [[GAP-P12D-51]], [[GAP-P12D-55]], [[GAP-P12D-75]]
+
 ## GAP-P12D-75: a restart silently clears every explicit HALT — `halt_event` rows are written but never read back
 - Severity: critical · Likelihood: high
 - Status: open (2026-09-25 — found by BUILDER-3 (F2). The lead VERIFIED it on main: core/risk/store.py writes `halt_event` (`record_halt`) and clears it (`clear_halt`), but nothing in `core/`, `monitoring/` or `scripts/` ever reads the table back)
