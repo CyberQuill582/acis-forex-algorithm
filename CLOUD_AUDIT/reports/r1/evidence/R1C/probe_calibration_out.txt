@@ -1,0 +1,7 @@
+rule EWMAC 16/64 sign, vol-targeted; N=20; 13.3 graded years; halflife 60 d
+planted trend: oracle SR/inst 0.755; rule theory SR/inst 0.250; pooled theory SR 0.828 (rho_pnl 0.0432); theory one-sided 5% power 0.915
+  null              mean SR -0.013 (se 0.025; sd 0.249)  detect rate (t>1.645) 0.040
+  planted           mean SR +0.808 (se 0.023; sd 0.227)  detect rate (t>1.645) 0.960
+  null_demeaned     mean SR -0.031 (se 0.026; sd 0.257)  detect rate (t>1.645) 0.020
+  planted_demeaned  mean SR +0.771 (se 0.025; sd 0.245)  detect rate (t>1.645) 0.910
+  expected: null mean 0, null sd ~ 1/sqrt(years) = 0.275, null detect ~0.05; planted mean 0.828, detect 0.915

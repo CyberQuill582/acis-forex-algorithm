@@ -1,0 +1,13 @@
+variant=lab  seeds=4  instruments=20  weekdays=3640 per seed  (null lab, no planted effect)
+  [PASS] 1 absence of linear autocorrelation    share of |acf(1..20)| > 1.96 robust se: 0.054    tolerance: <= 0.10 (lab tolerance; 0.05 nominal)
+  [PASS] 2 heavy tails (tail index 2 < a < 5)   Hill alpha (top 2.5%) 3.52; excess kurt 9.95     tolerance: Cont: 'higher than two and less than five'
+  [PASS] 3 gain/loss asymmetry ABSENT for FX    mean skew +0.039                                 tolerance: |skew| < 0.2 (lab tol.; Cont fn 2)
+  [PASS] 4 aggregational Gaussianity            excess kurt 1d 9.95 > 5d 4.58 > 20d 2.47         tolerance: monotone, 20d < half of 1d (lab tol.)
+  [PASS] 6 volatility clustering                mean acf(|r|) lags 1-5 0.199                     tolerance: > 0.05 (lab tolerance)
+  [PASS] 7 conditional heavy tails              kurt(r/sigma) 7.07 < kurt(r) 12.95               tolerance: 3 < conditional < unconditional
+  [PASS] 8 slow decay of |r| acf (power law)    beta 0.400; R2 power 0.943 vs exp 0.895          tolerance: Cont: beta in [0.2, 0.4]; power fits better
+  [info] mean |pairwise corr| 0.216 (spec rho 0.30);  Monday/weekday var ratio 1.245 (spec 1.25)
+  [n/a ] 5 intermittency, 9 leverage (equity), 10 volume, 11 time-scale asymmetry: not modelled / not asserted
+  [PASS] S intraday vol seasonality (self-cons.) corr(mean|r| by hour, sqrt(profile)) 0.993       tolerance: > 0.9; shape is a lab knob
+  [PASS] S spread peaks at the rollover hour    argmax hour 21                                   tolerance: == 21 UTC (lab rollover hour)
+SUMMARY variant=lab: 9/9 PASS
