@@ -488,6 +488,11 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
         - RDS MySQL db.t4g.micro: 0.167 h, $0.00, so it no longer runs;
         - Lambda, Glue, SNS, SQS, KMS, Secrets Manager, CloudWatch and Bedrock Claude Haiku 4.5: $0.00 (the Explore-AWS credit tasks).
       - The only thing still accruing is the snapshot, a few cents a month. KEEP it ([[GAP-P12D-50]]).
+    - **Owner pushback ("something is 100% eating credits, a drop observed in recent days after the account was reopened"). Re-checked the same evening:**
+      - **Payments:** $0.00 due, $0.00 unapplied, and "No financial records". AWS has NEVER charged the card.
+      - **The $2.03's timing:** it is mostly the dead server's 60 GB gp3 disk, 20.8 GB-Mo = 60 GB × 10.4 days, which matches its lifetime from setup (~09-11) to the AWS-triggered snapshot at termination (09-21). The charge stopped on 09-21. The "recent" drop is most likely billing lag: AWS updates credit estimates about once a day, the account was on hold 09-15..09-23, and the earlier usage posted after reinstatement. Inferred, not proven.
+      - **Cost Explorer** returned "Validation exception" and the Free Tier page failed to load in the agent's tab, so the daily series is UNVERIFIED.
+      - **OPEN, owner:** say which screen shows the drop, with its figures and dates. To confirm nothing accrues, re-read Credits → "Total estimated amount used" (and Bills → EBS GB-Mo) tomorrow. If it rose by more than a few cents, something is running; the prime unseen suspect is anything in a region or service `acis-data` cannot list.
 - [ ] **RDS is unverifiable with the current IAM user.** `rds:DescribeDBInstances` is `AccessDenied` for `acis-data` in every region, so the `db.t4g.micro` MySQL instance named in the owner's cost list can neither be confirmed nor deleted from here. **Only the root user in the console can check and remove it** — Billing → Bills, or RDS console with "any region" selected. This is the one item on that cost list that may still be billing.
 
 ## Standing rules (owner-directed)
