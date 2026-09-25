@@ -144,6 +144,14 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-85: the walk-forward harness carries open positions through the embargo, where nothing can act — so on weekend-flat accounts every position open at a fold's end is booked as a `weekend_holding` violation
+- Severity: medium · Likelihood: high
+- Status: open (2026-09-25 — found by the BUILDER agent while fixing F2 of [[GAP-P12D-72]]; the evidence is in its branch report. The lead has NOT reproduced it; verify before relying on it)
+- Area: tests/backtest/harness.py (fold boundaries, the embargo), tests/backtest/walk_forward.py, the §9.5 rule-violation tally (C-BT-7)
+- Description: at a fold's end the book keeps open positions across the embargo gap, during which no engine decision runs, so nothing can close them. On an account that disallows weekend holding, any engine position still open at a fold's end is later booked as a `weekend_holding` rule violation. The violation is caused by the harness's fold geometry, not by the strategy. So on weekend-flat accounts the §14 `rule_violations` gate fails for a reason unrelated to the engine, and a real violation is indistinguishable from this artifact.
+- Justification: open. FIX candidates (the lead's recommendation is the first): (a) flatten every open position at each fold's test end, at that tick's price, as the harness's declared convention; or (b) keep the embargo's rule clock off. Decide during the post-merge work. It interacts with BUILDER-3's weekend flatten ([[GAP-P12D-58]]).
+- Linked: [[GAP-P12D-72]], [[GAP-P11I-02]], [[GAP-P12D-58]]
+
 ## GAP-P12D-84: PRE-EXISTING ON MAIN — the graded backtest book fills a gapped-through stop AT THE STOP, not at the gap price, so every graded result flatters gap losses
 - Severity: high · Likelihood: high
 - Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X1) in the BUILDER-2 branch audit. The lead VERIFIED it on main: tests/backtest/book.py `maybe_close` runs `if price <= pos.stop_loss: return self.close_at(pos, pos.stop_loss, …)`, so the fill is the stop level however far the tick has gapped past it. The auditor's reproduction: a gap to 1.0950 against a 1.0990 stop books −100 instead of −500 per 100k)
@@ -406,7 +414,21 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - the suite gives 828 passed, 6 skipped;
     - the BUILDER's oracle figures reproduce exactly;
     - its account of MOP's method matches the paper.
-- Justification: open until the BUILDER's fixes land and the lead verifies them. Then the branch merges with the owner's go, after the merge-time items.
+- **FIXES LANDED (2026-09-25; BUILDER head `5d108de`), each committed separately and falsified:**
+  - F3 `6c8bb50`: **lead-verified**; the auditor's `trial_set.py` on the new head gives 23 trial Sharpes, the same as base;
+  - E6 `b842214`: a range-based step;
+  - F5+F9 `bb18730`;
+  - E9 `039a687`;
+  - F2 `3412f54`: the oracle obeys weekend-flat and minimum-hold rules;
+  - F1+E1 `9dd274d`: graded rungs, with profit factor 1.4 as the binding cut, and a full-scale test that kills the 4-hour duration mutant;
+  - E3+F4 `7d1d972`: NO VERDICT, exit 5;
+  - E2 `11fbe54`: GATE-LIMITED, exit 6;
+  - E4 `4b1e723`: an SR0 hurdle instead of the DSR claim;
+  - F6+E7 `76f2ce7`: strict JSON.
+  **What it surfaced:**
+  - a new finding, [[GAP-P12D-85]];
+  - an OWNER NOTE on E6: the range step moves period genes near their floor by large ratios (`ema_fast` 6 → 10). The delegated range-step decision trades one inconsistency (RSI moving 44% of its range) for another (small periods moving by large ratios). A grid-step neighbour, the external referent, is the refinement if it matters.
+- Justification: open until the lead verifies the full suite on the branch head, and the branch merges on the owner's go with the merge-time items applied: F7 (the ACIS-03 v1.5 text) and F8 (relocate BUILDER_REPORT and PARTIAL_BUILDER to archive/, and fix the link at plateau.py:5).
 - Linked: [[GAP-P12D-73]], [[GAP-P12D-37]], [[GAP-P12D-34]], [[GAP-P12D-38]], [[GAP-P12D-33]], [[GAP-P12D-71]]
 
 ## GAP-P12D-71: TSMOM's declared "raw returns, not excess returns" deviation rests on a false premise — for FX it drops carry, and the vote flips on 2–10% of days
