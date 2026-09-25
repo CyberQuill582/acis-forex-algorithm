@@ -12,11 +12,11 @@ Split out of core/risk/guardrails.py (GAP-P12M-01), which re-exports these names
     anchors on its first observation (ratified). A platform day anchors its `reset_basis`
     on the LARGER of the last observation before the reset and the first after it: the
     firm reads its value AT the reset, and the engine keeps the stricter bracketing sample.
-  * A restart is never a relaxation (GAP-0050, GAP-P12D-55): `export()` is persisted after
-    every evaluate and `restore()` puts it back before the first one. A restored static or
+  * A restart changes no reading (GAP-0050, GAP-P12D-55): `export()` is persisted after
+    every evaluate and `restore()` puts it back before the first one — restart-INVARIANT,
+    not stricter than a fresh re-anchor (audit F3, accepted). A restored static or
     trailing anchor never sits below the declared capital; a restored daily anchor is kept
-    for the same day, and a rollover missed while down brackets the downtime the same way
-    (the larger of the last persisted and the first new observation).
+    for the same day, and a rollover missed while down brackets the downtime the same way.
 """
 
 from __future__ import annotations

@@ -9,8 +9,10 @@ Invariants:
   * `limit_of: initial` sizes a limit as a % of the rulebook's declared `initial_capital`
     (FTMO: "5% of the Initial Simulated Capital"), so it is a schema error without one.
     The default `anchor` keeps every existing rule's meaning: a % of its own anchor.
-  * A declared `initial_capital` anchors static rules and seeds trailing high-water marks;
-    it can only make a rule stricter than the first observed basis would.
+  * A declared `initial_capital` (finite, > 0; a typo is fatal at load) anchors static
+    rules and seeds trailing high-water marks on the FIRM's line. Attached above it, a
+    static rule reads LOWER than a first-observed anchor would: faithful to the firm's
+    static rule, not stricter (audit F6/F3, accepted as the lead's delegated decision).
   * Per-account taper fractions may only be STRICTER than the ratified 0.60/0.80 floor.
 """
 
@@ -65,7 +67,7 @@ class AccountRulebook(_Strict):
     # Per-account override of the §9.5 taper — stricter-only (ratified floor).
     taper_start_fraction: float | None = Field(default=None, gt=0, le=0.60)
     entry_halt_fraction: float | None = Field(default=None, gt=0, le=0.80)
-    initial_capital: float | None = Field(default=None, gt=0)   # the account's starting capital
+    initial_capital: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def _initial_declared(self) -> "AccountRulebook":
