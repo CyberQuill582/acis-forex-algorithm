@@ -3,25 +3,24 @@
     python scripts/falsify_engine.py --quick         # 10 weeks, 3 short folds: a shape check, never a verdict
     python scripts/falsify_engine.py --workers 4     # THE run: over two graded years per market
 
-Stage 1 (GAP-P12D-37): the ORACLE positive control (tests/backtest/oracle.py) is graded on
-every market with the same folds, account and declared costs. The engine's verdict is VOID,
-and the engine is not run (exit 4), unless the harness recognises the oracle on planted (every
-non-DSR clause of `passed` met) and refuses it on null and permuted. A quick run only prints
-this stage: its graded span is too short for any verdict.
+Stage 1, the ORACLE positive control (GAP-P12D-37; tests/backtest/oracle.py): the perfect oracle
+and two graded rungs (`oracle.RUNGS`, just above and just below the §14 cut-offs) are graded on
+every market with the same folds, account and costs. The verdict is VOID unless the harness
+passes the oracle and the near-pass rung and refuses the near-fail rung, null and permuted.
+Stage 2: each market is labelled and graded by the real walk-forward (`run_walk_forward`); null
+and permuted must NOT pass, planted MUST. Writes data/validation/falsification/<run id>/. Each
+engine run reports the per-trade SR0 HURDLE the ratified gate demands (a hurdle, never "the
+oracle's Deflated Sharpe": the oracle is not in the trial set; audit E4).
 
-Stage 2: each market (tests/backtest/synthetic_market.py) is labelled, then graded by the real
-walk-forward (`run_walk_forward`: production config, account, costs and gates). The expected
-answers: null and permuted must NOT pass; planted MUST pass. Writes
-data/validation/falsification/<run id>/<kind>.json (and oracle_<kind>.json,
-oracle_deflation.json: the Deflated Sharpe the ratified gate gives the oracle under each engine
-run's own selection set). Exit 0 only when all three hold. A quick run exits 3: its graded
-span is under the two years §14 demands, so nothing can pass by design.
+Exit codes: 0 held; 1 FALSIFICATION FAILED; 2 an enabled instrument lacks a synthetic first mid;
+3 quick run, never a verdict; 4 VERDICT VOID (stage 1 failed, the engine never ran); 5 NO VERDICT
+(no planted, or no control; audits E3/F4); 6 GATE-LIMITED (planted met every non-DSR clause and
+failed ONLY the trial-count / DSR gate, reported as the gate's, not the engine's; audit E2).
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -31,10 +30,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from config.schemas import load_config  # noqa: E402
-from tests.backtest.deflated_sharpe import deflated_sharpe  # noqa: E402
 from tests.backtest.oos_runner import train_years  # noqa: E402
-from tests.backtest.oracle import void_reasons  # noqa: E402
-from tests.backtest.report import DSR_MIN  # noqa: E402
+from tests.backtest.oracle import RUNGS, void_reasons  # noqa: E402
 from tests.backtest.synthetic_grade import FIRST_MID, START, grade, label_year, oracle_row, plan  # noqa: E402
 from tests.backtest.synthetic_market import KINDS, MarketSpec  # noqa: E402
 
@@ -52,6 +49,13 @@ def main() -> int:
     ap.add_argument("--kinds", nargs="+", choices=KINDS, default=list(KINDS))
     ap.add_argument("--workers", type=int, default=2)
     a = ap.parse_args()
+    if not a.quick and ("planted" not in a.kinds or set(a.kinds) == {"planted"}):
+        # audits E3/F4: without planted there is no positive control and no expected pass, so a
+        # dead grader would "hold" on the controls alone; without a control, a grader that passes
+        # everything would "hold" on planted alone
+        print(f"NO VERDICT: --kinds {' '.join(a.kinds)} — a falsification verdict needs planted (the "
+              "positive control and the one expected pass) AND at least one of null / permuted")
+        return 5
     if a.quick:
         a.train_days, a.test_days, a.graded_days = 28, 12, 36
     folds = plan(a.train_days, a.test_days, math.ceil(a.graded_days / a.test_days))
@@ -70,11 +74,14 @@ def main() -> int:
     with ProcessPoolExecutor(max_workers=a.workers) as ex:
         # stage 1 (GAP-P12D-37): no engine verdict means anything until the grader recognises
         # a strategy KNOWN to be good, and refuses the same logic where it knows nothing
-        for fut in as_completed([ex.submit(oracle_row, specs[k], out, a.account, folds, ROOT)
-                                 for k in a.kinds]):
+        jobs = [ex.submit(oracle_row, specs[k], out, a.account, folds, ROOT) for k in a.kinds]
+        if "planted" in specs:          # audit E1: rungs just above and just below the §14 cut-offs
+            jobs += [ex.submit(oracle_row, specs["planted"], out, a.account, folds, ROOT,
+                               sign_error=p, tag=tag) for tag, p in RUNGS.items()]
+        for fut in as_completed(jobs):
             r = fut.result()
             oracle[r["kind"]] = r
-            print(f"  oracle {r['kind']:8s} trades={r['trades']} net={float(r['net_pnl']):,.2f} "
+            print(f"  oracle {r['kind']:17s} trades={r['trades']} net={float(r['net_pnl']):,.2f} "
                   f"sharpe={r['sharpe']:.2f} psr={r['psr']:.3f} non-DSR failures={r['non_dsr_failures']} "
                   f"({r['seconds']:,.0f} s)", flush=True)
         void = void_reasons({k: r["non_dsr_failures"] for k, r in oracle.items()})
@@ -94,22 +101,30 @@ def main() -> int:
                   f"sharpe={r['sharpe']:.2f} dsr={r['dsr']} trials={r['trials']} "
                   f"champions={r['champions']} failed={r['failed']} ({r['seconds']:,.0f} s)", flush=True)
 
-    # what the ratified gate says about the oracle had it been the strategy each run selected
-    deflation = {k: deflated_sharpe(oracle[k]["trade_returns"], r["trial_sharpes"], r["trials"])
-                 for k, r in results.items()}
-    for k, dsr in sorted(deflation.items()):
-        print(f"  oracle deflated by the {k} run's {results[k]['trials']} trials: DSR={dsr:.4f} "
-              f"(the gate needs {DSR_MIN})")
-    (out / "oracle_deflation.json").write_text(json.dumps(deflation, indent=1), encoding="utf-8")
+    for k, r in sorted(results.items()):
+        print(f"  {k}: the ratified gate's per-trade SR0 hurdle over this run's {r['trials']} trials "
+              f"= {r['sr0_hurdle']:.3f} (a hurdle the selected strategy's per-trade Sharpe must clear; "
+              "not a Deflated Sharpe of anything)")
 
     if a.quick:
         print("quick run: a shape check only — under two graded years nothing can pass, so no verdict")
         return 3
     wrong = sorted(k for k, r in results.items() if r["passed"] != EXPECT_PASS[k])
+    planted = results["planted"]
+    if wrong == ["planted"] and not planted["non_dsr_failed"]:
+        # audit E2: every other clause of `passed` held, so the only refusal is the ratified
+        # trial-count / Deflated Sharpe gate (GAP-P12D-33/37) — that says nothing about the engine
+        print(f"GATE-LIMITED — planted met every non-DSR clause of passed and failed only the "
+              f"trial-count / Deflated Sharpe gate (dsr={planted['dsr']}, trials={planted['trials']}; "
+              "GAP-P12D-33/37): uninterpretable, NOT an engine verdict")
+        return 6
     if wrong:
-        print("FALSIFICATION FAILED — wrong answer on:", ", ".join(wrong))
+        print("FALSIFICATION FAILED — wrong answer on:", ", ".join(wrong),
+              f"(planted's non-DSR failures: {planted['non_dsr_failed']})" if "planted" in wrong else "")
         return 1
-    print("falsification held: null and permuted fail, planted passes")
+    controls = [k for k in sorted(results) if k != "planted"]
+    print(f"falsification held on the markets graded in this run: planted passed; "
+          f"{', '.join(controls)} did not")
     return 0
 
 

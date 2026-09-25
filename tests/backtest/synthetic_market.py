@@ -134,13 +134,16 @@ class SyntheticMarket(TickSource):
             raise ValueError(f"{ts.isoformat()} is not a weekday tick of this market")
         return (d // 7 * 5 + d % 7) * spec.ticks_per_day + int(offset) // spec.tick_seconds
 
-    def episode_sign(self, instrument: str, ts: datetime) -> float:
-        """The sign of the planted episode containing the return that produced the tick at
-        `ts`: the state IN FORCE now, never the next one (no foresight of a change). On null
-        and permuted the same schedule exists but moves no price."""
+    def episode_at(self, instrument: str, ts: datetime) -> Episode:
+        """The planted episode containing the return that produced the tick at `ts`: the state IN
+        FORCE now, never the next one (no foresight of a change). On null and permuted the same
+        schedule exists but moves no price."""
         self.returns(instrument)                             # the schedule comes with the returns
         k = bisect.bisect_right(self._starts[instrument], self.index_of(ts)) - 1
-        return self._schedule[instrument][k].sign
+        return self._schedule[instrument][k]
+
+    def episode_sign(self, instrument: str, ts: datetime) -> float:
+        return self.episode_at(instrument, ts).sign
 
     def returns(self, instrument: str) -> array:
         if instrument not in self._returns:                  # built on first use, per instrument

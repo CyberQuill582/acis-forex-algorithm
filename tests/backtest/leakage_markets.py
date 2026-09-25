@@ -23,12 +23,14 @@ import bisect
 import math
 from array import array
 from datetime import datetime, timedelta
+from functools import partial
 from typing import Iterator, Mapping, Sequence
 
 from core.data.normaliser import RawTick
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.leakage import Decision, perturb_returns
-from tests.backtest.oracle import OracleLoop, OracleTick, grade_oracle
+from tests.backtest.oracle import grade_oracle
+from tests.backtest.oracle_loop import OracleLoop, OracleTick
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket
 from tests.backtest.walk_forward import Fold
 
@@ -91,18 +93,22 @@ def decision_cuts(spec: MarketSpec, step: timedelta = _DAY) -> list[datetime]:
 
 
 class LeakyOracleLoop(OracleLoop):
-    def __init__(self, market: SyntheticMarket, every: int = 1) -> None:
-        super().__init__(market)
+    def __init__(self, market: SyntheticMarket, *args, every: int = 1, **kw) -> None:
+        super().__init__(market, *args, **kw)
         self._every = every
 
-    def sign(self, st: OracleTick) -> int:
+    def on_state(self, st: OracleTick) -> None:
         j = self._market.index_of(st.timestamp)
+        if j % self._every == 0 and j + 1 >= len(self._market.returns(st.instrument)):
+            self._last[st.instrument] = st.mid
+            return                                 # nothing after this tick: no peek, no decision
+        super().on_state(st)
+
+    def sign(self, instrument: str, now: datetime) -> int:
+        j = self._market.index_of(now)
         if j % self._every:
-            return super().sign(st)
-        future = self._market.returns(st.instrument)
-        if j + 1 >= len(future):
-            return 0                               # nothing after this tick: no peek, no decision
-        return 1 if future[j + 1] > 0 else -1
+            return super().sign(instrument, now)
+        return 1 if self._market.returns(instrument)[j + 1] > 0 else -1
 
 
 def order_decisions(orders: Sequence, strategy_of: Mapping[str, str] = {},
@@ -129,6 +135,7 @@ def oracle_decisions(spec: MarketSpec, cfg, account: str, folds: Sequence[Fold],
     """The oracle through the REAL harness (Backtest, book, C8 costs) on `spec`, or on its
     variant at `cut`. `leak_every` > 0 swaps in the leaky control."""
     market = SyntheticMarket(spec) if cut is None else PerturbedMarket(spec, cut, mode)
-    loop = LeakyOracleLoop(market, leak_every) if leak_every else OracleLoop(market)
-    g = grade_oracle(spec, cfg, account, folds, logger, instruments=instruments, market=market, loop=loop)
-    return order_decisions(loop.book.orders, loop.book.strategy_of) + trade_decisions(g.trades)
+    loop_cls = partial(LeakyOracleLoop, every=leak_every) if leak_every else OracleLoop
+    g = grade_oracle(spec, cfg, account, folds, logger, instruments=instruments, market=market,
+                     loop_cls=loop_cls)
+    return order_decisions(g.orders) + trade_decisions(g.trades)

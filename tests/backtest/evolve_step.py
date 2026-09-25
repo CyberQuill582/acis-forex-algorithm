@@ -14,8 +14,10 @@ Invariants:
   * Seeds derive from (fold, regime, instrument), so a rerun reproduces every champion
     (ACIS-03 §3).
   * The returned record is the fold's in-sample transparency record. `trial_sharpes` holds
-    the holdout per-trade Sharpe of EVERY candidate champion (every instrument × regime that
-    produced one): the selection set the Deflated Sharpe deflates by (owner ruling GAP-P12D-25).
+    the holdout per-trade Sharpe of EVERY candidate champion (every instrument × regime whose
+    champion passed the holdout): the selection set the Deflated Sharpe deflates by (owner
+    ruling GAP-P12D-25). A candidate the §5.6 plateau law refuses is still a trial — it was
+    evaluated and selected — and is marked `plateau_refused`; only a staged one is a champion.
 """
 
 from __future__ import annotations
@@ -87,22 +89,24 @@ def evolve_fold(loop, fd, *, cfg: AcisConfig, costs: Mapping[str, CostModel],
             history = cache.history(instrument, regime, window_start, train_end, None)
             qiea = QIEA(opt, cost, logger, signal_bar_seconds=sig.signal_bar_seconds,
                         atr_period=sig.atr_period)
-            champion = qiea.evolve(regime, history, seed=seed_for(fd.fold.index, regime, instrument),
-                                   now=train_end)
+            result = qiea.evolve_outcome(regime, history, now=train_end,
+                                         seed=seed_for(fd.fold.index, regime, instrument))
+            champion, candidate = result.champion, result.candidate
             entry = {"instrument": instrument, "bars": len(history.bars), "champion": champion is not None,
                      "first_bar": history.bars[0].ts.isoformat() if history.bars else None,
                      "last_bar": history.bars[-1].ts.isoformat() if history.bars else None}
-            if champion is not None:
-                champions += 1
-                pnls = holdout_pnls(champion, history, opt, cost, sig.atr_period, train_end)
+            if candidate is not None:        # passed the holdout: a trial even if the plateau refused it
+                pnls = holdout_pnls(candidate, history, opt, cost, sig.atr_period, train_end)
                 res, m = expectancy_r(pnls), moments(pnls)
                 sharpe = m.sharpe if m is not None else None
                 if sharpe is not None:
                     trial_sharpes.append(sharpe)
-                entry.update(fitness=champion.fitness_score, holdout_e_r=res.e_r,
+                entry.update(fitness=candidate.fitness_score, holdout_e_r=res.e_r,
                              holdout_trades=res.n_trades, holdout_trade_sharpe=sharpe,
-                             param_set_id=champion.param_set_id)
-                if best is None or res.e_r > best["holdout_e_r"]:
+                             param_set_id=candidate.param_set_id, plateau_refused=champion is None)
+            if champion is not None:
+                champions += 1
+                if best is None or entry["holdout_e_r"] > best["holdout_e_r"]:
                     best, best_params = entry, champion
             candidates.append(entry)
         if best_params is not None:

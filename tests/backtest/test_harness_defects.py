@@ -92,3 +92,36 @@ def test_a_position_opened_through_the_book_remembers_its_entry_spread() -> None
     entry = _ms(T0, 1.10)
     model.apply_order(_order(T0, 1, entry.mid, entry.mid * 0.99, None), entry, book, "TREND", "X")
     assert book.open_by_inst["EUR_USD"].entry_spread == pytest.approx(entry.spread)
+
+
+# ------------- GAP-P12D-84: a gapped-through stop fills at the gap, never at the stop ----------- #
+
+def _stopped_out(direction: int, stop: float, gap_mid: float):
+    cost = CostModel(commission_per_side=0.0, slippage_per_side=0.0)
+    model = PositionModel(costs={"EUR_USD": cost}, max_hold_s=48 * 3600)
+    book = BookState()
+    entry = _ms(T0, 1.1000)
+    model.apply_order(_order(T0, direction, entry.mid, stop, None), entry, book, "TREND", "X")
+    gap = _ms(T0 + timedelta(days=2), gap_mid)          # e.g. a weekend gap past the stop
+    return model.maybe_close(book.open_by_inst["EUR_USD"], gap, book)
+
+
+def test_a_long_stop_gapped_through_books_the_gap_price_not_the_stop() -> None:
+    """A real venue fills a triggered stop at the first price equal to or worse than it (OANDA
+    v20; backtrader). Booking the stop level on a gap understated every gap loss (GAP-P12D-84):
+    here 1.0950 against a 1.0990 stop is −50 pips, not −10."""
+    closed = _stopped_out(1, stop=1.0990, gap_mid=1.0950)
+    # 1,000 units: gross (1.0950 − 1.1000)·1000 = −5.00, plus 0.10 round-trip spread = −5.10.
+    # Booked at the stop it read −1.10: the gap loss understated almost fivefold.
+    assert closed is not None and float(closed.pnl) == pytest.approx(-5.10)
+
+
+def test_a_short_stop_gapped_through_books_the_gap_price_not_the_stop() -> None:
+    closed = _stopped_out(-1, stop=1.1010, gap_mid=1.1060)
+    # short 1,000: gross (1.1060 − 1.1000)·(−1)·1000 = −6.00, plus 0.10 spread = −6.10 (not −1.10)
+    assert closed is not None and float(closed.pnl) == pytest.approx(-6.10)
+
+
+def test_a_stop_touched_exactly_still_fills_at_the_stop() -> None:
+    closed = _stopped_out(1, stop=1.0990, gap_mid=1.0990)
+    assert closed is not None and float(closed.pnl) == pytest.approx(-1.10)

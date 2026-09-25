@@ -56,7 +56,7 @@ def test_full_promotion_cycle_with_stall_restart_and_nvma_gate(tmp_path, acis_co
 
     # 2. QIEA evolves offline and stages — active stays empty (write-only-to-pending).
     qiea = QIEA(opt_cfg(), TEST_COSTS, log, signal_bar_seconds=60, atr_period=14)
-    champion = qiea.evolve(RegimeType.STRONG_TREND_UP, zigzag_history(500), seed=42, now=T0)
+    champion = qiea.evolve(RegimeType.STRONG_TREND_UP, zigzag_history(500), seed=5, now=T0)   # seed 42: plateau-refused (§5.6, GAP-P12D-34)
     assert champion is not None
     lib.stage(champion, now=BOUNDARY_0 - timedelta(hours=2))
     assert lib.get_active(RegimeType.STRONG_TREND_UP) is None

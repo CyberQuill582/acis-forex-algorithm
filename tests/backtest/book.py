@@ -4,8 +4,9 @@ A backtest IS a runtime, so the position layer the fast-loop GAPs (0075/0091b/00
 deferred lives here. Invariants:
 
   * An order fills at its `entry_price`. A position closes on a stop or target touch, an
-    opposite-direction order (reverse), or the max hold. A same-side repeat is ignored
-    (GAP-0075: the loop re-sizes every tradeable tick).
+    opposite-direction order (reverse), an `action="close"` order (at the tick's mid; nothing
+    to close is a no-op), or the max hold. A same-side repeat is ignored (GAP-0075: the loop
+    re-sizes every tradeable tick).
   * PnL is Decimal: gross minus the instrument's OWN C8 friction — one cost model per
     instrument, because costs are in price units and prices differ by scale (EUR/USD
     ~1.1, USD/JPY ~150; GAP-P12D-19) — plus financing on every real 17:00-New-York
@@ -94,6 +95,13 @@ class PositionModel:
         `regime` is the regime active when the loop opened the order (GAP-P12D-31), so a
         run can say which regime made or lost the money."""
         existing = book.open_by_inst.get(order.instrument)
+        if order.action == "close":
+            # a flatten fills at THIS tick's mid, as a max-hold close does — never at the order's
+            # entry_price (a Governor close carries its leg's original entry price)
+            if existing is not None:
+                book.book_close(self.close_at(existing, st.mid, st.timestamp, "close", book, st.spread),
+                                order.instrument)
+            return
         if existing is not None:
             if existing.direction == order.direction:
                 return                                   # same-side dedup (GAP-0075)
@@ -110,15 +118,19 @@ class PositionModel:
             entry_spread=st.spread)
 
     def maybe_close(self, pos: OpenPos, st: MarketState, book: BookState) -> ClosedTrade | None:
+        # GAP-P12D-84: a triggered stop fills at the first price equal to or WORSE than it (a
+        # gap past the stop books the gap); a target keeps its level (conservative on gaps).
         price = st.mid
         if pos.direction == 1:
             if price <= pos.stop_loss:
-                return self.close_at(pos, pos.stop_loss, st.timestamp, "stop", book, st.spread)
+                return self.close_at(pos, min(price, pos.stop_loss), st.timestamp, "stop", book,
+                                     st.spread)
             if pos.take_profit is not None and price >= pos.take_profit:
                 return self.close_at(pos, pos.take_profit, st.timestamp, "target", book, st.spread)
         else:
             if price >= pos.stop_loss:
-                return self.close_at(pos, pos.stop_loss, st.timestamp, "stop", book, st.spread)
+                return self.close_at(pos, max(price, pos.stop_loss), st.timestamp, "stop", book,
+                                     st.spread)
             if pos.take_profit is not None and price <= pos.take_profit:
                 return self.close_at(pos, pos.take_profit, st.timestamp, "target", book, st.spread)
         if (st.timestamp - pos.entry_ts).total_seconds() >= self.max_hold_s:

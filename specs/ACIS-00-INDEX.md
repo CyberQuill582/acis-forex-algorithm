@@ -30,7 +30,7 @@ ACIS-09 Backtest/Validation ──exercises 01–07 end-to-end; owns §14 gate
 |---|---|---|---|---|---|
 | `ACIS-SPEC-DATA-001` | `ACIS-01-DATA_INGESTION.md` | Data `[DIR:core/data]` | raw feed | `MarketState` | v1.1 LOCKED (built, phase 1) |
 | `ACIS-SPEC-REGIME-002` | `ACIS-02-NVMA_REGIME.md` | NVMA `[DIR:core/regime]` | `MarketState` | `RegimeContext` | v1.2 LOCKED (built, phase 3) |
-| `ACIS-SPEC-QIEA-003` | `ACIS-03-QIEA_OPTIMIZER.md` | QIEA `[DIR:core/optimizer]` | `RegimeContext` + history | `ActiveParamSet` | v1.4 LOCKED (built, phase 4; v1.4 fitness window = time span) |
+| `ACIS-SPEC-QIEA-003` | `ACIS-03-QIEA_OPTIMIZER.md` | QIEA `[DIR:core/optimizer]` | `RegimeContext` + history | `ActiveParamSet` | v1.5 LOCKED (built, phase 4; v1.4 fitness window = time span; v1.5 §6.4 plateau law, 2026-09-25) |
 | `ACIS-SPEC-ALPHA-004` | `ACIS-04-ALPHA_ARENA.md` | Alpha Arena `[DIR:core/signals]` | `RegimeContext` + `ActiveParamSet` | `Signal` | v1.2 LOCKED (built, phase 5; AGON) |
 | `ACIS-SPEC-GOV-005` | `ACIS-05-CAPITAL_GOVERNOR.md` | Governor `[DIR:core/governor]` | `Signal` + portfolio | `SizedOrder` | v1.2 LOCKED (built, phase 6) |
 | `ACIS-SPEC-EXEC-006` | `ACIS-06-EXECUTION_ORCHESTRATOR.md` | Execution `[DIR:core/execution]` | `SizedOrder` | `FillReport` | v1.1 LOCKED (phase-8 build started 2026-07-17) |
@@ -40,7 +40,7 @@ ACIS-09 Backtest/Validation ──exercises 01–07 end-to-end; owns §14 gate
 | `ACIS-SPEC-EVENTS-010` | `ACIS-10-EVENTS_NEWS.md` | Events `[DIR:core/data]` (master §3.5–3.6) | calendar/news feeds + `platform_rules.yaml` | `EventPicture`, blackout windows, Tier-G flags | LOCKED (built, phase 2) |
 | `ACIS-SPEC-PROV-011` | `ACIS-11-STRATEGY_PROVENANCE.md` | Provenance & literature law `[DIR:core/signals]` (master §5.5 Pair Divergence, §5.6) | literature citations, eval history | provenance records, attempt registry, rung ladder | TO AUTHOR |
 | `ACIS-SPEC-SWAN-012` | `ACIS-12-SCENARIO_BOOK.md` | Black-swan replay + §8.6 watchdog `[DIR:core/risk + tests/backtest + scripts]` (master §8.5–8.6) | `scenario_book.yaml`, guardrails, heartbeat | gap-law replay verdicts (release gate), watchdog flatten | v1.0 LOCKED (authored 2026-07-17, phase-9 gate) |
-| `ACIS-SPEC-VENUE-013` | `ACIS-13-VENUE_ADAPTERS.md` | Platform adapters + attach protocol `[DIR:core/data + core/execution]` (master §7.5, §9.5 rulebook load) | platform APIs, `platform_rules.yaml`, `instruments.yaml` | feed/execution adapter pairs, capability descriptors, conformance verdicts | TO AUTHOR |
+| `ACIS-SPEC-VENUE-013` | `ACIS-13-VENUE_ADAPTERS.md` | Platform adapters + attach protocol `[DIR:core/data + core/execution]` (master §7.5, §9.5 rulebook load) | platform APIs, `platform_rules.yaml`, `instruments.yaml` | feed/execution adapter pairs, capability descriptors, conformance verdicts | DRAFT v0.1 (2026-09-25, cTrader Open API first; NOT LOCKED — review pass pending: OQ-01/02/03a, ACIS-06 amendments; GAP-P12D-69/70) |
 
 Status ladder: `DRAFT` → `REVIEWED` (passed `_SPEC_REVIEW_PASS.md`) → `LOCKED` (ready to build) → `BUILT` (phase complete, tests green).
 

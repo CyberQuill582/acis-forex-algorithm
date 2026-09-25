@@ -11,11 +11,11 @@ map, metrics and report.
 from __future__ import annotations
 
 import importlib.util
-import json
 import math
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -23,7 +23,9 @@ import pytest
 from config.account_doctrine import guardrail_hash
 from config.schemas import load_config
 from tests.backtest.data_loader import BacktestDataLoader
-from tests.backtest.oracle import STRATEGY, grade_oracle, non_dsr_failures, oracle_ticks, void_reasons
+from tests.backtest.money import quote_to_account
+from tests.backtest.oracle import grade_oracle, non_dsr_failures, oracle_ticks, void_reasons
+from tests.backtest.oracle_loop import NOTIONAL_FRACTION, STRATEGY, OracleLoop, OracleTick
 from tests.backtest.synthetic_grade import FIRST_MID, START, plan
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, episodes
 from tests.backtest.test_metrics_and_grader import GH, _block, _report
@@ -86,6 +88,20 @@ def test_oracle_ticks_equal_the_factory_path(cfg) -> None:
     assert max(t[0] for t in ours) < START + timedelta(days=4, hours=22)
 
 
+def test_the_oracle_sizes_one_nav_of_notional_on_every_instrument() -> None:
+    """Audit E9: a fixed 10,000 units was $11k of EUR/USD but $18M of gold on a $10k account.
+    Each order's USD notional is NAV x NOTIONAL_FRACTION, to within one unit's value."""
+    prices = (("EUR_USD", 1.10), ("USD_JPY", 110.0), ("XAU_USD", 1800.0))
+    loop = OracleLoop(SyntheticMarket(MarketSpec("planted", START, 7, prices)), nav=Decimal("10000"))
+    for inst, px in prices:
+        loop.on_state(OracleTick(START, inst, px - 1e-4, px + 1e-4, 2e-4, px))
+    target = Decimal("10000") * NOTIONAL_FRACTION
+    for order, (inst, px) in zip(loop.book.orders, prices):
+        usd_per_unit = Decimal(str(px)) * quote_to_account(inst, px, {})
+        assert target - usd_per_unit < order.size_units * usd_per_unit <= target, (inst, order.size_units)
+    assert [o.size_units for o in loop.book.orders] == [Decimal(9090), Decimal(10000), Decimal(5)]
+
+
 def test_non_dsr_failures_is_every_clause_of_passed_but_the_trials() -> None:
     """The positive control's criterion must not drift from the ratified gate: with the trial
     clauses satisfied, `passed` holds exactly when there is no non-DSR failure."""
@@ -98,23 +114,34 @@ def test_non_dsr_failures_is_every_clause_of_passed_but_the_trials() -> None:
     assert non_dsr_failures(_report(trial_count=0, deflated_sharpe=float("nan")), GH) == ()
 
 
-def test_void_reasons_need_planted_recognised_and_every_control_refused() -> None:
+def test_void_reasons_need_planted_recognised_and_every_control_refused_by_a_section_14_row() -> None:
     assert void_reasons({"planted": (), "null": ("section-14 win_rate",),
                          "permuted": ("section-14 annual_sharpe",)}) == []
     assert "planted oracle failed" in void_reasons({"planted": ("section-14 avg_duration",)})[0]
-    assert "null oracle cleared" in void_reasons({"planted": (), "null": ()})[0]
+    assert "not refused by any section-14 row" in void_reasons({"planted": (), "null": ()})[0]
+    # audit F2: a control refused only by a sample floor or a rule is not refused by the grade,
+    # and an oracle that breaks a rule it is built to keep voids the run by itself
+    floor_only = void_reasons({"planted": (), "null": ("12 trades < 30",)})
+    assert len(floor_only) == 1 and "not refused by any section-14 row" in floor_only[0]
+    ruled = void_reasons({"planted": (), "null": ("section-14 win_rate", "rule violation weekend_holding")})
+    assert len(ruled) == 1 and "null oracle broke the account's rules" in ruled[0]
 
 
-def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: list):
+def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: list, engine: dict | None = None):
     """scripts/falsify_engine.py with the heavy stages stubbed: threads, not processes, and its
     ROOT moved to `tmp_path` so no run directory is written under any data/."""
     spec = importlib.util.spec_from_file_location("falsify_engine", ROOT / "scripts" / "falsify_engine.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    def oracle_row(s, out, account, folds, root):
-        return {"kind": s.kind, "trades": 40, "net_pnl": "1", "sharpe": 9.0, "psr": 1.0,
-                "non_dsr_failures": oracle_failures[s.kind], "trade_returns": [0.01, 0.02, 0.015], "seconds": 0}
+    rung_defaults = {"planted-near-pass": [], "planted-near-fail": ["section-14 profit_factor"]}
+
+    def oracle_row(s, out, account, folds, root, *, sign_error=0.0, tag=None):
+        kind = tag or s.kind
+        calls.append(("oracle", kind))
+        fails = oracle_failures[kind] if kind in oracle_failures else rung_defaults[kind]
+        return {"kind": kind, "trades": 40, "net_pnl": "1", "sharpe": 9.0, "psr": 1.0,
+                "non_dsr_failures": fails, "seconds": 0}
 
     def label_year(s, instrument, year, out, root):
         calls.append(("label", s.kind))
@@ -122,16 +149,24 @@ def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: li
 
     def grade(s, out, account, folds, root):
         calls.append(("grade", s.kind))
-        return {"kind": s.kind, "passed": s.kind == "planted", "trades": 40, "sharpe": 0.0, "dsr": 0.0,
-                "trials": 4, "trial_sharpes": [0.1, 0.2, 0.3, 0.4], "champions": [], "failed": [], "seconds": 0}
+        passed, non_dsr = (engine or {}).get(s.kind, (s.kind == "planted", [] if s.kind == "planted"
+                                                                             else ["section-14 win_rate"]))
+        return {"kind": s.kind, "passed": passed, "trades": 40, "sharpe": 0.0, "dsr": 0.0,
+                "trials": 4, "sr0_hurdle": 0.345, "champions": [], "failed": [],
+                "non_dsr_failed": non_dsr, "seconds": 0}
 
     monkeypatch.setattr(mod, "ROOT", tmp_path)
     monkeypatch.setattr(mod, "load_config", lambda path: cfg)
     for name, fn in (("oracle_row", oracle_row), ("label_year", label_year), ("grade", grade),
                      ("ProcessPoolExecutor", ThreadPoolExecutor)):
         monkeypatch.setattr(mod, name, fn)
-    monkeypatch.setattr(sys, "argv", ["falsify_engine.py", "--kinds", *oracle_failures])
+    kinds = [k for k in oracle_failures if k in ("planted", "null", "permuted")]
+    monkeypatch.setattr(sys, "argv", ["falsify_engine.py", "--kinds", *kinds])
     return mod
+
+
+def _engine_calls(calls: list) -> list:
+    return [c for c in calls if c[0] != "oracle"]
 
 
 def test_a_failed_oracle_voids_the_verdict_before_any_engine_compute(monkeypatch, tmp_path, cfg, capsys) -> None:
@@ -139,19 +174,73 @@ def test_a_failed_oracle_voids_the_verdict_before_any_engine_compute(monkeypatch
     mod = _falsify_script(monkeypatch, tmp_path, cfg,
                           {"planted": ["section-14 avg_duration"], "null": ["section-14 win_rate"]}, calls)
     assert mod.main() == 4
-    assert calls == []                                                     # the engine never ran
+    assert _engine_calls(calls) == []                                      # the engine never ran
     assert "VERDICT VOID" in capsys.readouterr().out
 
 
-def test_a_recognised_oracle_hands_over_to_the_unchanged_engine_stage(monkeypatch, tmp_path, cfg) -> None:
+def test_a_near_fail_rung_the_harness_passes_voids_the_verdict(monkeypatch, tmp_path, cfg, capsys) -> None:
+    """Audit E1: stage 1 grades both rungs whenever planted runs, and a grader that passes the rung
+    just below the cut-offs has no power there, so no engine verdict is given."""
+    calls: list = []
+    mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"],
+                                                       "planted-near-fail": []}, calls)
+    assert mod.main() == 4
+    assert {c[1] for c in calls if c[0] == "oracle"} == {"planted", "null", "planted-near-pass",
+                                                         "planted-near-fail"}
+    assert _engine_calls(calls) == [] and "planted-near-fail oracle was not refused" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("kinds", [("null", "permuted"), ("planted",)])
+def test_no_verdict_without_the_positive_control_and_a_control(monkeypatch, tmp_path, cfg, capsys, kinds) -> None:
+    """Audits E3/F4: `--kinds null permuted` used to exit 0 and print "planted passes" for a market
+    that never ran — a dead grader "held". Without planted, or without any control, nothing runs."""
+    calls: list = []
+    mod = _falsify_script(monkeypatch, tmp_path, cfg, {k: ["section-14 win_rate"] for k in kinds}, calls)
+    assert mod.main() == 5
+    assert calls == [] and "NO VERDICT" in capsys.readouterr().out
+
+
+def test_the_held_message_names_only_the_markets_graded(monkeypatch, tmp_path, cfg, capsys) -> None:
+    calls: list = []
+    mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"]}, calls)
+    assert mod.main() == 0
+    held = [line for line in capsys.readouterr().out.splitlines() if "falsification held" in line]
+    assert held == ["falsification held on the markets graded in this run: planted passed; null did not"]
+
+
+def test_a_planted_refusal_only_by_the_dsr_gate_is_gate_limited_not_an_engine_failure(
+        monkeypatch, tmp_path, cfg, capsys) -> None:
+    """Audit E2: stage 1 excludes the DSR clauses, so a planted run that met every other clause of
+    `passed` and failed only the (open, GAP-P12D-33/37) DSR gate was reported as the engine's
+    failure. It is GATE-LIMITED: its own exit code and message."""
+    calls: list = []
+    mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"]}, calls,
+                          engine={"planted": (False, [])})
+    assert mod.main() == 6
+    out = capsys.readouterr().out
+    assert "GATE-LIMITED" in out and "NOT an engine verdict" in out and "FALSIFICATION FAILED" not in out
+    # a planted run that ALSO failed a non-DSR clause is the engine's failure, and so is a passing control
+    for engine in ({"planted": (False, ["section-14 profit_factor"])}, {"null": (True, [])}):
+        mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"]},
+                              calls, engine=engine)
+        assert mod.main() == 1 and "FALSIFICATION FAILED" in capsys.readouterr().out
+
+
+def test_a_recognised_oracle_hands_over_to_the_unchanged_engine_stage(monkeypatch, tmp_path, cfg, capsys) -> None:
+    """Audit E4: the run reports each engine run's per-trade SR0 HURDLE, labelled as one; it no
+    longer writes `oracle_deflation.json`, which was not a faithful Deflated Sharpe (the oracle is
+    not in the trial set, and ~5-trade holdout Sharpes are not commensurate with its record)."""
     calls: list = []
     mod = _falsify_script(monkeypatch, tmp_path, cfg,
                           {"planted": [], "null": ["section-14 win_rate"]}, calls)
     assert mod.main() == 0                                                 # planted passed, null did not
     assert {c for c in calls if c[0] == "grade"} == {("grade", "planted"), ("grade", "null")}
     run = next((tmp_path / "data" / "validation" / "falsification").iterdir())
-    deflation = json.loads((run / "oracle_deflation.json").read_text(encoding="utf-8"))
-    assert set(deflation) == {"planted", "null"} and all(0.0 <= v <= 1.0 for v in deflation.values())
+    assert not (run / "oracle_deflation.json").exists()
+    out = capsys.readouterr().out
+    assert "oracle deflated" not in out and "DSR=" not in out
+    hurdles = [line for line in out.splitlines() if "SR0 hurdle" in line]
+    assert len(hurdles) == 2 and all("= 0.345 (a hurdle" in line for line in hurdles)
 
 
 def test_the_harness_recognises_the_oracle_on_planted_and_refuses_it_on_null(cfg) -> None:

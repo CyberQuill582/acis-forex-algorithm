@@ -1,6 +1,6 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **STATUS (2026-09-17): SPEC COMPLETE (master v2.18). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the VPS deployment gate is ✅, the untrained-baseline freeze is ENFORCED (tag `baseline-untrained-v1`), the full Dukascopy tick set is downloaded and validated, and the evolve-driver + walk-forward runner exist. 814 green; ledger 185 entries, 0 violations. The cost-stress ladder has RUN: the cost question is settled and was never the problem — read GAP-P12D-49 first.**
+> **STATUS (2026-09-17): SPEC COMPLETE (master v2.19). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the VPS deployment gate is ✅, the untrained-baseline freeze is ENFORCED (tag `baseline-untrained-v1`), the full Dukascopy tick set is downloaded and validated, and the evolve-driver + walk-forward runner exist. 814 green; ledger 185 entries, 0 violations. The cost-stress ladder has RUN: the cost question is settled and was never the problem — read GAP-P12D-49 first.**
 > `ACIS_SPEC.md` v2.12 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
@@ -29,6 +29,136 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 4. A zero-edge strategy is +EV on a prop account, and leakage passes every statistical gate, so neither a pass nor a payout is evidence.
 5. The honest path is: fix the grader (option C+D) → redesign the strategy layer onto documented edges ([[GAP-P12D-68]]) → certify forward on the demo.
 
+**OWNER DELEGATION (2026-09-24, night, in chat):** *"automode is on ... if you reach decision points and have recommendations among many, proceed with the recommendations instead of waiting for me because Ill just choose the recommendations youll give."*
+- **How the lead applies it:**
+  - each decision taken under this delegation is recorded below as **DELEGATED**, for the owner to review on waking;
+  - code changes go to branches and follow the dual-audit law.
+- **What stays human-only**, because CLAUDE.md's guard-integrity law outranks a blanket delegation:
+  - NO guardrail VALUE, NO equity-floor value, and NO `platform_rules.yaml` value is changed;
+  - tightening-only guard CODE is built on branches and never merged without the owner seeing it.
+
+**NIGHT RUN (2026-09-24): five agents launched by the lead.** All are Opus, run without subagents, and write only their own files and branches.
+- **Roster and resume handles:**
+  - AUDIT-INTERNAL `a0cd7f51de98aa6dd` and AUDIT-EXTERNAL `a8b7e5d6992adfc12`: the BUILDER branch, under the pinned brief `AUDIT_BRIEF_BUILDER_2026-09-24.md`. Reports: AUDIT_BUILDER_BRANCH_{INTERNAL,EXTERNAL}_2026-09-24.md in archive/.
+  - BUILDER-2 `a8937e82f9a7a5391`: the structural leakage suite T1/T2/T7, the look register and the T6 gap-through exit ([[GAP-P12D-65]], [[GAP-P12D-64]]). It stacks on the BUILDER branch.
+  - BUILDER-3 `a9e00713d15bb5082`: the prop-safety TIGHTENING fixes, based on main:
+    - restart persistence, [[GAP-P12D-55]];
+    - lot-step/minimum-lot enforcement and a request budget, [[GAP-P12D-57]];
+    - the pre-close ban always on, [[GAP-P12D-58]];
+    - daily-reset rules and a declared initial capital, [[GAP-P12D-54]]/[[GAP-P12D-59]].
+  - SPEC-AUTHOR `ac17d6698ee060d8e`: drafts `specs/ACIS-13-VENUE_ADAPTERS.md` v0.1 (cTrader Open API), DRAFT and NOT LOCKED.
+- **Every code change is BUILT, PENDING AUDIT, on a branch.** Nothing merges to main without the dual audit and the owner seeing it.
+- **Worktrees:**
+  - BUILDER-2: `.claude/worktrees/agent-a8937e82f9a7a5391`, branch `worktree-agent-a8937e82f9a7a5391`.
+  - BUILDER-3: `.claude/worktrees/agent-a9e00713d15bb5082`, branch `worktree-agent-a9e00713d15bb5082`.
+- **2026-09-25, just after midnight:** all five were cut off by the session limit, and all five were RESUMED with `SendMessage` after the reset, per the owner's directive. None was relaunched.
+
+**OWNER DIRECTIVE (2026-09-25): NO agent launches unless the owner explicitly asks for them.** It is recorded in CLAUDE.md and in memory.
+- **Why:** credits.
+- **New work counts as a launch.** Sending an existing agent new work needs the owner's go.
+- **Resuming is allowed.** Resuming an approved agent's interrupted, in-flight task is permitted.
+- **Due audits and builds** are listed here as ASKS, never launched. **The session must ASK the owner explicitly** (one standalone question: what, why, how big, and the cheaper alternative), because the owner cannot track when a launch is due.
+
+**OWNER ANSWER (2026-09-25, asked explicitly): "Let all four finish".** BUILDER (audit fixes), BUILDER-3 (safety fixes) and the two audits of the BUILDER-2 branch run to completion. After them, launch NOTHING further without an explicit ask.
+
+**OWNER DIRECTIVES (2026-09-24, before sleeping):**
+- (1) "let them continue". The night run goes on.
+- (2) **Audits are ONLY the constitution's two per phase.** No extra audit agents unless the owner asks. It is recorded in CLAUDE.md's audit section and in memory.
+- (3) **After a session-limit reset, RESUME the running agents with `SendMessage`; NEVER relaunch them.** Their handles are listed above.
+
+**2026-09-25 morning: the laptop lost power at 00:40** ([[GAP-P12D-76]]; Kernel-Power 41, `BugcheckCode=0`: a power loss, not a crash). BUILDER, BUILDER-2 and BUILDER-3 had stopped mid-stage, and each was RESUMED with `SendMessage`, never relaunched. Each was told to check its uncommitted files (`py_compile` + a full diff read) before building on them. Their committed stages were all intact, and main was clean at `6a58e89`.
+- [ ] **OWNER:** decide where the demo engine runs. The recommendation is a small non-US Linux VPS, not this laptop. Also check the charger, mains and battery health, and make the second tick-set copy ([[GAP-P12D-50]]).
+
+**BUILDER-2 IS IN (2026-09-25):** branch `worktree-agent-a8937e82f9a7a5391`, head `5d96570`. BUILT, PENDING AUDIT; author's count 864 passed, 6 skipped.
+- [x] Stages 1–3: the structural leakage suite (T1 truncation, T2 future-perturbation at EVERY decision point, T7 controls proving the guard bites) ([[GAP-P12D-65]]).
+- [x] Stage 4: the look register. Every real-data grade writes its line first, and `run_walk_forward` refuses without it ([[GAP-P12D-64]]).
+- [x] Stage 5: T6. A bar that opens through the stop exits at the open.
+- [ ] Stage 6 (T4 config provenance, T8 decision-time accessor) was not built.
+- **Lead pre-check:** `report.py` gains only an informational `look` field, and `passed` is byte-identical. No guard, spec or ledger file is touched.
+- **Pre-existing leak paths it found** are filed as [[GAP-P12D-82]], with delegated decisions on F1/F2/F3/F5, built after the merges.
+- [ ] **The constitution's TWO audits of the BUILDER-2 branch are RUNNING** (pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`; [[GAP-P12D-83]]):
+  - AUDIT-INTERNAL `a2c3bcf53066dd551`;
+  - AUDIT-EXTERNAL `a9d24cf88c3353a04`.
+- [ ] **OWNER ANSWER (2026-09-25, asked explicitly): the BUILDER-2 fixes go to BUILDER-2 AFTER the BUILDER branch merges.** It gets ONE job: re-merge BUILDER's final head, then fix every finding in [[GAP-P12D-83]]:
+  - the register: one canonical location, tier from the source object, one line consumed per grade, tamper-evident, safe on a truncated line, outcomes recorded;
+  - a distinct source name and a fresh process per variant;
+  - gap exits stamped at j;
+  - T2, evolution and AGON controls that bite;
+  - the lows.
+  It is resumed by `SendMessage` to BUILDER-2 `a8937e82f9a7a5391`, which is the owner-approved launch; nothing else.
+- **Merge protocol (the lead does it in the main session, with no new agents; each merge needs the owner's explicit go):**
+  - **Order:** (1) BUILDER, after its fixes are verified; (2) BUILDER-2, RE-MERGED onto BUILDER's final head, because it stacks on the old `9b9ec80` snapshot and BUILDER has added commits since; (3) BUILDER-3.
+  - **Measured file overlap (2026-09-25):** BUILDER ∩ BUILDER-2 = `tests/backtest/oracle.py` and `synthetic_grade.py`; BUILDER-3 overlaps neither.
+  - **After EACH merge, before the next:** the full suite, `python scripts/governance_gate.py --session` and `ledger_check`, all on the COMBINED tree.
+  - **BUILDER finished its audit fixes (2026-09-25, head `5d108de`).** The lead verified the F3 trial count on it: 23, the same as base. It found [[GAP-P12D-85]]: fold ends book weekend-holding violations. Next: ASK the owner for the merge go.
+  - [x] 2026-09-25 **MERGE 1 DONE** (`9b2d9b6`, the BUILDER branch, on the owner's explicit go; the combined tree gave 853 passed, and the governance gate is green). **GAP-P12D-84 FIXED straight after:** gapped stops now fill at the gap price. It was falsified, and the full suite gives 856 passed. **BUILDER-2's owner-approved job was SENT 2026-09-25:** merge main at `1e5c2ba`, then fix every [[GAP-P12D-83]] finding. That is the only launch. Then ASK the owner for merge 2.
+  - ~~**FIRST change after the merges:** fix [[GAP-P12D-84]]~~ (done 2026-09-25, above) (the graded book fills gapped stops at the stop, pre-existing on main). It is deferred only because the BUILDER branch edits the same file.
+  - **Watch the behavioural interaction.** BUILDER-3's always-on pre-close ban, weekend flatten and lot rounding act on code that BUILDER's oracle and BUILDER-2's leakage suite exercise. Anything that passes alone but fails combined is a finding, fixed before the next merge.
+
+**BUILDER-3 IS IN (2026-09-25):** branch `worktree-agent-a9e00713d15bb5082`, BUILT, PENDING AUDIT. The lead re-ran the suite on it: **842 passed, 6 skipped**.
+- [x] Stage 1: drawdown anchors and the taper persist across restarts ([[GAP-P12D-55]]).
+- [x] Stage 2: lot-step round-down and a minimum-lot refusal, plus a rolling 24-hour venue request budget of 1,000 that survives a restart, with an exemption for verified reducing closes ([[GAP-P12D-57]]).
+- [x] Stage 3: the 2-hour pre-close entry ban applies on every account ([[GAP-P12D-58]]).
+- [x] Stage 4: a daily-reset rule type anchored on the balance at a local reset instant, plus a declared `initial_capital`. FTMO's own worked examples are reproduced ([[GAP-P12D-54]]/[[GAP-P12D-59]]). The `platform_rules.yaml` drafts for `ftmo` and `e8` are in its report; do NOT commit the `e8` entry until E8's server time zone is verified.
+- [ ] Stage 5, the weekend flatten, is designed but not built; it is blocked by [[GAP-P12D-74]].
+- **New findings, verified by the lead and filed:**
+  - [[GAP-P12D-74]]: a Governor "close" ADDS to the position.
+  - [[GAP-P12D-75]]: a restart silently clears every explicit HALT. Critical.
+  - The governance gate was RED on main from comment shape; that is FIXED by the lead (comment-only, proven code-identical by AST).
+- [ ] **DELEGATED:** BUILDER-3 fixes [[GAP-P12D-75]] (restore halts at boot) and [[GAP-P12D-74]] (reduce-only close semantics) on its branch.
+- [x] 2026-09-25: BUILDER-3 finished stages 6 (halts restored at boot, [[GAP-P12D-75]]), 7 (reduce-only closes, [[GAP-P12D-74]]) and 5 (weekend flatten). Head `d8361a7`, 11 commits, 35 files; no guard, spec or ledger file touched. Author's count: 856 passed, 6 skipped.
+- [ ] **The constitution's TWO audits of the BUILDER-3 branch are RUNNING** (launched 2026-09-25; pinned brief `AUDIT_BRIEF_BUILDER3_2026-09-25.md`):
+  - AUDIT-INTERNAL `a253f98af675aef1f`: its top priority is finding any input where the branch is LOOSER than main;
+  - AUDIT-EXTERNAL `a137391bac5f1cb52`: FTMO/E8 rules, reduce-only semantics in real venue APIs, crash-safe persistence.
+
+  Reports: AUDIT_BUILDER3_BRANCH_{INTERNAL,EXTERNAL}_2026-09-25.md in archive/. Then triage, then merge on the owner's go.
+- **EXTERNAL audit IN (2026-09-25).** It found two BLOCKING defects, both reproduced by the lead:
+  - [[GAP-P12D-78]]: a stale restored session halt means a restart makes the next day's breach NOT halt. Looser than main.
+  - [[GAP-P12D-79]]: one failed ledger write loses the equity breaker.
+
+  The rest is in [[GAP-P12D-77]].
+- **INTERNAL audit IN (2026-09-25).** The branch is NOT tightening-only. Also reproduced by the lead:
+  - [[GAP-P12D-80]]: **PRE-EXISTING ON MAIN**, the engine's daily-loss halt fires only ONCE per process;
+  - [[GAP-P12D-81]]: lot rounding orphans a pair leg.
+- [ ] **ONE consolidated fix list was sent to BUILDER-3** (2026-09-25). The merge waits for:
+  - [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-80]] and [[GAP-P12D-81]] fixed and verified by the lead;
+  - the atomic close intent (X3/F4);
+  - WAL durability;
+  - bans and flattens on holiday closures;
+  - close backoff;
+  - the owner's go.
+  - DELEGATED: restart-invariance (F3) is accepted as the property.
+- [ ] **Not wired yet:** production must route halts and MCP controls through the new halt-recording layer, call the resume-clear, and call the weekend flatten each tick. All three wait on the three-loop runtime ([[GAP-0091b]]).
+
+**ACIS-13 DRAFTED (2026-09-25, SPEC-AUTHOR): `specs/ACIS-13-VENUE_ADAPTERS.md` v0.1, a DRAFT, NOT LOCKED.**
+- **What it covers.** The cTrader Open API adapter comes first. It has an 11-step attach protocol with re-attach when an account churns, and 16 invariants (C-VEN-1..16). There are 42 quoted facts in Appendix A and 18 open questions in Appendix B.
+- **The lead verified the most load-bearing fact:** in the official proto, `stopLoss` reads "Not supported for MARKET orders". So stops go in as a distance, and the existing server-side-stop conformance test must change for this venue.
+- **Blocking questions, ruled in the review pass:**
+  - OQ-01: there is no lawful demo mode, [[GAP-P12D-69]]. The recommendation is a `practice` mode, adopted in direction.
+  - OQ-02: the transport. The recommendation is **JSON over WebSocket via aiohttp**, which is already in the §16 stack, so no new dependency. DELEGATED.
+  - OQ-03a: fills the venue makes on its own, [[GAP-P12D-70]].
+- **Before it is LOCKED:**
+  - [ ] **The ACIS-13 review pass.** Rule OQ-01/02/03a into the text; agree the ACIS-06 amendments (a)–(d) as a versioned change; recompute the request-budget defaults from the position policy's real order rate; decide where the single account binding lives, engine or watchdog; re-fetch every source.
+  - [ ] **The master §7.5/§12 + ACIS-08 `practice` mode text** ([[GAP-P12D-69]]), and the ACIS-06 amendment for venue-initiated fills plus runtime reconciliation ([[GAP-P12D-70]]).
+- **A practical point for the owner (fact F-09):** cTrader access granted to the app covers only the accounts that existed at the time. Every 14-day FTMO free trial is a NEW account, so the owner must **re-grant access for each trial renewal**. The agent cannot do this; it is a human step.
+
+**DECISIONS TAKEN UNDER THE OWNER'S DELEGATION (2026-09-24 night). Each is the lead's stated recommendation; the owner should review them on waking.**
+- **D1 = option C + D (DELEGATED).**
+  - D is being built tonight: the oracle (already on the BUILDER branch), the leakage suite and the look register.
+  - C needs the research simulator (RSIM, [[GAP-P12D-68]] item 6), so it comes next.
+  - The ratified DSR gate is NOT edited until C's replacement exists, is audited, and the §14 / ACIS-09 C-BT-11 amendment is written.
+- **D3, the LLM-contamination rule: ADOPTED (DELEGATED)** ([[GAP-P12D-66]]). Applied as master §5.6 text. It is tightening only.
+- **D7, the century-study correction: APPLIED (DELEGATED)** ([[GAP-P12D-53]]). A factual correction to §5.6.
+- **D8, the plateau reading of "dies": ADOPTED (DELEGATED), as the BUILDER defined it** ([[GAP-P12D-34]]). The ACIS-03 v1.5 text goes in with the branch merge.
+- **D6, guardrail-adjacent items.**
+  - The TIGHTENING code is being built on a branch.
+  - VALUES stay human-only: the equity floor ([[GAP-P12D-56]]) and the `platform_rules.yaml` corrections. The drafts will be ready for the owner to commit.
+- **D2, D4 and D5 are ADOPTED IN DIRECTION (DELEGATED); their spec text lands with their builds, not tonight:**
+  - D2: PropEV beside §14, tightening;
+  - D4: an expanding window for the engine confirmation run;
+  - D5: the redesign in the recommended order, position policy first.
+- **D9 stays with the owner:** the token test needs the owner's token.
+
 **STEP 1 RATIFIED BY THE OWNER (2026-09-24, in chat: "i ratify the whole of step 1").** Step 1 of the lead's plan, with its status:
 - [ ] **The OANDA practice-token test.** No token exists on this machine: the lead checked environment variable names only. The OWNER runs it; the command is in the lead's reply. **Ratified with a condition: if it fails, the FTMO Free Trial on cTrader via the Open API is the demo venue.** That is a SPEC §15 deviation; apply the §15 amendment (the SCOUT's draft, report §7) once the result is known.
 - [x] 2026-09-24 **Commit** the pass: the brief, the 4 reports and 4 checkpoints, the ledger and TODO updates, and a `.gitignore` entry keeping `.claude/worktrees/` out of git.
@@ -51,8 +181,8 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - [[GAP-P12D-54]] and [[GAP-P12D-60]] rulebook corrections;
   - [[GAP-P12D-59]] daily-limit semantics and a pre-breach flatten;
   - [[GAP-P12D-61]] the Governor's risk unit (with, never ahead of, the edge).
-- [ ] **D7. Spec wording** ([[GAP-P12D-53]]): correct §5.6's century-study figure.
-- [ ] **D8. The plateau law's reading of "dies"** ([[GAP-P12D-34]]), and the go-ahead to dual-audit and merge the BUILDER branch.
+- [x] 2026-09-24 **D7. Spec wording** ([[GAP-P12D-53]]): correct §5.6's century-study figure. DONE under the owner's delegation, master v2.19. **D3** (the LLM-contamination law) is also now in §5.6 ([[GAP-P12D-66]], mitigated; its enforcement is owed).
+- [x] 2026-09-25 **D8. The plateau law's reading of "dies"** ([[GAP-P12D-34]]), and the go-ahead to dual-audit and merge the BUILDER branch. DONE: both audits ran, every finding was fixed, and the branch was MERGED on the owner's explicit go (ACIS-03 v1.5 §6.4). The "dies" reading and the E6 range step stay flagged for the owner's review, owned by the GAP-P12D-34 residual.
 - [ ] **D9. The venue** (from the SCOUT): the OANDA token test, then the FTMO Free Trial as demo venue (a §15 deviation); send the drafted firm emails; the equity floor for the demo account.
 - [x] 2026-09-24 **SCOUT** — prop-venue due diligence: the owner's outstanding PROP-FIRM RESEARCH (a)–(f) below, the filter for compatibility with automation on funded accounts, and the **demo-venue recommendation that feeds Track A step 1**. Report: archive/RESEARCH_PROP_VENUES_2026-09-24.md. **IN.**
   - **Only FTMO and E8 Markets pass the hard filter:** both let an unattended engine on Linux trade a funded account via the cTrader Open API.
@@ -99,13 +229,17 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 
   Its 15 proposed ledger items are triaged once the other reports are in.
 - [x] 2026-09-24 **BUILDER** (worktree branch) — the oracle positive control ([[GAP-P12D-37]]), the zero-duration artifacts ([[GAP-P12D-38]]), TSMOM attribution, and the §5.6 plateau law ([[GAP-P12D-34]]). Report: BUILDER_REPORT_2026-09-24.md on its branch. Status: BUILT — PENDING AUDIT; merge only after review and the owner's go. **IN** (branch `worktree-agent-a128ab904780ce593`, 8 commits, NOT merged):
-  - **The oracle** passes every non-DSR §14 clause on planted and fails on null. The ratified DSR gate refuses it (0.000).
+  - **The oracle** passes every non-DSR §14 clause on planted and fails on null. ~~The ratified DSR gate refuses it (0.000)~~ That was corrected 2026-09-25 as not a faithful DSR comparison (E4, [[GAP-P12D-72]]).
+  - **The DUAL AUDIT is DONE** (2026-09-25; the two lenses only):
+    - the fixes are sent back to the BUILDER: [[GAP-P12D-72]], and gate-loosening F3 as [[GAP-P12D-73]], reproduced by the lead;
+    - a pre-existing TSMOM finding is filed as [[GAP-P12D-71]];
+    - the merge waits for the fixes, the lead's check of them, and the owner's go.
   - **[[GAP-P12D-38]] is REFUTED**, and the lead verified it: there were no zero-duration trades, only an empty population printed as 0.0. That exposed [[GAP-P12D-63]]: MOMENTUM_SCALP can never fire on synthetic markets.
   - **TSMOM** holds 53 h through 1–4 h episodes, blocks other modules' opposite signals, and is not faithful to Moskowitz–Ooi–Pedersen.
   - **The plateau law** is built.
   - **Every QIEA evaluation** is now logged.
   - **Still open:**
-    - [ ] Dual audit of the branch (A3, two Opus lenses in fresh context), then merge on the owner's go. When it merges: close GAP-P12D-37 and -38 with Residuals, fix the 904b409 test-count wording in the ledger narrative, and `git worktree remove` the worktree.
+    - [x] 2026-09-25 Dual audit of the branch (A3, two Opus lenses in fresh context), then merge on the owner's go. DONE: MERGED on the owner's explicit go. GAP-P12D-37, -38, -34, -72 and -73 are closed with Residuals. The 904b409 commit message wrongly says 7 plateau tests; there are 5, as recorded in GAP-P12D-52. The worktree was removed after the merge.
     - [ ] OWNER: ratify the plateau law's reading of "dies": a ±10% one-gene neighbour failing C9 on the champion's train window, with any death refusing the champion. The draft is ACIS-03 v1.5 in the report.
     - [ ] The TSMOM per-trade bucketing run is BLOCKED on memory (needs ≥2 GB free). The spec is in the report, and the script is in the session scratchpad at `BUILDER/tsmom_diag.py`, about 25 min.
 - **Resume handles** (launched 2026-09-24; resume one with `ListAgents`, then `SendMessage`): SCOUT `a0a597186258d7486` · ECONOMIST `a37a331d96a383232` · VALIDATOR `a6a2d191066bfb8a6` · ARCHITECT `acc770fb0b4e54e86` · BUILDER `a128ab904780ce593`, with worktree `.claude/worktrees/agent-a128ab904780ce593` on branch `worktree-agent-a128ab904780ce593`. Never commit the worktree dir to main. **2026-09-24:** the ECONOMIST, VALIDATOR and BUILDER were cut off by the session limit and resumed by `SendMessage` after the reset. At the cut-off the BUILDER had Stages 1–2 committed and falsified, the ECONOMIST was proofreading, and the VALIDATOR was drafting its calibration section. Checkpoint files are archive/PARTIAL_<TOPIC>_2026-09-24.md; read them first if a session died mid-pass. The brief, this block and the GAP-P12D-52 entry are **not committed yet**. Commit them on the owner's go.

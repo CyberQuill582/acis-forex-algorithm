@@ -144,6 +144,344 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-85: the walk-forward harness carries open positions through the embargo, where nothing can act — so on weekend-flat accounts every position open at a fold's end is booked as a `weekend_holding` violation
+- Severity: medium · Likelihood: high
+- Status: open (2026-09-25 — found by the BUILDER agent while fixing F2 of [[GAP-P12D-72]]; the evidence is in its branch report. The lead has NOT reproduced it; verify before relying on it)
+- Area: tests/backtest/harness.py (fold boundaries, the embargo), tests/backtest/walk_forward.py, the §9.5 rule-violation tally (C-BT-7)
+- Description: at a fold's end the book keeps open positions across the embargo gap, during which no engine decision runs, so nothing can close them. On an account that disallows weekend holding, any engine position still open at a fold's end is later booked as a `weekend_holding` rule violation. The violation is caused by the harness's fold geometry, not by the strategy. So on weekend-flat accounts the §14 `rule_violations` gate fails for a reason unrelated to the engine, and a real violation is indistinguishable from this artifact.
+- Justification: open. FIX candidates (the lead's recommendation is the first): (a) flatten every open position at each fold's test end, at that tick's price, as the harness's declared convention; or (b) keep the embargo's rule clock off. Decide during the post-merge work. It interacts with BUILDER-3's weekend flatten ([[GAP-P12D-58]]).
+- Linked: [[GAP-P12D-72]], [[GAP-P11I-02]], [[GAP-P12D-58]]
+
+## GAP-P12D-84: PRE-EXISTING ON MAIN — the graded backtest book fills a gapped-through stop AT THE STOP, not at the gap price, so every graded result flatters gap losses
+- Severity: high · Likelihood: high
+- Status: fixed (2026-09-25 — fixed by the lead in the main session, as the first change after the BUILDER merge. `PositionModel.maybe_close` now fills a triggered stop at `min(price, stop)` for longs and `max(price, stop)` for shorts: the first price equal to or worse than the stop, as OANDA v20 and backtrader do. Targets keep their level, which is conservative on gaps. Falsified per A16: reverting either side turns exactly its test red, and the restore is byte-identical. The full suite gives 856 passed. Originally found by AUDIT-EXTERNAL (X1) of the BUILDER-2 branch, and verified by the lead)
+- Area: tests/backtest/book.py `maybe_close` (the graded tick book behind every §14 grade, the falsification runs and the cost ladder); master §8.5's gap law (ACIS_SPEC.md "gap" / black-swan preparedness)
+- Description:
+  - **The mismatch with real venues.** Real venues fill a triggered stop at the first price equal to or worse than the trigger. OANDA's v20 docs: "filled … by the first price that is equal to or worse than the threshold"; backtrader fills gapped stops at the open.
+  - **What the book does instead.** It books the stop level exactly, so weekend gaps, news gaps and thin-liquidity jumps all land at the stop. Every graded result understates gap losses: the "false encouragement" class this project exists to prevent.
+  - **The selection side is now stricter than grading.** BUILDER-2's T6 made the selection-side fitness simulator fill gaps at the open.
+  - **An earlier test covered a different path.** The phase-9 "weekend gap through stop books loss at gap price" test exercises the Risk Monitor, not this graded book.
+- Justification: open. The fix is a TIGHTENING one-liner that fills at `min(price, stop)` for longs and `max(price, stop)` for shorts, pinned by hand-worked tests for a gap through the stop, falsified. It is DEFERRED until after the BUILDER branch merges, because that branch also edits tests/backtest/book.py and a fix on main now would conflict. It is the first change applied after the merges. Until then, any graded number is optimistic on gaps. The ladder's verdict (the engine loses, [[GAP-P12D-49]]) only gets worse, so no conclusion flips.
+- Proof: `test_a_long_stop_gapped_through_books_the_gap_price_not_the_stop`, `test_a_short_stop_gapped_through_books_the_gap_price_not_the_stop`, `test_a_stop_touched_exactly_still_fills_at_the_stop`.
+- Residual: GAP-P12D-83 — the selection-side twins: T6's fitness-simulator gap exits (on the unmerged BUILDER-2 branch, which also pays the closing spread at an open fill) and X3 (a bar that opens beyond the target and then touches the stop).
+- Linked: [[GAP-P12D-83]], [[GAP-P12D-65]], [[GAP-P12D-49]], [[GAP-0001]]
+
+## GAP-P12D-82: four latent look-ahead or artifact paths in the research instrument, found by the structural leakage suite (pre-existing on main)
+- Severity: medium · Likelihood: medium
+- Status: open (2026-09-25 — surfaced by BUILDER-2's T1/T2 leakage sweeps; see its branch report `BUILDER2_REPORT_2026-09-24.md` §2 and §5. Each has a named mechanism and `file:line` evidence. None leaks on the current production call paths, which the sweeps checked clean: 102,998 / 102,961 decisions compared)
+- Area: core/optimizer/fitness.py (`trade_path` costs), core/optimizer/qiea.py (`fitness_window`), the NVMA session-median callback via `MarketStateFactory`, the per-regime fitness windows (ACIS-03 §6)
+- Description:
+  1. **F1: the fitness fill pays the entry bar's CLOSING spread**, a datum from after the fill. It is a small cost look-ahead in selection.
+  2. **F2: QIEA's `fitness_window` bounds only the START of the span.** It would evolve on bars after `now` if a caller supplied them. The production caller does not, and `refuse_lookahead` plus the new sweep check it.
+  3. **F3: materialising the tick stream leaks end-of-tape session medians into NVMA.** Every current path is lazy; any `list(market_states(...))` before labelling would leak.
+  4. **F5: regime-sliced fitness windows are concatenated across time**, so every junction between two regime stretches is a synthetic price jump. After T6's gap-through exit it is no longer optimistic, but the series itself is an artifact.
+- Justification: open. **DELEGATED DECISIONS** (the lead's recommendations under the owner's delegation, recorded for review):
+  - **F2 [impl]:** the one-line tightening, keeping only `b.ts + bar_seconds <= now`. No ratification is needed.
+  - **F1 [spec, ACIS-03]:** charge the SIGNAL bar's closing spread, the latest known at decision time. This is the clean no-look-ahead convention.
+  - **F5 [spec, ACIS-03]:** simulate each contiguous regime stretch separately, flat at every junction.
+  - **F3 [impl]:** make it structural via the T8 decision-time accessor.
+
+  All four are built AFTER the three open branches merge, to avoid conflicts. F1 and F5 change fitness numbers, so they get an ACIS-03 amendment. The gene search space is unchanged, so no re-baseline is needed.
+- Linked: [[GAP-P12D-65]], [[GAP-P12D-64]], [[GAP-P12D-83]]
+
+## GAP-P12D-83: the dual audit of the BUILDER-2 branch (leakage suite, look register, T6)
+- Severity: medium · Likelihood: high
+- Status: open (2026-09-25 — the constitution's two lenses only, launched under the pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`. The branch `worktree-agent-a8937e82f9a7a5391` is at head `5d96570`, and BUILDER-2's own work sits on top of the BUILDER-branch merge `577d882`. Lead pre-checks: `report.py` gains only an informational `look` field and the `passed` gate is byte-identical; no guard, spec or ledger file is touched; the lead re-ran the full branch suite independently: 864 passed, 6 skipped, which matches the author)
+- Area: the BUILDER-2 branch — the leakage suite (T1/T2/T7), the look register and its `run_walk_forward` refusal, and T6 gap-through exits in `core/optimizer/fitness.py`
+- Description: BUILT, PENDING AUDIT.
+  - **EXTERNAL lens IN (2026-09-25, archive/AUDIT_BUILDER2_BRANCH_EXTERNAL_2026-09-25.md)**, every finding reproduced by the auditor:
+    - **X1:** pre-existing on main, and verified by the lead. It has its own entry, [[GAP-P12D-84]].
+    - **X2 (MED-HIGH):** `trade_path_decisions` stamps every exit at bar j+0.5, so a planted leak where a gap exit reads the bar's close gives 0 T1 and 0 T2 violations over 479 cuts. The detector is blind to re-stamped exits. T6's gap exit also pays the bar's CLOSING spread for a fill at the open, the exit-side twin of [[GAP-P12D-82]] F1.
+    - **X4 (MED): the register's completeness rests on caller diligence.**
+      - a look in a throwaway directory passes `verify_look`;
+      - deleting the latest line is undetectable;
+      - dirty-tree real-data looks are accepted;
+      - `dukascopy-mirror` counts as tier 0;
+      - renaming a family resets its history;
+      - one empty line, as after a power loss, breaks every later registration;
+      - it lives in git-ignored /data/;
+      - no per-look outcome is recorded, so the DSR and PBO trial variance cannot be derived.
+    - **X5/X7 (MED): honesty wording.** The suite's "clean: no decision depends on data after it" overclaims; an empirical detector certifies nothing by its silence (Fonseca). It also cites Gençay's "structural guardrail" for what is a two-run detector (T8 would be the structural one).
+    - **X3 (MED-LOW):** a bar that opens beyond the target and then touches the stop is booked as a stop.
+    - **X6/X8/X9 (LOW):** the labeller tape is too short to show F3; the engine grid is anchored at 00:00 UTC, not 17:00 New York; tier "forward" starts 2026-01, before the June-2026 model cutoff ([[GAP-P12D-66]]).
+    - **Honest negatives:** whole-tail statistic leaks are caught; exclusive create is atomic; looks survive crashed grades; T6's stop-at-open matches OANDA and backtrader.
+    - **The auditor's verdict:** a strict empirical detector for value look-ahead on price data, not a certificate.
+  - **INTERNAL lens IN (2026-09-25, archive/AUDIT_BUILDER2_BRANCH_INTERNAL_2026-09-25.md): "every guard can be made to miss"; NOT fit to merge until fixed.** Findings:
+    - **HIGH-1: the look register can be bypassed.** The lead REPRODUCED all five cases with `r_look_register.py`:
+      - L1: a validation-tier line in a temp dir grades to completion while the canonical register is untouched;
+      - L2: a source named `dukascopy` but keyed `synthetic` grades as tier 0;
+      - L3: one line serves three grades;
+      - L4: a hand-forged line on disk passes `verify_look`;
+      - L5: an empty file left by a power cut bricks the register with `JSONDecodeError`, which `run_oos_validation` does not catch.
+      The fix: pin ONE canonical register; derive the tier from the source OBJECT; CONSUME a line at grade time, so one line is one grade; hash-chain or otherwise make deletion and forgery detectable; tolerate or repair a truncated line and fail closed; record each look's outcome. This matches EXTERNAL X4.
+    - **MEDIUM-1:** a whole-file statistic memoised on the source name hides from both T1 and T2 (0/129 cuts, against 129/129 when recomputed), because `PerturbedMarket` keeps the reference's name and workers are reused. FIX: give each variant a distinct source name, in a fresh spawned process.
+    - **MEDIUM-2:** a gap exit reading its own bar's close passes the exhaustive fitness sweep, because every exit is stamped at j+0.5. This agrees with EXTERNAL X2. FIX: stamp at j.
+    - **MEDIUM-3:** the evolution sweep's T2 has never caught anything. Only T1 catches the author's own mutation and peeks of +5, +20 and +60 min. FIX: a T2 control that bites.
+    - **MEDIUM-4:** the AGON sweep cannot fail on a look-ahead in AGON's own code. With the perturbation switched off, the AGON sweep, the bar-builder sweep and every T7 control stay green. FIX: controls that bite.
+    - **LOW:** concurrent first-look registrations; the dirty flag counts untracked files and the commit is not re-checked at grade time; a bar opening beyond the target then touching the stop is booked as a stop (= X3); T6's ACIS-03 amendment is owed; the engine tap is not in the default suite.
+    - **Honest negatives:**
+      - the engine path catches a planted F3 leak (T2 −2,200, T1 −1,704 decisions), and the honest run is clean;
+      - the 60 s reference is not vacuous (51,118 labels, 20 orders);
+      - all 14 new falsification cases go red for their stated reasons;
+      - 10 of 10 T6 hand mutants were killed;
+      - `passed` is byte-identical;
+      - the export gives 864 passed, 6 skipped.
+  - **Status: BOTH LENSES IN; the fixes are not yet assigned.** Per the owner's 2026-09-25 rule, sending this list back to BUILDER-2 is a NEW launch and needs the owner's explicit go. The alternative is the lead fixing it in-session.
+- Justification: open until both lenses' findings are triaged and the branch merges on the owner's go. It merges AFTER the BUILDER branch, which it stacks on.
+- Linked: [[GAP-P12D-64]], [[GAP-P12D-65]], [[GAP-P12D-82]], [[GAP-P12D-72]]
+
+## GAP-P12D-81: lot-step rounding can orphan one leg of a pair group, leaving a naked directional position — on the BUILDER-3 branch, looser than main
+- Severity: high · Likelihood: medium
+- Status: open (2026-09-25 — found by AUDIT-INTERNAL (F11) in the BUILDER-3 branch audit. The lead REPRODUCED it with `r9_pair_leg_rounding.py`: with legs of 1,500 and 900 units, base `bdd3a75` fills both, while head `d8361a7` leaves only EUR_USD +1,000 at the venue, because the 900-unit leg is under the minimum lot and refused)
+- Area: the BUILDER-3 branch (lot rounding in execution); core/governor/capital_governor.py (atomic groups, §5.5 both-or-neither at min-leg); core/execution/orchestrator.py
+- Description: the new per-order lot rounding and minimum-lot refusal act on each leg independently. A pair group whose smaller leg rounds below the minimum loses that leg, and the surviving leg is a directional position the strategy never intended. That breaks master §5.5's atomic-group law (both legs or neither).
+- Justification: open and BLOCKING for the merge. FIX: group atomicity in execution. Rounding and minimum-lot checks run over the WHOLE group before any leg is sent, and if any leg would be refused or rounded to zero, the whole group is refused. Proof: a regression test mirroring the reproduction, falsified.
+- Linked: [[GAP-P12D-57]], [[GAP-P12D-77]], [[GAP-0049]]
+
+## GAP-P12D-80: PRE-EXISTING ON MAIN — the engine's daily-loss session halt fires at most once per process; the Guardrails latch is reset only by a human resume
+- Severity: critical · Likelihood: high
+- Status: open (2026-09-25 — found by AUDIT-INTERNAL (F2) in the BUILDER-3 branch audit. The lead REPRODUCED it on BOTH base `bdd3a75` (i.e. main) and the branch with `r2b_inprocess_latch.py`: within one process, the day-1 breach halts (`drawdown_halt`), but a 2.1% breach on day 3 does not (`formula`))
+- Area: core/risk/guardrails.py (`_session_halted`, reset only in `rearm()`, which is called on a human resume); master §8 (the daily-loss limit is SESSION-scoped and auto-clears at the boundary); ACIS-07
+- Description:
+  - **The latch outlives the halt.** The Governor's session halt auto-clears at the next session boundary, as §8 intends. But the Guardrails latch `_session_halted`, which stops the monitor from re-issuing, stays set until a human resume.
+  - **So in one process only the FIRST daily-loss breach ever halts.** Every later day's breach is silently ignored.
+  - **It is a guardrail that works once per process lifetime.** It went unseen because every test exercises a single breach, and the production runtime does not exist yet. It sits on main now, and the backtest harness's risk path would inherit it.
+  - **It is the root of the branch's [[GAP-P12D-78]].**
+- Justification: open and BLOCKING (a guardrail defect). The fix RESTORES the spec's own semantics and is tightening-only: the guard fires again on every day it is breached. **DELEGATED:** it is fixed on the BUILDER-3 branch, and raised to the owner as a HALT-semantics item: the session latch re-arms at the session boundary, exactly when the Governor's session halt auto-clears. Proof: an in-process multi-day breach test and a restart variant, falsified.
+- Linked: [[GAP-P12D-78]], [[GAP-P12D-77]], [[GAP-P12D-59]]
+
+## GAP-P12D-79: on the BUILDER-3 branch, one failed halt-ledger write during an equity-floor breach loses the equity breaker entirely — no halt, no freeze, never re-issued
+- Severity: critical · Likelihood: low
+- Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X2) in the dual audit of the BUILDER-3 branch. The lead REPRODUCED it on the branch export with the auditor's `r2_store_failure.py`. A `database is locked` error on the `halt_event` write during the equity-floor breach makes `evaluate` raise. Afterwards entries are allowed (`formula`), the orchestrator is not frozen, no halt row exists, and two further evaluates below the floor re-issue nothing. On main the equity breaker has no store dependency)
+- Area: the BUILDER-3 branch (the persistent halt sink and restore_on_boot); core/risk/guardrails.py (latch set before the sink call); master §8 (the equity breaker is unthrottleable and first)
+- Description:
+  - **Two ordering choices combine.** The Guardrails latch `_equity_flattened` is set BEFORE the sink call. The new persistent sink writes the ledger BEFORE it forwards to the Governor or execution. So any store failure (a lock from a second process such as the MCP plane, a full disk, an I/O error) swallows the flatten and the HALT, and the latch prevents any retry.
+  - **Why it is critical.** It is a NEW failure mode relative to main, on the single most important guard. The likelihood is low; the severity is that the guard silently does not fire.
+- Justification: open and BLOCKING for the merge.
+  - **The fix principle: the guard acts first, and recording can never gate it.** Forward the halt or flatten to the Governor and execution FIRST, then persist. If persisting fails, retry and alarm, and keep the halt in force in memory; never swallow it. Set the latch only after the action succeeded.
+  - **Proof:** regression tests that inject a store failure at each write and assert the halt and flatten still take effect, falsified per A16.
+- Linked: [[GAP-P12D-75]], [[GAP-P12D-77]], [[GAP-P12D-78]]
+
+## GAP-P12D-78: on the BUILDER-3 branch, a stale restored session-halt row latches the breaker, so after a restart the next day's 2% breach no longer halts — LOOSER than main
+- Severity: high · Likelihood: medium
+- Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X1). The lead REPRODUCED it on exports of base `bdd3a75` and branch head `d8361a7` with the auditor's `r1_stale_session_latch.py`:
+  - **base:** day-2 fresh 2% breach → `drawdown_halt`; still `drawdown_halt` after an in-session recovery.
+  - **branch:** → `formula_zero`, then `formula` (TRADING) after the recovery; the day-1 session row is still open)
+- Area: the BUILDER-3 branch (restore_on_boot, the persistent halt sink); core/risk/guardrails.py `_session_halted`; master §8 (the daily loss is session-scoped and auto-clears at the boundary)
+- Description:
+  - **The mechanism.** A SESSION halt auto-clears at the next session boundary in the Governor, but the branch's halt ledger keeps its row "uncleared", because only a human resume clears rows. At boot the row is restored, and Guardrails' `_session_halted` latch is set again. A NEW breach on a later day then finds the latch already set and issues no session halt.
+  - **The effect.** After a restart, a fresh daily-loss breach does not halt, and entries resume as soon as the taper allows.
+  - **Why it matters.** It breaks the tightening-only claim. The branch is looser than main in exactly the "restart" case it was built to harden.
+- Justification: open and BLOCKING for the merge.
+  - **The fix:** session-scoped halts must be restored WITH their expiry. A row whose session boundary has passed is closed as auto-expired, never re-latched. The restore must re-arm the Guardrails latches consistently with the restored state.
+  - **Proof:** a regression test mirroring the reproduction (restart the next trading day; a fresh breach halts; the halt survives an in-session recovery), falsified.
+- Linked: [[GAP-P12D-75]], [[GAP-P12D-77]], [[GAP-P12D-79]], [[GAP-P12D-59]]
+
+## GAP-P12D-77: the dual audit of the BUILDER-3 branch — findings and triage
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — the constitution's two lenses only. EXTERNAL is in (archive/AUDIT_BUILDER3_BRANCH_EXTERNAL_2026-09-25.md), and INTERNAL is running. Lead verification: the full branch suite re-run gives 856 passed, 6 skipped; X1 and X2 were reproduced)
+- Area: the BUILDER-3 branch `worktree-agent-a9e00713d15bb5082` (head `d8361a7`)
+- Description: triage of the EXTERNAL findings.
+  - **Each has its own entry:**
+    - X1 → [[GAP-P12D-78]], looser than main, blocking;
+    - X2 → [[GAP-P12D-79]], the equity breaker lost on a store failure, blocking.
+  - **X3 (HIGH; not looser than main, which doubled):** "reduce-only" is check-then-act in the engine, and the venue receives a plain opposite-side order. A stop filling in between, or two racing closes, leaves an unprotected opposite position. Real venues close atomically:
+    - cTrader `ProtoOAClosePositionReq` ("The unique ID of the position to close");
+    - OANDA `REDUCE_ONLY`;
+    - FIX PositionEffect(77)=C.
+
+    FIX: carry the close intent across the face boundary. The `ExecutionFace` contract gains a close-position operation (or a reduce-only flag) that the adapter maps to the venue's atomic close. That is an ACIS-06 amendment; fold it into the ACIS-13 review with [[GAP-P12D-70]]. The mock face must implement it atomically.
+  - **X4 (MED-HIGH):** the risk and fill stores run in the default rollback journal with `synchronous=FULL`, which SQLite documents as "not necessarily durable across a power loss". FIX: WAL + FULL via the existing `core/data/sqlite_wal.py` helper. It is live because of [[GAP-P12D-76]].
+  - **X5 (MEDIUM, reproduced by the auditor):** the pre-close ban and weekend flatten key only on the Friday close. FTMO binds at ANY closure of two hours or more (it closed FX on Dec 25 and Jan 1 in 2025). FIX: key on the calendar's next ≥2 h closure, holidays included ([[GAP-P12D-58]]).
+  - **Lower findings:**
+    - X6: failing closes are re-sent every tick with no backoff, though FTMO counts closes toward its request cap. FIX: backoff plus a close ceiling.
+    - X7: FTMO 1-Step's end-of-day trailing max loss has no safe encoding. RECORD: the rule type is owed before any 1-Step account.
+    - X8: stale FTMO page date. FIX the citation.
+    - X9: the resume fingerprint is 48 bits of unsalted SHA-256, an offline guessing oracle for a human-chosen token. FIX: HMAC or salted, and never a weaker form than the existing verifier ([[GAP-P10E-03]]).
+  - **Honest negatives, from the auditor:**
+    - FTMO 2-Step reproduces exactly (95k, 97k, 96k; static 90k);
+    - the Prague DST day boundaries fall while FX is closed (2025–27);
+    - the rolling 24-hour budget is at least as strict as a calendar cap;
+    - lot rounding is down-only;
+    - no guard, rulebook, spec or ledger file is touched.
+  - **Unconfirmed:** E8's rules (its help centre returned 403).
+- **INTERNAL lens IN (2026-09-25; archive/AUDIT_BUILDER3_BRANCH_INTERNAL_2026-09-25.md): the branch is NOT tightening-only.** Its F0 is X2, and its F1 is X1.
+  - **New entries, reproduced by the lead:**
+    - [[GAP-P12D-80]] (F2): PRE-EXISTING ON MAIN, the daily-loss halt fires once per process;
+    - [[GAP-P12D-81]] (F11): lot rounding orphans a pair leg.
+  - **F4:** the reduce-only close race. It confirms X3: two concurrent closes leave the venue SHORT 100k, and a hedging venue ends net short 200k. It is a BLOCKER before any demo or live attach.
+  - **F3 (DELEGATED DECISION):** a restart while the account is up now reads a later loss LOWER than main, because main re-anchors at the post-restart equity by accident. The branch is RESTART-INVARIANT and faithful to the firm's static rule, which anchors on initial capital. The lead ACCEPTS restart-invariance as the property, and the branch's claim is corrected from "tightening-only" to "restart-invariant; tightening elsewhere".
+  - **F6:** an `initial_capital` typo can disable the static rule. FIX: schema validation plus a test.
+  - **F5:** re-emitted closes are unbounded, and a restart forgets attempts. FIX: backoff, a ceiling, and persisted attempts (with X6).
+  - **F7:** restore-before-evaluate is only a convention. FIX: enforce it.
+  - **F8:** a Governor-only resume re-halts at the next restart. FIX: one human-resume path that clears the ledger rows.
+  - **F9, F10, F12 (Low):** fix them. F10 is the same as X9.
+  - **Honest negatives:**
+    - no halt clears without a non-blank token;
+    - rounding never rounds up;
+    - sequential closes on a netting venue never grow a position;
+    - with no restore or declared capital, the drawdown series matches base exactly;
+    - corrupt anchors fail closed;
+    - 20 of 21 mutants were killed.
+- Justification: open. ONE consolidated fix list went back to BUILDER-3 on 2026-09-25. The merge needs [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-80]] and [[GAP-P12D-81]] fixed with regression tests and verified by the lead, X3/F4 fixed or filed as an attach blocker, and the owner's go. The merge needs [[GAP-P12D-78]] and [[GAP-P12D-79]] fixed and verified by the lead, plus the owner's go.
+- Linked: [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-74]], [[GAP-P12D-75]], [[GAP-P12D-58]], [[GAP-P12D-76]], [[GAP-P12D-70]]
+
+## GAP-P12D-76: the development laptop keeps losing power abruptly — four hard power-offs in 13 days — so it cannot host the demo engine
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — measured by the lead from the Windows System log, read-only. The latest: an "unexpected" shutdown at 00:40:22 on 2026-09-25 (event 6008) and a reboot at 04:48 (Kernel-Power 41). Every event-41 record reads `BugcheckCode=0`, `PowerButtonTimestamp=0`, `LongPowerButtonPressDetected=false`: no crash, no button, a straight loss of power. Earlier ones: 2026-09-23 08:20, 2026-09-23 16:28 (during sleep), and 2026-09-12 23:51 (recorded in TODO.md). The battery now reads 100% on AC, which suggests mains drops that the battery cannot carry)
+- Area: infrastructure. The laptop holds the ONLY copy of the tick set ([[GAP-P12D-50]]) and is the only machine running ACIS work; the demo engine (Track A) needs an always-on host
+- Description:
+  - **The pattern.** The laptop drops power without warning roughly every few days. Last night it killed three running build agents mid-stage, leaving uncommitted, possibly truncated, files in their worktrees. They were resumed and told to verify file integrity first.
+  - **Why the demo cannot run here.** For a trading engine a power drop means: the fast loop and the §8.6 watchdog die TOGETHER, which defeats the watchdog's purpose; the feed goes stale; and a restart must reconcile against the venue. [[GAP-P12D-55]] and [[GAP-P12D-75]] exist because restarts are dangerous. Server-side stops still protect open positions, but a host that dies every few days makes every restart path a routine event, not an exception.
+  - **The data is at risk too.** Repeated hard power-offs also threaten the single copy of the 12 GB tick set.
+- Justification: open, owner-owned (hardware, and spend).
+  - **Recommendation:** run the demo engine on a small Linux VPS OUTSIDE the US, which FTMO requires. That is what the deployment gate (Docker + systemd + watchdog) was built for. Keep the laptop for development.
+  - **Also for the owner:** check the charger, the mains supply and the battery health (`powercfg /batteryreport` in an elevated shell). And make the second tick-set copy ([[GAP-P12D-50]]) sooner rather than later.
+- Linked: [[GAP-P12D-50]], [[GAP-P12D-51]], [[GAP-P12D-55]], [[GAP-P12D-75]]
+
+## GAP-P12D-75: a restart silently clears every explicit HALT — `halt_event` rows are written but never read back
+- Severity: critical · Likelihood: high
+- Status: open (2026-09-25 — found by BUILDER-3 (F2). The lead VERIFIED it on main: core/risk/store.py writes `halt_event` (`record_halt`) and clears it (`clear_halt`), but nothing in `core/`, `monitoring/` or `scripts/` ever reads the table back)
+- Area: core/risk/store.py, core/risk/monitor.py (restart restore), core/governor/capital_governor.py (halt state), the future three-loop runtime boot, master §8 ("halts are cheap; resumes are human-only")
+- Description:
+  - **What survives a restart and what doesn't.** Every HALT the engine issues is persisted, but the process that restarts starts with no halts at all.
+  - **Why that is dangerous.** A HALT that only a human token may clear (equity floor, platform drawdown breach, restart drift) is therefore cleared by any crash or restart. Under systemd supervision that is automatic.
+  - **It breaks the guard-integrity law** (a restart is never a relaxation; halts are human-only to resume). It is the HALT-state twin of [[GAP-P12D-55]] (drawdown anchors).
+- Justification: open and blocking for any runtime or demo attach.
+  - **The fix is tightening-only:** restore every uncleared `halt_event` at boot, before the first evaluate, re-applying it through the same upward edge. **DELEGATED:** it is sent to BUILDER-3's branch.
+  - **Proof:** regression tests in which a restart after a global HALT still refuses entries until a human resume, falsified per A16.
+- Linked: [[GAP-P12D-55]], [[GAP-0050]], [[GAP-P12D-74]]
+
+## GAP-P12D-74: a Governor "close" order ADDS to the position it means to close — close direction is unspecified between ACIS-05 and ACIS-06, and the execution freeze lets it through
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — found by BUILDER-3 (F1). Its reproduction used the real Governor and orchestrator against a whole-unit mock venue: pair legs went from −441 to −882 and from −486 to −972 after their "closes". The lead VERIFIED the mechanism in main's code: `check_group_exits` builds `SizedOrder(direction=leg.direction, action="close")`, the orchestrator sends `direction=order.direction` verbatim, and nothing inverts it)
+- Area: core/governor/capital_governor.py `check_group_exits` (GAP-0040), core/execution/orchestrator.py (submit; the freeze admits `action == "close"`), specs/ACIS-05 / ACIS-06 (the SizedOrder contract), tests/integration test coverage of the seam
+- Description:
+  - **The bug.** A close order carries the POSITION's direction, and execution treats every order as a trade in its direction. So executing a group exit doubles both legs instead of flattening them.
+  - **The freeze makes it worse.** The post-flatten execution freeze admits any `action == "close"`, so a group exit during a freeze would ADD exposure.
+  - **Why nothing caught it.** The seam has never run (no runtime exists), and the freeze test submits a close into a flat venue and checks only that it FILLED.
+  - **What it blocks:** the weekend flatten, and every Governor-originated close.
+- Justification: open.
+  - **DELEGATED DECISION (the lead's recommendation):** REDUCE-ONLY close semantics, enforced in execution next to the venue.
+    - A `close` identifies the position to close.
+    - The orchestrator converts it into the opposing trade, and REFUSES any close that would not reduce |position| at the venue: a closing trade against a flat or same-side venue is a REJECTED FillReport.
+    - The freeze admits only such reduce-only closes.
+    - This is tightening-only. The closes-allowed-under-freeze law survives, and adding exposure under a freeze becomes impossible.
+    - The Governor's current `direction = leg.direction` stays as the position identifier.
+    - ACIS-05/06 get the convention stated in a versioned amendment.
+  - **Proof:** a seam test that asserts the venue is FLAT after a group exit, and that the freeze refuses an exposure-increasing "close". The fix is sent to BUILDER-3's branch.
+- Linked: [[GAP-0040]], [[GAP-P12D-75]], [[GAP-P12D-58]], [[GAP-P12D-70]]
+
+## GAP-P12D-73: the plateau law shrinks the Deflated-Sharpe trial set — a champion refused after the holdout gate drops out of the trials, which loosens a ratified gate
+- Severity: high · Likelihood: high
+- Status: fixed (2026-09-25 — MERGED. `QIEA.evolve_outcome` returns the holdout-passed candidate whether or not the plateau law stages it, and `evolve_fold` counts every candidate as a trial. The lead re-ran the auditor's `trial_set.py` on the fixed head: 23 trial Sharpes, the same as base, where the defective head gave 18)
+- Area: the BUILDER branch — core/optimizer/qiea.py (the order of the plateau and holdout gates), tests/backtest/evolve_step.py (trial assembly), tests/backtest/report.py (the owner-ratified DSR gate, C-BT-11)
+- Description:
+  - **How it happens.** The plateau check runs AFTER the holdout gate. A champion that clears the holdout and is then refused for plateau reasons is silently removed from the trial set that the DSR deflates by.
+  - **Why it matters.** Fewer, more alike trials mean a lower SR0 and an easier gate: the same inversion class as [[GAP-P12D-33]]. A spec-mandated anti-overfitting law must never loosen the multiple-testing correction.
+- Justification: open and blocking for the merge.
+  - **Required fix:** a refused champion is still a trial (it was evaluated and selected), so it stays counted.
+  - **Regression test:** base and head count the same trials.
+  - **Proof it can fail (A16):** the test must be falsified.
+- Proof: `test_a_plateau_refused_candidate_stays_a_deflated_sharpe_trial`, `test_every_candidate_champion_with_a_sharpe_is_a_trial`.
+- Residual: none — the trial count is restored exactly, and the gate itself belongs to GAP-P12D-33.
+- Linked: [[GAP-P12D-34]], [[GAP-P12D-33]], [[GAP-P12D-72]]
+
+## GAP-P12D-72: the dual audit of the BUILDER branch — findings and triage
+- Severity: medium · Likelihood: high
+- Status: fixed (2026-09-25 — every finding of the BUILDER-branch dual audit is fixed on the branch, committed separately, falsified, and MERGED to main. The lead verified the branch suite at 847 passed, 6 skipped, and the F3 trial count at 23 = base. The merge-time items are done: F7, ACIS-03 v1.5; F8, the report is relocated to archive/)
+- Area: the BUILDER branch `worktree-agent-a128ab904780ce593`, as for [[GAP-P12D-37]] / [[GAP-P12D-34]] / [[GAP-P12D-38]] / [[GAP-P12D-33]]
+- Description: triage, one line each. The gate-affecting F3 has its own entry, [[GAP-P12D-73]].
+  - **FIX on the branch:**
+    - F1/E1: the oracle control is saturated. It passes at 1/15 of the drift and with 35% of signs wrong, and no test catches a 4-hour duration mutant. Add graded-strength rungs, and a fast full-scale test.
+    - F2: stage 1 always voids on weekend-flat accounts. The oracle must obey the account's rules.
+    - E3/F4: `--kinds` without planted still reports a verdict. It must refuse.
+    - E2: a planted failure caused only by the gate must be reported as GATE-LIMITED, not blamed on the engine.
+    - E4: "oracle DSR 0.000" is not a faithful Deflated Sharpe, because the oracle is not one of the trials. Remove it and report the SR0 hurdle instead. The lead also corrects its own notes, below.
+    - E6: a plateau step of ±10% of value is inconsistent across genes; `rsi_overbought` moves 44.5% of its range. **DELEGATED DECISION: the step becomes ±10% of the gene's declared range.**
+    - F5: log each neighbour's direction after repair.
+    - F9: the registry must include the plateau neighbours.
+    - F6/E7: no bare NaN in any JSON output; write null, per RFC 8259.
+    - E9: size the oracle so its notional is a fraction of NAV.
+  - **AT MERGE (lead):**
+    - F7: apply the ACIS-03 v1.5 amendment;
+    - F8: relocate the root report and its PARTIAL references.
+  - **ACCEPTED as a design note:** E8. The registry cannot feed PBO, which needs synchronous per-period P&L; that belongs in the research simulator's design ([[GAP-P12D-68]] item 6).
+  - **SEPARATE:** E5, a pre-existing TSMOM finding outside the diff: [[GAP-P12D-71]].
+  - **Honest negatives, reproduced by both lenses:**
+    - the synthetic tapes are byte-identical before and after;
+    - the oracle has no foresight;
+    - `non_dsr_failures` mirrors `passed` exactly;
+    - the plateau check is deterministic and costs ~3–4%;
+    - `repair_invariants` was moved verbatim;
+    - the registry is logging only;
+    - the suite gives 828 passed, 6 skipped;
+    - the BUILDER's oracle figures reproduce exactly;
+    - its account of MOP's method matches the paper.
+- **FIXES LANDED (2026-09-25; BUILDER head `5d108de`), each committed separately and falsified:**
+  - F3 `6c8bb50`: **lead-verified**; the auditor's `trial_set.py` on the new head gives 23 trial Sharpes, the same as base;
+  - E6 `b842214`: a range-based step;
+  - F5+F9 `bb18730`;
+  - E9 `039a687`;
+  - F2 `3412f54`: the oracle obeys weekend-flat and minimum-hold rules;
+  - F1+E1 `9dd274d`: graded rungs, with profit factor 1.4 as the binding cut, and a full-scale test that kills the 4-hour duration mutant;
+  - E3+F4 `7d1d972`: NO VERDICT, exit 5;
+  - E2 `11fbe54`: GATE-LIMITED, exit 6;
+  - E4 `4b1e723`: an SR0 hurdle instead of the DSR claim;
+  - F6+E7 `76f2ce7`: strict JSON.
+  **What it surfaced:**
+  - a new finding, [[GAP-P12D-85]];
+  - an OWNER NOTE on E6: the range step moves period genes near their floor by large ratios (`ema_fast` 6 → 10). The delegated range-step decision trades one inconsistency (RSI moving 44% of its range) for another (small periods moving by large ratios). A grid-step neighbour, the external referent, is the refinement if it matters.
+- Justification: open until the lead verifies the full suite on the branch head, and the branch merges on the owner's go with the merge-time items applied: F7 (the ACIS-03 v1.5 text) and F8 (relocate BUILDER_REPORT and PARTIAL_BUILDER to archive/, and fix the link at plateau.py:5).
+- Proof: `test_strict_json_writes_every_non_finite_float_as_null`, `test_the_plateau_neighbours_are_recorded_too`, `test_the_oracle_sizes_one_nav_of_notional_on_every_instrument`, `test_on_a_weekend_flat_min_hold_account_the_oracle_keeps_the_rules_and_the_grade_decides`, plus the proofs under GAP-P12D-37, -34 and -73.
+- Residual: GAP-P12D-85 — the fold-end weekend-holding artifact the BUILDER found while fixing F2; E8 (the registry cannot feed PBO) is owned by GAP-P12D-68 item 6; E5 is GAP-P12D-71.
+- Linked: [[GAP-P12D-73]], [[GAP-P12D-37]], [[GAP-P12D-34]], [[GAP-P12D-38]], [[GAP-P12D-33]], [[GAP-P12D-71]]
+
+## GAP-P12D-71: TSMOM's declared "raw returns, not excess returns" deviation rests on a false premise — for FX it drops carry, and the vote flips on 2–10% of days
+- Severity: medium · Likelihood: high
+- Status: open (2026-09-25 — found by AUDIT-EXTERNAL, E5, while auditing the BUILDER branch; it is pre-existing and outside the diff. The lead VERIFIED the declaration exists at core/signals/canonical.py: "signs RAW price returns, not excess-over-risk-free returns as in MOP 2012 (immaterial at 3-12m FX horizons) — GAP-0073". The auditor's measurement is not re-run by the lead)
+- Area: core/signals/canonical.py (TSMOM's `declared_deviations`), core/signals/agon.py `_tsmom`, the closed [[GAP-0073]]
+- Description: the deviation is declared, so the BUILDER's "undeclared" claim was wrong. But the declaration's justification is wrong about the world. For currencies, Moskowitz–Ooi–Pedersen build returns from "spot and forward interest rates" (Appendix A.3), which includes carry. On the repo's own dated overnight-rates data, the 3/6/12-month vote computed on excess returns differs in direction from the raw-return vote on 2.1–10.4% of days in 2013–2025, and on 42% of days for USD/CHF in 2019. So "immaterial" is false.
+- Justification: open.
+  - **Where it gets fixed:** in the TSMOM rebuild ([[GAP-P12D-68]] item 2: a faithful slow sleeve), which should use excess, carry-inclusive returns.
+  - **Until then:** correct the declaration's wording, because a false justification is dishonest provenance under §5.6.
+- Linked: [[GAP-P12D-49]], [[GAP-P12D-68]], [[GAP-0073]], [[GAP-P12D-53]]
+
+## GAP-P12D-70: fills the venue makes on its own — a server-side stop firing, a broker close — have no path into ACIS; the position view goes stale until a restart calls it drift and halts
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — raised as OQ-03a by the SPEC-AUTHOR drafting ACIS-13. The lead VERIFIED it by absence: no unsolicited, venue-initiated or stop-trigger handling exists in specs/ACIS-06, specs/ACIS-07, core/execution or core/risk/monitor.py, and `reconcile_on_restart` is called only by tests)
+- Area: specs/ACIS-06 (the FillReport contract; `ExecutionFace`), core/risk/monitor.py (position accounting from FillReports), the three-loop runtime ([[GAP-0091b]]/[[GAP-0075]]), specs/ACIS-13 (draft)
+- Description: the Risk Monitor builds its view of open positions only from FillReports for orders ACIS itself sent. Several things close a position without that:
+  - a protective stop resting on the venue's server (master §279), which cTrader keeps "active after your session ends" (ACIS-13 draft F-16);
+  - a firm's liquidation;
+  - a manual close.
+
+  None of these produces a FillReport through the orchestrator. The internal view therefore keeps the position open, and VaR, exposure, drawdown and re-entry gating all read a phantom. The only reconciliation in the code runs at restart, and it treats any difference as drift and halts. So the first stop that ever fires correctly would, on the next restart, look like a fault.
+- Justification: open.
+  - **[spec]:** an ACIS-06 amendment, a locked-spec version bump, for venue-initiated FillReports (execution events the venue pushes, mapped to the position they closed), plus periodic RUNTIME reconciliation against the venue, not just at restart.
+  - **[impl]:** that path, in the adapter and the monitor.
+  - **Where it gets decided:** in the ACIS-13 review pass together with the other ACIS-06 amendments (a)–(d) the draft lists.
+  - **It blocks** any live or demo attach that relies on server-side stops, which is all of them.
+- Linked: [[GAP-P12D-69]], [[GAP-0075]], [[GAP-0091b]], [[GAP-P12D-55]], [[GAP-0018]]
+
+## GAP-P12D-69: the spec has no lawful mode for a demo account — paper mode may never send an order, and live mode needs §14 plus human sign-off
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — raised as OQ-01 by the SPEC-AUTHOR drafting ACIS-13. The lead VERIFIED it in the master spec: `acis_set_mode(backtest|paper|live)` offers only three modes, and the GAP-0018 attach law reads "paper mode never gains a real-order path", while §15 orders "OANDA practice account first" before live)
+- Area: ACIS_SPEC.md §7.5 (the attach law, GAP-0018), §12 (modes, `acis_set_mode`, the human token), §15 (phase 12), monitoring/mode.py, specs/ACIS-08, specs/ACIS-13 (draft)
+- Description: the owner's top priority is to see ACIS trade a demo account, and a demo trade is an order sent to a venue.
+  - **In paper mode** it is forbidden by construction.
+  - **In live mode** it would need the §14 minimums out-of-sample, plus human sign-off and the dual-hash acknowledgement. A demo is exactly what must come BEFORE those can be met.
+  - **So a demo run has no lawful mode as written.** This is a real contradiction inside the spec, and it has to be ruled before any adapter attaches.
+- Justification: open.
+  - **The lead's recommendation, adopted in direction under the owner's delegation:** add a fourth mode, `practice`, with these properties:
+    - Orders go ONLY to a venue the attach protocol has verified to be a simulated or practice environment. The adapter proves it structurally: the demo host, and the platform's own is-live flag set to false. If the venue cannot prove it, attach is refused.
+    - Every guardrail, HALT and §9.5 rulebook stays active and unchanged.
+    - Entering practice mode needs the human token, as `live` does, but NOT §14. The venue holds no real money, so §14 has nothing to certify.
+    - Paper mode keeps its "never an order path" law untouched.
+  - **Why it is safe:** it adds an order path only where no real money exists. It must land in master §7.5/§12 and ACIS-08 as spec text, with tests proving that a live-flagged venue is refused in practice mode.
+  - **When the text lands:** in the ACIS-13 review pass. The SPEC-AUTHOR drafted wording for this in the draft's Appendix B.
+- Linked: [[GAP-P12D-70]], [[GAP-P12D-43]], [[GAP-0018]], [[GAP-P12D-52]]
+
 ## GAP-P12D-68: the strategy-layer redesign — the coupled owner decisions the five-agent pass produced
 - Severity: high · Likelihood: high
 - Status: open (2026-09-24 — the triage home for the design proposals from [[GAP-P12D-52]] that are not defects of the existing code. Each item gets its own ID when the owner rules on it and work starts. They share this entry because they are one coupled redesign that the evidence argues for together, and because each depends on the validation protocol ([[GAP-P12D-33]]) and on the objective ([[GAP-P12D-62]]))
@@ -182,7 +520,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-66: an LLM-originated hypothesis cannot be certified on any history the model was trained on — for this session that is ALL of 2012–2025, the holdout included
 - Severity: high · Likelihood: high
-- Status: open (2026-09-24 — proposed by the VALIDATOR and the ARCHITECT in [[GAP-P12D-52]]. The lead verified the anchor source: Gençay, arXiv 2608.27734 (27 Aug 2026) "rejects every LLM-discovered strategy (across two frontier models, search budgets up to one hundred candidates, and five repeated runs)". The VALIDATOR quotes five more 2023–2026 papers on LLM memorisation and look-ahead)
+- Status: mitigated (2026-09-24: the rule is now LAW, master v2.19 §5.6 "LLM-contamination law", adopted under the owner's in-chat delegation. The enforcement is NOT built yet: an origin/cutoff field in the attempt registry, and a grader that refuses a pass on pre-cutoff data for LLM-origin hypotheses. It is owned by [[GAP-P12D-68]] item 7). Originally proposed by the VALIDATOR and the ARCHITECT in [[GAP-P12D-52]]. The lead verified the anchor source: Gençay, arXiv 2608.27734 (27 Aug 2026) "rejects every LLM-discovered strategy (across two frontier models, search budgets up to one hundred candidates, and five repeated runs)". The VALIDATOR quotes five more 2023–2026 papers on LLM memorisation and look-ahead)
 - Area: master §5.6/§5.7 (provenance, the hypothesis lifecycle), specs/ACIS-11 (the attempt registry), the research factory ([[GAP-P12D-68]] item 7), the §14 grading
 - Description: LLMs reproduce financial history from before their cutoff. So when an LLM helps generate or refine a strategy hypothesis — this session's agents included — a backtest over the model's training window tests the model's memory, not the market. This session's model cutoff is June 2026, which covers the entire Dukascopy set (2012–2025) AND the locked 2024–25 holdout. The ARCHITECT's slate was selected with LLM help. Proposed rule, for the owner to ratify:
   - record each hypothesis's origin and the generating model's cutoff;
@@ -393,7 +731,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-53: master §5.6 misstates the century trend-following evidence, and the figure it quotes is the per-market one
 - Severity: medium · Likelihood: high
-- Status: open (2026-09-24 — found by the ARCHITECT agent in [[GAP-P12D-52]]. VERIFIED by the lead from the paper's own Exhibit 1, with the text extracted from a fresh download of Hurst, Ooi & Pedersen, "A Century of Evidence on Trend-Following Investing")
+- Status: fixed (2026-09-24, master v2.19 §5.6, applied under the owner's in-chat delegation; see TODO.md's night-run block). Originally open: found by the ARCHITECT agent in [[GAP-P12D-52]]. VERIFIED by the lead from the paper's own Exhibit 1, with the text extracted from a fresh download of Hurst, Ooi & Pedersen, "A Century of Evidence on Trend-Following Investing")
 - Area: ACIS_SPEC.md §5.6, the verified-benchmark law; the expectations placed on the TSMOM module in specs/ACIS-04; and the FX-methods research report, which repeats "~0.4 in every decade"
 - Description: §5.6 says the century study (1880–2016) shows "Sharpe ≈ 0.4 *every decade*". The paper's Exhibit 1 says otherwise.
   - **The full sample:** "Full Sample Jan 1880-Dec 2016 18.0% 11.0% 7.3% 9.7% 0.76". The columns are the gross excess return, net of cost, net of cost and 2/20 fees, volatility, and the net Sharpe.
@@ -403,6 +741,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Justification: open and owner-owned, because §5.6 is master-spec text (v2.9, owner-directed).
   - **Proposed correction:** state the full-sample net Sharpe of 0.76 over 67 markets, the decade range of 0.13–1.70, and the per-market ~0.4 gross. Say plainly that the evidence is breadth at the portfolio level.
   - **Scope:** it changes no code and no threshold. It changes what a reader would expect of a 2-instrument TSMOM.
+- Proof: ACIS_SPEC.md §5.6 now states the full-sample 0.76 over 67 markets, the decade range 0.13–1.70, and the per-market ≈0.4 gross; the v2.19 changelog records it.
+- Residual: GAP-P12D-68 — what TSMOM should become in light of the corrected evidence (item 2: rebuild it as a faithful slow, broad sleeve). The archived 2026-09-16 FX-methods report still repeats the old figure; it is kept as history.
 - Linked: [[GAP-P12D-52]], [[GAP-P12D-49]], [[GAP-P12D-32]]
 
 ## GAP-P12D-52: five-agent edge pass (2026-09-24) — findings and triage (5 of 5 in, triage complete)
@@ -664,7 +1004,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-37: the falsification VERDICT IS VOID - the pass gate was unsatisfiable before the first tick, and the suite has no positive control
 - Severity: critical - Likelihood: high
-- Status: open (2026-09-16 - found by the BLIND adversarial agent, the one deliberately given no framing; VERIFIED by the author the same day from the run's own artifacts)
+- Status: fixed (2026-09-25 — the oracle positive control is MERGED to main from the BUILDER branch, after the constitution's two audits (GAP-P12D-72) with every finding fixed. It is the first stage of `scripts/falsify_engine.py`: the engine verdict is VOID (exit 4) unless the harness recognises planted on every non-DSR clause and refuses every control by a §14 row. Near-fail rungs prove the grader separates just-above from just-below; there is NO VERDICT (exit 5) without planted, and GATE-LIMITED (exit 6) when only the DSR or trial-count gate fails. Originally found 2026-09-16 by the BLIND agent)
 - Area: scripts/falsify_engine.py `EXPECT_PASS`, tests/backtest/report.py `passed` (the DSR gate), tests/backtest/deflated_sharpe.py `sharpe_threshold`, the whole GAP-P12D-28 falsification design
 - Description: `falsify_engine` asserts planted must PASS, where "pass" is the full 14 gate including `deflated_sharpe >= 0.95`. Feeding the run's OWN recorded trial Sharpe ratios back through the repo's own `sharpe_threshold` gives SR0 (per trade) of **2.430 planted / 0.617 null / 0.649 permuted**, which at each market's own trade count over the graded span demands an **annualised Sharpe above 76.2 / 18.6 / 20.8**. The section-14 target is 1.5. **Planted could not have passed under any engine behaviour whatsoever**, so "planted FAILED" carries no information about the engine. Worse, the hurdle is HIGHEST where the edge is real: the planted trial Sharpes have sd 0.936 against 0.248 on null, because genuine signal widens the dispersion the DSR deflates by - the gate tightens exactly when the strategy works. This is the sharper form of [[GAP-P12D-33]]: that entry documents the inversion with respect to trial COUNT; this one is with respect to trial DISPERSION, and it is why the falsification returned no usable answer.
 - Also: the suite has **no positive control**. An oracle strategy replayed through the same harness (a rule with perfect knowledge of the planted drift sign) would have exposed both this and the 30-minute duration floor in minutes, before any 6-hour run. Nothing in the suite asserts that the harness can recognise a strategy known to be good.
@@ -676,8 +1016,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **Its grade on planted** (EUR_USD, the ladder's 25-fold plan, 2.53 graded years):
     - all seven §14 rows pass: Sharpe 10.2, drawdown 0.94%, PF 555, 100% positive months, average hold 7.1 h;
     - on null the same logic fails five rows.
-  - **The ratified DSR gate refuses even perfect knowledge.** Deflated by the engine's own planted trial sets, the oracle scores **DSR 0.000** (ladder 1x: 106 trials, SR0 5.654; the 2026-09-15 run: 121 trials, SR0 2.430), against its per-trade Sharpe of 1.273. That is the strongest evidence yet for [[GAP-P12D-33]]. The gate itself was not touched.
+  - ~~The ratified DSR gate refuses even perfect knowledge (oracle DSR 0.000)~~ **CORRECTED 2026-09-25 (AUDIT-EXTERNAL E4, [[GAP-P12D-72]]).** That was not a faithful Deflated Sharpe: the oracle is not in the trial set, and the trial Sharpes come from roughly 5-trade holdouts (sd 2.216, max 19.4). Against a like-for-like hurdle the oracle's DSR is 1.0. The valid facts are these:
+    - the gate as fed demands a per-trade SR0 of 5.654 or 2.430, a hurdle no real record meets, because it mixes sample lengths ([[GAP-P12D-33]]);
+    - the VALIDATOR's calibration shows it passes 0 of 1,200 planted edges.
+    The gate itself was not touched.
   - **Lead review:** diff read; the lead re-ran the full suite on the branch (828 passed, 6 skipped). Close this entry when the branch merges, after audit and the owner's go.
+- Proof: `test_a_failed_oracle_voids_the_verdict_before_any_engine_compute`, `test_a_near_fail_rung_the_harness_passes_voids_the_verdict`, `test_the_planted_oracle_clears_every_non_dsr_clause_at_full_fold_scale`, `test_the_harness_passes_a_rung_just_above_the_cut_offs_and_refuses_one_just_below`, `test_non_dsr_failures_is_every_clause_of_passed_but_the_trials`.
+- Residual: GAP-P12D-33 — the ratified DSR gate itself (it mixes sample lengths and passes 0 of 1,200 planted edges); the owner's option C+D decision is pending.
 - Linked: [[GAP-P12D-33]], [[GAP-P12D-31]], [[GAP-P12D-35]], [[GAP-P12D-36]], [[GAP-P12D-28]], [[GAP-P12D-16]]
 
 ## GAP-P12D-38: 79% of the graded "trades" are zero-duration artifacts, and they sit inside the section-14 ratios
@@ -689,10 +1034,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **The fix.** An empty population now reports NaN, not 0.0. It is BUILT, PENDING AUDIT, on branch `worktree-agent-a128ab904780ce593`, with a falsified regression test, and is not yet merged.
   - **When this closes.** Close it on merge, with a Residual pointing at [[GAP-P12D-63]]. The §14 win-rate and PF quotes that this entry barred are no longer barred for this reason; the other reasons still hold, notably [[GAP-P12D-37]] and [[GAP-P12D-33]].
 - Severity: high - Likelihood: high
-- Status: open (2026-09-16 - found by the blind adversarial agent by exact rational arithmetic on the report's own averages; VERIFIED by the author)
+- Status: closed (2026-09-25 — REFUTED and MERGED. There were never any zero-duration trades: the "0.0" was an EMPTY population's mean, since MOMENTUM_SCALP never fires on the synthetic tape. An empty population now reports NaN, written as null in JSON, per GAP-P12D-72 F6/E7. Lead-verified against the ladder's per-strategy attribution)
 - Area: tests/backtest/metrics.py (`win_rate`, `profit_factor`, `n_trades` include every closed trade), core/signals/agon.py `_momentum_scalp`, tests/backtest/book.py open/close on the same tick
 - Description: planted reports `n_trades = 2018` and `avg_trade_duration_s = 477.5061425061425`, which is exactly 194345/407 - so only **407** trades are in the section-14 duration band. TSMOM contributes about 13. The remaining **~1,598 are MOMENTUM_SCALP trades whose durations sum to exactly zero** (`scalp_avg_duration_s = 0.0` with a non-zero scalp population). Same shape on null (733 of 1,864 in band) and permuted (1,717 of 2,111). These zero-duration trades carry non-zero PnL and are counted in `n_trades`, `win_rate` and `profit_factor` - the two section-14 ratios previously quoted as evidence describe a majority-artifact population. The mechanism (open and close on the same tick) is not yet established and is the first thing to reproduce.
 - Justification: open. Until this is explained, no section-14 ratio from any run may be quoted, and the 30-trade floor ([[GAP-P11I-07]]) is not measuring what it was built to measure.
+- Proof: `test_an_empty_carve_out_has_no_mean_duration_never_zero`, `test_momentum_scalp_can_never_fire_on_a_uniform_synthetic_tape`, `test_the_ladder_document_is_strict_json_even_when_the_duration_band_is_empty`.
+- Residual: GAP-P12D-63 — MOMENTUM_SCALP is untested by every synthetic falsification run.
 - Linked: [[GAP-P12D-37]], [[GAP-P12D-31]], [[GAP-SP12I-03]], [[GAP-0075]]
 
 ## GAP-P12D-39: `RegimeContext.trend_direction` is computed every cycle and read by nothing
@@ -735,7 +1082,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Secondary: the recorded trial count understates the true search by ~600x — `population_size 20 x generations 30` = 600 configurations are evaluated and maximised over per QIEA run, and only champions are recorded (gated-out runs record nothing at all, adding survivorship truncation). The multiple-testing exposure that actually threatens the final grade — the OUTER design loop, every pipeline/gene-range/fitness revision re-evaluated against the same history — is counted nowhere.
 - Justification: open and RAISED, not fixed. The gate is owner-ratified (GAP-P12D-16), and a live §14 pass would currently rest on it. It is guardrail-adjacent in spirit: it is the gate that decides whether a result may be believed. Two candidate remedies, both needing owner ratification because they change a ratified gate: (a) make the trial basis commensurate (trials and graded record measured over comparable samples, e.g. `holdout_min_trades >= 30`, and a floor under the trial variance) and re-ratify the 0.95 threshold against it; (b) replace the DSR as primary gate with PBO via CSCV, which reuses evaluations already performed and tests the question actually posed by a search. Until then, treat any DSR-based pass as unproven and do not present one as evidence.
 - **2026-09-24, two developments from the BUILDER agent in [[GAP-P12D-52]]. Both are BUILT, PENDING AUDIT, on branch `worktree-agent-a128ab904780ce593`, not merged:**
-  1. **The gate refuses perfect knowledge.** Deflated by the engine's own planted trial sets, the oracle positive control scores DSR 0.000: the ratified gate refuses a strategy KNOWN to be good ([[GAP-P12D-37]]).
+  1. ~~The gate refuses perfect knowledge (oracle DSR 0.000)~~ **CORRECTED 2026-09-25** by AUDIT-EXTERNAL E4 ([[GAP-P12D-72]]). The oracle is not one of the trials, so that comparison was not a DSR. The valid evidence that the gate is broken is the mixing of sample lengths, where 5-trade holdout Sharpes set the hurdle for a thousands-of-trades record, and the VALIDATOR's measured 0-of-1,200 pass rate on planted edges.
   2. **Every QIEA evaluation is now logged** (genes, fitness, holdout; gated-out runs included; ~45 KB per evolve call). That makes the true trial count, and PBO/CSCV, computable. It is logging only: no gate reads it.
 
   The gate decision is still the owner's.
@@ -758,7 +1105,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-34: the §5.6 parameter-plateau law is spec-mandated and entirely unimplemented
 - Severity: high · Likelihood: high
-- Status: open (2026-09-16 — found by the statistical-methodology research agent; verified by the author: `grep -rn plateau --include=*.py` returns ONE hit, a prompt string in monitoring/prompts.py:40)
+- Status: fixed (2026-09-25 — the §5.6 plateau law is MERGED as ACIS-03 v1.5 §6.4, after the constitution's two audits (GAP-P12D-72/73). It uses a range-based ±10% step, and "dies" = fails C9 on the train window, the lead's delegated decision D8, for the owner's review. A refused candidate stays a DSR trial)
 - Area: ACIS_SPEC.md §5.6 anti-overfitting law, core/optimizer/qiea.py (selection), specs/ACIS-03 §6, specs/ACIS-11
 - Description: master §5.6 binds: "Parameter plateaus required — a strategy that dies at +/-10% on any parameter fails." Nothing in the optimizer, the harness or the validation path computes or enforces this. QIEA selects the single best-scoring individual, which is the peak-picking the law exists to forbid. The spec also requires reported metrics to be read against an attempt registry; the registry exists for strategies but does not count parameter configurations (see GAP-P12D-33's secondary finding).
 - Justification: open. This is the cheapest genuine anti-overfitting device available to us — perturb the champion's genes by +/-10% and require the neighbourhood to survive — and it is already law, so implementing it needs no ratification, only building. It directly attacks the failure mode the falsification exposed: parameters that score well in selection and do nothing in execution.
@@ -771,6 +1118,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **The gene search space is unchanged**, so no re-baseline.
   - **The plateau law is a filter, not evidence.** The VALIDATOR measured the ±10% plateau test as a GATE on its own: it passes noise 93–99% of the time ([[GAP-P12D-33]] options). The spec requires it, and it removes knife-edge champions, but a champion passing it proves nothing.
   - **Close** when it merges after audit.
+- Proof: `test_every_gene_moves_ten_percent_of_its_range_each_way_and_nothing_else_moves`, `test_a_single_dead_neighbour_fails_the_champion_and_is_named`, `test_qiea_refuses_the_same_champion_once_its_neighbourhood_dies`, `test_a_knife_edge_champion_on_the_real_landscape_is_refused`, `test_a_plateau_refused_candidate_stays_a_deflated_sharpe_trial`.
+- Residual: GAP-P12D-68 — whether per-regime QIEA survives the redesign (item 4), and the owner's review of the D8 "dies" reading and the E6 range step (small period genes move by large ratios, e.g. ema_fast 6 → 10; a grid-step neighbour is the refinement).
 - Linked: [[GAP-P12D-33]], [[GAP-0035]], [[GAP-P12D-31]], [[GAP-0008]]
 
 ## GAP-P12D-32: external research pass — findings and triage (report 1 of 5 in)
@@ -1365,4 +1714,5 @@ dimensionally correct; the taper is exactly the ratified linear schedule.
 - Description: v0.9 discharged here before the pin moved from v0.5 (A14 requires that order — an undischarged pin bump reads as adoption and stops anyone looking). What changes for ACIS: **A12** adds a *comment-shape* check alongside the existing size ratchet — a comment cites an ID rather than quoting a rule (a verbatim twelve-word run shared with `ACIS_SPEC.md` is a finding), the mental-model header is one screen (<=20 lines), a later comment block over five lines is a finding, and no comment narrates history; today's 25 findings over 19 file/rule pairs are frozen in `code-shape.baseline.json`, the gate fails only on new ones, and a file a phase edits forfeits its allowance. SIZE stays with `tests/unit/test_module_budget.py`, which already ratchets it under GAP-P12M-01 — two mechanisms policing one rule would be the duplication A12 forbids. **A14** `python scripts/governance_gate.py --session` fails on a stale pin or a CLAUDE.md reference that no longer resolves. **A16** `falsify.cases.json` carries four cases over `core/risk/guardrails.py` — the taper asserted from both sides of its start and halt boundaries, the equity breaker flattening and halting, and the breaker being one-shot per armed cycle rather than per process — all four seen red for their stated reason on 2026-09-16, with every restore sha256-verified. **A3** the terminal milestone (the live-readiness gate) adds a practicality-and-code-efficiency lens run by Fable 5; if Fable is unavailable the lens still runs on the next superior tier and the report names what actually ran. This does not disturb the 2026-09-15 directive that ordinary audits run on Opus 5. **A13** per-phase cleanup is now audited rather than promised, and a spec's spent narrative retires under an "implemented is not spent" guard — the adoption-gate block still at the top of `CLAUDE.md` is a candidate once its step 2 is done. Minor: A1 ledgers an ambiguous requirement and proceeds, A6 gives wording-only corrections no ID, A9 names a subordinate agent's report as untrusted input, A15 requires a proof pointer to resolve to the *right* referent.
 - Justification: the baseline is frozen rather than fixed because a gate red on the day it lands gets disabled, which is worse than none (A16), and the burn-down follows the work rather than a quota. `scripts/governance_gate.py` composes the family checks in one command because ACIS has no npm; the checks themselves live once in `../specs_constitution/checks/` rather than being copied here (A14 — forks drift).
 - Residual: this entry owns the 19 frozen file/rule pairs. A15's closure check was already built (`scripts/ledger_check.py`, 166 entries green).
+- **2026-09-25: the session gate is RED on main.** BUILDER-3 found it (F3), and the lead verified it with `python scripts/governance_gate.py --session`, which exits 1. The comment-shape ratchet flags NEW violations in core/optimizer/costs.py (HEADER 1, BLOCK 1) and scripts/cost_stress_ladder.py (HEADER 1, BLOCK 1), none allowed by the baseline. Both come from the 2026-09-17 cost-stress-ladder work ([[GAP-P12D-46]]), not from any agent branch. The gate also reports that core/data/feeds.py burned down one HISTORY violation, so the baseline can be lowered. The fix is comment-only; costs.py is in the mutation-gate scope, so no code line changes.
 - Linked: TODO.md, [[GAP-P12M-01]], [[GAP-P12M-02]], ../specs_constitution/SPEC_CONSTITUTION.md A12/A14/A16

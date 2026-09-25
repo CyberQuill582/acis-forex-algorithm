@@ -24,14 +24,19 @@ test, a commit or a script named below.
      PF 555, 100% positive months, SPX 0.07, avg duration 7.1 h, 2,656 trades.
    - On null the same logic fails 5 §14 rows (Sharpe −1.21, PSR 0.023).
    - Evidence: the scratch script is reproducible, and the fast test (`test_the_harness_recognises_the_oracle_on_planted_and_refuses_it_on_null`, ~40 s) pins the shape.
-2. **The ratified DSR gate refuses the perfect-knowledge oracle.**
-   - Deflated against the engine's own recorded planted trial sets, the oracle scores **DSR 0.000**
-     under both.
-     - Ladder 1x: 106 trials, SR0 5.654 per trade.
-     - 2026-09-15 run: 121 trials, SR0 2.430, which reproduces GAP-P12D-37 exactly.
-   - The oracle's own per-trade Sharpe is only 1.273.
-   - With no trials the oracle cannot pass by construction (`trial_count` 0 < 2).
-   - The gate was not touched. This is the positive-control evidence GAP-P12D-33/37 asked for.
+2. **The ratified DSR gate cannot pass the oracle.** *(Corrected after audit E4; see "Fixes after
+   dual audit".)*
+   - With no trials the oracle cannot pass by construction (`trial_count` 0 < 2). The gate was not
+     touched.
+   - The engine's recorded planted trial sets demand a per-trade **SR0 hurdle** of 5.654 (ladder
+     1x, 106 trials) and 2.430 (2026-09-15, 121 trials, reproducing GAP-P12D-37).
+   - **Withdrawn:** my earlier "the oracle scores DSR 0.000 under both" was not a Deflated Sharpe in
+     Bailey & López de Prado's sense, and neither was "the oracle's per-trade Sharpe is only 1.273":
+     - the oracle is not a member of the trial set;
+     - the trial Sharpes come from roughly 5-trade holdouts, against the oracle's roughly 2,600-trade
+       record. Against a like-for-like SR0 (about 0.05) the oracle's DSR is 1.0.
+   - The conclusion stands; the mechanism was wrong. The gate as fed refuses everything because of
+     that T-mismatch, not because the oracle is weak.
 3. **`falsify_engine.py` now runs the oracle as stage 1.**
    - A full run is VOID (exit 4) and the engine never runs unless the planted oracle clears every
      non-DSR clause and the null/permuted oracles clear none.
@@ -63,18 +68,111 @@ test, a commit or a script named below.
      (2015-02-03); there were 0 stalls in 2014.
    - Evidence: on-disk rare-event log.
 8. **The §5.6 plateau law is in the optimizer's staging path.**
-   - Every gene is perturbed ±10% (with rounding, clamping and invariant repair). A neighbour
-     "dies" if it fails C9 on the same train window, and any death refuses the champion.
+   - Every gene is perturbed by **±10% of its declared range** (with rounding, clamping and invariant
+     repair). That step is the lead's delegated ruling on audit E6; it was 10% of the value until then.
+   - A neighbour "dies" if it fails C9 on the same train window, and any death refuses the champion.
+   - A refused champion still counts as a Deflated Sharpe trial (audit F3).
    - Cost: **2.61 s per champion, 3.4% of an evolution run** (production config).
-   - It refuses 11–14 of 30 champions on the repo's zigzag fixtures, almost always on an RSI-filter gene.
-   - The operationalisation interprets spec prose, so it is **owner-ratification-flagged**.
+   - It refuses 9–10 of 30 champions on the repo's zigzag fixtures (it was 11–14 at 10% of the value),
+     mostly on `ema_fast` or `rsi_period`.
+   - The reading of "dies" interprets spec prose, so it is **owner-ratification-flagged**.
 9. **Every QIEA evaluation is now logged, including gated-out runs** (logging only). This
    enables PBO/CSCV later, at about 45 KB per evolve call.
-10. **Suite: 808 → 828 passed (+6 data-absent skips); ledger 187 entries, 0 violations.**
-    - All 12 falsification mutants (F1–F12) are dead.
-    - Two survived at first and were resolved:
-      - F6 was an equivalent mutant; its docstring now names the second barrier.
+10. **Suite: 808 → 828 passed at the first hand-off; 847 passed after the audit fixes (+6
+    data-absent skips); ledger 187 entries, 0 violations.**
+    - All 12 falsification mutants of the first batch are dead:
+      - F6 was an equivalent mutant; its docstring now names the second barrier;
       - F12 exposed a blind spot, killed by a new test.
+    - Every audit fix has its own falsification record, below.
+
+## Fixes after dual audit (2026-09-25) — each BUILT — PENDING AUDIT
+**Sources.** The two constitutional audits of this branch at `9b9ec80`:
+- `archive/AUDIT_BUILDER_BRANCH_INTERNAL_2026-09-24.md` (F1–F9);
+- `archive/AUDIT_BUILDER_BRANCH_EXTERNAL_2026-09-24.md` (E1–E9).
+
+Both are in the main tree. The lead triaged them into ten fixes.
+
+**How they were made.** Each fix is its own commit on this branch: green in a full run, falsified
+per A16 (the fix reverted or mutated, red for its stated reason, then restored and re-verified),
+then committed. A power cut and a session limit hit mid-batch. Afterwards every uncommitted file
+was compile-checked and read in full before it was committed.
+
+**Suite.** 828 → **847 passed, 6 skipped** (data-absent). Ledger: 187 entries, 0 violations.
+
+| # | Finding | Commit | What changed | Test (the red line under the reverted fix) |
+|---|---|---|---|---|
+| 1 | **F3** (MUST FIX): the plateau law shrank the DSR trial set | `6c8bb50` | `QIEA.evolve_outcome()` returns `(champion, candidate)`. A holdout-passed candidate the plateau law refuses stays a DSR trial, marked `plateau_refused`. `evolve()` is unchanged for callers. | `test_a_plateau_refused_candidate_stays_a_deflated_sharpe_trial`: base (law off) and head count the same trials. Red: `assert ([] == [12.772798952055345]` |
+| 2 | **F1** the 2-fold control missed the defect class | `9dd274d` | Full-scale fast test: `plan(1,30,25)`, 300 s tape, EUR_USD, dev_paper; ~70 s. | `test_the_planted_oracle_clears_every_non_dsr_clause_at_full_fold_scale`. Red under `DURATION_MAX_S = 4 h`: `assert ('section-14 avg_duration',) == ()` |
+| 2 | **E1** the oracle is saturated; no power near the cut-off | `9dd274d` | The oracle's `sign_error` makes it wrong on a hash-chosen share of whole episodes (`SyntheticMarket.episode_at`). **Profit factor 1.4 is the clause that binds first**; the Sharpe cut never does. Stage 1 grades `oracle.RUNGS` and VOIDs unless near-pass passes and near-fail is refused by a §14 row. | Coarse tape: p = 0.42 gives PF 1.46 (pass) and p = 0.45 gives PF 1.29 (fails exactly `section-14 profit_factor`). Red under a perfect-oracle mutant: `assert () == ('section-14 profit_factor',)`; dropping the stage-1 rungs: `assert 0 == 4` |
+| 3 | **F2** stage 1 always VOIDed on weekend-flat accounts | `3412f54` | `tests/backtest/oracle_loop.py` (split from `oracle.py`) keeps the rules: flat 30 min before Friday's rollover, and before each fold's test end; nothing opened in the preceding `min_hold`; never reverses or closes a position younger than `min_hold`. `book.py` honours `action="close"` at the tick's mid. `void_reasons`: any oracle rule violation VOIDs, and a control counts as refused only by a §14 row. | `test_on_a_weekend_flat_min_hold_account_the_oracle_keeps_the_rules_and_the_grade_decides` (prop_demo), plus 4 unit tests. Five mutants all red, e.g. weekend rule ignored `(('weekend_holding',) == ()`, fold-end deadline dropped (same line), min hold ignored (flip after 20 s, not 60 s) |
+| 4 | **E3 + F4** `--kinds` without planted "held" | `7d1d972` | A full run needs planted AND at least one control; otherwise NO VERDICT, exit 5, before anything runs. The held message names only the markets graded. | `test_no_verdict_without_the_positive_control_and_a_control`. Red: `assert 0 == 5` |
+| 5 | **E2** a DSR-only planted failure was charged to the engine | `11fbe54` | The grade row carries `non_dsr_failed`. When planted is the only wrong answer and that list is empty: GATE-LIMITED, exit 6, "uninterpretable, NOT an engine verdict". Exit codes are documented in the script docstring. | `test_a_planted_refusal_only_by_the_dsr_gate_is_gate_limited_not_an_engine_failure`. Red: `assert 1 == 6` |
+| 6 | **E4** "oracle DSR 0.000" was not a DSR | `4b1e723` | `oracle_deflation.json` and its print are removed. Each engine run reports the per-trade **SR0 hurdle** (`sharpe_threshold` over the harness's own trial filter and N), labelled as a hurdle. `OracleGrade.trade_returns` and `per_trade_returns` (stage-1 scaffolding) are removed. | Handover test pins no file and two labelled hurdle lines. Red: `assert not True` |
+| 7 | **E6** (the lead's delegated decision) value-relative step | `b842214` | A neighbour moves each gene by **±10% of its GENE_SPECS range**; rounding, clamping and repair are unchanged. | Hand-worked table, bounds and trench pins recomputed. Red under the value step: `Mismatched elements: 20 / 22` |
+| 8 | **F5** a repaired move logged with its intended direction | `bb18730` | `Neighbour.direction` is the ACTUAL move after repair; duplicate neighbours are skipped. | `test_a_repair_that_carries_the_move_past_the_champion_is_logged_as_it_happened`. Red: `[(-1, 2.1), (1, 2.4)] == [(1, 2.1), (1, 2.4)]` |
+| 8 | **F9** the registry omitted the plateau neighbours | `bb18730` | `EVOLUTION_EVALUATIONS.neighbours` records each neighbour's genome and train fitness. | `test_the_plateau_neighbours_are_recorded_too`. Red: `assert (None is None and 0 == 22)` |
+| 9 | **F6 + E7** bare `NaN` in JSON | `76f2ce7` | `oos_runner.strict_json` (non-finite → null, `allow_nan=False`) now writes every report, `ladder.json` (new `ladder_document`) and the data-validation `report.json`. | `tests/backtest/test_strict_json.py`, whose parser refuses NaN and Infinity. Red: `ValueError: non-RFC-8259 constant NaN` |
+| 10 | **E9** 10,000 units = $18M of gold | `039a687` | The oracle sizes whole units to one NAV of USD notional per instrument via `money.quote_to_account`. | `test_the_oracle_sizes_one_nav_of_notional_on_every_instrument` (EUR 9,090 / JPY 10,000 / XAU 5). Red: `assert (10000 * 1.1) <= 10000` |
+
+**Measured along the way.**
+- **Stage-1 rung calibration** (the falsification default: `plan(60, 30, 25)`, 20 s tape, dev_paper;
+  `SCRATCH/BUILDER/rung_scan.py`):
+  - p = 0.42 on EUR_USD + USD_JPY: Sharpe 6.09, **PF 1.593**, win 0.585, positive months 100%, every
+    clause met (1,380 s).
+  - p = 0.46: **PF 1.251** on EUR_USD alone and 1.316 on USD_JPY alone, both failing only
+    `section-14 profit_factor`. The oracle decides per instrument, so the pooled PF lies between the
+    two and fails too.
+  - Not run: the two-instrument grade at p = 0.46 was not run end-to-end. The pooled figure is
+    inferred from the two single-instrument grades (a pooled PF is a mediant of the two, so it lies
+    between them).
+  - Coarse-tape curve (EUR_USD), PF by p: 13.5 (0.00), 3.98 (0.20), 2.44 (0.30), 1.98 (0.35),
+    1.60 (0.40), 1.46 (0.42), 1.43 (0.43), 1.36 (0.44), 1.29 (0.45), 1.25 (0.46).
+- **Weekend-flat accounts on the coarse full-scale tape** (`SCRATCH/BUILDER/coarse_accounts.py`):
+  - prop_demo and ftmo: planted `()`; null and permuted fail §14 rows only; no rule violations;
+    `void_reasons == []`.
+  - dev_paper is unchanged.
+- **Plateau refusals under the range step** (unit config, seeds 1–30): trend zigzag **10/30** (was
+  14/30) and ranging-25 **9/30** (was 11/30).
+  - `rsi_overbought` now kills in 2 and 3 of those; `ema_fast` in 8 of each.
+  - Cost is unchanged: at most 22 neighbours.
+
+**New findings the fixes surfaced** (for the lead; I changed nothing beyond the fixes).
+- **The harness carries open positions through the observe-only embargo** (7 days, always spanning
+  a weekend), where no strategy can act and orders emitted on warm-up ticks are never applied.
+  - On a weekend-flat account, any ENGINE position open at a fold's test end is therefore booked as
+    `weekend_holding`, whatever the engine does.
+  - The oracle now avoids it by flattening before each fold's end. The engine cannot.
+  - Proposed Status: open, Severity high on weekend-flat accounts (FTMO), [impl].
+- **The range step (E6) makes large RELATIVE moves on period genes near their floor.**
+  - Example: seed 42's zigzag champion has `ema_fast = 6`. Its +4.5 neighbour rounds to 10, a +67%
+    move, and dies there.
+  - The range step is uniform on the search-range scale, not on a log scale. That matters for EMA
+    periods, whose effect scales with the ratio.
+  - Owner note: a log-scale step for period genes is the natural alternative.
+- **Test-fixture churn from E6.** Six tests that only need *a* staged champion moved from seed 42
+  or 9 to seed 5:
+  - `test_evolve_returns_valid_paramset_and_logs_run`;
+  - `test_same_seed_same_history_identical_champion`;
+  - `test_evolves_on_every_bar_inside_the_span_not_a_bar_count`;
+  - the promotion-cycle integration test, plus the registry and trench tests.
+
+  Their intent is unchanged, and the refusals themselves are pinned.
+
+**Updated ACIS-03 v1.5 draft** (it supersedes the §6.4 wording in the Stage 4 section below): "…
+the neighbour is the champion with g ← g + d·0.10·(hi_g − lo_g) …; `direction` records the gene's
+actual move after repair; a candidate the law refuses is not staged but remains a Deflated Sharpe
+trial (it consulted the holdout); `EVOLUTION_EVALUATIONS` also lists the plateau neighbours." The
+open owner questions on "dies" (the C9 cliff vs relative degradation), joint vs one-at-a-time
+moves, and GAP-0035's unread genes stand.
+
+**Left for the lead, per the triage:**
+- F7: land the ACIS-03 amendment at merge;
+- F8: relocate this report and the PARTIAL pointer, and cite a gap ID in `plateau.py`;
+- E8: the research-simulator design note.
+
+E5 (TSMOM's declared spot-return deviation rests on wrong premises) was outside my list. It also
+corrects my Stage 3 claim: the deviation **is** declared, at `core/signals/canonical.py:101-102`
+(GAP-0073, closed). What E5 disputes is its premise ("excess over risk-free", "immaterial").
 
 ## Setup
 - **Branch base.** My worktree branch was cut at `e00fdd3`, 84 commits behind local `main`, most
@@ -101,7 +199,8 @@ test, a commit or a script named below.
 ## Stage 1 — Oracle positive control (GAP-P12D-37) — BUILT — PENDING AUDIT
 **What was built.**
 - `tests/backtest/oracle.py` (188 lines):
-  - `OracleLoop` holds 10,000 units in the direction of the planted episode *in force*. It reads
+  - `OracleLoop` holds 10,000 units (one NAV of USD notional since E9; now in `oracle_loop.py`, F2)
+    in the direction of the planted episode *in force*. It reads
     `SyntheticMarket.episode_sign`, never the next episode, and never sees the noise. It reverses
     when the state changes and re-asserts at the first graded tick of each UTC day, so a max-hold
     close does not leave it flat.
@@ -122,7 +221,8 @@ test, a commit or a script named below.
   - **Every market is bit-identical to before.** sha256 fingerprints were taken of the returns and
     of sample ticks for 3 specs × 3 kinds, before and after (`SCRATCH/BUILDER/market_fingerprint.py`).
 - `harness.py`:
-  - `per_trade_returns` extracted, so one definition serves the DSR and the oracle.
+  - ~~`per_trade_returns` extracted~~ (reverted by E4: it only fed the withdrawn deflation; the
+    harness expression is verbatim again).
   - A read-only `graded_trades()` accessor. Grading is unchanged.
 - `synthetic_grade.py`:
   - `oracle_row`, the worker behind stage 1.
@@ -130,8 +230,8 @@ test, a commit or a script named below.
 - `scripts/falsify_engine.py`:
   - Stage 1 grades the oracle on every market. `void_reasons` returns exit 4 before any labelling
     or engine compute unless planted is recognised and null/permuted are refused.
-  - After the engine stage, it writes `oracle_deflation.json`: the DSR the ratified formula gives
-    the oracle under each engine run's own trial set.
+  - ~~After the engine stage, it writes `oracle_deflation.json`~~ (removed by E4; each run now
+    reports the gate's per-trade SR0 hurdle).
   - A `--quick` run prints stage 1 and never voids, because its span is too short for any verdict.
 
 **The oracle's full §14 record** (scratch `oracle_record.py`; EUR_USD; the ladder's exact plan `plan(60, 30, 25)`, 25 folds, 985 days; account `dev_paper`; declared 1x costs).
@@ -151,20 +251,22 @@ test, a commit or a script named below.
 | per-trade Sharpe (skew, raw kurtosis) | 1.273 (1.65, 6.42) | −0.039 | — |
 | **`trial_count`** | **0 ✗** (needs ≥ 2) | 0 ✗ | ratified |
 | **DSR as reported** (no trials, so it is the PSR against 0) | 1.000 | 0.023 | ≥ 0.95 |
-| **DSR under the ladder-1x planted trial set** (106 trials, SR0 5.654) | **0.000 ✗** | 0.000 | ≥ 0.95 |
-| **DSR under the 2026-09-15 planted trial set** (121 trials, SR0 2.430) | **0.000 ✗** | 0.000 | ≥ 0.95 |
+| ~~DSR under the ladder-1x planted trial set~~ — **WITHDRAWN (E4)**: the per-trade SR0 **hurdle** of that set is 5.654 (106 trials) | ~~0.000~~ | ~~0.000~~ | — |
+| ~~DSR under the 2026-09-15 planted trial set~~ — **WITHDRAWN (E4)**: SR0 hurdle 2.430 (121 trials) | ~~0.000~~ | ~~0.000~~ | — |
 
 Reading the table:
 - The null oracle's loss is friction plus noise. The declared per-trade cost is about $0.84, and
   × 2,656 trades that is about $2,231 of the $2,538.
 - The planted PnL is huge because perfect knowledge of a 0.15σ-per-step drift is worth a great deal.
   **The oracle is an upper bound, not a target.**
-- **Refusal evidence for GAP-P12D-33/37:**
-  - The ratified gate refuses the oracle twice over: no trials means no pass by construction, and
-    under the engine's own recorded trial sets its DSR is 0.
-  - SR0 per trade exceeds the oracle's perfect-knowledge per-trade Sharpe by 4.4× (ladder) and
-    1.9× (2026-09-15).
-  - No strategy could pass this gate on this market as it is fed. I did not modify the gate.
+- **Refusal evidence for GAP-P12D-33/37** *(corrected after audit E4)*:
+  - No trials means no pass by construction.
+  - The hurdle the engine's own trial sets demand is set by roughly 5-trade holdout estimates. A
+    per-trade Sharpe over thousands of trades is not commensurate with it, so the "oracle DSR 0.000"
+    and the "4.4× / 1.9×" ratios I gave here were withdrawn: they measured that T-mismatch, not the
+    oracle.
+  - As fed, the gate refuses everything; the VALIDATOR and both auditors agree. I did not modify the
+    gate.
 
 **Tests** (`tests/backtest/test_oracle_control.py`, 8):
 - the schedule is exactly the planted drift;
@@ -283,8 +385,8 @@ session), against the brief's ≥ 2 GB rule.
   - **avg 192,318.8 s = 53.4 h**, against planted episodes of 1–4 h (mean 2.5 h).
   - The ladder's rungs move TSMOM only −152.49 → −175.41 for 4× the friction, so friction is about
     5.7 per 1x. **About 96% of TSMOM's loss is direction.**
-- **The 48 h cap.** The harness book closes EVERY position at 48 h (`tests/backtest/harness.py:98`,
-  `max_hold_s: float = 48 * 3600`, passed to `PositionModel`; `book.py:124`), TSMOM included.
+- **The 48 h cap.** The harness book closes EVERY position at 48 h (`tests/backtest/harness.py:93`,
+  `max_hold_s: float = 48 * 3600`, passed to `PositionModel`; `book.py:132`), TSMOM included.
   - A mean of 53.4 h > 48 h fits max-hold exits extended over the synthetic weekend gap (no ticks
     Fri 21:00 → Mon 00:00 UTC). If starts are uniform, max-hold trades average about 59 h, so
     roughly 85–90% of TSMOM trades are 48 h truncations. That is inference, not measured.
@@ -331,8 +433,9 @@ session), against the brief's ≥ 2 GB rule.
     - MOP's headline rule is the sign of the past 12-month *excess* return, rebalanced monthly and
       held one month, with each position sized to 40% ex-ante volatility using an EWMA σ.
     - The 3/6/12-month blend is a declared variant.
-    - Using **spot returns instead of excess/forward returns (carry omitted)** does not appear in
-      the declared deviations I read.
+    - Using **spot returns instead of excess/forward returns (carry omitted)**: ~~does not appear in
+      the declared deviations I read~~ **REFUTED by audit E5:** it is declared at
+      `core/signals/canonical.py:101-102` (GAP-0073, closed). E5 disputes the declaration's premises.
     - Grade: (a), recalled from the paper and not re-fetched this pass.
   - (ii) *Holding:* the engine re-evaluates every tick, and in the backtest the **book truncates
     every TSMOM position at 48 h** and re-enters.
@@ -362,6 +465,11 @@ session), against the brief's ≥ 2 GB rule.
 - **`GENE_SPECS` is unchanged. `test_baseline_paramset.py` is green.**
 
 **Operationalisation of "dies" — FLAGGED FOR OWNER RATIFICATION (it interprets spec prose).**
+> **Superseded in part after the dual audit.** The step is now ±10% of the gene's RANGE (E6). A
+> refused candidate stays a DSR trial (F3). `direction` is the actual post-repair move (F5).
+> Refusal counts are 10/30 and 9/30; the seeds are 5 and fold 1. See "Fixes after dual audit". The
+> text below records the first hand-off.
+
 - **Neighbour:** ONE gene × (1 ± 0.10) of its own value. Integer genes are rounded as `decode_gene`
   rounds (half-to-even), clamped to the `GENE_SPECS` range, and repaired with `repair_invariants`
   (ema_slow > ema_fast; tp > sl).
@@ -382,9 +490,9 @@ session), against the brief's ≥ 2 GB rule.
   3. One-at-a-time moves (22 neighbours) versus joint corners (2¹¹).
   4. The three genes fitness does not read (GAP-0035) are perturbed. They cannot die until that gap
      closes, and bind automatically afterwards.
-  5. **Interaction with GAP-P12D-33.** Refused champions leave the DSR trial set, and under the
-     inverted gate fewer recorded trials make it EASIER to pass. Stage 5's registry is the start of
-     the fix.
+  5. **Interaction with GAP-P12D-33.** Refused champions left the DSR trial set, and under the
+     inverted gate fewer recorded trials make it EASIER to pass. **Fixed after audit F3:** a refused
+     candidate stays a trial.
 
 **Measured.**
 - Production config (20 × 30 = 600 evaluations), 20,000 one-minute bars: **20.8 neighbours and
@@ -421,7 +529,8 @@ session), against the brief's ≥ 2 GB rule.
 - **F9** uses a 20% step → the table, bounds, cliff and trench tests fail.
 - **F10** drops the invariant repair → `assert 26 == 29`.
 
-**Draft ACIS-03 amendment (v1.5). For the owner; NOT written to `specs/`.**
+**Draft ACIS-03 amendment (v1.5). For the owner; NOT written to `specs/`.** *The step, `direction`,
+refused-candidate and registry wording is superseded by the updated draft in "Fixes after dual audit".*
 > **§6 step 5 (append):** "…then pass the §6.3 holdout gate **and the §6.4 plateau law** before it may be staged."
 >
 > **§6.4 Parameter plateau (master §5.6 anti-overfitting law; closes GAP-P12D-34).** After the champion clears C9 on train (GAP-0038) and the §6.3 holdout gate, QIEA evaluates its ±10% neighbourhood on the **same train window**. For each gene g in `GENE_SPECS` and each direction d ∈ {−1, +1}, the neighbour is the champion with g ← g·(1 + 0.10·d): an integer gene is rounded as the decoder rounds (half-to-even), the value is clamped to g's range, and the cross-field invariants are repaired as §6 step 2 repairs them. A move that returns the champion is not a neighbour. A neighbour **dies** iff its train fitness is `WORST_FITNESS` (it fails C9: fewer than `fitness_min_trades` closed trades, or E_R ≤ `expectancy_min_r`). **Any dead neighbour ⇒ the champion is not staged**; `EVOLUTION_REJECTED_PLATEAU` is logged and the regime stays param-less (safe; NVMA holds `tradeable=False`). Genes the v1 fitness harness does not exercise (GAP-0035) are perturbed like every other; their neighbours cannot die until module-gene fitness exists. Cost: ≤ 2 × 11 train evaluations per surviving champion (≤ 3.7% of a 20 × 30 run).
@@ -497,11 +606,11 @@ come to about 18 MB of JSONL. It is not a sampled type, so it is written in full
 
 ## Ledger items this pass should generate
 (No IDs; the lead assigns them. [impl] = implementation, [spec — owner ratification] = needs a ruling.)
-1. **Oracle positive control built; the ratified DSR gate refuses a perfect-knowledge oracle** (DSR 0.000 under the engine's own planted trial sets) — Severity critical · Likelihood high · proposed Status: GAP-P12D-37 → *mitigated* (control exists and is stage 1), GAP-P12D-33 → *open, now evidenced* — [impl] for the control; [spec — owner ratification] for any gate change.
+1. **Oracle positive control built; the ratified DSR gate cannot pass it** (no trials by construction; the engine's trial sets demand per-trade SR0 hurdles of 5.654 / 2.430 — a T-mismatched hurdle, not an "oracle DSR", after audit E4) — Severity critical · Likelihood high · proposed Status: GAP-P12D-37 → *mitigated* (control exists and is stage 1), GAP-P12D-33 → *open, now evidenced* — [impl] for the control; [spec — owner ratification] for any gate change.
 2. **GAP-P12D-38 refuted — empty-population mean reported as 0.0; no zero-duration trades exist** — Severity medium · Likelihood high · proposed Status: *fixed* (`test_an_empty_carve_out_has_no_mean_duration_never_zero`, `test_momentum_scalp_can_never_fire_on_a_uniform_synthetic_tape`); the band count in the ledger text (407) should be corrected to 1,628 — [impl].
 3. **MOMENTUM_SCALP is never exercised by any synthetic market (uniform 20 s tape)** — Severity high · Likelihood high · proposed Status: open — [spec — owner ratification] (changes the positive-control market design).
 4. **The backtest book truncates TSMOM at 48 h (every strategy shares one max hold), contradicting ACIS-09's multi-month carve-out** — Severity high · Likelihood high · proposed Status: open — [spec — owner ratification] (per-strategy max hold forces a longer embargo, GAP-SP12E-03).
-5. **`_tsmom` uses spot returns, not excess/forward returns (carry omitted) — possibly undeclared deviation from MOP** — Severity medium · Likelihood medium · proposed Status: open, verify against ACIS-11 `declared_deviations` — [spec — owner ratification].
+5. ~~`_tsmom` uses spot returns — possibly undeclared deviation from MOP~~ **Corrected by audit E5:** the deviation IS declared (`core/signals/canonical.py:101-102`, GAP-0073 closed); what fails is its premise ("excess over risk-free", "immaterial") — the external auditor owns that finding.
 6. **TSMOM's standing vote vetoes every opposite-direction signal on its instrument (DISCARD_OPPOSITE on every tradeable tick) and stalls promotions from the day it goes live** — Severity high · Likelihood high · proposed Status: open — [spec — owner ratification] (arena conflict rule, ACIS-04 §2 table).
 7. **The planted market has no edge at TSMOM's horizon, and whole-path demeaning tilts long-horizon trend votes negative** — Severity medium · Likelihood medium · proposed Status: open — [spec — owner ratification] (a TSMOM-appropriate control).
 8. **TSMOM per-trade bucketing BLOCKED on memory; run spec written** — Severity medium · Likelihood — · proposed Status: open (lead to run `SCRATCH/BUILDER/tsmom_diag.py`, folds 9–10, ≥ 2 GB free) — [impl].
@@ -509,9 +618,12 @@ come to about 18 MB of JSONL. It is not a sampled type, so it is written in full
 10. **Plateau refusals shrink the DSR trial set; under the inverted gate that makes passing easier** — Severity high · Likelihood medium · proposed Status: open, owned by GAP-P12D-33 — [spec — owner ratification].
 11. **Every QIEA evaluation now logged (EVOLUTION_EVALUATIONS)** — Severity medium · proposed Status: GAP-P12D-33 secondary finding *mitigated* (registry exists; PBO/CSCV not computed) — [impl].
 12. **Worktree isolation cuts branches from a stale ref (84 commits behind local `main`)** — Severity low · Likelihood high · proposed Status: open (process note for future builder passes) — [impl].
+13. **(From the audit fixes.) The harness carries open positions through the observe-only embargo, where no strategy can act and orders are never applied; on a weekend-flat account every ENGINE position open at a fold's test end is booked `weekend_holding`, whatever the engine does** — Severity high (FTMO/prop_demo) · Likelihood high · proposed Status: open — [impl] (e.g. flatten at test end, or grade the embargo's closes as the harness's) — the oracle avoids it by flattening before each fold's end (`oracle_loop.py`).
+14. **(From the audit fixes.) The E6 range step is uniform on the search range but moves period genes near their floor by large RATIOS (`ema_fast` 6 → 10, +67%)** — Severity low · Likelihood medium · proposed Status: open, owner note — [spec — owner ratification] (a log-scale step for period genes).
+15. **(From the audit fixes.) Audit-fix batch: F3, F1+E1, F2, E3+F4, E2, E4, E6, F5+F9, F6+E7, E9 built on the branch** — proposed Status: each *fixed pending audit*; residuals: F7/F8/E8 with the lead at merge; E5 with the external auditor's entry.
 
 ## Sources
-- **Code** (exact): `tests/backtest/harness.py:98` (max hold); `tests/backtest/book.py:124`; `core/signals/agon.py:430-448` (scalp), `:482-506` (TSMOM), `:306-318` (DISCARD_OPPOSITE); `core/data/normaliser.py:234-243` (velocity window); `config/system_config.yaml:41,52,82` (conviction_discard, surge ratio, velocity window); `specs/ACIS-09-BACKTEST_VALIDATION.md:76` (TSMOM "multi-month by design"); `ACIS_SPEC.md:207` (§5.6 law); `specs/ACIS-03-QIEA_OPTIMIZER.md` §6/§9/§12–§14.
+- **Code** (exact): `tests/backtest/harness.py:93` (max hold); `tests/backtest/book.py:132`; `core/signals/agon.py:430-448` (scalp), `:482-506` (TSMOM), `:306-318` (DISCARD_OPPOSITE); `core/data/normaliser.py:234-243` (velocity window); `config/system_config.yaml:41,52,82` (conviction_discard, surge ratio, velocity window); `specs/ACIS-09-BACKTEST_VALIDATION.md:76` (TSMOM "multi-month by design"); `ACIS_SPEC.md:207` (§5.6 law); `specs/ACIS-03-QIEA_OPTIMIZER.md` §6/§9/§12–§14.
 - **Data** (read-only; copies in `SCRATCH/BUILDER/ladder_copy/`): `data/validation/cost_stress/20260917T083216Z/{rung_1x.json, ladder.json, logs/run_rung_1x.jsonl, engine/rung_1x/*.db}`; `data/validation/falsification/20260915T231127Z/{planted,null,permuted}.json`.
 - **Scripts:** `SCRATCH/BUILDER/{oracle_record.py, oracle_record_*_EUR_USD.json, gap38_arith.py, market_fingerprint.py, tsmom_blocking.py, tsmom_bridge.py, tsmom_bridge_8.log, tsmom_diag.py, plateau_seed_scan.py, plateau_cost.py, evolve_step_scan.py}`.
 - **Literature** (grade a; recalled, not re-fetched, no web access): Moskowitz, Ooi & Pedersen, "Time series momentum", *Journal of Financial Economics* 104(2), 2012; Hurst, Ooi & Pedersen, "A Century of Evidence on Trend-Following Investing", 2017; Bailey & López de Prado, "The Deflated Sharpe Ratio", *JPM* 40(5), 2014 (as pinned in `deflated_sharpe.py`).

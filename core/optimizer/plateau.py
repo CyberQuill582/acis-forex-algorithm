@@ -1,22 +1,19 @@
-"""The §5.6 parameter-plateau law (master §5.6, GAP-P12D-34): "Parameter plateaus required — a
-strategy that dies at ±10% on any parameter fails."
+"""The master §5.6 parameter-plateau law, specified as ACIS-03 v1.5 §6.4 (GAP-P12D-34).
 
-Mental model (the operationalisation interprets spec prose; it is flagged for owner ratification
-in BUILDER_REPORT_2026-09-24.md and drafted as an ACIS-03 amendment there):
-  * A NEIGHBOUR is the champion with ONE gene moved by ±`PLATEAU_STEP` (10%) of its own value,
-    made valid exactly as QIEA makes a decoded gene valid: an integer gene is rounded as
-    `decode_gene` rounds it, the value is clamped into its GENE_SPECS range, and the cross-field
-    invariants (ema_slow > ema_fast, tp > sl) are repaired by `repair_invariants`. A neighbour
-    is therefore never invalid, and a repair may move a second gene.
-  * A move that lands back on the champion (the gene sits on its range bound, 10% is below an
-    integer gene's resolution, or the repair undoes it) is not a neighbour: that side has nothing
-    to test.
-  * A neighbour DIES when it fails the C9 gate on the champion's own TRAIN window: the fitness
-    function scores it WORST_FITNESS (fewer than `fitness_min_trades` closed trades, or E_R <=
-    `expectancy_min_r`). ANY dead neighbour fails the champion ("on any parameter").
-  * Every gene is perturbed, including the three the v1 fitness harness does not read (GAP-0035):
-    while that gap is open their neighbours trade exactly like the champion and cannot die; when it
-    closes they bind with no change here.
+Mental model (the operationalisation is the lead's delegated ruling D8, for the owner's review):
+  * A NEIGHBOUR is the champion with ONE gene moved by ±`PLATEAU_STEP` (10%) of that gene's
+    declared GENE_SPECS RANGE (hi − lo), the same meaning on every gene (audit E6). It is made
+    valid exactly as QIEA makes a decoded gene valid: an integer gene is rounded as `decode_gene`
+    rounds, the value is clamped into its range, and `repair_invariants` restores ema_slow >
+    ema_fast and tp > sl. A neighbour is never invalid, and a repair may move a second gene.
+  * A move that lands back on the champion (a range bound, or a repair that undoes it) is not a
+    neighbour. A repair can carry a move PAST the champion, so `direction` is the gene's ACTUAL
+    signed move after repair, never the intended one (audit F5).
+  * A neighbour DIES when it fails C9 on the champion's own TRAIN window (fitness WORST_FITNESS:
+    too few closed trades, or E_R <= `expectancy_min_r`). ANY dead neighbour fails the champion.
+  * Every gene is perturbed, including the three the v1 harness does not read (GAP-0035): until
+    that closes, their neighbours trade like the champion and cannot die.
+  * Passing proves nothing by itself: it is a fragility veto, not evidence (VALIDATOR, GAP-P12D-33).
 """
 
 from __future__ import annotations
@@ -27,7 +24,7 @@ from typing import Callable, Mapping
 from core.optimizer.fitness import WORST_FITNESS
 from core.optimizer.param_types import GENE_SPECS, repair_invariants
 
-PLATEAU_STEP = 0.10                      # master §5.6: "±10% on any parameter"
+PLATEAU_STEP = 0.10                      # master §5.6 "±10%", as a share of each gene's RANGE (E6)
 
 Genes = Mapping[str, "float | int"]
 
@@ -35,7 +32,7 @@ Genes = Mapping[str, "float | int"]
 @dataclass(frozen=True)
 class Neighbour:
     gene: str
-    direction: int                       # +1: the gene moved up 10%, -1: down
+    direction: int                       # +1 / -1: the ACTUAL move of `gene` after repair (F5)
     genes: Mapping[str, "float | int"]   # the complete, valid neighbour
 
 
@@ -58,13 +55,14 @@ def _moved(name: str, value: float) -> float | int:
 
 
 def neighbours(genes: Genes) -> tuple[Neighbour, ...]:
-    """Every distinct one-gene ±10% neighbour of `genes`, in GENE_SPECS order, down before up."""
-    out = []
-    for name in GENE_SPECS:
-        for direction in (-1, 1):
-            moved = repair_invariants({**genes, name: _moved(name, genes[name] * (1 + direction * PLATEAU_STEP))})
-            if moved != dict(genes):
-                out.append(Neighbour(name, direction, moved))
+    """Every distinct one-gene ±10%-of-range neighbour of `genes`, in GENE_SPECS order, the
+    intended down-move before the up-move; `direction` is the actual move after repair."""
+    out: list[Neighbour] = []
+    for name, (lo, hi, _) in GENE_SPECS.items():
+        for intended in (-1, 1):
+            moved = repair_invariants({**genes, name: _moved(name, genes[name] + intended * PLATEAU_STEP * (hi - lo))})
+            if moved != dict(genes) and all(moved != n.genes for n in out):
+                out.append(Neighbour(name, 1 if moved[name] > genes[name] else -1, moved))
     return tuple(out)
 
 

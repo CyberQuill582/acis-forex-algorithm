@@ -169,5 +169,12 @@ def _plain(v):
     return v
 
 
+def strict_json(value, *, sort_keys: bool = False) -> str:
+    """RFC 8259 JSON (audits F6/E7: "NaN and Infinity are not permitted"): `_plain` maps every
+    non-finite float to null, and `allow_nan=False` makes any that slips past RAISE rather than
+    write a bare NaN a strict parser rejects."""
+    return json.dumps(_plain(value), indent=1, sort_keys=sort_keys, allow_nan=False)
+
+
 def report_json(report: ValidationReport) -> str:
-    return json.dumps(_plain(report), indent=1, sort_keys=True)
+    return strict_json(report, sort_keys=True)
