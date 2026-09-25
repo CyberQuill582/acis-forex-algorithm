@@ -20,7 +20,9 @@ from decimal import Decimal
 
 from config.schemas import ExecutionConfig
 from core.data.errors import DataQualityError
+from core.execution.boundary import quantity_at, reduce_only_at, side
 from core.execution.fragmenter import Fragment, FragmentPlan, plan
+from core.execution.reports import ReportBook
 from core.execution.venue import (
     ExecutionFace,
     FillReport,
@@ -30,17 +32,12 @@ from core.execution.venue import (
     VenueQuality,
 )
 from core.execution.venue_limits import (WINDOW, RequestBudget, capable_venues, lot_units,
-                                         reducible, venue_quantity)
+                                         venue_quantity)
 from core.governor.portfolio_types import SizedOrder
 
 # §7 steps 5–6: "bounded" remainder/reroute policy — the bounds, as constants.
 MAX_REMAINDER_RETRIES = 2      # partial-fill remainder resubmissions per fragment
 MAX_REROUTES = 1               # venue reroutes after a rejection per fragment
-
-
-def _side(order: SizedOrder) -> int:
-    """The side traded: a close names its position's side and trades the opposite."""
-    return -order.direction if order.action == "close" else order.direction
 
 
 class ExecutionOrchestrator:
@@ -62,8 +59,6 @@ class ExecutionOrchestrator:
         self._cfg = cfg
         self._faces = faces
         self._quality = quality
-        self._store = store
-        self._alert_bps = slippage_alert_bps
         self._rng = rng
         self._log = logger
         self._session = session_id
@@ -72,6 +67,8 @@ class ExecutionOrchestrator:
             import asyncio
             sleep_fn = asyncio.sleep
         self._sleep = sleep_fn
+        self._reports = ReportBook(quality, store, logger, slippage_alert_bps, session_id,
+                                   now_fn)
         self._frozen: str | None = None
         self.budget_exceeded_count = 0      # §10 loop-health surface
         since = self._now() - WINDOW        # a restart re-seeds, never resets (GAP-P12D-57)
@@ -96,7 +93,52 @@ class ExecutionOrchestrator:
         """Execute one SizedOrder. `valid_for_seconds` is the originating
         signal's validity (the loop owner carries it across; SizedOrder does
         not — ACIS-05 locked shape): < cfg.fast_decay_seconds ⇒ aggressive IOC.
-        Returns every FillReport (fills, partials, rejects) — Risk's input."""
+        Returns every FillReport (fills, partials, rejects) — Risk's input. An OPEN
+        pair leg is refused here: a pair opens only through `submit_group`."""
+        if order.group_id is not None and order.action == "open" and order.size_units > 0:
+            self._log.event("EXEC_GROUP_LEG_ALONE", order_id=order.order_id,
+                            group_id=order.group_id)
+            report = self._reports.reject(order, side(order), fragment_id="group")
+            self._reports.record(report)
+            return (report,)
+        return await self._submit(order, valid_for_seconds)
+
+    async def submit_group(self, legs: tuple[SizedOrder, ...], *,
+                           valid_for_seconds: int) -> tuple[FillReport, ...]:
+        """§5.5 "both legs or neither", held in execution (audit F11): every open leg's
+        quantity (lot step, minimum lot) and the request budget are checked FIRST; if any
+        leg would be refused or round to zero, the WHOLE group is refused, nothing sent."""
+        now = self._now()
+        short = [leg.order_id for leg in legs if leg.action == "open"
+                 and self._sendable(leg, valid_for_seconds, len(legs), now) == 0]
+        if short:
+            self._log.event("EXEC_GROUP_REFUSED", group_id=legs[0].group_id, legs=short)
+            reports = tuple(self._reports.reject(leg, side(leg), fragment_id="group")
+                            for leg in legs)
+            for report in reports:
+                self._reports.record(report)
+            return reports
+        out: list[FillReport] = []
+        for leg in legs:
+            out.extend(await self._submit(leg, valid_for_seconds))
+        return tuple(out)
+
+    def _sendable(self, leg: SizedOrder, valid_for_seconds: int, requests: int,
+                  now: datetime) -> Decimal:
+        """What a leg's planning venue would take, or 0 (no venue, below its minimum lot,
+        or too little request budget left for the whole group)."""
+        venues = capable_venues(self._faces, self._quality, leg,
+                                float(leg.size_units / UNITS_PER_LOT),
+                                need_ioc=valid_for_seconds < self._cfg.fast_decay_seconds)
+        if not venues:
+            return Decimal("0")
+        budget = self._requests[venues[0]]
+        if budget.used(now) + requests > budget.limit:
+            return Decimal("0")
+        return venue_quantity(leg.size_units, self._faces[venues[0]].descriptor)[0]
+
+    async def _submit(self, order: SizedOrder,
+                      valid_for_seconds: int) -> tuple[FillReport, ...]:
         t0 = time.perf_counter()
         if order.size_units == 0:
             self._log.event("EXEC_NOOP", order_id=order.order_id)
@@ -117,12 +159,12 @@ class ExecutionOrchestrator:
             self._log.event("EXEC_CAPABILITY_REJECT", order_id=order.order_id,
                             instrument=order.instrument, lots=total_lots,
                             ioc=fast_decay)
-            report = self._synthetic_reject(order, "no_capable_venue")
-            self._record(report)
+            report = self._reports.reject(order, side(order))
+            self._reports.record(report)
             return (report,)
 
-        units, reports = self._venue_quantity(order, order.size_units, venues[0],
-                                              order.order_id)
+        units, reports = quantity_at(self._faces[venues[0]], venues[0], order, order.size_units,
+                                     order.order_id, self._reports, self._log)
         if units == 0:
             return tuple(reports)
         fragment_plan = plan(order.order_id, units, fast_decay=fast_decay, cfg=self._cfg,
@@ -164,23 +206,25 @@ class ExecutionOrchestrator:
         retries = 0
         while True:
             if order.action == "close":               # reduce-only, at THIS venue
-                units, refused = await self._reduce_only(order, units, venue, fragment_id)
+                units, refused = await reduce_only_at(self._faces[venue], venue, order, units,
+                                                      fragment_id, self._reports, self._log)
                 reports.extend(refused)
                 if units == 0:
                     return reports
-            units, boundary = self._venue_quantity(order, units, venue, fragment_id)
+            units, boundary = quantity_at(self._faces[venue], venue, order, units, fragment_id,
+                                          self._reports, self._log)
             reports.extend(boundary)
             if units == 0:
                 return reports
             report = await self._submit_once(order, fragment_id, venue, units,
                                              fragment_plan.path == "ioc")
             if report is None:                        # gave up mid-reconcile
-                report = self._synthetic_reject(order, "venue_unreachable",
-                                                fragment_id=fragment_id, venue=venue)
-                self._record(report)
+                report = self._reports.reject(order, side(order),
+                                              fragment_id=fragment_id, venue=venue)
+                self._reports.record(report)
                 reports.append(report)
                 return reports
-            self._record(report)
+            self._reports.record(report)
             reports.append(report)
             if report.status is FillStatus.REJECTED:
                 nxt = [v for v in capable_venues(
@@ -218,12 +262,12 @@ class ExecutionOrchestrator:
         for attempt in (1, 2):      # a close here was checked reduce-only at this venue
             if not budget.admit(self._now(), closing=order.action == "close",
                                 order_id=order.order_id, log=self._log):
-                return self._synthetic_reject(order, "request_budget", units=units,
+                return self._reports.reject(order, side(order), units=units,
                                               fragment_id=f"{fragment_id}:budget")
             try:
                 return await face.submit_order(
                     fragment_id=fragment_id, order_id=order.order_id,
-                    instrument=order.instrument, direction=_side(order),
+                    instrument=order.instrument, direction=side(order),
                     units=units, requested_price=order.entry_price,
                     ioc=ioc, now=self._now(), session_id=self._session)
             except ConnectionError:
@@ -235,66 +279,3 @@ class ExecutionOrchestrator:
                          "units": str(p.size_units)} for p in positions])
                 if attempt == 2:
                     return None
-
-    async def _reduce_only(self, order: SizedOrder, units: Decimal, venue: str,
-                           tag: str) -> tuple[Decimal, list[FillReport]]:
-        """A close trades only what `venue` holds on the side it names: capped at that
-        holding, refused without one. What is not sent is a REJECTED report."""
-        held = reducible(await self._faces[venue].open_positions(), order)
-        if held >= units:
-            return units, []
-        kind = "EXEC_CLOSE_REFUSED" if held == 0 else "EXEC_CLOSE_CAPPED"
-        self._log.event(kind, order_id=order.order_id, venue=venue, units=str(units),
-                        held=str(held))
-        report = self._synthetic_reject(order, kind, units=units - held,
-                                        fragment_id=f"{tag}:reduce")
-        self._record(report)
-        return held, [report]
-
-    def _venue_quantity(self, order: SizedOrder, units: Decimal, venue: str,
-                        tag: str) -> tuple[Decimal, list[FillReport]]:
-        """GAP-P12D-57: `units` rounded DOWN to `venue`'s lot step, or 0 if that falls
-        below its minimum lot. What is not sent is recorded as a REJECTED report."""
-        sendable, rest = venue_quantity(units, self._faces[venue].descriptor)
-        if rest == 0:
-            return sendable, []
-        kind = "EXEC_MIN_LOT_REFUSED" if sendable == 0 else "EXEC_LOT_STEP_ROUNDED"
-        self._log.event(kind, order_id=order.order_id, venue=venue, action=order.action,
-                        units=str(units), sent=str(sendable), unsent=str(rest))
-        report = self._synthetic_reject(order, kind, units=rest,
-                                        fragment_id=f"{tag}:{'minlot' if sendable == 0 else 'step'}")
-        self._record(report)
-        return sendable, [report]
-
-    def _record(self, report: FillReport) -> None:
-        self._quality.update(report)
-        self._store.write(report)
-        event = {FillStatus.FILLED: "FILL", FillStatus.PARTIAL: "PARTIAL",
-                 FillStatus.REJECTED: "REJECT",
-                 FillStatus.CANCELLED: "CANCEL"}[report.status]
-        self._log.event(event, fill_id=report.fill_id, order_id=report.order_id,
-                        fragment_id=report.fragment_id, venue=report.venue,
-                        filled_units=str(report.filled_units),
-                        fill_px=report.fill_price,
-                        slippage_bps=round(report.slippage_bps, 4),
-                        remaining=str(report.remaining_units))
-        if (report.status in (FillStatus.FILLED, FillStatus.PARTIAL)
-                and report.slippage_bps > self._alert_bps):
-            self._log.event("SLIPPAGE_ALERT", fill_id=report.fill_id,
-                            instrument=report.instrument,
-                            slippage_bps=round(report.slippage_bps, 4),
-                            alert_bps=self._alert_bps)
-
-    def _synthetic_reject(self, order: SizedOrder, reason: str, *, fragment_id: str = "",
-                          venue: str = "none", units: Decimal | None = None) -> FillReport:
-        """A boundary rejection is still a FillReport — never a silent drop (§4);
-        `units` is what went unsent (default: the whole order)."""
-        return FillReport(
-            fill_id=f"{order.order_id}:{fragment_id or 'cap'}:rej",
-            order_id=order.order_id, fragment_id=fragment_id or "none",
-            instrument=order.instrument, direction=_side(order),
-            requested_price=order.entry_price, fill_price=0.0,
-            filled_units=Decimal("0"), slippage_bps=0.0, fill_time=self._now(),
-            venue=venue, status=FillStatus.REJECTED,
-            remaining_units=order.size_units if units is None else units,
-            session_id=self._session)

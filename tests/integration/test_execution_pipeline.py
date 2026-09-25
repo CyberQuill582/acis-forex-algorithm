@@ -113,8 +113,9 @@ async def test_pair_group_executes_both_legs(tmp_path) -> None:
     assert min(usd) > 0 and abs(usd[0] - usd[1]) <= Decimal("0.05")   # equal USD legs (GAP-P12D-26)
 
     orch, face, _ = mk_exec(tmp_path, unit_venue())
-    ra = await orch.submit(oa, valid_for_seconds=pair[0].valid_for_seconds)
-    rb = await orch.submit(ob, valid_for_seconds=pair[1].valid_for_seconds)
+    both = await orch.submit_group((oa, ob), valid_for_seconds=pair[0].valid_for_seconds)
+    ra = [r for r in both if r.order_id == oa.order_id]
+    rb = [r for r in both if r.order_id == ob.order_id]
     for order, reports in ((oa, ra), (ob, rb)):   # each leg fills its own size in whole units
         whole, filled, unsent = _sent_and_unsent(order, reports)
         assert filled == whole and filled + unsent == order.size_units
@@ -131,8 +132,7 @@ async def test_governor_pair_exit_leaves_the_venue_flat(tmp_path) -> None:
     gov, _ = mk_governor()
     legs = gov.allocate_group(_pair_signals(), mk_portfolio(), mk_regime(), T0)
     orch, face, _ = mk_exec(tmp_path, unit_venue())
-    for leg in legs:
-        await orch.submit(leg, valid_for_seconds=300)
+    await orch.submit_group(legs, valid_for_seconds=300)
     opened = {p.instrument: (p.direction, p.size_units) for p in await face.open_positions()}
     assert set(opened) == {"EUR_USD", "USD_JPY"}
     closes = gov.check_group_exits({legs[0].group_id: "coupling_break"}, T0)
@@ -155,8 +155,7 @@ async def test_weekend_flatten_leaves_the_venue_flat(tmp_path) -> None:
     gov, _ = mk_governor(rulebook=mk_rulebook(weekend_holding_allowed=False))
     legs = gov.allocate_group(_pair_signals(), mk_portfolio(), mk_regime(), T0)
     orch, face, _ = mk_exec(tmp_path, unit_venue())
-    for leg in legs:
-        await orch.submit(leg, valid_for_seconds=300)
+    await orch.submit_group(legs, valid_for_seconds=300)
     book = mk_portfolio(open_positions=tuple(
         Position(instrument=p.instrument, direction=p.direction, size_units=p.size_units,
                  entry_price=leg.entry_price, stop_loss=leg.stop_loss, take_profit=None,
@@ -164,6 +163,7 @@ async def test_weekend_flatten_leaves_the_venue_flat(tmp_path) -> None:
                  param_set_id=leg.param_set_id, group_id=leg.group_id)
         for p, leg in zip(await face.open_positions(),
                           sorted(legs, key=lambda o: o.instrument))))
+    assert len(book.open_positions) == 2                        # both legs really opened
     friday = datetime(2026, 7, 10, 20, 0, tzinfo=timezone.utc)     # 1 h before the close
     for close in gov.weekend_flatten(book, friday):
         await orch.submit(close, valid_for_seconds=300)
