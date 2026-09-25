@@ -1,0 +1,6 @@
+FX      held-out: AUD/NZD, NZD/USD, CAD/JPY        explored: EUR/USD, USD/JPY, GBP/USD, AUD/USD, USD/CAD, USD/CHF, EUR/GBP, EUR/JPY, GBP/JPY, AUD/JPY, EUR/CHF, EUR/AUD, CHF/JPY
+METAL   held-out: XCU/USD                          explored: XAU/USD, XAG/USD
+INDEX   held-out: GER40, US100                     explored: US500, US30, UK100, JP225, EU50, AUS200
+ENERGY  held-out: USOIL                            explored: UKOIL, NATGAS
+
+total 30: explored 23, held-out 7

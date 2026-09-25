@@ -40,7 +40,7 @@
 
 ---
 
-# Checkpoint 2 (08:38 UTC, moved forward at the lead's request) — DRAFT "For PLAN_R1"
+# Checkpoint 2 (about 08:07 UTC by the container clock; the "08:38" first written here was my error; moved forward at the lead's request) — DRAFT "For PLAN_R1"
 
 **Web used: 7 of 40.** Every number below is a **DRAFT**. The literature values come from my knowledge and from the prior reports; the ones not yet re-fetched are marked **[to verify]**, and the final report will quote or correct them.
 
@@ -143,3 +143,25 @@ Gates follow ARC §5.5: E = 2012–19, V = 2020–23, H = 2024–25 once, F = fo
 | D4 | Breakout sleeve (F2) inside the trend family | all | as D1 | Counts as a D1 family variant. Kept only if the combination's net SR on E is ≥ D1's |
 
 **This slate ranks alongside ARC's:** D1 sits between H3 and H4 on evidence, and below H1 and H5 on prop fit, because of the swap and the 10% static max loss. D3 is comparable to H5.
+
+
+---
+
+# Checkpoint 3 (about 08:40 UTC): the FINAL report is written
+
+**The final report is `R1B_EDGE_BREADTH.md`, and it supersedes the draft above.**
+
+**Web used: 36 of 40.** The ledger check was run on a scratch copy of BASE with these files added: 221 entries, 0 violations.
+
+**Changes from the draft:**
+- **Held-out set, redrawn.**
+  - The draw now forces **all 8 on-disk instruments** into the explored set. The reason is that GAP-P12D-71's auditor read the declared FX pairs.
+  - XPT (Dukascopy from 2021-11) and US2000 (from 2018-08) are excluded. AUS200 and XCU are added.
+  - **The held-out set is now AUD/NZD, NZD/USD, CAD/JPY, XCU/USD, GER40, US100 and USOIL** (`evidence/R1B/probe_holdout_draw.out`).
+- **BREAKOUT is rejected as a family.** On the synthetic null its positions correlate 0.95 with EWMAC at the matched speed. TSMOM(12m) correlates 0.77 with EWMAC(64,256), so both are variants of TREND.
+- **D2 (the forecast threshold) is withdrawn.** A threshold of 5 keeps 92% of exposure and a threshold of 10 keeps 71%, so it is a weak lever on holding cost.
+- **Null-fixed forecast scalars:** EWMAC 16/64 → 4.66, 32/128 → 3.26, 64/256 → 2.28, and FDM is 1.09. These are measured on synthetic data; Carver's book values are unverified here.
+- **Headline.** Net pooled trend SR ≈ (s − c)·√N_eff, with N_eff ≈ 6.
+  - At FTMO's median swap markup (c = 0.21) it is −0.15 to +0.32.
+  - Swap-free, it is +0.32 to +0.79.
+  - **The account's swap regime is the decisive owner question** (report §2.8).

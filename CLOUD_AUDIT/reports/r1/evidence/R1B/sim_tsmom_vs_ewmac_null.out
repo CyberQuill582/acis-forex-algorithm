@@ -1,0 +1,4 @@
+TSMOM12m     turnover   1.5 round trips/yr; corr with TSMOM12m = 1.00
+EWMAC16,64   turnover   8.5 round trips/yr; corr with TSMOM12m = 0.41
+EWMAC32,128  turnover   5.5 round trips/yr; corr with TSMOM12m = 0.62
+EWMAC64,256  turnover   4.3 round trips/yr; corr with TSMOM12m = 0.77

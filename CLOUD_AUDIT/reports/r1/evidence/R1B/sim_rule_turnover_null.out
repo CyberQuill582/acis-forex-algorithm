@@ -1,0 +1,20 @@
+rule            scalar  turnover/yr  P(|f|>=5) E|pos| thr5 E|pos| thr10
+EWMAC8,32         6.63         15.7       0.69        0.92         0.71
+EWMAC16,64        4.66          8.6       0.69        0.92         0.71
+EWMAC32,128       3.26          5.5       0.68        0.92         0.72
+EWMAC64,256       2.28          4.3       0.69        0.92         0.70
+BREAKOUT20       35.56         24.5       0.79        0.95         0.76
+BREAKOUT40       37.55         12.4       0.79        0.95         0.75
+BREAKOUT80       38.57          6.1       0.79        0.95         0.75
+BREAKOUT160      39.19          3.0       0.78        0.95         0.76
+
+Correlation of POSITIONS on the null (a proxy for rule-return correlation under zero drift):
+               EWMAC8,32 EWMAC16,6 EWMAC32,1 EWMAC64,2 BREAKOUT2 BREAKOUT4 BREAKOUT8 BREAKOUT1
+EWMAC8,32           1.00      0.86      0.58      0.31      0.85      0.95      0.76      0.47
+EWMAC16,64          0.86      1.00      0.87      0.58      0.55      0.86      0.95      0.76
+EWMAC32,128         0.58      0.87      1.00      0.87      0.28      0.57      0.87      0.95
+EWMAC64,256         0.31      0.58      0.87      1.00      0.13      0.30      0.58      0.87
+BREAKOUT20          0.85      0.55      0.28      0.13      1.00      0.77      0.46      0.23
+BREAKOUT40          0.95      0.86      0.57      0.30      0.77      1.00      0.79      0.47
+BREAKOUT80          0.76      0.95      0.87      0.58      0.46      0.79      1.00      0.79
+BREAKOUT160         0.47      0.76      0.95      0.87      0.23      0.47      0.79      1.00
