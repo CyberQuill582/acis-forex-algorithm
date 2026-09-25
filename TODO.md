@@ -79,6 +79,13 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 - [ ] **The constitution's TWO audits of the BUILDER-2 branch are RUNNING** (pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`; [[GAP-P12D-83]]):
   - AUDIT-INTERNAL `a2c3bcf53066dd551`;
   - AUDIT-EXTERNAL `a9d24cf88c3353a04`.
+- [ ] **OWNER ANSWER (2026-09-25, asked explicitly): the BUILDER-2 fixes go to BUILDER-2 AFTER the BUILDER branch merges.** It gets ONE job: re-merge BUILDER's final head, then fix every finding in [[GAP-P12D-83]]:
+  - the register: one canonical location, tier from the source object, one line consumed per grade, tamper-evident, safe on a truncated line, outcomes recorded;
+  - a distinct source name and a fresh process per variant;
+  - gap exits stamped at j;
+  - T2, evolution and AGON controls that bite;
+  - the lows.
+  It is resumed by `SendMessage` to BUILDER-2 `a8937e82f9a7a5391`, which is the owner-approved launch; nothing else.
 - **Merge protocol (the lead does it in the main session, with no new agents; each merge needs the owner's explicit go):**
   - **Order:** (1) BUILDER, after its fixes are verified; (2) BUILDER-2, RE-MERGED onto BUILDER's final head, because it stacks on the old `9b9ec80` snapshot and BUILDER has added commits since; (3) BUILDER-3.
   - **Measured file overlap (2026-09-25):** BUILDER ∩ BUILDER-2 = `tests/backtest/oracle.py` and `synthetic_grade.py`; BUILDER-3 overlaps neither.
