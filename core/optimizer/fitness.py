@@ -137,15 +137,17 @@ def trade_path(
         if direction != 0:
             bars_held += 1
             exit_mid: float | None = None
-            # SL checked before TP on the same bar — conservative (§6.1)
+            # SL checked before TP on the same bar — conservative (§6.1). A bar that OPENS
+            # through the stop fills at that open, the first price after the gap (T6,
+            # GAP-P12D-65); a gap through the target still fills at the target, never better.
             if direction > 0:
                 if bar.low <= sl:
-                    exit_mid = sl
+                    exit_mid = min(bar.open, sl)
                 elif bar.high >= tp:
                     exit_mid = tp
             else:
                 if bar.high >= sl:
-                    exit_mid = sl
+                    exit_mid = max(bar.open, sl)
                 elif bar.low <= tp:
                     exit_mid = tp
             if exit_mid is None and bars_held >= params.max_holding_periods:

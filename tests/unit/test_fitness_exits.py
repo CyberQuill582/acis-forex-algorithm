@@ -133,6 +133,58 @@ def test_the_trade_path_records_when_each_decision_was_taken(direction: int) -> 
     assert marked.pnl == pytest.approx(-_cost(0) - _cost(1), abs=1e-15)
 
 
+def _gap(direction: int, open_at, reach: float = 0.0):
+    """Entry, one quiet bar, then a bar that OPENS at `open_at(entry, sl, tp)` and stays within a
+    tenth of a band step of it — or also reaches `reach` band steps toward the target."""
+    bars, i, entry, sl, tp = _trade_bars(direction, lambda e, s, t: _quiet(e, s, t, 1))
+    o, step = open_at(entry, sl, tp), _band_step(entry, sl, tp)
+    near = (o + step / 10, o - step / 10)
+    far = tp + direction * reach * step
+    high, low = (max(near[0], far), near[1]) if direction > 0 else (near[0], min(near[1], far))
+    # the close differs from the open, so an exit at the wrong one of the two cannot pass
+    bars.append(LabelledBar(ts=bars[-1].ts + timedelta(minutes=1), open=o, high=high if reach else near[0],
+                            low=low if reach else near[1], close=o + direction * step / 20, spread=_spread(1),
+                            regime=bars[-1].regime))
+    first, = trade_path(PS, bars, TEST_COSTS, atr_period=ATR)
+    return first, i, entry, sl, tp, o
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop(direction: int) -> None:
+    """T6 (GAP-P12D-65, VALIDATOR §7.3): the first price after the gap is the open. Filling at
+    the stop there would credit a price the market never offered — optimistic in selection,
+    while the tick book correctly fills at the gapped tick."""
+    t, i, entry, sl, tp, o = _gap(direction, lambda e, s, p: s - direction * 3 * _band_step(e, s, p))
+    assert direction * (o - sl) < 0                                     # beyond the stop, against us
+    assert t == Trade(signal_bar=i, direction=direction, entry_price=entry, exit_bar=i + 2, exit_price=o,
+                      pnl=t.pnl, marked=False)
+    assert t.pnl == pytest.approx(direction * (o - entry) - _cost(0) - _cost(1), abs=1e-15)
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_a_bar_that_opens_exactly_at_the_stop_exits_at_the_stop(direction: int) -> None:
+    t, i, entry, sl, tp, o = _gap(direction, lambda e, s, p: s)
+    assert (t.exit_bar, t.exit_price) == (i + 2, sl)
+    assert t.pnl == pytest.approx(direction * (sl - entry) - _cost(0) - _cost(1), abs=1e-15)
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_a_gap_through_the_stop_is_not_rescued_by_a_rally_to_the_target(direction: int) -> None:
+    """Stop before target (§6.1) holds on a gap bar: it exits at the gapped open even when the
+    same bar's range later reaches the target."""
+    t, i, entry, sl, tp, o = _gap(direction, lambda e, s, p: s - direction * 3 * _band_step(e, s, p), reach=1.0)
+    assert (t.exit_bar, t.exit_price) == (i + 2, o)
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_a_gap_through_the_target_is_not_credited(direction: int) -> None:
+    """Tightening only: a bar that opens BEYOND the target still fills at the target's price,
+    never at the better open."""
+    t, i, entry, sl, tp, o = _gap(direction, lambda e, s, p: p + direction * 3 * _band_step(e, s, p))
+    assert direction * (o - tp) > 0
+    assert (t.exit_bar, t.exit_price) == (i + 2, tp)
+
+
 @pytest.mark.parametrize("direction", [1, -1])
 def test_a_trade_that_touches_neither_exits_on_its_fourth_bar_close(direction: int) -> None:
     def suffix(entry, sl, tp):

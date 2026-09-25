@@ -129,6 +129,22 @@
       "mutation": "        if False:",
       "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k say_what_changed",
       "expect": "test_a_real_family_that_looked_before_must_say_what_changed"
+    },
+    {
+      "id": "GAP-P12D-65 T6 a long gapped through its stop exits at the open",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                    exit_mid = min(bar.open, sl)",
+      "mutation": "                    exit_mid = sl",
+      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k opens_through_the_stop",
+      "expect": "test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop"
+    },
+    {
+      "id": "GAP-P12D-65 T6 a short gapped through its stop exits at the open",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                    exit_mid = max(bar.open, sl)",
+      "mutation": "                    exit_mid = sl",
+      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k opens_through_the_stop",
+      "expect": "test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop"
     }
   ]
 }
