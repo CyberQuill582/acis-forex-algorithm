@@ -24,3 +24,5 @@
 | 07:55–07:58 | P1: read the prior SYNTHESIS, C1, ARC and VAL; `BRIEF_R1.md` pinned and pushed (`0200443`) | 1 | ~$3 |
 | ~07:59 | **P2 launch:** R1-A, R1-B, R1-C and R1-D in one message (`opus`, general-purpose; web caps 30 / 40 / 25 / 40; boxes 2 h 30 min each) | 4 lanes + lead | ~$4 at launch |
 | 08:05 | **Metered** `cost_usd` = **$11.31** at a turn boundary. It evidently includes the lanes' usage: 21.7 M cached reads, 0.71 M cache writes and 135 k output tokens. R1-B and R1-D have posted their first PARTIALs | 4 lanes + lead | **$11.31 metered** |
+| 08:14 | **Metered $24.03** (51.9 M cached reads, 1.07 M cache writes, 342 k output). The slope since 08:05 is ~$1.4/min, so $65 is reached around 08:43. All four lanes have posted draft 'For PLAN_R1' sections; the lead writes v1 now | 4 lanes + lead | **$24.03 metered** |
+| 08:18 | **PLAN_R1 v1 pushed** (all six sections, plus disagreements and P3 status). Ledger check with the reports copied into the review tree: 221 / 0. The meter can't be read mid-turn; see the next row | 4 lanes + lead | see next row |
