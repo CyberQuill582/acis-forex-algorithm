@@ -4,7 +4,7 @@
 - **Model and effort, as observed:** the system prompt names `claude-opus-5-5` (Opus 5.5). Effort is not observable from inside the session.
 - **Fresh context:** yes. No subagents launched.
 - **BASE:** `974dbdadd538ffd0b4941169dd8979bcabc3e8cd`, read-only at `/tmp/review-acis`.
-- **Date:** 2026-09-25, 08:00–~10:25 UTC.
+- **Date:** 2026-09-25, 08:00–~09:20 UTC (inside the 2 h 30 min box).
 - **Web:** 25: 19 fetches (one returned 403) and 6 searches of the 30-call cap (searches and fetches combined).
 - **Data:** synthetic only. No market data, bundled datasets or `.bi5` fixtures were touched. Every number in §2 regenerates from `evidence/R1A/` (§2.9).
 - **Compute:** at most 2 worker processes, `OMP_NUM_THREADS=1`, heavy work in `/tmp/r1-R1A/`.
@@ -341,6 +341,20 @@ FPR, in % (Wilson 95% CI), for rejecting the global null "no edge":
 | forward 2 y, once, on the best run | 6.5 | 6.0 | 5.2 | 4.5 |
 | forward 2 y, once, on the best family combination | 3.2 | 4.2 | 4.2 | 4.2 |
 
+**Sensitivity to the researcher's style** (null, R = 300 each; hill-climbing share 40% and 90% instead of 70%):
+
+| rule, FPR % at K = 20 / 50 / 100 / 200 | 40% hill-climb | 70% (main) | 90% hill-climb |
+|---|---|---|---|
+| Bonferroni over registered runs | 7.3 / 10.0 / 8.3 / 6.3 | 10.8 / 12.8 / 9.2 / 6.5 | 10.0 / 10.7 / 7.3 / 5.3 |
+| max-t over the registered union | 9.0 / 11.3 / 11.0 / 8.3 | 11.5 / 16.2 / 13.8 / 9.8 | 12.0 / 12.0 / 13.0 / 8.3 |
+| max-t over the declared grid | 5.3 (all K) | 5.2–5.5 | 5.0–6.0 |
+| Holm over fixed family combinations | 1.3 | 1.5 | 1.3 |
+| held-out raw / residualised | 14–25 / 2.3–4.0 | 14.5–24 / 2.5–3.2 | 14–25 / 2.0–2.7 |
+
+The inflation of the registered-union rules (8–16%) holds across researcher styles. The declared-grid and fixed-combination rules stay at or below 6.0% in every style.
+
+e-BH [S3] rejects its first hypothesis only when max e ≥ K/α, so on this global null it coincides with the e-Bonferroni row.
+
 Mean annual Sharpe of the kept "best run" on the development years: 0.57 / 0.67 / 0.72 / 0.76 at K = 20 / 50 / 100 / 200. The same run's forward Sharpe: 0.05–0.08. That is the false encouragement, reproduced.
 
 **Reading (new; it corrects the scope of C1's union result):**
@@ -631,7 +645,7 @@ Everything runs from `CLOUD_AUDIT/reports/r1/evidence/R1A/` with `OMP_NUM_THREAD
 |---|---|---|---|
 | e-processes E1, E2, E3 | `python sim_eprocess_demo.py 2000`, then `python sim_eprocess_demo.py 2000 costonly` (the tripwire/clip variants) | `sim_out_eprocess.json` | ~2 min + 1 min |
 | breadth, IDM, the panel-vs-portfolio FPR, the price→P&L correlation map | `python sim_breadth.py 400` | `sim_out_breadth.json` | ~1 min |
-| register verdicts under an adaptive researcher; held-out instruments | `python sim_register_verdict.py null 400` → `sim_out_register_null.json`; `... idio 300 0.08` → `sim_out_register_idio_mu08.json` (renamed by hand from an earlier run with an identical generator); `... factor 300` → `sim_out_register_factor.json`; `... idio_weak 300 0.05` → `sim_out_register_idio_weak_mu005.json`; the kill-rate reruns `... factor 200 0.08` → `sim_out_register_factor_mu008.json` and `... idio 200 0.05` → `sim_out_register_idio_mu005.json` | as listed | ~6–10 min per world |
+| register verdicts under an adaptive researcher; held-out instruments | `python sim_register_verdict.py null 400` → `sim_out_register_null.json`; `... idio 300 0.08` → `sim_out_register_idio_mu08.json` (renamed by hand from an earlier run with an identical generator); `... factor 300` → `sim_out_register_factor.json`; `... idio_weak 300 0.05` → `sim_out_register_idio_weak_mu005.json`; the kill-rate reruns `... factor 200 0.08` → `sim_out_register_factor_mu008.json` and `... idio 200 0.05` → `sim_out_register_idio_mu005.json`; the researcher-style sensitivity `R1A_EXPLOIT=0.9` (or `0.4`) `... null 300 0.0` → `sim_out_register_null_mu00_exploit90.json` (or `…40.json`) | as listed | ~6–10 min per world |
 | pooled vs per-instrument vs EB parameter choice | `python sim_shrinkage.py 2000` | `sim_out_shrinkage.json` | < 1 min |
 
 Declared simplifications:
@@ -650,7 +664,7 @@ Declared simplifications:
 - **Carver's turnover table** is as rendered by the fetch tool from his post. I did not see the raw HTML. I **assume** (c) that one turnover unit ≈ one round-trip-equivalent executed as 2–4 fills. The fills-per-week range (6–40) inherits that assumption.
 - **The paired cost-gap dispersion** (0.5–2 modelled costs per fill) is a planning grid, not a measurement. The first 50 demo fills will measure it. If it is above ~1.5, E3 needs a larger tripwire bound and certification slows to ~600 fills (§2.2.3).
 - **MOP's correlations** are for 12-month TSMOM on monthly futures returns, 1985–2009. ACIS's rules are daily EWMAC-type rules on CFDs, 2012–2025. I use MOP only to set a planning range, not as a measurement of ACIS's universe. Computing it from the Dukascopy data would be a look, so I did not.
-- **The register simulation's researcher** is a stylised hill-climber (§2.5). Real researchers are cleverer at finding noise: they change the rule's *form*, which my grid only partly represents. The measured inflation is therefore a **lower bound** for keep-best-style rules.
+- **The register simulation's researcher** is a stylised hill-climber (§2.5), tested at 40%, 70% and 90% hill-climbing. Real researchers are cleverer at finding noise: they change the rule's *form*, which my grid only partly represents. The measured inflation is therefore a **lower bound** for keep-best-style rules.
 - **Not simulated:** R1A-13 (live-versus-replay reconciliation); the forward weights γ_j across several promotions; and the kill floors' effect on a full pipeline (derived analytically).
 - **Not run:** a heavy-tailed or GARCH version of the register and held-out simulations (C1 and VAL showed that size holds across those shapes); CPCV/PBO inside the register simulation (VAL's; not duplicated); an e-LOND implementation (argued analytically in §2.5, not simulated).
 

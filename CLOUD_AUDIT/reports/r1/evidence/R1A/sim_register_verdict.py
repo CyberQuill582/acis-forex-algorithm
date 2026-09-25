@@ -11,6 +11,7 @@ best-so-far (one coordinate changed). Verdicts computed on the first K in {20,50
 """
 import json
 import math
+import os
 import sys
 from multiprocessing import Pool
 
@@ -29,6 +30,7 @@ PARAMS = [2, 3, 5, 8, 12, 16, 24, 32, 48, 64, 96]
 FAMS = ["ewmac", "breakout", "tsmom", "reversal", "calendar", "xsmom", "volfilt"]
 NF, NP, NFORM, NU = len(FAMS), len(PARAMS), 2, 5
 KS = [20, 50, 100, 200]
+EXPLOIT = float(os.environ.get("R1A_EXPLOIT", "0.7"))   # hill-climb share of runs (sensitivity knob)
 B = 300
 LAMS = np.array([0.05, 0.1, 0.2, 0.4, 0.8])
 
@@ -157,7 +159,7 @@ def researcher(sr, rng, K):
     untried = set(range(len(sr)))
     for k in range(K):
         cand = None
-        if best is not None and k >= 3 and rng.random() < 0.7:
+        if best is not None and k >= 3 and rng.random() < EXPLOIT:
             fi, rem = divmod(best, NP * NFORM * NU)
             pi, rem = divmod(rem, NFORM * NU)
             fo, u = divmod(rem, NU)
@@ -282,7 +284,7 @@ if __name__ == "__main__":
     with Pool(2) as p:
         reps = p.map(one_rep, [(world, mu, 777000 + i) for i in range(R)], chunksize=4)
     keys = [k for k in reps[0][KS[0]] if isinstance(reps[0][KS[0]][k], bool)]
-    summ = {"world": world, "mu": mu, "R": R}
+    summ = {"world": world, "mu": mu, "R": R, "exploit": EXPLOIT}
     for K in KS:
         row = {}
         for k in keys:
@@ -295,6 +297,8 @@ if __name__ == "__main__":
     for k in ("ref_fwd_annSR", "ref_dev_annSR", "ewmac_combo_dev_annSR", "oracle_best_dev_annSR"):
         summ[k] = float(np.mean([rp[k] for rp in reps]))
     tag = world if len(sys.argv) <= 3 else f"{world}_mu{sys.argv[3].replace('.', '')}"
+    if EXPLOIT != 0.7:
+        tag += f"_exploit{int(round(EXPLOIT * 100))}"
     with open(f"sim_out_register_{tag}.json", "w") as fh:
         json.dump(summ, fh, indent=1)
     print(json.dumps(summ, indent=1))

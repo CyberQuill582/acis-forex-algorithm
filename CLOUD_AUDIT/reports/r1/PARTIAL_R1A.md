@@ -1,3 +1,5 @@
+> **SUPERSEDED by the final report `R1A_VALIDATION_SCIENCE.md` (08:55 UTC).** The final changes several draft items here: `E_MIX` is the default; the held-out and holdout kill floors are t < −0.5; the fill-rate weeks are 3–28; and the declared-grid rule is measured. Use the final.
+
 # PARTIAL R1-A — VALIDATION SCIENCE (checkpoint 2, 08:38 UTC, with a DRAFT "For PLAN_R1")
 
 - **Lane:** R1-A VALIDATION SCIENCE (mission R1). **Model as observed:** the system names `claude-opus-5-5`; effort not observable.
