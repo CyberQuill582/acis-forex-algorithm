@@ -10,8 +10,10 @@ statistical deflation completely; only the structural guardrail removes it".
 
 from __future__ import annotations
 
+import inspect
 import math
 import random
+import textwrap
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
@@ -108,6 +110,39 @@ def test_a_five_percent_peek_is_caught_only_because_the_sweep_is_exhaustive(monk
     t2, t1 = _sweep_fitness()
     assert t2.violations and t1.violations, (t2.summary(), t1.summary())
     assert len(t2.violations) / t2.cuts < 0.05 and len(t1.violations) / t1.cuts < 0.05
+
+
+# -- a gap exit that reads its own bar's close (MEDIUM-2 / X2) ------------------------------- #
+
+CLOSE_PEEK = (('exit_mid, kind = (bar.open, "gap") if bar.open < sl else (sl, "stop")',
+               'exit_mid, kind = (min(max(bar.open, bar.close), sl), "gap") if bar.open < sl else (sl, "stop")'),
+              ('exit_mid, kind = (bar.open, "gap") if bar.open > sl else (sl, "stop")',
+               'exit_mid, kind = (max(min(bar.open, bar.close), sl), "gap") if bar.open > sl else (sl, "stop")'))
+
+
+def _planted_trade_path(replacements):
+    """The REAL trade_path with the audit's exact mutation planted in a copy of its source."""
+    src = textwrap.dedent(inspect.getsource(fitness.trade_path))
+    for old, new in replacements:
+        assert src.count(old) == 1, "the planted anchor moved: re-point this control"
+        src = src.replace(old, new)
+    namespace = dict(vars(fitness))
+    exec(compile(src, "<planted trade_path>", "exec"), namespace)
+    return namespace["trade_path"]
+
+
+def test_a_gap_exit_that_reads_its_own_close_is_caught_by_t1_and_t2() -> None:
+    """The audit's leak: a gap exit that fills at the stop when its bar's CLOSE recovers above
+    it. With every exit stamped at its bar's close, 479 cuts found nothing (MEDIUM-2 / X2)."""
+    leaky = _planted_trade_path(CLOSE_PEEK)
+    bars = bar_tape(240, seed=21, gap=3.0)
+
+    def run(k, mode):
+        return trade_path_decisions(leaky(PS, bar_tape_variant(bars, k, mode), TEST_COSTS, atr_period=14))
+    ref, cuts = run(len(bars), "truncate"), bar_cuts(len(bars))
+    t2 = future_perturbation(ref, lambda t: run(t, "perturb"), cuts)
+    t1 = truncation(ref, lambda t: run(t, "truncate"), cuts)
+    assert t2.violations and t1.violations, (t2.summary(), t1.summary())
 
 
 # -- a labeller that labels a bar with the regime AFTER its completing tick ----------------- #

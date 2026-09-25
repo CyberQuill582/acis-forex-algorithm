@@ -11,7 +11,9 @@ Mental model:
     a peek at the NEXT close, because a signal is emitted with its fill at the next open.
   * `trade_path_decisions` stamps the fitness simulator's decisions on that axis: an entry
     signal is decided at its bar's close (i + 0.5) and emitted with its fill at the next open
-    (i + 1); an exit on bar j is stamped j + 0.5 (conservative for a gap exit at j's open);
+    (i + 1); a gap exit is decided at bar j's OPEN and stamped j, so any read of bar j's
+    close, range or closing spread shows (the audit's MEDIUM-2 / X2); an intrabar or
+    max-hold exit is stamped j + 0.5;
     the window-end mark (GAP-0039) is bookkeeping, not a decision, and is never compared.
     The fill's C8 cost is NOT in the fill decision: the simulator charges the entry bar's
     CLOSING spread for a fill at its open (a finding; tests/unit/test_fitness_exits.py pins the
@@ -70,13 +72,14 @@ def tick_tape_variant(tape: TickTape, cut: datetime, mode: str) -> TickTape:
     return TickTape(tape.ts, perturb_path(tape.mid, k), tail(tape.spread), tail(tape.velocity))
 
 
-def bar_tape(n: int, seed: int, *, vol: float = 8e-4, wick: float = 2e-4) -> list[LabelledBar]:
-    """n bars from a two-point-per-bar path (open, close) with trending stretches."""
+def bar_tape(n: int, seed: int, *, vol: float = 8e-4, wick: float = 2e-4, gap: float = 1.0) -> list[LabelledBar]:
+    """n bars from a two-point-per-bar path (open, close) with trending stretches. `gap`
+    scales the close-to-next-open step, so a gappy tape exercises the gap-exit branch."""
     rng = random.Random(seed)
     path = [1.1]
     for i in range(1, 2 * n):
         drift = vol * 0.35 * (1 if (i // 30) % 2 else -1)          # 15-bar trending stretches
-        path.append(path[-1] * math.exp(rng.gauss(drift, vol)))
+        path.append(path[-1] * math.exp(rng.gauss(drift, vol * (gap if i % 2 == 0 else 1.0))))
     spreads = [1e-4 * (1 + rng.random()) for _ in range(n)]
     return bars_from_path(path, spreads, wick)
 
@@ -122,7 +125,10 @@ def trade_path_decisions(trades: Sequence[Trade]) -> list[Decision]:
     for t in trades:
         out.append(Decision(t.signal_bar + 0.5, t.signal_bar + 1.0, "signal", (t.signal_bar, t.direction)))
         out.append(Decision(t.signal_bar + 1.0, t.signal_bar + 1.0, "fill", (t.signal_bar, t.entry_price)))
-        if not t.marked:
+        if t.exit_kind == "gap":                    # decided at bar j's OPEN (MEDIUM-2 / X2)
+            out.append(Decision(float(t.exit_bar), float(t.exit_bar), "exit",
+                                (t.signal_bar, t.exit_bar, t.exit_price, t.pnl)))
+        elif not t.marked:
             out.append(Decision(t.exit_bar + 0.5, t.exit_bar + 0.5, "exit",
                                 (t.signal_bar, t.exit_bar, t.exit_price, t.pnl)))
     return out

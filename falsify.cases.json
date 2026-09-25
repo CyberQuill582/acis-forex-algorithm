@@ -107,22 +107,6 @@
       "expect": "test_a_real_family_that_looked_before_must_say_what_changed"
     },
     {
-      "id": "GAP-P12D-65 T6 a long gapped through its stop exits at the open",
-      "file": "core/optimizer/fitness.py",
-      "anchor": "                    exit_mid = min(bar.open, sl)",
-      "mutation": "                    exit_mid = sl",
-      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k opens_through_the_stop",
-      "expect": "test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop"
-    },
-    {
-      "id": "GAP-P12D-65 T6 a short gapped through its stop exits at the open",
-      "file": "core/optimizer/fitness.py",
-      "anchor": "                    exit_mid = max(bar.open, sl)",
-      "mutation": "                    exit_mid = sl",
-      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k opens_through_the_stop",
-      "expect": "test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop"
-    },
-    {
       "id": "GAP-P12D-64 no grade without its look-register line",
       "file": "tests/backtest/oos_runner.py",
       "anchor": "    begin_grade(inp.look, cfg=cfg, loader=inp.loader, source=inp.source, instruments=instruments,",
@@ -241,6 +225,46 @@
       "mutation": "    return ProcessPoolExecutor(max_workers=workers)",
       "test": "python -m pytest tests/backtest/test_leakage_suite.py -q -x -p no:cacheprovider -k spawned",
       "expect": "test_every_engine_variant_runs_in_a_fresh_spawned_process"
+    },
+    {
+      "id": "GAP-P12D-65 T6 a long gapped through its stop exits at the open",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                    exit_mid, kind = (bar.open, \"gap\") if bar.open < sl else (sl, \"stop\")",
+      "mutation": "                    exit_mid, kind = (sl, \"gap\") if bar.open < sl else (sl, \"stop\")",
+      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k opens_through_the_stop",
+      "expect": "test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop"
+    },
+    {
+      "id": "GAP-P12D-65 T6 a short gapped through its stop exits at the open",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                    exit_mid, kind = (bar.open, \"gap\") if bar.open > sl else (sl, \"stop\")",
+      "mutation": "                    exit_mid, kind = (sl, \"gap\") if bar.open > sl else (sl, \"stop\")",
+      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k opens_through_the_stop",
+      "expect": "test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop"
+    },
+    {
+      "id": "GAP-P12D-83 M2 a gap exit is stamped at its bar's open",
+      "file": "tests/backtest/leakage_tapes.py",
+      "anchor": "        if t.exit_kind == \"gap\":                    # decided at bar j's OPEN (MEDIUM-2 / X2)",
+      "mutation": "        if False:",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k reads_its_own_close",
+      "expect": "test_a_gap_exit_that_reads_its_own_close_is_caught_by_t1_and_t2"
+    },
+    {
+      "id": "GAP-P12D-83 X2 a gap exit pays the prior bar's closing spread",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                exit_spread = bars[i - 1].spread if kind == \"gap\" else bar.spread",
+      "mutation": "                exit_spread = bar.spread",
+      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k never_pays",
+      "expect": "test_a_gap_exit_never_pays_the_gap_bars_own_closing_spread"
+    },
+    {
+      "id": "GAP-P12D-83 X2 the leakage sweep sees a gap exit that pays its own closing spread",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                exit_spread = bars[i - 1].spread if kind == \"gap\" else bar.spread",
+      "mutation": "                exit_spread = bar.spread",
+      "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k no_gap_exit",
+      "expect": "test_no_gap_exit_is_decided_from_its_own_bars_later_data"
     }
   ]
 }

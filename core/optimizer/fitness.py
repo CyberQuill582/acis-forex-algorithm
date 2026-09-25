@@ -89,7 +89,13 @@ class Trade:
     exit_bar: int          # the bar the exit was decided on (the last bar when `marked`)
     exit_price: float
     pnl: float             # net of both sides' C8 cost
-    marked: bool           # closed by the window-end mark (GAP-0039), not by a decision
+    # how it closed: "gap" (at the open, through the stop), "stop" / "target" (intrabar),
+    # "hold" (max hold, at the close), "mark" (the window-end mark, GAP-0039: not a decision)
+    exit_kind: str
+
+    @property
+    def marked(self) -> bool:
+        return self.exit_kind == "mark"
 
 
 def simulate_trades(
@@ -137,24 +143,28 @@ def trade_path(
         if direction != 0:
             bars_held += 1
             exit_mid: float | None = None
+            kind = ""
             # SL checked before TP on the same bar — conservative (§6.1). A bar that OPENS
             # through the stop fills at that open, the first price after the gap (T6,
             # GAP-P12D-65); a gap through the target still fills at the target, never better.
             if direction > 0:
                 if bar.low <= sl:
-                    exit_mid = min(bar.open, sl)
+                    exit_mid, kind = (bar.open, "gap") if bar.open < sl else (sl, "stop")
                 elif bar.high >= tp:
-                    exit_mid = tp
+                    exit_mid, kind = tp, "target"
             else:
                 if bar.high >= sl:
-                    exit_mid = max(bar.open, sl)
+                    exit_mid, kind = (bar.open, "gap") if bar.open > sl else (sl, "stop")
                 elif bar.low <= tp:
-                    exit_mid = tp
+                    exit_mid, kind = tp, "target"
             if exit_mid is None and bars_held >= params.max_holding_periods:
-                exit_mid = bar.close
+                exit_mid, kind = bar.close, "hold"
             if exit_mid is not None:
-                pnl = direction * (exit_mid - entry_mid) - entry_cost - costs.per_side_cost(bar.spread)
-                trades.append(Trade(signal_bar, direction, entry_mid, i, exit_mid, pnl, False))
+                # a fill at the open pays the latest spread known then, the prior bar's close
+                # (X2, GAP-P12D-83): the gap bar's own closing spread is its future
+                exit_spread = bars[i - 1].spread if kind == "gap" else bar.spread
+                pnl = direction * (exit_mid - entry_mid) - entry_cost - costs.per_side_cost(exit_spread)
+                trades.append(Trade(signal_bar, direction, entry_mid, i, exit_mid, pnl, kind))
                 direction = 0
             continue
         if i + 1 >= n:
@@ -182,7 +192,7 @@ def trade_path(
         # accounted, so end-of-window losers cannot silently vanish from E_R.
         last = bars[-1]
         pnl = direction * (last.close - entry_mid) - entry_cost - costs.per_side_cost(last.spread)
-        trades.append(Trade(signal_bar, direction, entry_mid, n - 1, last.close, pnl, True))
+        trades.append(Trade(signal_bar, direction, entry_mid, n - 1, last.close, pnl, "mark"))
     return trades
 
 

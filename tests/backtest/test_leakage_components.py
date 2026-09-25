@@ -190,6 +190,19 @@ def test_the_fitness_simulator_decides_nothing_from_later_bars() -> None:
     _both(ref, run, bar_cuts(len(bars)), 3000)
 
 
+def test_no_gap_exit_is_decided_from_its_own_bars_later_data() -> None:
+    """MEDIUM-2 / X2: on a gappy tape a gap exit is stamped at its bar's OPEN, so its price and
+    PnL are compared at the cut between that open and the bar's close."""
+    bars = bar_tape(240, seed=21, gap=3.0)
+    params = make_paramset(max_holding_periods=12)
+
+    def run(k, mode):
+        return trade_path_decisions(trade_path(params, bar_tape_variant(bars, k, mode), TEST_COSTS, atr_period=14))
+    ref = run(len(bars), "truncate")
+    assert sum(t.exit_kind == "gap" for t in trade_path(params, bars, TEST_COSTS, atr_period=14)) >= 4
+    _both(ref, run, bar_cuts(len(bars)), 3000)
+
+
 # -- evolution: the fold's train end is the cut that matters ------------------------------- #
 
 def test_evolution_decides_nothing_from_bars_after_its_train_end(tmp_path, acis_config) -> None:
