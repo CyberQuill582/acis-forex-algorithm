@@ -7,6 +7,9 @@ Mental model:
     (`SyntheticMarket.episode_sign`): never the next episode, never the noise.
   * It re-asserts at the first graded tick of each UTC day, so a max-hold close does not leave it
     flat, and reverses when the episode changes.
+  * A graded RUNG (audit E1) is the same oracle wrong on a fixed share of whole episodes
+    (`sign_error`): a weaker, known edge on the SAME tape, so the harness can be asked to pass a
+    rung just above the §14 cut-offs and refuse one just below them. `sign_error = 0` is perfect.
   * It OBEYS the account's evaluable §9.5 rules (audit F2), so a refusal of it can only come from
     the grade, never from a rule it could have kept:
       - weekend-flat accounts: it opens nothing in the `min_hold + FLATTEN_LEAD` before Friday's
@@ -23,6 +26,7 @@ Mental model:
 from __future__ import annotations
 
 import bisect
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -68,11 +72,14 @@ class _Orders:
 class OracleLoop:
     """The loop surface `Backtest` drives: `on_state`, `observe_only`, `book`, `params`."""
 
-    def __init__(self, market: SyntheticMarket, nav: Decimal,
-                 rulebook: AccountRulebook | None = None, flat_before: Sequence[datetime] = ()) -> None:
+    def __init__(self, market: SyntheticMarket, nav: Decimal, rulebook: AccountRulebook | None = None,
+                 flat_before: Sequence[datetime] = (), sign_error: float = 0.0) -> None:
+        if not 0.0 <= sign_error < 0.5:
+            raise ValueError("sign_error must be in [0, 0.5): at 0.5 the oracle knows nothing")
         self.book = _Orders()
         self.params = _NoParams()
         self._market = market
+        self._sign_error = sign_error
         self._notional = nav * NOTIONAL_FRACTION
         self._weekend_flat = rulebook is not None and not rulebook.weekend_holding_allowed
         self._fold_ends = sorted(flat_before)
@@ -134,7 +141,13 @@ class OracleLoop:
         self._held[inst], self._opened[inst] = (sign, now.date()), now
 
     def sign(self, instrument: str, now: datetime) -> int:
-        return int(self._market.episode_sign(instrument, now))
+        """The episode in force's sign, WRONG on a fixed `sign_error` share of episodes: a graded
+        rung (audit E1). Which episodes are wrong is a hash of (instrument, episode start), so the
+        rung is deterministic and its errors fall on whole episodes, as a real filter's would."""
+        ep = self._market.episode_at(instrument, now)
+        digest = hashlib.sha256(f"{instrument}|{ep.start}".encode()).digest()
+        wrong = int.from_bytes(digest[:8], "big") / 2 ** 64 < self._sign_error
+        return -int(ep.sign) if wrong else int(ep.sign)
 
     def _order(self, st: OracleTick, sign: int, action: str) -> None:
         oid = f"oracle-{len(self.book.orders)}"

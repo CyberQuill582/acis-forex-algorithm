@@ -69,7 +69,8 @@ class OracleGrade:
 
 
 def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequence[Fold], logger,
-                 *, instruments: Sequence[str] | None = None) -> OracleGrade:
+                 *, instruments: Sequence[str] | None = None, sign_error: float = 0.0) -> OracleGrade:
+    """`sign_error` > 0 grades a weaker rung of the same oracle (oracle_loop.py, audit E1)."""
     market = SyntheticMarket(spec)
     insts = sorted(instruments if instruments is not None else cfg.instruments.enabled)
     specs = cfg.instruments.instruments
@@ -86,7 +87,7 @@ def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequenc
     limits = guardrail_hash(cfg.guardrails)
     report = bt.run(
         loop=OracleLoop(market, nav=bt.portfolio_state().nav, rulebook=rulebook,
-                        flat_before=[f.test_end for f in folds]),
+                        flat_before=[f.test_end for f in folds], sign_error=sign_error),
         folds=[FoldData(f, stream(f.test_start, f.test_end), warmup_states=stream(f.train_end, f.test_start))
                for f in folds],
         evolve_fn=lambda lp, fd: {"fold": fd.fold.index, "champions": 0, "trial_sharpes": [], "regimes": {}},
@@ -114,22 +115,35 @@ def non_dsr_failures(report: ValidationReport, expected_guardrail_hash: str) -> 
     return tuple(out)
 
 
+# What stage 1 expects of each oracle it grades: the perfect oracle and the rung just above the
+# §14 cut-offs must PASS every non-DSR clause; the rung just below them, and every control, must be
+# REFUSED by a §14 row (audit E1: power near the cut-off, not only against an overwhelming edge).
+EXPECTED = {"planted": "pass", "planted-near-pass": "pass", "planted-near-fail": "refuse",
+            "null": "refuse", "permuted": "refuse"}
+# The rungs' per-episode sign-error rates, calibrated on the falsification default plan
+# (plan(60, 30, 25), the 20 s tape, dev_paper). Profit factor (1.4) binds first for this trade
+# structure: near-pass 0.42 graded PF 1.593 on EUR_USD + USD_JPY, every clause met; near-fail
+# 0.46 graded PF 1.251 (EUR_USD) and 1.316 (USD_JPY), so the pooled PF lies between them
+# (the oracle decides per instrument), failing that row alone.
+RUNGS = {"planted-near-pass": 0.42, "planted-near-fail": 0.46}
+
+
 def void_reasons(failures: Mapping[str, Sequence[str]]) -> list[str]:
-    """Why an engine falsification verdict is VOID (GAP-P12D-37). `failures` maps market kind ->
-    the oracle's `non_dsr_failures` there. The harness must recognise the planted oracle (no
-    failure at all) and refuse the null/permuted oracle BY A §14 ROW (audit F2: a refusal by a rule
-    violation or a sample floor proves nothing about the grade). The oracle keeps the account's
-    rules, so a rule violation on any market voids the run by itself."""
+    """Why an engine falsification verdict is VOID (GAP-P12D-37). `failures` maps an `EXPECTED`
+    key -> that oracle's `non_dsr_failures`. A "pass" oracle must show no failure at all; a
+    "refuse" oracle must be refused BY A §14 ROW (audit F2: a refusal by a rule violation or a
+    sample floor proves nothing about the grade). The oracle keeps the account's rules, so a rule
+    violation on any market voids the run by itself."""
     out = []
     for kind, fails in sorted(failures.items()):
         broken = [f for f in fails if f.startswith("rule violation")]
         if broken:
             out.append(f"the {kind} oracle broke the account's rules ({', '.join(broken)}): it is "
                        "built to keep them, so the oracle or the rule model is wrong")
-        if kind == "planted" and fails:
-            out.append(f"the planted oracle failed: {', '.join(fails)}")
-        elif kind != "planted" and not any(f.startswith("section-14") for f in fails):
+        if EXPECTED[kind] == "pass" and fails:
+            out.append(f"the {kind} oracle failed: {', '.join(fails)}")
+        elif EXPECTED[kind] == "refuse" and not any(f.startswith("section-14") for f in fails):
             out.append(f"the {kind} oracle was not refused by any section-14 row "
                        f"({', '.join(fails) or 'it cleared every non-DSR clause'}): the grader "
-                       "cannot tell knowledge of a zero drift from an edge")
+                       "cannot tell it from an edge")
     return out

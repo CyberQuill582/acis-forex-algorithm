@@ -84,17 +84,19 @@ def label_year(spec: MarketSpec, instrument: str, year: int, out: Path,
     return spec.kind, instrument, year, n, time.perf_counter() - t0
 
 
-def oracle_row(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Path) -> dict:
+def oracle_row(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Path, *,
+               sign_error: float = 0.0, tag: str | None = None) -> dict:
     """Stage 1 of a falsification verdict (GAP-P12D-37): the oracle positive control on this
-    market, with the SAME folds, account and declared costs the engine is graded on. Runs in a
-    worker process, so it reloads the config."""
-    t0, cfg = time.perf_counter(), load_config(root / "config")
-    log = run_logger(out, f"oracle_{spec.kind}", "backtest", 200)
-    g = grade_oracle(spec, cfg, account, folds, log)
+    market, with the SAME folds, account and declared costs the engine is graded on; a
+    `sign_error` rung under its own `tag` (audit E1). Runs in a worker process, so it reloads
+    the config."""
+    t0, cfg, tag = time.perf_counter(), load_config(root / "config"), tag or spec.kind
+    log = run_logger(out, f"oracle_{tag}", "backtest", 200)
+    g = grade_oracle(spec, cfg, account, folds, log, sign_error=sign_error)
     log.close()
-    (out / f"oracle_{spec.kind}.json").write_text(report_json(g.report), encoding="utf-8")
+    (out / f"oracle_{tag}.json").write_text(report_json(g.report), encoding="utf-8")
     oos = g.report.out_of_sample
-    return {"kind": spec.kind, "trades": oos.n_trades, "net_pnl": str(g.net_pnl),
+    return {"kind": tag, "sign_error": sign_error, "trades": oos.n_trades, "net_pnl": str(g.net_pnl),
             "sharpe": oos.annual_sharpe, "psr": g.report.deflated_sharpe,
             "non_dsr_failures": list(non_dsr_failures(g.report, guardrail_hash(cfg.guardrails))),
             "trade_returns": list(g.trade_returns), "seconds": time.perf_counter() - t0}

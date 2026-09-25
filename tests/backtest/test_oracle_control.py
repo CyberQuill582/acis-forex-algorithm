@@ -135,9 +135,14 @@ def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: li
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    def oracle_row(s, out, account, folds, root):
-        return {"kind": s.kind, "trades": 40, "net_pnl": "1", "sharpe": 9.0, "psr": 1.0,
-                "non_dsr_failures": oracle_failures[s.kind], "trade_returns": [0.01, 0.02, 0.015], "seconds": 0}
+    rung_defaults = {"planted-near-pass": [], "planted-near-fail": ["section-14 profit_factor"]}
+
+    def oracle_row(s, out, account, folds, root, *, sign_error=0.0, tag=None):
+        kind = tag or s.kind
+        calls.append(("oracle", kind))
+        fails = oracle_failures[kind] if kind in oracle_failures else rung_defaults[kind]
+        return {"kind": kind, "trades": 40, "net_pnl": "1", "sharpe": 9.0, "psr": 1.0,
+                "non_dsr_failures": fails, "trade_returns": [0.01, 0.02, 0.015], "seconds": 0}
 
     def label_year(s, instrument, year, out, root):
         calls.append(("label", s.kind))
@@ -153,8 +158,13 @@ def _falsify_script(monkeypatch, tmp_path, cfg, oracle_failures: dict, calls: li
     for name, fn in (("oracle_row", oracle_row), ("label_year", label_year), ("grade", grade),
                      ("ProcessPoolExecutor", ThreadPoolExecutor)):
         monkeypatch.setattr(mod, name, fn)
-    monkeypatch.setattr(sys, "argv", ["falsify_engine.py", "--kinds", *oracle_failures])
+    kinds = [k for k in oracle_failures if k in ("planted", "null", "permuted")]
+    monkeypatch.setattr(sys, "argv", ["falsify_engine.py", "--kinds", *kinds])
     return mod
+
+
+def _engine_calls(calls: list) -> list:
+    return [c for c in calls if c[0] != "oracle"]
 
 
 def test_a_failed_oracle_voids_the_verdict_before_any_engine_compute(monkeypatch, tmp_path, cfg, capsys) -> None:
@@ -162,8 +172,20 @@ def test_a_failed_oracle_voids_the_verdict_before_any_engine_compute(monkeypatch
     mod = _falsify_script(monkeypatch, tmp_path, cfg,
                           {"planted": ["section-14 avg_duration"], "null": ["section-14 win_rate"]}, calls)
     assert mod.main() == 4
-    assert calls == []                                                     # the engine never ran
+    assert _engine_calls(calls) == []                                      # the engine never ran
     assert "VERDICT VOID" in capsys.readouterr().out
+
+
+def test_a_near_fail_rung_the_harness_passes_voids_the_verdict(monkeypatch, tmp_path, cfg, capsys) -> None:
+    """Audit E1: stage 1 grades both rungs whenever planted runs, and a grader that passes the rung
+    just below the cut-offs has no power there, so no engine verdict is given."""
+    calls: list = []
+    mod = _falsify_script(monkeypatch, tmp_path, cfg, {"planted": [], "null": ["section-14 win_rate"],
+                                                       "planted-near-fail": []}, calls)
+    assert mod.main() == 4
+    assert {c[1] for c in calls if c[0] == "oracle"} == {"planted", "null", "planted-near-pass",
+                                                         "planted-near-fail"}
+    assert _engine_calls(calls) == [] and "planted-near-fail oracle was not refused" in capsys.readouterr().out
 
 
 def test_a_recognised_oracle_hands_over_to_the_unchanged_engine_stage(monkeypatch, tmp_path, cfg) -> None:

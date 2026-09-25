@@ -4,10 +4,12 @@
     python scripts/falsify_engine.py --workers 4     # THE run: over two graded years per market
 
 Stage 1 (GAP-P12D-37): the ORACLE positive control (tests/backtest/oracle.py) is graded on
-every market with the same folds, account and declared costs. The engine's verdict is VOID,
-and the engine is not run (exit 4), unless the harness recognises the oracle on planted (every
-non-DSR clause of `passed` met) and refuses it on null and permuted. A quick run only prints
-this stage: its graded span is too short for any verdict.
+every market with the same folds, account and declared costs, plus two graded RUNGS of it on
+planted (audit E1: wrong on a calibrated share of episodes, `oracle.RUNGS`), one just above the
+§14 cut-offs and one just below. The engine's verdict is VOID, and the engine is not run (exit 4),
+unless the harness passes the perfect oracle and the near-pass rung (every non-DSR clause of
+`passed` met) and refuses the near-fail rung, null and permuted by a §14 row. A quick run only
+prints this stage: its graded span is too short for any verdict.
 
 Stage 2: each market (tests/backtest/synthetic_market.py) is labelled, then graded by the real
 walk-forward (`run_walk_forward`: production config, account, costs and gates). The expected
@@ -33,7 +35,7 @@ sys.path.insert(0, str(ROOT))
 from config.schemas import load_config  # noqa: E402
 from tests.backtest.deflated_sharpe import deflated_sharpe  # noqa: E402
 from tests.backtest.oos_runner import train_years  # noqa: E402
-from tests.backtest.oracle import void_reasons  # noqa: E402
+from tests.backtest.oracle import RUNGS, void_reasons  # noqa: E402
 from tests.backtest.report import DSR_MIN  # noqa: E402
 from tests.backtest.synthetic_grade import FIRST_MID, START, grade, label_year, oracle_row, plan  # noqa: E402
 from tests.backtest.synthetic_market import KINDS, MarketSpec  # noqa: E402
@@ -70,11 +72,14 @@ def main() -> int:
     with ProcessPoolExecutor(max_workers=a.workers) as ex:
         # stage 1 (GAP-P12D-37): no engine verdict means anything until the grader recognises
         # a strategy KNOWN to be good, and refuses the same logic where it knows nothing
-        for fut in as_completed([ex.submit(oracle_row, specs[k], out, a.account, folds, ROOT)
-                                 for k in a.kinds]):
+        jobs = [ex.submit(oracle_row, specs[k], out, a.account, folds, ROOT) for k in a.kinds]
+        if "planted" in specs:          # audit E1: rungs just above and just below the §14 cut-offs
+            jobs += [ex.submit(oracle_row, specs["planted"], out, a.account, folds, ROOT,
+                               sign_error=p, tag=tag) for tag, p in RUNGS.items()]
+        for fut in as_completed(jobs):
             r = fut.result()
             oracle[r["kind"]] = r
-            print(f"  oracle {r['kind']:8s} trades={r['trades']} net={float(r['net_pnl']):,.2f} "
+            print(f"  oracle {r['kind']:17s} trades={r['trades']} net={float(r['net_pnl']):,.2f} "
                   f"sharpe={r['sharpe']:.2f} psr={r['psr']:.3f} non-DSR failures={r['non_dsr_failures']} "
                   f"({r['seconds']:,.0f} s)", flush=True)
         void = void_reasons({k: r["non_dsr_failures"] for k, r in oracle.items()})
