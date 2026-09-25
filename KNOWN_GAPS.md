@@ -144,6 +144,35 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-103: the dual audit of the applied R1 amendments (master v2.21, commit 271d8e0)
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — the constitution's two lenses, launched by the owner explicitly, under the pinned brief AUDIT_BRIEF_R1_AMENDMENTS_2026-09-25.md. INTERNAL IN: archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md, 19 findings. EXTERNAL still running. The lead re-verified F1, F4, F5, F6 and F18 on the tree before recording them)
+- Area: ACIS_SPEC.md v2.21 (§2, §4, §5, §5.5, §14), specs/ACIS-03 v2.0, ACIS-04 v1.3, ACIS-09 v1.7 (C-BT-11 v2, C-BT-12), OOS_VALIDATION.md, CLAUDE.md rule 5
+- Description: the guard VALUES are untouched (no `config/` change; master §6–§9.5 byte-identical; the confidence veto kept). But the applied text fails three of its own claims. The findings, verified by the lead where marked:
+  - **F1 (high, verified):** C-BT-11 v2 defines `passed` as stages A–C only, while ACIS-09's live gate and `monitoring/mode.py` read `passed`. So a built verdict would pass a 30% drawdown, or a guardrail-hash mismatch, to the human token. A2 ratified replacing only the DSR clause.
+  - **F2 (high):** the ratified A6 made rung 1 = B0–B5, but the applied text dropped B0 ("machinery proven first": the lab calibration).
+  - **F3 (high):** "validated", the new `tradeable=False` trigger's predicate, is defined nowhere. Read as rung 1, an LLM-originated family can never trade, so it can never earn the forward record stage D needs; and the as-built demo trades unvalidated sets.
+  - **F4 (high, verified):** the staging rule is "unchanged", but its only implementation (`param_library.py`: `PromotionForbiddenError`, `PositionGate`, stage/promote/on_boundary) is on the retirement list. `core/signals/provenance.py:22` imports it.
+  - **F5 (high, verified):** §4's "NVMA's one effect on trading is the veto" contradicts the unamended §6 regime sizing factor (`capital_governor.py:292-303`), C4, §3.6 and ACIS-02. Built literally, it is an unannounced size-UP (1/regime_f). One trigger (no params for the regime) was REPLACED, not kept.
+  - **F6 (medium-high, verified):** the stage-D bettors are mis-specified. E2 subtracts a Sharpe ratio from a return; σ* has no units; the clip contradicts "never clipped"; and "E2 silent ≥ 3 months" is met by 99.8% of dead strategies. PLAN_R1's "25% killed by 1 year" is the FREEZE figure.
+  - **F7 (medium-high):** the family verdict on the research universe is not the per-account grade §14/C-BT-7 still require.
+  - **F8 (medium-high):** "R1.7" is defined only in PLAN_R1, whose list also retires marginal-alpha, the fragmenter and C4, which v2.21 never amended.
+  - **F9–F14 (medium):**
+    - F9: rung 2 needs the practice mode ([[GAP-P12D-69]]);
+    - F10: two incompatible no-trade buffers, and the buffer needs portfolio state AGON lacks;
+    - F11: netting plus the cap leaves a pair leg alone;
+    - F12: staging plus continuous positions means promotion never happens;
+    - F13: stage A's α split, its look correction and the registration of the order are unstated (union FWER ≈ 0.098);
+    - F14: "stricter meanwhile" is false as a universal claim.
+  - **F15–F19 (low to low-medium):**
+    - F15: rounding positions vs rounding orders;
+    - F16: the embargo and config do not fit a fixed family;
+    - F17: C9 per member and the fixed-family plateau check are uncomputable as written;
+    - F18 (verified): the held-out draw reproduces only with slash spellings ("XCU/USD");
+    - F19: read-path residue.
+- Justification: open. Triage follows when the EXTERNAL lens is in: one consolidated correction pass restoring the ratified intent (tightening), plus owner decisions for F3 (what "validated" means per mode), F5 (whether regime_f leaves sizing, a size-up) and F12 (promotion under netting; the staging rule is law). Until then, no R1.x build starts, and the as-built v2.20 behaviour stands.
+- Linked: [[GAP-P12D-89]], [[GAP-P12D-96]], [[GAP-P12D-101]], [[GAP-P12D-102]], [[GAP-P12D-69]]
+
 ## GAP-P12D-102: even swap-free, the R1 flagship family (pooled trend, "D1") most likely fails the plan's own development bar
 - Severity: high · Likelihood: high
 - Status: open [impl — RATIFIED 2026-09-25 (owner: "i ratify all your recommendations for R1-D1 to D14") and the spec APPLIED: ACIS-09 v1.7 C-BT-11 v2 stage A is fixed-sequence; built with the verdict module, R1.4] (2026-09-25 — found by the lead reviewing PLAN_R1; `archive/r1_lead_probes/d1_power.py` → `.out`)

@@ -53,8 +53,10 @@ The specifics need explicit OLD/NEW amendments for: the 2-year window, the DSR �
 - [ ] **The constitution's TWO audits of the applied R1 amendments are RUNNING.** The owner launched them explicitly on 2026-09-25 ("Launch both now").
   - What is under audit: commit `271d8e0`, under the pinned brief `AUDIT_BRIEF_R1_AMENDMENTS_2026-09-25.md` (`c440b17`).
   - Resume handles (after a session limit, RESUME with `SendMessage`; never relaunch): AUDIT-INTERNAL `a4931719099e7f704` · AUDIT-EXTERNAL `a1c16d9c51348e948`.
+  - 2026-09-25: both were cut off by the session limit (resets 15:00 Nairobi) and were RESUMED with `SendMessage` after the reset, per the owner's directive. Neither was relaunched.
   - Reports: `archive/AUDIT_R1_AMENDMENTS_{INTERNAL,EXTERNAL}_2026-09-25.md`.
   - Then the lead triages every finding. The R1.1–R1.4 build waits for the triage.
+  - **INTERNAL IN (2026-09-25):** 19 findings, recorded as [[GAP-P12D-103]]; the lead verified F1, F4, F5, F6 and F18. EXTERNAL still running. Triage both together.
 - [ ] **The R1 build order** (PLAN_R1 §2), once the rulings land:
   - R1.0 preconditions (merge 3 DONE);
   - R1.1 the lab;
