@@ -345,6 +345,22 @@
       "mutation": "FORWARD_START = datetime(2026, 1, 1, tzinfo=timezone.utc)   # after the June-2026 model cutoff (X9)",
       "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k forward_starts",
       "expect": "test_tiers_follow_the_test_windows_and_forward_starts_after_the_model_cutoff"
+    },
+    {
+      "id": "GAP-P12D-83 LOW the engine tap records every order",
+      "file": "tests/backtest/leakage_engine.py",
+      "anchor": "            self.decisions += order_decisions(loop.book.orders[n:], loop.book.strategy_of,",
+      "mutation": "            self.decisions += order_decisions([], loop.book.strategy_of,",
+      "test": "python -m pytest tests/backtest/test_leakage_engine.py -q -x -p no:cacheprovider -k the_tap_records",
+      "expect": "test_the_tap_records_signals_orders_and_regimes_and_passes_them_through"
+    },
+    {
+      "id": "GAP-P12D-83 LOW a reference that ordered nothing is vacuous",
+      "file": "tests/backtest/leakage_engine.py",
+      "anchor": "    if not any(d.kind == \"order\" for d in reference):",
+      "mutation": "    if False:",
+      "test": "python -m pytest tests/backtest/test_leakage_engine.py -q -x -p no:cacheprovider -k vacuity",
+      "expect": "test_vacuity_is_empty_only_when_a_champion_was_staged_and_an_order_placed"
     }
   ]
 }
