@@ -42,6 +42,7 @@ def mk_portfolio(**overrides) -> PortfolioState:
 
 
 def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0, holidays=(),
+                resume_gate=None,
                 **cfg_overrides) -> tuple[CapitalGovernor, CapturingLogger]:
     log = CapturingLogger()
     cfg = dict(marginal_alpha_window=50, marginal_alpha_min_trades=20,
@@ -71,6 +72,7 @@ def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0, holiday
         atr_period=14,
         blackout=blackout or (lambda instrument, now: False),
         logger=log,
+        resume_gate=resume_gate or (lambda token: None),   # no halt ledger in these tests
     )
     return gov, log
 

@@ -1,9 +1,10 @@
 """Capital Governor — sovereign allocation (ACIS-05, master §6).
 
-The only layer that sees total portfolio state. Signal -> SizedOrder through
-independent factors, then hard limits that clamp only downward. The Risk
-Monitor's upward edge lands here and is risk-restrictive only: halt, cut,
-taper — never a size increase (GAP-0014). Guardrail limits are read-only.
+The only layer that sees total portfolio state: Signal -> SizedOrder through independent
+factors, then hard limits that clamp only downward. The Risk Monitor's upward edge lands
+here and is risk-restrictive only (halt, cut, taper — never a size increase, GAP-0014);
+guardrail limits are read-only. `resume` is the ONE human-resume path: the injected
+`resume_gate` (the risk ledger's clear) runs first, or no halt lifts (audit F8).
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ class CapitalGovernor:
         atr_period: int,
         blackout: Callable[[str, datetime], bool],
         logger,
+        resume_gate: Callable[[str], None],   # clears the halt ledger; raises to refuse
     ) -> None:
         self._cfg = cfg
         self._limits = guardrails
@@ -65,12 +67,9 @@ class CapitalGovernor:
         self._closure = (week_close, week_open, tuple(holidays))   # every >= 2 h closure
         self._scalp_horizon_s = scalp_horizon_s
         self._atr = AtrMemo(atr_period)   # GAP-P12D-15: recomputed only when a window changes
-        self._blackout = blackout
-        self._log = logger
+        self._blackout, self._log, self._resume_gate = blackout, logger, resume_gate
         self.marginal_alpha = MarginalAlphaEstimator(
-            cfg.marginal_alpha_window, cfg.marginal_alpha_min_trades,
-            cfg.marginal_alpha_min_bucket,
-        )
+            cfg.marginal_alpha_window, cfg.marginal_alpha_min_trades, cfg.marginal_alpha_min_bucket)
         self._bars: dict[str, deque[Bar]] = {}
         self._halts: dict[str, str] = {}          # scope ("all" | instrument) -> reason
         self._session_halt_until: datetime | None = None
@@ -84,8 +83,7 @@ class CapitalGovernor:
         self.orders_zeroed = 0
 
     def take_rate(self) -> dict:
-        return {"orders_placed": self.orders_placed,
-                "orders_zeroed": self.orders_zeroed,
+        return {"orders_placed": self.orders_placed, "orders_zeroed": self.orders_zeroed,
                 "skips": dict(self.skips)}
 
     # -- market context (vol-norm input; GAP-0059: BARS, the v2.11 time base) ---- #
@@ -136,6 +134,7 @@ class CapitalGovernor:
     def resume(self, human_token: str) -> None:
         if not isinstance(human_token, str) or not human_token.strip():
             raise ResumeForbiddenError("resume requires a human token (master §12)")
+        self._resume_gate(human_token)       # the ledger clears first, or nothing lifts (F8)
         self._halts.clear()
         self._session_halt_until = None
         self._log.event("HALT_RESUMED", by="human_token")

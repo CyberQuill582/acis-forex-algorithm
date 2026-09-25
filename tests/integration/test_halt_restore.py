@@ -27,12 +27,14 @@ NOON = datetime(2026, 7, 6, 12, 0, tzinfo=timezone.utc)   # = 08:00 EDT, the nex
 
 def _process(tmp_path, store, clock=T0, boot=None):
     from tests.optimizer_fixtures import CapturingLogger
-    gov, glog = mk_governor()
+    monitor = []                                   # the ONE resume path (F8): the Governor's
+    gov, glog = mk_governor(resume_gate=lambda token: monitor[0].on_human_resume(token, clock))
     orch = _mk_exec(tmp_path)
     rlog = CapturingLogger()
     sink = PersistentHaltSink(GovernorHaltSink(gov, orch, PaperBook()), store, lambda: clock,
                               rlog)
     mon, _, _, _ = build_monitor(load_cfg(), sink, store=store, logger=rlog, boot=boot)
+    monitor.append(mon)
     return gov, glog, orch, mon, rlog, sink
 
 
@@ -60,8 +62,7 @@ def test_equity_floor_halt_survives_a_restart_until_a_human_resumes(tmp_path) ->
     with pytest.raises(DataQualityError):                 # no machine path unhalts
         mon2.on_human_resume("  ", T0)
     assert len(store.open_halts()) == 2
-    gov2.resume(HUMAN)                                    # the human resume, as today
-    mon2.on_human_resume(HUMAN, T0 + timedelta(minutes=2))
+    gov2.resume(HUMAN)                                    # the ONE human resume path
     assert _entry(gov2) == "formula"
     assert store.open_halts() == []
 

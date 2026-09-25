@@ -269,6 +269,7 @@ def build_paper_loop(
         atr_period=signals_cfg.atr_period,
         blackout=blackout or (lambda instrument, now: False),
         logger=log,
+        resume_gate=lambda token: None,    # the paper loop keeps no halt ledger
     )
     loop = PaperLoop(factory, engine, lib, agon, governor, writer, store, log,
                      portfolio_fn, regime_cycle_s=regime_cycle_s)
