@@ -1,7 +1,7 @@
-# PARTIAL R1-A — VALIDATION SCIENCE (checkpoint 1, 08:30 UTC, with a DRAFT "For PLAN_R1")
+# PARTIAL R1-A — VALIDATION SCIENCE (checkpoint 1b, 08:25 UTC, with a DRAFT "For PLAN_R1")
 
 - **Lane:** R1-A VALIDATION SCIENCE (mission R1). **Model as observed:** the system names `claude-opus-5-5`; effort not observable.
-- **Fresh context:** yes; no subagents. **BASE:** `974dbda`. **Date:** 2026-09-25. **Web:** 3 of 30 used so far.
+- **Fresh context:** yes; no subagents. **BASE:** `974dbda`. **Date:** 2026-09-25. **Web:** 23 of 30 used so far.
 - **Data:** synthetic only. Receipts: `evidence/R1A/sim_eprocess_demo.py` → `sim_out_eprocess.json`; `sim_breadth.py` → `sim_out_breadth.json`.
 - Everything below is **LLM-originated** procedure (no strategy claims). **DRAFT** numbers; the final report may revise them.
 
@@ -28,6 +28,22 @@
    - **Validity trap found:** the bounded-betting clip must be a **tripwire, not a winsorisation.** If the adverse clip (5 modelled costs) is silently applied when fills exceed it 3.5% of the time, false "inside-band" certification is **43%** at the band edge. With the clip loose enough never to bind (20×), validity returns (≤ 2%) but certification slows to 350–690 fills. Rule: any fill beyond the declared adverse bound is itself a K5 reconciliation breach and voids the certification.
 5. **Breadth: the pooled test must be the portfolio time series, never the pooled panel.** [sim] Treating N × T rule-days as independent passes a zero-edge pooled rule **9.5–32%** of the time at P&L correlation 0.1–0.3 and N = 8–40. The portfolio t-test holds 3.8–6.0%, and its power at the analytic length is 77–83% (target 80%).
 6. **Effective-breadth multiplier** IDM = √(N / (1 + (N − 1)ρ)), ρ = the correlation of the rules' **P&L streams**, not of prices [derived + sim]. Measured: for a linear trend forecast, P&L correlation ≈ ρ_price² (0.6 → 0.35, 0.4 → 0.17), and for a sign forecast it is lower still. At ρ_P&L = 0.1 / 0.2 / 0.3: IDM(20) = 2.63 / 2.04 / 1.73, IDM(30) = 2.77 / 2.10 / 1.76, IDM(40) = 2.86 / 2.13 / 1.78. The ceiling is 1/√ρ; going past N ≈ 20 buys little.
+8. **NEW, register null simulation (R = 400): under an ADAPTIVE researcher, "register every run" is necessary but NOT sufficient.** [sim]
+   - Setup: 7 families × 11 params × 2 forms × 5 universes = 770 pooled configs on 20 development instruments. 70% of runs hill-climb from the best so far; 30% explore.
+   - FPR at K = 20 / 50 / 100 / 200 registered runs:
+
+     | rule | FPR |
+     |---|---|
+     | keep-best | 70 / 88 / 95 / 99% |
+     | **Bonferroni over the registered runs** | **11 / 13 / 9 / 6.5%** |
+     | **max-t over the registered (tried) union** (C1's SPA_union) | **12 / 16 / 14 / 10%** |
+     | **max-t over the DECLARED grid of touched families** | **5.2–5.5%** |
+     | **Holm over fixed pooled family combinations** | **1.5%** |
+     | held-out instruments, same window, raw | **15–24%** (the leak grows with K) |
+     | held-out, residualised | 2.5–3.2% |
+     | held-out, forward | 5–7% |
+
+   - C1's 2.7–7% for the union test was measured with non-adaptive draws. Under hill-climbing the register over-samples the high-noise corner. **The count must run over the declared reachable space (the grid), fixed before the first look.**
 7. **Correction to C1's frontier.** C1's 9.3 years at SR 1, K = 1, carries Lo's (1 + S²/2) factor with S in *annual* units. With daily observations the factor is ≈ 1 (S_daily ≈ 0.063), giving **6.2 years**, which is VAL §5.1's number. C1's own sim found its frontier "slightly conservative". [derived]
 
 ## DRAFT "For PLAN_R1" (numbered; each: value · complexity · grade · falsifier · verdict)
@@ -83,7 +99,8 @@
 - Across the register's K family-versions:
   - on the development history, Holm or SPA over the K family streams (C1's union test at family granularity);
   - forward, a weighted e-Bonferroni: promote family j only if w_j · W_j ≥ 20, with the pre-committed weights w_j summing to ≤ 1. That is valid under any dependence, and online.
-- The FPR under an adaptive hill-climbing researcher (50–200 runs, 5–15 families) is to be measured next.
+- **MEASURED (null):** this rule holds 1.5% (fixed combinations) or 5.2–5.5% (max-t over the declared grid). The registered-union max-t is 10–16%, and Bonferroni over the registered runs is 6.5–13%. Power in the planted worlds is running now.
+- **Consequence:** VAL's CPCV + PBO is not needed for R-1 families, since there is no within-family selection. That is a deletion.
 
 **P7. Acceptance bar (PLAN §6).** DRAFT
 - (a) **Development:** the one-sided Holm lower bound of the family's expanding-window OOS Sharpe is > 0, i.e. SR̂ > z_{1−0.05/K}/√Y. At Y = 10 OOS years and K = 10 that is **SR̂ > 0.74**, with 80% power at a true portfolio SR of 1.0.
