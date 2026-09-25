@@ -116,8 +116,8 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
     tag = tag or spec.kind
     log = run_logger(out, f"run_{tag}", "backtest", 200)
     look = LookRegister(out / "looks").register(      # tier 0: a synthetic look, still written first
-        cfg=cfg, source=market.name, instruments=sorted(cfg.instruments.enabled), folds=folds,
-        family=f"synthetic:{tag}")
+        cfg=cfg, source=market, instruments=sorted(cfg.instruments.enabled), folds=folds,
+        family=f"synthetic:{tag}", account=account, cost_stress=cost_stress, spread_floor=spread_floor)
     report = run_walk_forward(RunInputs(
         cfg=cfg, account=account, source=market.name,
         loader=BacktestDataLoader({market.name: market}, log), cache=market_cache(cfg, out, market.name),

@@ -131,8 +131,8 @@ def test_selection_and_grading_hold_the_same_stressed_cost_map(tmp_path, acis_co
 
     log = CapturingLogger()
     look = LookRegister(tmp_path / "looks").register(
-        cfg=acis_config, source="synthetic", instruments=sorted(acis_config.instruments.enabled), folds=folds,
-        family="test:cost-stress", git=("test", False))
+        cfg=acis_config, source=_Synthetic(), instruments=sorted(acis_config.instruments.enabled), folds=folds,
+        family="test:cost-stress", account="dev_paper", cost_stress=3.0, git=("test", False))
     report = run_walk_forward(RunInputs(
         cfg=acis_config, account="dev_paper", source="synthetic",
         loader=BacktestDataLoader({"synthetic": _Synthetic()}, log), cache=cache, folds=folds,

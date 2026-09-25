@@ -61,10 +61,11 @@ def main() -> int:
         print("refused: labelled bars missing for", ", ".join(f"{i} {y}" for i, y in missing),
               "— run scripts/build_labelled_bars.py first")
         return 2
+    source = DukascopyTickSource(ROOT / "data" / "dukascopy")
     try:   # GAP-P12D-64: the line is written BEFORE any grade, and before the holdout's marker
         look = LookRegister(ROOT / "data" / "validation" / "looks").register(
-            cfg=cfg, source=SOURCE, instruments=sorted(cfg.instruments.enabled), folds=folds,
-            family=a.family, changed=a.changed, operator=a.operator)
+            cfg=cfg, source=source, instruments=sorted(cfg.instruments.enabled), folds=folds,
+            family=a.family, account=a.account, changed=a.changed, operator=a.operator)
     except LookRefused as exc:
         print("refused:", exc)
         return 2
@@ -83,7 +84,7 @@ def main() -> int:
     macro = ROOT / "data" / "macro"
     report = run_walk_forward(RunInputs(
         cfg=cfg, account=a.account, source=SOURCE,
-        loader=BacktestDataLoader({SOURCE: DukascopyTickSource(ROOT / "data" / "dukascopy")}, log),
+        loader=BacktestDataLoader({SOURCE: source}, log),
         cache=cache, folds=folds, spx_closes=load_spx_closes(macro / "spx_yahoo.csv"),
         financing=make_financing(load_rate_table(macro)), work_dir=out / "engine", logger=log, look=look))
     log.close()

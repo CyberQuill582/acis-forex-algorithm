@@ -115,6 +115,8 @@ def _returns(spec: MarketSpec, instrument_index: int) -> tuple[array, tuple[Epis
 
 
 class SyntheticMarket(TickSource):
+    provenance = "synthetic"
+
     def __init__(self, spec: MarketSpec) -> None:
         self.spec = spec
         self.name = f"synthetic-{spec.kind}"

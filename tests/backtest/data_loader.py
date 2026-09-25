@@ -36,9 +36,14 @@ class ProvenanceError(Exception):
 
 class TickSource(ABC):
     """A declared, named historical tick source (Dukascopy, HistData, or a test
-    synthetic). The real network adapters subclass this at data-ops time."""
+    synthetic). The real network adapters subclass this at data-ops time.
+
+    `provenance` is declared by the CLASS: "real" (market data) or "synthetic" (generated).
+    The look register derives a grade's data tier from it (GAP-P12D-64); a source that
+    declares neither cannot be graded."""
 
     name: str
+    provenance: str | None = None
 
     @abstractmethod
     def load(self, instrument: str, start: datetime, end: datetime) -> Iterable[RawTick]:
@@ -89,6 +94,10 @@ class BacktestDataLoader:
         # only these named sources are legal — an undeclared source is refused.
         self._sources = dict(sources)
         self._log = logger
+
+    def source_object(self, source: str) -> TickSource:
+        """The declared source object behind a key (the look register reads its provenance)."""
+        return self._declared(source)
 
     def load(self, *, source: str, instrument: str, start: datetime, end: datetime,
              max_plausible_spread: float | None = None) -> LoadResult:

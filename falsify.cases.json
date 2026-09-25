@@ -99,30 +99,6 @@
       "expect": "test_the_harness_level_controls_honest_oracle_clean_and_next_tick_peek_caught"
     },
     {
-      "id": "GAP-P12D-64 no grade without its look-register line",
-      "file": "tests/backtest/oos_runner.py",
-      "anchor": "    family_looks = verify_look(inp.look, cfg=cfg, source=inp.source, instruments=instruments,",
-      "mutation": "    family_looks = {} if True else verify_look(inp.look, cfg=cfg, source=inp.source, instruments=instruments,",
-      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k refuses_before_any_compute",
-      "expect": "test_the_grade_refuses_before_any_compute_without_its_own_line"
-    },
-    {
-      "id": "GAP-P12D-64 a look line is created exclusively, never overwritten",
-      "file": "tests/backtest/look_register.py",
-      "anchor": "                with path.open(\"x\", encoding=\"utf-8\") as f:           # the line is the claim",
-      "mutation": "                with path.open(\"w\", encoding=\"utf-8\") as f:           # the line is the claim",
-      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k exclusively_created",
-      "expect": "test_each_look_is_one_exclusively_created_file_and_nothing_is_overwritten"
-    },
-    {
-      "id": "GAP-P12D-64 the data tier is derived from the source and dates",
-      "file": "tests/backtest/look_register.py",
-      "anchor": "    if source not in REAL_SOURCES:",
-      "mutation": "    if True:",
-      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k tier_is_derived",
-      "expect": "test_the_tier_is_derived_from_the_data_never_claimed"
-    },
-    {
       "id": "GAP-P12D-64 a real re-look must say what changed",
       "file": "tests/backtest/look_register.py",
       "anchor": "        if tier > 0 and previous is not None and not changed.strip():",
@@ -145,6 +121,110 @@
       "mutation": "                    exit_mid = sl",
       "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k opens_through_the_stop",
       "expect": "test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop"
+    },
+    {
+      "id": "GAP-P12D-64 no grade without its look-register line",
+      "file": "tests/backtest/oos_runner.py",
+      "anchor": "    begin_grade(inp.look, cfg=cfg, loader=inp.loader, source=inp.source, instruments=instruments,",
+      "mutation": "    (lambda *a, **k: None)(inp.look, cfg=cfg, loader=inp.loader, source=inp.source, instruments=instruments,",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k refuses_before_any_compute",
+      "expect": "test_the_grade_refuses_before_any_compute_without_its_own_line"
+    },
+    {
+      "id": "GAP-P12D-64 every grade records its outcome",
+      "file": "tests/backtest/oos_runner.py",
+      "anchor": "    register.record_outcome(inp.look, _plain({",
+      "mutation": "    (lambda *a: None)(inp.look, _plain({",
+      "test": "python -m pytest tests/backtest/test_oos_runner.py -q -x -p no:cacheprovider",
+      "expect": "test_the_runner_grades_two_folds_end_to_end"
+    },
+    {
+      "id": "GAP-P12D-64 a look line is created exclusively, never overwritten",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "        os.link(tmp, path)                       # FileExistsError if the name is taken",
+      "mutation": "        os.replace(tmp, path); tmp.touch()       # FileExistsError if the name is taken",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k one_line_is_one_grade",
+      "expect": "test_one_line_is_one_grade"
+    },
+    {
+      "id": "GAP-P12D-64 the tier comes from the source object's declared provenance",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "    if provenance != \"real\":",
+      "mutation": "    if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k source_object",
+      "expect": "test_the_tier_comes_from_the_source_object"
+    },
+    {
+      "id": "GAP-P12D-64 a loader key must be its source object's own name",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "    if getattr(src, \"name\", None) != source:",
+      "mutation": "    if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k source_object",
+      "expect": "test_the_tier_comes_from_the_source_object"
+    },
+    {
+      "id": "GAP-P12D-64 a real-data look lives in the canonical register",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "    if tier > 0 and register.root.resolve() != CANONICAL.resolve():",
+      "mutation": "    if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k outside_the_canonical",
+      "expect": "test_a_real_data_look_outside_the_canonical_register_is_refused"
+    },
+    {
+      "id": "GAP-P12D-64 one line is one grade",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "    register.consume(look)",
+      "mutation": "    pass",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k one_line_is_one_grade",
+      "expect": "test_one_line_is_one_grade"
+    },
+    {
+      "id": "GAP-P12D-64 an edited line breaks the chain",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "            if line is not None and line[\"prev_hash\"] != head:",
+      "mutation": "            if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k chain_and_the_register_fails_closed",
+      "expect": "test_forged_deleted_or_edited_lines_break_the_chain"
+    },
+    {
+      "id": "GAP-P12D-64 a buried line leaves its grade marker behind",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "            if int(marker.name[:6]) > len(files):",
+      "mutation": "            if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k chain_and_the_register_fails_closed",
+      "expect": "test_forged_deleted_or_edited_lines_break_the_chain"
+    },
+    {
+      "id": "GAP-P12D-64 a torn line never escapes as JSONDecodeError",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "            except ValueError:",
+      "mutation": "            except TypeError:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k torn_line",
+      "expect": "test_a_torn_line_is_reported_and_counted"
+    },
+    {
+      "id": "GAP-P12D-64 a real-data look needs a clean tree",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "        if tier > 0 and (dirty or commit == \"unknown\"):",
+      "mutation": "        if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k clean_tree",
+      "expect": "test_a_real_look_needs_a_clean_tree"
+    },
+    {
+      "id": "GAP-P12D-64 a real-data grade re-checks the commit",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "        if dirty or commit != look.git_commit:",
+      "mutation": "        if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k clean_tree",
+      "expect": "test_a_real_look_needs_a_clean_tree"
+    },
+    {
+      "id": "GAP-P12D-64 a concurrent loser re-reads before it decides",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "                continue                                     # another registrant won: re-read, re-decide",
+      "mutation": "                return look",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k concurrent",
+      "expect": "test_concurrent_first_looks_are_unambiguous"
     }
   ]
 }

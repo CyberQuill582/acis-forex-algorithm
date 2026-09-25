@@ -16,9 +16,10 @@ command line around it (paths, holdout guard, report file). Invariants:
     strategy families (GAP-P12D-25).
   * With no historical event calendar, MACRO_EVENT never fires and news blackouts never
     apply; the report says so (GAP-P12D-03).
-  * No grade without its look (GAP-P12D-64): `inp.look` must be a look-register line already
-    on disk for exactly this run (look_register.verify_look), checked BEFORE any compute; the
-    report carries the look and the register's per-family look counts.
+  * No grade without its look (GAP-P12D-64): `look_register.begin_grade` proves, BEFORE any
+    compute, that `inp.look` is an unconsumed line of an intact register (the canonical one for
+    real data) for exactly this run, then consumes it; the outcome is recorded against it after
+    the grade, and the report carries the look and the register's counts.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ from tests.backtest.carry import FinancingRate
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.evolve_step import cost_model, evolve_fold
 from tests.backtest.harness import Backtest, FoldData
-from tests.backtest.look_register import verify_look
+from tests.backtest.look_register import LookRegister, begin_grade
 from tests.backtest.metrics import MetricBlock
 from tests.backtest.regime_labels import LabelledBarCache
 from tests.backtest.report import ValidationReport
@@ -103,8 +104,9 @@ def stress_caveat(inp: RunInputs) -> tuple[str, ...]:
 def run_walk_forward(inp: RunInputs) -> ValidationReport:
     cfg = inp.cfg
     instruments = sorted(cfg.instruments.enabled)
-    family_looks = verify_look(inp.look, cfg=cfg, source=inp.source, instruments=instruments,
-                               folds=inp.folds)       # GAP-P12D-64: the line exists BEFORE the grade
+    begin_grade(inp.look, cfg=cfg, loader=inp.loader, source=inp.source, instruments=instruments,
+                folds=inp.folds, account=inp.account, cost_stress=inp.cost_stress,
+                spread_floor=inp.spread_floor)     # GAP-P12D-64: the line exists and is consumed first
     specs = cfg.instruments.instruments
     # ONE cost map, both places (master §5 C8): selection (QIEA, via evolve_fold) and the
     # graded book charge the same instances, so a stressed run cannot select cheap and grade
@@ -147,8 +149,14 @@ def run_walk_forward(inp: RunInputs) -> ValidationReport:
     inp.logger.event("BACKTEST_RUN", account=inp.account, folds=len(inp.folds), passed=report.passed,
                      period=[report.period[0].isoformat(), report.period[1].isoformat()],
                      look=inp.look.look_id, family=inp.look.family)
+    register = LookRegister(Path(inp.look.path).parent)
+    register.record_outcome(inp.look, _plain({
+        "passed": report.passed, "targets_met": report.targets_met, "period": report.period,
+        "annual_sharpe": report.out_of_sample.annual_sharpe, "n_trades": report.out_of_sample.n_trades,
+        "deflated_sharpe": report.deflated_sharpe, "trial_count": report.trial_count,
+        "trade_returns": [float(t.pnl / t.notional_usd) for t in bt.graded_trades() if t.notional_usd]}))
     return replace(report, look={"look_id": inp.look.look_id, "family": inp.look.family,
-                                 "tier": inp.look.tier_name, "family_looks": family_looks})
+                                 "tier": inp.look.tier_name, **register.summary()})
 
 
 def _plain(v):

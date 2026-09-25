@@ -125,8 +125,8 @@ def engine_decisions(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Seq
         for year in train_years(folds):
             label_instrument_year(cfg=cfg, loader=loader, source=market.name, instrument=instrument,
                                   year=year, cache=cache, logger=log, data_start=spec.start)
-    look = LookRegister(work / "looks").register(cfg=cfg, source=market.name, instruments=instruments,
-                                                 folds=folds, family="synthetic:leakage", git=("n/a", False))
+    look = LookRegister(work / "looks").register(cfg=cfg, source=market, instruments=instruments, folds=folds,
+                                                 family="synthetic:leakage", account=account, git=("n/a", False))
     tap = _Tap(oos_runner.build_paper_loop)
     with mock.patch.object(oos_runner, "build_paper_loop", tap.build):
         report = run_walk_forward(RunInputs(
