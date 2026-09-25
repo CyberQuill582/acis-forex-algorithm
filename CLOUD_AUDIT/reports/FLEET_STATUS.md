@@ -1,1 +1,2 @@
 acis | CLOSED | claude/acis-cloud-review-2026-09-24 | 860a0bd45a47af5c72b3615cf8cb6fcb215062e4 | ~$70-115 est. (run 1 $3-6; run 2 lead + 5 lanes ~$55-90; finishing lead + 1 helper ~$12-20; unobservable in-session) | C1 C2 C3 C4 C5 (5)
+acis-r1 | CLOSED | claude/acis-cloud-review-2026-09-24 | 91a2048910272ac69ccbbfd68d7366b368d209c8 | ~$58-60 metered est. (get_session; ~$67-70 on the owner's panel if it under-reads ~15%); PLAN_R1 v1 pushed at ~$35-38 | R1-A R1-B R1-C R1-D (4)
