@@ -225,6 +225,22 @@
       "mutation": "                return look",
       "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k concurrent",
       "expect": "test_concurrent_first_looks_are_unambiguous"
+    },
+    {
+      "id": "GAP-P12D-83 M1 every variant carries a distinct source name",
+      "file": "tests/backtest/leakage_markets.py",
+      "anchor": "        self.name = f\"{self.name}~{mode}@{cut:%Y%m%dT%H%M%S}\"",
+      "mutation": "        self.name = self.name",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k memoised",
+      "expect": "test_a_whole_file_statistic_memoised_on_the_source_name_is_caught"
+    },
+    {
+      "id": "GAP-P12D-83 M1 every engine variant runs in a fresh spawned process",
+      "file": "scripts/leakage_suite.py",
+      "anchor": "    return ProcessPoolExecutor(max_workers=workers, mp_context=get_context(\"spawn\"), max_tasks_per_child=1)",
+      "mutation": "    return ProcessPoolExecutor(max_workers=workers)",
+      "test": "python -m pytest tests/backtest/test_leakage_suite.py -q -x -p no:cacheprovider -k spawned",
+      "expect": "test_every_engine_variant_runs_in_a_fresh_spawned_process"
     }
   ]
 }

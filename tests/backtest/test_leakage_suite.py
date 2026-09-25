@@ -27,7 +27,7 @@ def _script(monkeypatch, tmp_path, *, controls=None, variant=None, argv=ARGS):
     spec.loader.exec_module(mod)
     monkeypatch.setattr(mod, "ROOT", tmp_path)                        # never write under data/
     monkeypatch.setattr(mod, "leak_config", lambda root, small_optimizer: load_config(ROOT / "config"))
-    monkeypatch.setattr(mod, "ProcessPoolExecutor", ThreadPoolExecutor)
+    monkeypatch.setattr(mod, "fresh_process_pool", lambda workers: ThreadPoolExecutor(max_workers=workers))
     if controls is not None:
         monkeypatch.setattr(mod, "controls", controls)
     if variant is not None:
@@ -116,6 +116,19 @@ def test_out_moves_the_run_directory_and_nothing_is_written_under_data(monkeypat
     assert mod.main() == 0
     run, = (tmp_path / "o").iterdir()
     assert (run / "report.json").exists() and not (tmp_path / "data").exists()
+
+
+def test_every_engine_variant_runs_in_a_fresh_spawned_process(monkeypatch, tmp_path) -> None:
+    """MEDIUM-1: a memo the reference run filled must not survive into a variant: spawn (never
+    fork), and one task per worker process."""
+    spec = importlib.util.spec_from_file_location("leakage_suite", ROOT / "scripts" / "leakage_suite.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    pool = mod.fresh_process_pool(2)
+    try:
+        assert pool._mp_context.get_start_method() == "spawn" and pool._max_tasks_per_child == 1
+    finally:
+        pool.shutdown()
 
 
 def test_the_grid_is_every_weekday_the_market_holds(monkeypatch) -> None:

@@ -23,6 +23,7 @@ import json
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from multiprocessing import get_context
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -36,6 +37,12 @@ from tests.backtest.synthetic_grade import FIRST_MID, START, plan  # noqa: E402
 from tests.backtest.synthetic_market import MarketSpec  # noqa: E402
 
 EMBARGO = timedelta(days=2)            # >= the 48 h max hold the harness checks on the data
+
+
+def fresh_process_pool(workers: int) -> ProcessPoolExecutor:
+    """Every engine variant in a freshly SPAWNED process that runs nothing else (MEDIUM-1): no
+    in-memory memo filled by the reference run, or by another variant, can reach it."""
+    return ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn"), max_tasks_per_child=1)
 
 
 def controls(cfg, account: str) -> dict:
@@ -109,7 +116,7 @@ def main() -> int:
         return finish(5, "VACUOUS — " + "; ".join(hollow) + ": nothing that matters could be compared")
 
     variants: dict = {}
-    with ProcessPoolExecutor(max_workers=a.workers) as ex:
+    with fresh_process_pool(a.workers) as ex:
         futures = [ex.submit(variant_decisions, spec, account, folds, out / f"{mode[0]}{k:03d}", ROOT, small, c, mode)
                    for mode in ("perturb", "truncate") for k, c in enumerate(cuts)]
         for fut in as_completed(futures):

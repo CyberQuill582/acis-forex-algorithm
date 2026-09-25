@@ -6,6 +6,8 @@ Mental model:
     deletes those ticks. The change is made at the SOURCE (`returns`), so every channel sees
     it: `load`, the price path, and any side channel that reads `returns` directly. A leak can
     only hide from a perturbation it does not see, so no channel may keep the original future.
+    Each variant also carries a DISTINCT source name, so nothing memoised on the name can
+    carry the reference's true future into it (MEDIUM-1).
   * A tick's price depends on its own return and every earlier one, so ticks stamped < cut
     are bit-identical in every variant (pinned by test).
   * `TickClock` holds the tick times the LOADER actually delivers (the FX weekend dropped), so
@@ -52,7 +54,10 @@ class PerturbedMarket(SyntheticMarket):
     def __init__(self, spec: MarketSpec, cut: datetime, mode: str) -> None:
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
-        super().__init__(spec)                     # the same name: the same market up to the cut
+        super().__init__(spec)
+        # a DISTINCT name per variant (MEDIUM-1): a statistic memoised on the source name can
+        # never carry the reference's true future into a variant
+        self.name = f"{self.name}~{mode}@{cut:%Y%m%dT%H%M%S}"
         self.cut, self.mode = cut, mode
         self._k = ticks_before(spec, cut)
         self._variant: dict[str, array] = {}
