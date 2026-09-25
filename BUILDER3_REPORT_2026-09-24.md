@@ -29,7 +29,7 @@ have run and been triaged, and nothing here is merged: it lives on this branch o
 | 2b. The budget exemption checks the venue position | GAP-P12D-57 (+ F1 below) | `272e2f6` | 1 | 1 of 1 | 842 passed, 6 skipped |
 | 6. Explicit HALTs survive a restart | lead's P12D-75 (F2 below) | `34d3f77` | 5 | 5 of 5 | 847 passed, 6 skipped |
 | 7. Reduce-only closes trade the opposite side | lead's P12D-74 (F1 below) | `16150bb` | 4 (+1 made stricter) | 4 of 4 | 850 passed, 6 skipped |
-| 5. Weekend flatten | master §9.5 | not built: **design only**, see §5 | — | — | — |
+| 5. Weekend flatten, built after stage 7 fixed the close path | master §9.5 | `f23e73d` | 6 | 5 of 5 | **856 passed, 6 skipped** (final) |
 
 The lead's new ledger IDs are written without the `GAP-` prefix in this report and in the code: this branch's
 `KNOWN_GAPS.md` predates them, and `scripts/ledger_check.py` fails on an ID the branch's ledger does not define. The
@@ -521,45 +521,62 @@ under the freeze trades the other side and leaves the venue flat.
 
 ---
 
-## §5 — Weekend flatten (master §9.5): DESIGN ONLY, deliberately not built
+## Stage 5: the weekend flatten (master §9.5), built on stage 7's close path
 
-**Why not built.** The brief allows the design instead when the loop-owner seam is not ready, and it is not:
-- no production loop owner exists yet (the three-loop runtime is GAP-0091b / GAP-0075);
-- the flatten wiring (`HaltSink.flatten`) exists only test-side;
-- the existing Governor close path is **defective** (F1 below).
+**Why it waited.** The first pass left this stage as a design. The Governor's close path doubled positions (F1), and
+a flatten built on it would have done the same. Stage 7 fixed that path, and this stage uses it.
 
-A weekend flatten built on that path would, today, double the positions it means to close.
+### What changed
 
-### The design, precise enough to build once F1 is settled
+`CapitalGovernor.weekend_flatten(portfolio, now)` (logic in `core/governor/calendar_gates.py`):
+- **Who.** It acts only on an account that may not hold over the weekend; an account allowed to hold is never touched.
+- **When.** From the start of the pre-close entry ban until the Sunday open, through the closed window. The ban is
+  the existing `weekend_entry_buffer_s`, 2 h; no new config key.
+- **What.** Every open position gets an `action="close"` order naming it: its own side and size, with
+  `reason="weekend_flatten"`. Both legs of a pair are closed and the group is retired from the registry.
+- **Retries.** It is called every tick, so a close that fails is re-emitted. The stage-2 request budget never blocks
+  a reduce-only close.
+- **Surfaced.** A position still open once the market has closed is logged as `WEEKEND_FLATTEN_INCOMPLETE`, never
+  ignored.
 
-1. **Owner.** The Governor. §9.5 files weekend-holding bans among the downward, config-driven Governor overrides,
-   not the Risk Monitor's upward flatten edge.
-2. **Trigger.** Add a pure `weekend_flatten_due(now, week_close, week_open, lead_s) -> bool` in
-   `core/governor/calendar_gates.py`. It is true from `close − lead_s` through the closed window until the Sunday
-   open, in local `{zone, at}` terms.
-3. **Lead time.** Add a new required key `governor.weekend_flatten_lead_s` (suggested 1,800 s). The schema enforces
-   `0 < weekend_flatten_lead_s <= weekend_entry_buffer_s`, so no entry can open after the flatten starts.
-4. **Orders.** Add `CapitalGovernor.weekend_flatten(portfolio, now) -> tuple[SizedOrder, ...]`. It emits orders only
-   when `not rules.weekend_holding_allowed` and the flatten is due:
-   - one `action="close"` order per open position, carrying the full position size;
-   - both legs of a pair group, never one;
-   - `reason="weekend_flatten"`, logged as `WEEKEND_FLATTEN{instrument, units}`;
-   - emitted on every tick while positions remain, so a rejected close is retried. Retries are bounded by the stage-2
-     request budget, which never blocks a verified close.
-   `capital_governor.py` is at its cap (447), so the logic belongs in `calendar_gates.py` or a new module, with a
-   thin method.
-5. **Surfaced if impossible (§9.5).** If a position is still open 60 s before the close, or at the close, log
-   `WEEKEND_FLATTEN_INCOMPLETE{instruments}` and surface it on `acis://status` for the human. It changes no HALT
-   semantics.
-6. **Loop owner.** On each fast-loop tick, submit `governor.weekend_flatten(portfolio, now)` through
-   `ExecutionOrchestrator.submit`. Closes pass the execution freeze and the request budget.
-7. **Tests.** A no-weekend account with a position:
-   - at `close − lead − 1 s`: no orders;
-   - at `close − lead`: a close for each position;
-   - at the close with the position unfilled: INCOMPLETE is logged.
-   Also: a weekend-allowed account gets none; a pair group closes both legs; EDT and EST; a seam test that the
-   positions are **flat** at the venue after execution (this is what F1 breaks today).
-8. **Spec.** Master §9.5 already mandates the flatten. ACIS-05 §7 needs a step (draft below).
+The exposure caps moved unchanged to `core/governor/exposure.py`, taking `capital_governor.py` from 447 to 437 (the
+ratchet is lowered).
+
+**A narrower design choice than first drafted.** The first design proposed a separate `weekend_flatten_lead_s` key.
+Reusing the entry ban's 2 h is leaner and stricter: positions close at the moment new entries stop, so no entry can
+open after the flatten starts. A shorter, separate lead remains an owner option.
+
+### Tests
+
+- **`tests/unit/test_weekend_flatten.py`:**
+  - it starts exactly at the ban, not a second earlier, in EDT and EST;
+  - a weekend-allowed account is never flattened;
+  - a position still open after the close is surfaced;
+  - both legs of a pair are closed and the group retired.
+- **Seam:** `test_weekend_flatten_leaves_the_venue_flat` (real Governor and orchestrator: the venue is FLAT an hour
+  before the close).
+
+### Falsification (A16)
+
+| Revert | Result |
+|---|---|
+| it never flattens | 5 failed |
+| closes carry the traded side instead of the position's | 3 failed, incl. the seam test (stage 7 refuses them, so the venue stays open) |
+| the pair group stays registered | 1 failed |
+| an unclosed position is never surfaced | 1 failed |
+| the weekend-holding flag is ignored | 1 failed |
+
+### Residuals
+
+- **R5-1: nothing calls it yet.** The runtime's fast loop must call `governor.weekend_flatten(portfolio, now)` each
+  tick and submit the closes (GAP-0091b). `WEEKEND_FLATTEN_INCOMPLETE` still needs surfacing on `acis://status`
+  (ACIS-08).
+- **R5-2: only the Friday FX close is covered,** with the FX `week_close`/`week_open`. Per-instrument exchange
+  calendars (index CFDs, metals holidays) are not (same scope as R3-1).
+- **R5-3: FTMO Standard's "shortly before the markets close" is met with a 2 h lead,** which is stricter. It is the
+  same window as the entry ban.
+
+**No guard loosened.** It only closes positions, through reduce-only closes, on accounts that may not hold them.
 
 ---
 
@@ -596,7 +613,7 @@ only checks that it FILLED.
 Mitigated here only where this batch had reach: the stage-2b budget exemption checks the venue position. The freeze
 path was not changed (HALT-adjacent, human-owned).
 
-**Blocks:** the weekend flatten (§5 above) and any Governor-originated close.
+**Blocked** the weekend flatten and any Governor-originated close, until stages 7 and 5 were built.
 
 ### F2 (MEDIUM): active halts were not restored at boot. **Fixed by stage 6**
 
@@ -618,8 +635,8 @@ against `code-shape.baseline.json` at `bdd3a75`. This batch did not touch those 
 - **The lead's P12D-74 (F1):** stage 7. Residuals R7-1, R7-2 and R7-3 (ACIS-13).
 - **GAP-P12D-57:** stage 2 [impl] parts. The [spec] NAV-relative sizing stays open (GAP-P12D-61). Residuals R2-1,
   R2-2, R2-4, R2-5.
-- **GAP-P12D-58:** stage 3 [impl] part. The [spec] rulebook field, the news blackout and the weekend flatten stay
-  open (R3-1, §5).
+- **GAP-P12D-58:** stage 3 [impl] part, plus the weekend flatten (stage 5). The [spec] rulebook field and the news
+  blackout stay open (R3-1). Residuals R5-1 (GAP-0091b, ACIS-08) and R5-2.
 - **GAP-P12D-54:** the schema half (stage 4). The config half is the owner's commit of the draft (R4-3).
 - **GAP-P12D-59:** the per-account day boundary is expressible and enforced for platform daily rules (stage 4). The
   pre-breach flatten and the engine daily-halt semantics stay owner-owned (R4-1, R4-2).
@@ -643,7 +660,10 @@ against `code-shape.baseline.json` at `bdd3a75`. This batch did not touch those 
      holding allowed or not (GAP-P12D-58)"*.
    - §7.1: the guard becomes *"any account within `weekend_entry_buffer_s` of the weekend close, or inside the closed
      window → `(0,"weekend_ban")`"*.
-   - Add step 9 (the weekend flatten, §5 above) once F1 is ruled on.
+   - Add step 9 (stage 5): *"On an account without weekend holding, from the start of the `weekend_entry_buffer_s`
+     window until the Sunday open, `weekend_flatten(portfolio, now)` emits an `action="close"` order naming every open
+     position (both legs of a pair; the group retired), every tick until flat. A position still open after the close
+     logs `WEEKEND_FLATTEN_INCOMPLETE` for the human."*
 4. **ACIS-06:**
    - §5 config gains `max_venue_requests_per_day` (required; per venue; rolling 24 h; every submit attempt).
    - §7 gains: *"quantities are sent in whole venue lot steps, rounded down; a sub-step remainder and any quantity
@@ -674,7 +694,12 @@ against `code-shape.baseline.json` at `bdd3a75`. This batch did not touch those 
   stage (evidence above), not by `falsify.mjs`.
 - **Module budget (a tightening of the ratchet):**
   - `guardrails.py` leaves the grandfather list;
-  - caps are lowered: `monitor.py` 368, `venue.py` 342, `capital_governor.py` 447, `schemas.py` 581;
+  - caps are lowered: `monitor.py` 368, `venue.py` 342, `capital_governor.py` 437, `schemas.py` 581;
   - new modules, all under 300 lines and each opening with its invariants: `drawdown_series.py`,
-    `usd_conversion.py`, `fill_store.py`, `venue_limits.py`, `config/rulebook.py`;
-  - `orchestrator.py` is at 299, near the 300-line budget.
+    `usd_conversion.py`, `fill_store.py`, `venue_limits.py`, `config/rulebook.py`, `halt_ledger.py`,
+    `core/governor/exposure.py`;
+  - `orchestrator.py` is at exactly 300 lines, the budget itself; its next addition needs an extraction first;
+  - the code-shape baseline lost `monitor.py`'s last BLOCK and HISTORY entries (stage 6).
+- **Resumed after a power cut** (2026-09-25). The uncommitted stage-7 files were checked before continuing: each
+  compiled, each diff was read end to end and found complete, and the stage-7 falsification and full suite were
+  re-run before the commit.
