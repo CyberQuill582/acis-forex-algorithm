@@ -201,7 +201,8 @@ def _orchestrator(face, tmp_path, *, requests_per_day=1000, now=T0, store=None):
 
     from config.schemas import ExecutionConfig
     from core.execution.orchestrator import ExecutionOrchestrator
-    from core.execution.venue import FillReportStore, VenueQuality
+    from core.execution.venue import FillReportStore
+    from core.execution.venue_quality import VenueQuality
     from tests.optimizer_fixtures import CapturingLogger
 
     async def instant(_s: float) -> None:
@@ -347,3 +348,39 @@ async def test_request_budget_survives_a_restart(adapter, tmp_path) -> None:
                              now=T0 + timedelta(hours=25))
     (r,) = await orch3.submit(_order(lot, order_id="o-next-day"), valid_for_seconds=300)
     assert r.status is FillStatus.FILLED
+
+
+# ── close_position: the venue's own atomic reduce (audits X3/F4, ACIS-06 §7.5) ──
+# Every adapter maps it to its venue's close (cTrader ProtoOAClosePositionReq by
+# position id; OANDA positionFill=REDUCE_ONLY; FIX PositionEffect=C). Whatever the venue,
+# it may only take a position DOWN: never open one, add to one, or flip one.
+
+async def _close(face, units, direction=1, fragment_id="cl"):
+    return await face.close_position(
+        fragment_id=fragment_id, order_id="ord-cl", instrument="EUR_USD",
+        direction=direction, units=Decimal(str(units)), requested_price=1.10, now=T0,
+        session_id="conf")
+
+
+async def test_close_position_on_a_flat_venue_opens_nothing(adapter) -> None:
+    face = adapter()
+    report = await _close(face, 1000)
+    assert report.status is FillStatus.REJECTED
+    assert await face.open_positions() == ()
+
+
+async def test_close_position_naming_the_other_side_opens_nothing(adapter) -> None:
+    face = adapter()
+    await _submit(face)                                           # long 1,000
+    report = await _close(face, 1000, direction=-1)               # "close the short"
+    assert report.status is FillStatus.REJECTED
+    (pos,) = await face.open_positions()
+    assert (pos.direction, pos.size_units) == (1, Decimal("1000"))
+
+
+async def test_close_position_larger_than_the_holding_never_flips(adapter) -> None:
+    face = adapter()
+    await _submit(face)                                           # long 1,000
+    report = await _close(face, 3000)
+    assert report.filled_units == Decimal("1000") and report.direction == -1
+    assert await face.open_positions() == ()                      # flat, not short 2,000

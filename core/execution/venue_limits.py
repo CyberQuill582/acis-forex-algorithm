@@ -23,7 +23,8 @@ from decimal import ROUND_FLOOR, Decimal
 from typing import Iterable, Mapping
 
 from core.execution.venue import (UNITS_PER_LOT, BrokerPosition, CapabilityDescriptor,
-                                  ExecutionFace, VenueQuality)
+                                  ExecutionFace)
+from core.execution.venue_quality import VenueQuality
 from core.governor.portfolio_types import SizedOrder
 
 WINDOW = timedelta(hours=24)

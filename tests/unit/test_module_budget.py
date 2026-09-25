@@ -29,7 +29,7 @@ GRANDFATHERED = {
     "core/regime/nvma.py": 395,
     "core/signals/provenance.py": 391,
     "core/risk/monitor.py": 343,                # 378 → 368: usd factor → usd_conversion.py (P12D-55); 343: VaR/cluster → exposure_metrics.py
-    "core/execution/venue.py": 342,             # 378 → 342: FillReportStore → fill_store.py (P12D-57)
+    "core/execution/venue.py": 318,             # 378 → 342: FillReportStore → fill_store.py (P12D-57); 318: attach, quality moved out
 }
 
 

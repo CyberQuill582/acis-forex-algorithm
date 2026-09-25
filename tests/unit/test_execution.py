@@ -18,16 +18,15 @@ from core.data.errors import DataQualityError
 from core.execution import orchestrator as orch_mod
 from core.execution.fragmenter import plan
 from core.execution.orchestrator import ExecutionOrchestrator
+from core.execution.attach import AttachHalt, verify_attach
 from core.execution.venue import (
-    AttachHalt,
     CapabilityDescriptor,
     FillReportStore,
     FillStatus,
     MockExecutionFace,
-    VenueQuality,
     slippage_bps,
-    verify_attach,
 )
+from core.execution.venue_quality import VenueQuality
 from core.governor.portfolio_types import SizedOrder
 from tests.optimizer_fixtures import CapturingLogger
 

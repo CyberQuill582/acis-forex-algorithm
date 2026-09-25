@@ -12,7 +12,8 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Callable
 
-from core.execution.venue import FillReport, FillReportStore, FillStatus, VenueQuality
+from core.execution.venue import FillReport, FillReportStore, FillStatus
+from core.execution.venue_quality import VenueQuality
 from core.governor.portfolio_types import SizedOrder
 
 _EVENT = {FillStatus.FILLED: "FILL", FillStatus.PARTIAL: "PARTIAL",

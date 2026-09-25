@@ -20,7 +20,8 @@ from decimal import Decimal
 import pytest
 
 from core.execution.orchestrator import ExecutionOrchestrator
-from core.execution.venue import FillReportStore, MockExecutionFace, VenueQuality
+from core.execution.venue import FillReportStore, MockExecutionFace
+from core.execution.venue_quality import VenueQuality
 from core.governor.capital_governor import CapitalGovernor, ResumeForbiddenError
 from core.risk.sink import HaltSink
 from tests.risk_fixtures import acct, build_monitor, load_cfg, mk_fill

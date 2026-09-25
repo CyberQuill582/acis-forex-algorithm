@@ -29,8 +29,8 @@ from core.execution.venue import (
     FillReportStore,
     FillStatus,
     UNITS_PER_LOT,
-    VenueQuality,
 )
+from core.execution.venue_quality import VenueQuality
 from core.execution.venue_limits import (WINDOW, RequestBudget, capable_venues, lot_units,
                                          venue_quantity)
 from core.governor.portfolio_types import SizedOrder
@@ -263,13 +263,15 @@ class ExecutionOrchestrator:
             if not budget.admit(self._now(), closing=order.action == "close",
                                 order_id=order.order_id, log=self._log):
                 return self._reports.reject(order, side(order), units=units,
-                                              fragment_id=f"{fragment_id}:budget")
+                                            fragment_id=f"{fragment_id}:budget")
+            common = dict(fragment_id=fragment_id, order_id=order.order_id,
+                          instrument=order.instrument, units=units,
+                          requested_price=order.entry_price, now=self._now(),
+                          session_id=self._session)
             try:
-                return await face.submit_order(
-                    fragment_id=fragment_id, order_id=order.order_id,
-                    instrument=order.instrument, direction=side(order),
-                    units=units, requested_price=order.entry_price,
-                    ioc=ioc, now=self._now(), session_id=self._session)
+                if order.action == "close":        # the venue's own atomic reduce (X3)
+                    return await face.close_position(direction=order.direction, **common)
+                return await face.submit_order(direction=order.direction, ioc=ioc, **common)
             except ConnectionError:
                 positions = await face.open_positions()
                 self._log.event(

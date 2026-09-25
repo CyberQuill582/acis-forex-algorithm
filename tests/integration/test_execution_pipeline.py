@@ -20,8 +20,8 @@ from core.execution.venue import (
     FillReportStore,
     FillStatus,
     MockExecutionFace,
-    VenueQuality,
 )
+from core.execution.venue_quality import VenueQuality
 from core.regime.regime_types import RegimeType
 from tests.optimizer_fixtures import CapturingLogger, make_paramset
 from tests.signals_fixtures import (

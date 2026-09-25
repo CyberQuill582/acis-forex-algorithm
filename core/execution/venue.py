@@ -10,9 +10,10 @@ state flows exclusively through this face DOWNWARD to the Risk Monitor
 
 from __future__ import annotations
 
+import asyncio
 import math
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
@@ -164,6 +165,16 @@ class ExecutionFace(ABC):
         ...
 
     @abstractmethod
+    async def close_position(self, *, fragment_id: str, order_id: str, instrument: str,
+                             direction: int, units: Decimal, requested_price: float,
+                             now: datetime, session_id: str) -> FillReport:
+        """REDUCE-ONLY, atomically (audit X3/F4): take up to `units` off the `direction`
+        position; never open, add to or flip one (nothing held: REJECTED). Adapters map it
+        to the venue's close: cTrader ClosePositionReq(positionId), OANDA REDUCE_ONLY, FIX
+        PositionEffect=C. The report's `direction` is the side traded (the opposite)."""
+        ...
+
+    @abstractmethod
     async def cancel(self, fragment_id: str) -> bool: ...
 
     @abstractmethod
@@ -213,6 +224,7 @@ class MockExecutionFace(ExecutionFace):
         self._net: dict[str, Decimal] = {}
         self._stops: dict[str, float] = {}  # instrument -> stop RESTING at the venue
         self.submissions = 0                # physical venue hits (idempotency proof)
+        self._lock = asyncio.Lock()
 
     def _behaviour(self) -> str:
         return self._script.pop(0) if self._script else "fill"
@@ -227,7 +239,31 @@ class MockExecutionFace(ExecutionFace):
             raise DataQualityError(                     # never accept unprotected
                 "stop_loss", stop_loss,
                 f"venue {self.name} does not hold server-side stops (§279)")
-        behaviour = self._behaviour()
+        return self._execute(self._behaviour(), fragment_id, order_id, instrument, direction,
+                             units, requested_price, now, session_id, stop_loss)
+
+    async def close_position(self, *, fragment_id: str, order_id: str, instrument: str,
+                             direction: int, units: Decimal, requested_price: float,
+                             now: datetime, session_id: str) -> FillReport:
+        async with self._lock:                          # read-and-act as ONE step
+            if fragment_id in self._by_fragment:
+                return self._by_fragment[fragment_id]
+            net = self._net.get(instrument, Decimal("0"))
+            held = abs(net) if net * direction > 0 else Decimal("0")
+            await asyncio.sleep(0)           # the venue's round-trip; the lock keeps it one step
+            behaviour = self._behaviour() if held > 0 else "reject"   # nothing to close
+            report = self._execute(behaviour, fragment_id, order_id, instrument, -direction,
+                                   min(units, held) if held > 0 else units,
+                                   requested_price, now, session_id, None)
+            if held and held < units and report.filled_units > 0:
+                report = replace(report, status=FillStatus.PARTIAL,
+                                 remaining_units=units - report.filled_units)
+                self._by_fragment[fragment_id] = report
+            return report
+
+    def _execute(self, behaviour: str, fragment_id: str, order_id: str, instrument: str,
+                 direction: int, units: Decimal, requested_price: float, now: datetime,
+                 session_id: str, stop_loss: float | None) -> FillReport:
         if behaviour == "disconnect":
             raise ConnectionError("mock venue: connection lost before submission")
         self.submissions += 1
@@ -280,63 +316,3 @@ class MockExecutionFace(ExecutionFace):
         # a COPY of the venue-held stops — the caller sees broker state, never a
         # live handle into engine memory (§279).
         return dict(self._stops)
-
-
-class AttachHalt(Exception):
-    """GAP-0018 flat-or-decide: the account holds open positions at attach —
-    a HUMAN must decide (flatten via platform, or manage manually until flat).
-    Never caught-and-continued by any agent path."""
-
-    def __init__(self, positions: tuple[BrokerPosition, ...]) -> None:
-        self.positions = positions
-        super().__init__(
-            f"attach halted: {len(positions)} open position(s) on the account — "
-            "human decision required (flatten first, or manage manually until flat)")
-
-
-async def verify_attach(face: ExecutionFace, enabled_symbols: set[str],
-                        logger) -> None:
-    """§7.5 attach protocol, the phase-8 contract half: (1) the capability
-    descriptor's symbol map must cover the enabled universe (the §13 suffix
-    problem dies here, once); (2) flat-or-decide (GAP-0018). Rulebook loading
-    is the §9.5 config layer's job and precedes this call; paper-always mode
-    start follows it."""
-    missing = enabled_symbols - set(face.descriptor.symbol_map)
-    if missing:
-        raise DataQualityError("symbol_map", sorted(missing),
-                               "descriptor must map every enabled instrument")
-    positions = await face.open_positions()
-    if positions:
-        logger.event("ATTACH_HALTED_OPEN_POSITIONS", venue=face.name,
-                     count=len(positions))
-        raise AttachHalt(positions)
-    logger.event("ATTACH_VERIFIED", venue=face.name,
-                 symbols=sorted(enabled_symbols))
-
-
-class VenueQuality:
-    """Per-(venue, instrument) rolling execution quality (ACIS-06 §5). Fed by
-    this layer's own FillReports — internal feedback, never upstream. Score is
-    deterministic and monotone: higher fill rate raises it, adverse slippage
-    and rejects lower it."""
-
-    def __init__(self, window: int = 50) -> None:
-        self._window = window
-        self._records: dict[tuple[str, str], list[tuple[bool, float]]] = {}
-
-    def update(self, report: FillReport) -> None:
-        key = (report.venue, report.instrument)
-        rows = self._records.setdefault(key, [])
-        rejected = report.status in (FillStatus.REJECTED, FillStatus.CANCELLED)
-        rows.append((not rejected, 0.0 if rejected else report.slippage_bps))
-        if len(rows) > self._window:
-            del rows[0]
-
-    def score(self, venue: str, instrument: str) -> float:
-        rows = self._records.get((venue, instrument))
-        if not rows:
-            return 0.5                       # unknown venue: neutral prior
-        fill_rate = sum(1 for ok, _ in rows if ok) / len(rows)
-        fills = [s for ok, s in rows if ok]
-        avg_adverse = max(0.0, sum(fills) / len(fills)) if fills else 0.0
-        return fill_rate / (1.0 + avg_adverse / 10.0)
