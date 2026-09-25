@@ -324,6 +324,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - corrupt anchors fail closed;
     - 20 of 21 mutants were killed.
 - Justification: open. ONE consolidated fix list went back to BUILDER-3 on 2026-09-25. The merge needs [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-80]] and [[GAP-P12D-81]] fixed with regression tests and verified by the lead, X3/F4 fixed or filed as an attach blocker, and the owner's go. The merge needs [[GAP-P12D-78]] and [[GAP-P12D-79]] fixed and verified by the lead, plus the owner's go.
+- **FIXES LANDED on the branch (2026-09-25, head `b7da5f0`, all 12 items, each falsified). The LEAD RE-RAN the auditors' own reproductions against the fixed head:**
+  - X1 ([[GAP-P12D-78]]): the day-2 fresh breach → `drawdown_halt`, and after recovery → `drawdown_halt`, matching base; the day-1 row closes at the boundary.
+  - X2 ([[GAP-P12D-79]]): with the store write failing → entry `halt`, the orchestrator frozen, and both equity-floor rows persisted after the retry.
+  - F2 ([[GAP-P12D-80]]): the in-process day-3 breach → `drawdown_halt`.
+  - F11 ([[GAP-P12D-81]]): the 1,500/900 pair → the venue is FLAT.
+  - F4/X3: two concurrent closes → FLAT. Checked on the venue's own state, one open plus three closes gives FILLED, REJECTED, REJECTED and a flat venue; the repro's hedging-subclass reading was an artifact of its private bookkeeping, which closes never touch.
+  The adapted repro copies, which add the new required `logger` argument and the boot restore that F7 now enforces, are in the session scratchpad under lead/. No guardrail, rulebook, spec, ledger or baseline file was touched; the config gains schema only (the Europe/Prague zone, FX holidays, and a split-out rulebook schema module).
 - Linked: [[GAP-P12D-78]], [[GAP-P12D-79]], [[GAP-P12D-74]], [[GAP-P12D-75]], [[GAP-P12D-58]], [[GAP-P12D-76]], [[GAP-P12D-70]]
 
 ## GAP-P12D-76: the development laptop keeps losing power abruptly — four hard power-offs in 13 days — so it cannot host the demo engine
