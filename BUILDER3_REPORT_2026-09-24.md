@@ -26,8 +26,14 @@ have run and been triaged, and nothing here is merged: it lives on this branch o
 | 2. Venue lot step, minimum lot, request cap | GAP-P12D-57 | `3c2aee9` | 14 | 4 of 4 | 828 passed, 6 skipped |
 | 3. Pre-close entry ban on every account | GAP-P12D-58 | `57fc40f` | 2 (+1 inverted) | 1 of 1 | 830 passed, 6 skipped |
 | 4. Daily-reset rules and a declared initial capital | GAP-P12D-54 / -59 | `713a84e` | 11 | 5 of 5 | 841 passed, 6 skipped |
-| 2b. The budget exemption checks the venue position | GAP-P12D-57 (+ F1 below) | `272e2f6` | 1 | 1 of 1 | **842 passed, 6 skipped** (final) |
+| 2b. The budget exemption checks the venue position | GAP-P12D-57 (+ F1 below) | `272e2f6` | 1 | 1 of 1 | 842 passed, 6 skipped |
+| 6. Explicit HALTs survive a restart | lead's P12D-75 (F2 below) | `34d3f77` | 5 | 5 of 5 | 847 passed, 6 skipped |
+| 7. Reduce-only closes trade the opposite side | lead's P12D-74 (F1 below) | `16150bb` | 4 (+1 made stricter) | 4 of 4 | 850 passed, 6 skipped |
 | 5. Weekend flatten | master §9.5 | not built: **design only**, see §5 | — | — | — |
+
+The lead's new ledger IDs are written without the `GAP-` prefix in this report and in the code: this branch's
+`KNOWN_GAPS.md` predates them, and `scripts/ledger_check.py` fails on an ID the branch's ledger does not define. The
+code cites the spec section instead (ACIS-07 §7; the close convention in `venue_limits.py`).
 
 **How each revert was run:** each A16 revert used a scratch helper. It applied one text mutation that undoes one
 fix, ran the named tests, restored the file from its original bytes, and compared sha256 before and after. The
@@ -102,9 +108,7 @@ never loaded, and ACIS-07 §7 already required it back. The new hook is `Guardra
 - **R1-2: the downtime bracket is conservative, not exact.** It is never below either known sample, but the true
   value at the rollover is unknowable without the broker's balance history (GAP-P12D-55's other candidate fix). The
   ACIS-13 adapter can make it exact.
-- **R1-3 (new, F2 below): active halts are not re-applied at boot.** Restored anchors make every *measured* breach
-  fire again on the first evaluate, which the test proves. An explicit MCP/agent HALT and a latched session halt are
-  written to `halt_event` but never read back. ACIS-07 §7 lists "active halts" as restrictive state to restore.
+- **R1-3 (F2 below): active halts were not re-applied at boot. Addressed by stage 6.**
 - **R1-4: the per-evaluate write cost is unmeasured.** It is one small transaction per evaluate (10 s cadence). The
   backtest replay does not construct a `RiskStore`, so it pays nothing.
 
@@ -405,6 +409,118 @@ capital only raises anchors. No shipped rulebook changes meaning, which a test p
 
 ---
 
+## Stage 6: explicit HALTs survive a restart (lead's P12D-75, from F2)
+
+### What changed
+
+Nothing wrote or read `halt_event` before: `RiskStore.record_halt` had no caller. ACIS-07 §7 lists "active halts"
+among the restrictive state a restart must restore before the first evaluate.
+
+**Write path** (`core/risk/halt_ledger.py`). `PersistentHaltSink` wraps the single upward edge. Every `apply_halt`,
+`apply_session_halt` and `flatten` is written to `halt_event` BEFORE it is forwarded, so a crash between the two can
+only leave a recorded halt not yet applied, never the reverse. The DDL is unchanged: the kind rides in the opaque
+`halt_id` as `<kind>|ts|scope|reason`, and the reason is part of the id so two halts at one instant never collide.
+
+**Boot** (`restore_on_boot` → `Guardrails.restore_state`). Every uncleared row is re-applied through the same edge,
+same scope and reason, before the first evaluate, and the coalescing latches are set so the first check does not
+re-issue. Two kinds need care:
+- **A session halt** is re-applied with its ORIGINAL instant, so it lifts at the boundary it would have.
+- **A flatten** is re-applied, so positions are closed again if the dead process had not finished.
+
+Re-applying writes nothing new.
+
+**Clear path** (`RiskMonitor.on_human_resume(human_token, now)`). Only this clears rows. It refuses a blank token
+and signs `cleared_by` with a sha256 fingerprint of the token, never the token itself. The sink has no clearing
+verb: an agent that can reach it can halt, never unhalt.
+
+### Tests (`tests/integration/test_halt_restore.py`, real Governor behind the test-side edge)
+
+- `test_equity_floor_halt_survives_a_restart_until_a_human_resumes`:
+  - a fresh Governor is sized; after `restore_on_boot` it is halted and the orchestrator is frozen;
+  - recovered equity does not lift the halt;
+  - a blank token is refused;
+  - a human resume clears it exactly as today;
+  - a restart after the resume restores nothing.
+- `test_an_agent_halt_is_reapplied_with_its_own_scope_and_reason`.
+- `test_a_session_halt_lifts_at_its_own_boundary_after_a_restart`.
+- `test_restoring_writes_nothing_twice_and_keeps_distinct_reasons`.
+- `test_the_ledger_is_signed_by_a_token_fingerprint_never_the_token`.
+
+### Falsification (A16)
+
+| Revert | Result |
+|---|---|
+| boot restores no halts | 3 failed |
+| the sink persists nothing | 5 failed |
+| a human resume does not clear the ledger | 2 failed |
+| a session halt is restored as a plain halt | 1 failed |
+| restore writes every halt again | at first **survived**: the test's clock was constant, so a re-written row had an identical id. The test now restarts at later clocks, as real restarts do, and the revert fails 1 |
+
+### Residuals
+
+- **R6-1: the production wiring is not built.** The runtime must wrap its edge adapter in `PersistentHaltSink`,
+  route the MCP control target's `apply_halt`/`flatten` through it, and call `on_human_resume(token, now)` on the
+  human resume path next to `Governor.resume`. Owner: GAP-0091b.
+- **R6-2: one resume clears every row.** This mirrors `Governor.resume`, which clears every scope. ACIS-07 §7's
+  "a resume clears exactly the scope it names" is not what the Governor does today; that is pre-existing and unchanged.
+- **R6-3: `on_human_resume` gained required parameters.** Its only caller is a test.
+
+**No guard loosened.** Every restored halt is the dead process's own; clearing needs a human token.
+
+---
+
+## Stage 7: reduce-only closes trade the opposite side (lead's P12D-74, from F1)
+
+**The convention** (the lead's delegated decision under the owner's delegation):
+- a `SizedOrder` with `action="close"` NAMES the position to close; its `direction` is the position's side, exactly
+  as the Governor emits it today;
+- the orchestrator trades the OPPOSITE side, and fills and refusals carry that traded side;
+- at every dispatch attempt, at the venue the attempt goes to, a close is checked against that venue's holding on the
+  side it names:
+  - it is capped at the holding (`EXEC_CLOSE_CAPPED`; the rest is a REJECTED report);
+  - it is REFUSED when the venue is flat or holds the other side (`EXEC_CLOSE_REFUSED`).
+
+A close can shrink |position|; it can never open, add to, or flip one. So the execution freeze admits only
+reduce-only closes, and the spent-budget exemption needs no extra read (stage 2b's `_shrinks` is gone). Venue
+capability filtering moved to `venue_limits.capable_venues`; the orchestrator is at 300 lines.
+
+**Stricter, stated:** `test_frozen_blocks_opens_allows_closes` asserted that a "close" into a flat venue FILLED,
+which meant a flatten could OPEN a position. That close is now REJECTED. The test also proves that a real close
+under the freeze trades the other side and leaves the venue flat.
+
+### Tests
+
+- **Seam:** `test_governor_pair_exit_leaves_the_venue_flat` (real Governor and orchestrator; the pair exit that used
+  to double both legs now flattens them).
+- **Conformance, every adapter:**
+  - `test_a_close_into_a_flat_venue_is_refused`;
+  - `test_a_close_naming_the_other_side_is_refused_not_added`;
+  - `test_a_close_larger_than_the_position_is_capped_never_flips`;
+  - `test_spent_request_budget_refuses_opens_but_never_a_close`, updated to the convention.
+
+### Falsification (A16)
+
+| Revert | Result |
+|---|---|
+| a close is sent verbatim | 4 failed, incl. the seam test and the freeze test |
+| no reduce-only check | 4 failed |
+| no cap at the holding | 1 failed |
+| `reducible` ignores the named side | 1 failed |
+
+### Residuals
+
+- **R7-1: one extra read per close attempt.** The reduce-only check calls `open_positions()` on each close attempt.
+  The watchdog's direct broker flatten does not pass through it (it has no core imports).
+- **R7-2: a hedging account must close by position ID.** A hedging account (cTrader can be one) holding both sides
+  sums the named side; closing by position ID there is the ACIS-13 adapter's job.
+- **R7-3: an unclosable remainder is reported, not closed.** A position that is not a whole number of lot steps
+  (opened outside ACIS) keeps its sub-step remainder, reported as REJECTED. A close-by-position-ID adapter can close
+  it fully (ACIS-13).
+
+**No guard loosened.** Every change refuses or shrinks a close; nothing adds exposure.
+
+---
+
 ## §5 — Weekend flatten (master §9.5): DESIGN ONLY, deliberately not built
 
 **Why not built.** The brief allows the design instead when the loop-owner seam is not ready, and it is not:
@@ -451,7 +567,7 @@ A weekend flatten built on that path would, today, double the positions it means
 
 Chat is not a record, and this builder may not edit `KNOWN_GAPS.md`.
 
-### F1 (new, HIGH): Governor close orders ADD to the position when executed
+### F1 (HIGH): Governor close orders ADDED to the position when executed. **Fixed by stage 7**
 
 The close-direction contract is unspecified between ACIS-05 and ACIS-06.
 - `CapitalGovernor.check_group_exits` (GAP-0040) emits `action="close"` orders that carry each leg's **own**
@@ -482,7 +598,7 @@ path was not changed (HALT-adjacent, human-owned).
 
 **Blocks:** the weekend flatten (§5 above) and any Governor-originated close.
 
-### F2 (new, MEDIUM): active halts are not restored at boot
+### F2 (MEDIUM): active halts were not restored at boot. **Fixed by stage 6**
 
 ACIS-07 §7 lists "active halts" among the restrictive state a restart must restore. Explicit HALTs are written to
 `halt_event` by `RiskStore.record_halt`, but nothing reads them back. After this batch, every *measured* breach
@@ -497,7 +613,9 @@ against `code-shape.baseline.json` at `bdd3a75`. This batch did not touch those 
 
 ### Ledger map for this batch's gaps
 
-- **GAP-P12D-55:** stage 1. Residuals R1-1 (GAP-0091b), R1-2 (ACIS-13), R1-3 (F2).
+- **GAP-P12D-55:** stage 1. Residuals R1-1 (GAP-0091b), R1-2 (ACIS-13). R1-3 was addressed by stage 6.
+- **The lead's P12D-75 (F2):** stage 6. Residuals R6-1 (GAP-0091b), R6-2, R6-3.
+- **The lead's P12D-74 (F1):** stage 7. Residuals R7-1, R7-2 and R7-3 (ACIS-13).
 - **GAP-P12D-57:** stage 2 [impl] parts. The [spec] NAV-relative sizing stays open (GAP-P12D-61). Residuals R2-1,
   R2-2, R2-4, R2-5.
 - **GAP-P12D-58:** stage 3 [impl] part. The [spec] rulebook field, the news blackout and the weekend flatten stay
@@ -533,7 +651,20 @@ against `code-shape.baseline.json` at `bdd3a75`. This batch did not touch those 
      and only a close that shrinks the venue position is exempt"*.
    - C-EXE-6 becomes *"total filled ≤ sized; equal to sized less the reported sub-step remainder on a full fill"*.
    - Master §7.5's "rejected loudly, never emulated silently" then reads as satisfied by the reported remainder.
-5. **ACIS-06 §7 / ACIS-05 §4:** define the close-direction convention (F1).
+5. **The close convention (F1, built in stage 7).**
+   - **ACIS-05 §4:** *"`action="close"` names the position to close: `direction` is that position's side and
+     `size_units` the quantity to take off it. The Governor never emits the trade's side for a close."*
+   - **ACIS-06 §2 guard, §7 and §8:** *"A close is REDUCE-ONLY. Execution trades the side opposite to the order's
+     `direction`, and at each dispatch caps the quantity at the venue's holding on the named side, refusing it
+     (`REJECTED`) when the venue is flat or holds the other side. A close can shrink |position| but never open, add
+     to or flip one. The execution freeze admits only such closes."*
+   - **ACIS-06 §4:** a FillReport's `direction` is the side TRADED; for a close it is opposite to the order's.
+   - **ACIS-06 §13:** a new C-EXE-7 with that contract, proven at the seam by
+     `test_governor_pair_exit_leaves_the_venue_flat`.
+6. **ACIS-07 §7 (stage 6):** *"Every halt, session halt and flatten crossing the upward edge is persisted in
+   `halt_event` before it is forwarded, re-applied at boot through the same edge (same scope and reason; a session
+   halt with its original instant) before the first evaluate, and cleared only by a human resume, which signs it with
+   a token fingerprint."* §10: `halt_event.cleared_by` is `human:<fingerprint>`, never the token.
 
 ## Governance notes
 
