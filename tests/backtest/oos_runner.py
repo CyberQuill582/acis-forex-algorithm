@@ -16,6 +16,9 @@ command line around it (paths, holdout guard, report file). Invariants:
     strategy families (GAP-P12D-25).
   * With no historical event calendar, MACRO_EVENT never fires and news blackouts never
     apply; the report says so (GAP-P12D-03).
+  * No grade without its look (GAP-P12D-64): `inp.look` must be a look-register line already
+    on disk for exactly this run (look_register.verify_look), checked BEFORE any compute; the
+    report carries the look and the register's per-family look counts.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from __future__ import annotations
 import csv
 import json
 import math
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -37,6 +40,7 @@ from tests.backtest.carry import FinancingRate
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.evolve_step import cost_model, evolve_fold
 from tests.backtest.harness import Backtest, FoldData
+from tests.backtest.look_register import verify_look
 from tests.backtest.metrics import MetricBlock
 from tests.backtest.regime_labels import LabelledBarCache
 from tests.backtest.report import ValidationReport
@@ -61,6 +65,7 @@ class RunInputs:
     financing: FinancingRate | None
     work_dir: Path
     logger: object
+    look: object                  # a look_register.Look written for THIS run (GAP-P12D-64)
     # GAP-P12D-46 cost-stress ladder — RUN properties, never instrument properties. 1.0 / 0.0
     # is the declared world; anything else is recorded as a fidelity caveat so a stressed
     # number can never be read as a declared-cost one.
@@ -98,6 +103,8 @@ def stress_caveat(inp: RunInputs) -> tuple[str, ...]:
 def run_walk_forward(inp: RunInputs) -> ValidationReport:
     cfg = inp.cfg
     instruments = sorted(cfg.instruments.enabled)
+    family_looks = verify_look(inp.look, cfg=cfg, source=inp.source, instruments=instruments,
+                               folds=inp.folds)       # GAP-P12D-64: the line exists BEFORE the grade
     specs = cfg.instruments.instruments
     # ONE cost map, both places (master §5 C8): selection (QIEA, via evolve_fold) and the
     # graded book charge the same instances, so a stressed run cannot select cheap and grade
@@ -138,8 +145,10 @@ def run_walk_forward(inp: RunInputs) -> ValidationReport:
         extra_caveats=(NO_CALENDAR, *stress_caveat(inp)),
         min_trials=sum(loop.provenance.attempts(f) for f in families))
     inp.logger.event("BACKTEST_RUN", account=inp.account, folds=len(inp.folds), passed=report.passed,
-                     period=[report.period[0].isoformat(), report.period[1].isoformat()])
-    return report
+                     period=[report.period[0].isoformat(), report.period[1].isoformat()],
+                     look=inp.look.look_id, family=inp.look.family)
+    return replace(report, look={"look_id": inp.look.look_id, "family": inp.look.family,
+                                 "tier": inp.look.tier_name, "family_looks": family_looks})
 
 
 def _plain(v):

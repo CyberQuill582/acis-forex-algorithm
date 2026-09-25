@@ -22,6 +22,7 @@ from core.data.errors import DataQualityError
 from core.optimizer.costs import CostModel
 from tests.backtest.book import BookState, OpenPos, PositionModel
 from tests.backtest.data_loader import BacktestDataLoader
+from tests.backtest.look_register import LookRegister
 from tests.backtest.oos_runner import RunInputs, run_walk_forward, stress_caveat
 from tests.backtest.regime_labels import LabelledBarCache, LabelSpec
 from tests.backtest.test_oos_runner import _Synthetic, _folds
@@ -92,7 +93,7 @@ def test_the_book_charges_exactly_the_stressed_friction() -> None:
 def test_a_stressed_run_declares_itself_and_a_declared_run_stays_silent(acis_config, tmp_path) -> None:
     common = dict(cfg=acis_config, account="dev_paper", source="synthetic",
                   loader=None, cache=None, folds=(), spx_closes={}, financing=None,
-                  work_dir=tmp_path, logger=None)
+                  work_dir=tmp_path, logger=None, look=None)
     assert stress_caveat(RunInputs(**common)) == ()
     caveat, = stress_caveat(RunInputs(**common, cost_stress=2.0))
     assert "COST-STRESS RUN" in caveat and "2.0" in caveat and "NOT a venue calibration" in caveat
@@ -129,10 +130,13 @@ def test_selection_and_grading_hold_the_same_stressed_cost_map(tmp_path, acis_co
         cache.write(instrument, 2014, shifted)
 
     log = CapturingLogger()
+    look = LookRegister(tmp_path / "looks").register(
+        cfg=acis_config, source="synthetic", instruments=sorted(acis_config.instruments.enabled), folds=folds,
+        family="test:cost-stress", git=("test", False))
     report = run_walk_forward(RunInputs(
         cfg=acis_config, account="dev_paper", source="synthetic",
         loader=BacktestDataLoader({"synthetic": _Synthetic()}, log), cache=cache, folds=folds,
-        spx_closes={}, financing=None, work_dir=tmp_path / "engine", logger=log, cost_stress=3.0))
+        spx_closes={}, financing=None, work_dir=tmp_path / "engine", logger=log, look=look, cost_stress=3.0))
 
     assert seen["book"] is seen["selection"]
     assert all(c.stress == 3.0 for c in seen["book"].values())

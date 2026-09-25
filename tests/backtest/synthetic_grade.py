@@ -29,6 +29,7 @@ from config.account_doctrine import guardrail_hash
 from config.schemas import AcisConfig, load_config
 from core.data.jsonl_logging import JsonlEventLogger
 from tests.backtest.data_loader import BacktestDataLoader
+from tests.backtest.look_register import LookRegister
 from tests.backtest.oos_plan import EMBARGO
 from tests.backtest.oos_runner import RunInputs, report_json, run_walk_forward
 from tests.backtest.oracle import grade_oracle, non_dsr_failures
@@ -111,11 +112,15 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
     t0, cfg, market = time.perf_counter(), load_config(root / "config"), SyntheticMarket(spec)
     tag = tag or spec.kind
     log = run_logger(out, f"run_{tag}", "backtest", 200)
+    look = LookRegister(out / "looks").register(      # tier 0: a synthetic look, still written first
+        cfg=cfg, source=market.name, instruments=sorted(cfg.instruments.enabled), folds=folds,
+        family=f"synthetic:{tag}")
     report = run_walk_forward(RunInputs(
         cfg=cfg, account=account, source=market.name,
         loader=BacktestDataLoader({market.name: market}, log), cache=market_cache(cfg, out, market.name),
         folds=folds, spx_closes=synthetic_spx(START, spec.days), financing=None,
-        work_dir=out / "engine" / tag, logger=log, cost_stress=cost_stress, spread_floor=spread_floor))
+        work_dir=out / "engine" / tag, logger=log, look=look, cost_stress=cost_stress,
+        spread_floor=spread_floor))
     log.close()
     (out / f"{tag}.json").write_text(report_json(report), encoding="utf-8")
     oos = report.out_of_sample

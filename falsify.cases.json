@@ -97,6 +97,38 @@
       "mutation": "            self._variant[instrument] = (array(\"d\", base)",
       "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k harness_level",
       "expect": "test_the_harness_level_controls_honest_oracle_clean_and_next_tick_peek_caught"
+    },
+    {
+      "id": "GAP-P12D-64 no grade without its look-register line",
+      "file": "tests/backtest/oos_runner.py",
+      "anchor": "    family_looks = verify_look(inp.look, cfg=cfg, source=inp.source, instruments=instruments,",
+      "mutation": "    family_looks = {} if True else verify_look(inp.look, cfg=cfg, source=inp.source, instruments=instruments,",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k refuses_before_any_compute",
+      "expect": "test_the_grade_refuses_before_any_compute_without_its_own_line"
+    },
+    {
+      "id": "GAP-P12D-64 a look line is created exclusively, never overwritten",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "                with path.open(\"x\", encoding=\"utf-8\") as f:           # the line is the claim",
+      "mutation": "                with path.open(\"w\", encoding=\"utf-8\") as f:           # the line is the claim",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k exclusively_created",
+      "expect": "test_each_look_is_one_exclusively_created_file_and_nothing_is_overwritten"
+    },
+    {
+      "id": "GAP-P12D-64 the data tier is derived from the source and dates",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "    if source not in REAL_SOURCES:",
+      "mutation": "    if True:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k tier_is_derived",
+      "expect": "test_the_tier_is_derived_from_the_data_never_claimed"
+    },
+    {
+      "id": "GAP-P12D-64 a real re-look must say what changed",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "        if tier > 0 and previous is not None and not changed.strip():",
+      "mutation": "        if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k say_what_changed",
+      "expect": "test_a_real_family_that_looked_before_must_say_what_changed"
     }
   ]
 }

@@ -34,6 +34,7 @@ from config.schemas import AcisConfig, load_config
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.leakage import Decision
 from tests.backtest.leakage_markets import PerturbedMarket, TickClock, order_decisions, trade_decisions
+from tests.backtest.look_register import LookRegister
 from tests.backtest.oos_runner import RunInputs, run_walk_forward, train_years
 from tests.backtest.regime_labels import label_instrument_year
 from tests.backtest.synthetic_grade import market_cache
@@ -124,12 +125,14 @@ def engine_decisions(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Seq
         for year in train_years(folds):
             label_instrument_year(cfg=cfg, loader=loader, source=market.name, instrument=instrument,
                                   year=year, cache=cache, logger=log, data_start=spec.start)
+    look = LookRegister(work / "looks").register(cfg=cfg, source=market.name, instruments=instruments,
+                                                 folds=folds, family="synthetic:leakage", git=("n/a", False))
     tap = _Tap(oos_runner.build_paper_loop)
     with mock.patch.object(oos_runner, "build_paper_loop", tap.build):
         report = run_walk_forward(RunInputs(
             cfg=cfg, account=account, source=market.name, loader=loader, cache=cache, folds=folds,
             spx_closes=synthetic_spx(spec.start, spec.days), financing=None, work_dir=work / "engine",
-            logger=log))
+            logger=log, look=look))
 
     full = SyntheticMarket(spec)                   # emission stamps come from the FULL tape
     clocks = {i: TickClock(BacktestDataLoader({full.name: full}, log), full.name, i, spec.start, spec.end)

@@ -21,7 +21,7 @@ a relaxed-limit run CANNOT pass — provable by test.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Mapping, Sequence
 
@@ -79,6 +79,9 @@ class ValidationReport:
     # GAP-P12D-18: the in-sample transparency record — one evolution summary per fold
     # (training windows are not replayed through the engine; `in_sample` is not graded)
     in_sample_evolution: tuple[Mapping, ...]
+    # GAP-P12D-64: the look-register line this grade wrote first, and the register's
+    # per-family look counts. Informational: no clause of `passed` reads it.
+    look: Mapping = field(default_factory=dict)
 
 
 def grade_out_of_sample(block: MetricBlock) -> dict[str, bool]:

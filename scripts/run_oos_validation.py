@@ -1,13 +1,16 @@
 """Run the §14 out-of-sample walk-forward validation for one account (ACIS-09 §7, GAP-P12D-23).
 
-    python scripts/run_oos_validation.py                                   # development plan, test years 2014–2023
-    python scripts/run_oos_validation.py --first-test-year 2014 --last-test-year 2015
-    python scripts/run_oos_validation.py --final-holdout                   # 2024–2025, ONCE, after the design is frozen
+    python scripts/run_oos_validation.py --family trend-v1                 # development plan, test years 2014–2023
+    python scripts/run_oos_validation.py --family trend-v1 --changed "gene ranges narrowed" \\
+        --first-test-year 2014 --last-test-year 2015
+    python scripts/run_oos_validation.py --family trend-v1 --changed "frozen" --final-holdout   # 2024–2025, ONCE
 
+Every run is a LOOK (GAP-P12D-64): its line goes into data/validation/looks/ BEFORE anything
+is graded — hypothesis family, tier, commit, config hash, what changed since the family's
+previous look — and the per-family look counts are printed and written into the report.
 Needs the Dukascopy mirror (data/dukascopy), the labelled-bar cache for every training year
 (scripts/build_labelled_bars.py) and data/macro (SPX closes + overnight rates). Writes
 data/validation/oos/<run id>/report.json and prints the verdict with its caveats.
-
 A development run is never the final grade. Before any paid or long run, the pipeline itself
 must be falsified on synthetic data (GAP-P12D-28).
 """
@@ -26,6 +29,7 @@ from config.schemas import load_config  # noqa: E402
 from core.data.jsonl_logging import JsonlEventLogger  # noqa: E402
 from tests.backtest.data_loader import BacktestDataLoader  # noqa: E402
 from tests.backtest.financing import load_rate_table, make_financing  # noqa: E402
+from tests.backtest.look_register import LookRefused, LookRegister  # noqa: E402
 from tests.backtest.oos_plan import DATA_START, HOLDOUT_END, HOLDOUT_START, HoldoutGuard, plan_folds  # noqa: E402
 from tests.backtest.oos_runner import (RunInputs, load_spx_closes, missing_labels,  # noqa: E402
                                        report_json, run_walk_forward)
@@ -43,6 +47,9 @@ def main() -> int:
     ap.add_argument("--first-test-year", type=int, default=2014)
     ap.add_argument("--last-test-year", type=int, default=2023)
     ap.add_argument("--final-holdout", action="store_true")
+    ap.add_argument("--family", required=True, help="the hypothesis family this look belongs to (GAP-P12D-64)")
+    ap.add_argument("--changed", default="", help="what changed since the family's previous look (required after its first)")
+    ap.add_argument("--operator", default=None, help="who ran it (default: the OS user)")
     a = ap.parse_args()
 
     folds = (plan_folds(HOLDOUT_START.year, HOLDOUT_END.year - 1) if a.final_holdout
@@ -54,6 +61,15 @@ def main() -> int:
         print("refused: labelled bars missing for", ", ".join(f"{i} {y}" for i, y in missing),
               "— run scripts/build_labelled_bars.py first")
         return 2
+    try:   # GAP-P12D-64: the line is written BEFORE any grade, and before the holdout's marker
+        look = LookRegister(ROOT / "data" / "validation" / "looks").register(
+            cfg=cfg, source=SOURCE, instruments=sorted(cfg.instruments.enabled), folds=folds,
+            family=a.family, changed=a.changed, operator=a.operator)
+    except LookRefused as exc:
+        print("refused:", exc)
+        return 2
+    print(f"look {look.look_id} registered: family {look.family}, tier {look.tier_name}, commit {look.git_commit}"
+          + (" (dirty tree)" if look.git_dirty else ""))
     if a.final_holdout:
         guard.begin_final(folds, config_hash=guardrail_hash(cfg.guardrails))   # graded ONCE
     else:
@@ -69,12 +85,14 @@ def main() -> int:
         cfg=cfg, account=a.account, source=SOURCE,
         loader=BacktestDataLoader({SOURCE: DukascopyTickSource(ROOT / "data" / "dukascopy")}, log),
         cache=cache, folds=folds, spx_closes=load_spx_closes(macro / "spx_yahoo.csv"),
-        financing=make_financing(load_rate_table(macro)), work_dir=out / "engine", logger=log))
+        financing=make_financing(load_rate_table(macro)), work_dir=out / "engine", logger=log, look=look))
     log.close()
     (out / "report.json").write_text(report_json(report), encoding="utf-8")
     print(f"{'FINAL HOLDOUT' if a.final_holdout else 'development'} run {run_id}: "
           f"passed={report.passed}  trades={report.out_of_sample.n_trades}  "
           f"deflated_sharpe={report.deflated_sharpe}  trials={report.trial_count}")
+    for family, tiers in report.look["family_looks"].items():
+        print(f"  looks by family: {family}: " + ", ".join(f"{n} {t}" for t, n in tiers.items()))
     for caveat in report.fidelity_caveats:
         print("  caveat:", caveat)
     print("report:", out / "report.json")
