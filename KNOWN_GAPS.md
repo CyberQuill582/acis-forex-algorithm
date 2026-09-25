@@ -1254,6 +1254,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   3. A 16-minute-wrong clock in live trading would misalign session boundaries, the 17:00-New-York rollover and any venue reconciliation. The §13 clock-skew glitch class is tested in code; this is the same defect in the host.
 - Justification: open and NOT fixable by this agent — starting `w32time` needs administrator rights. The AWS work was unblocked by reading AWS's own clock and patching the signing timestamp only (a scratchpad helper; it changes no system setting and no AWS resource), which is a workaround for one tool, not a fix.
 - Residual: GAP-P12D-51 — this entry owns the host fix (an elevated `net start w32time` plus `w32tm /resync`, and setting the service to Automatic so it does not recur) and a pre-live check that the engine refuses to start, or at least logs loudly, when host time is more than a few seconds off a reference.
+- **Progress 2026-09-25:** the clock now reads **+2 s** against AWS's STS `Date` header (it was +949 s), so SigV4 signs without the workaround. But `w32time` is still **Stopped / Manual**, so the correction is not durable and drift will recur. The elevated fix is still owed: set Automatic, start, `w32tm /resync`.
 - Linked: [[GAP-P12D-10]], [[GAP-P12D-07]], [[GAP-0001]]
 
 ## GAP-P12D-49: the cost question is SETTLED and it was never the problem — on the planted market the engine loses 89% of its money on DIRECTION, and TSMOM is the sink
