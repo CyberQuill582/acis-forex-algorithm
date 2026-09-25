@@ -9,6 +9,8 @@ so a green result can never come from an empty run. The guard's bite is proven s
 
 from __future__ import annotations
 
+import random
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
@@ -139,8 +141,18 @@ def _regime(k: int, ts: datetime, instrument: str, shift: int) -> RegimeContext:
                          timestamp=ts, instrument=instrument, inputs_snapshot=MappingProxyType({}))
 
 
-def _agon(store, tapes, cut=None) -> list[Decision]:
-    agon = AGON(signals_cfg(), PAIR, store, lambda inst, sess, kind: 10.0, NullLogger())
+def agon_tapes() -> dict:
+    base = tick_tape(AGON_START, 64, seed=11, gap_s=(60, 60))
+    jpy = tick_tape(AGON_START, 64, seed=12, gap_s=(60, 60))
+    jpy.mid = [100.0 * m for m in jpy.mid]
+    jpy.spread = [100.0 * s for s in jpy.spread]
+    return {"EUR_USD": base, "USD_JPY": jpy}
+
+
+def _agon(store, tapes, cut=None, median=None) -> list[Decision]:
+    """`median` is AGON's session-median channel (production: the live factory's medians);
+    by default a constant, so nothing reaches AGON but the ticks it is fed."""
+    agon = AGON(signals_cfg(), PAIR, store, median or (lambda inst, sess, kind: 10.0), NullLogger())
     for inst in tapes:
         for i in range(262):                               # >= the 252-day lookback + 1, >= min history 260
             agon.observe_daily_close(inst, (1.0 if inst == "EUR_USD" else 100.0) * (1 + 0.001 * i))
@@ -162,11 +174,8 @@ def _agon(store, tapes, cut=None) -> list[Decision]:
 def test_agon_decides_nothing_from_later_ticks(tmp_path) -> None:
     store = ProvenanceStore(tmp_path / "provenance.db", 90, NullLogger())
     register_canonical(store, AGON_START)
-    base = tick_tape(AGON_START, 64, seed=11, gap_s=(60, 60))
-    jpy = tick_tape(AGON_START, 64, seed=12, gap_s=(60, 60))
-    jpy.mid = [100.0 * m for m in jpy.mid]
-    jpy.spread = [100.0 * s for s in jpy.spread]
-    tapes = {"EUR_USD": base, "USD_JPY": jpy}
+    tapes = agon_tapes()
+    base = tapes["EUR_USD"]
     ref = _agon(store, tapes)
     strategies = {d.payload[6] for d in ref}
     assert len(ref) >= 60 and len(strategies) >= 3, strategies
@@ -205,30 +214,45 @@ def test_no_gap_exit_is_decided_from_its_own_bars_later_data() -> None:
 
 # -- evolution: the fold's train end is the cut that matters ------------------------------- #
 
-def test_evolution_decides_nothing_from_bars_after_its_train_end(tmp_path, acis_config) -> None:
-    """The real evolve_fold over a cache that DOES hold later bars (as a leaky cache would
-    serve): perturbing or deleting everything from the train end on changes no record."""
-    cfg = _cfg(acis_config)
+EVO_TRAIN_END = T0 + timedelta(minutes=500)
+
+
+def evolution_tape() -> list:
+    """A zigzag edge under noise: evolution stages a champion whose fitness sits BELOW the formula
+    cap (0.754 < 0.8), and a champion survives a peek past the train end (MEDIUM-3: a saturated
+    record, or a leaky run that stages nothing, gives T2 nothing to compare)."""
+    rng = random.Random(4)
+    return list(bars_from_closes([c + rng.gauss(0, 0.0009) for c in zigzag_closes(700)]))
+
+
+def evolution_run(tmp_path, cfg, bars, *, peek: timedelta = timedelta(0)) -> tuple[list[Decision], dict]:
+    """The real evolve_fold over a cache that DOES hold later bars (as a leaky cache would serve);
+    `peek` > 0 plants the look-ahead: the cache serves bars up to `peek` past the requested end."""
     spec = LabelSpec(source="test", bar_seconds=60, cycle_s=120.0, regime_config="{}")
-    closes = zigzag_closes(700)
-    train_end = T0 + timedelta(minutes=500)
-    fold = Fold(1, T0, train_end, train_end + timedelta(days=7), train_end + timedelta(days=365))
+    fold = Fold(1, T0, EVO_TRAIN_END, EVO_TRAIN_END + timedelta(days=7), EVO_TRAIN_END + timedelta(days=365))
     costs = {i: cost_model(cfg, i) for i in ("EUR_USD", "USD_JPY")}
 
-    def run(t, mode) -> list[Decision]:
-        bars = bars_from_closes(closes)
-        k = sum(1 for b in bars if b.ts < t) if t is not None else len(bars)
-        future = tuple(b.__class__(ts=b.ts, open=b.open * 1.5, high=b.high * 1.5, low=b.low * 1.5,
-                                   close=b.close * 1.5, spread=b.spread * 2, regime=b.regime) for b in bars[k:])
-        bars = bars[:k] + (future if mode == "perturb" else ())
-        cache = LabelledBarCache(tmp_path / f"{mode}-{k}", spec)
-        for instrument in costs:
-            cache.write(instrument, T0.year, bars)
-        stager = SimpleNamespace(staged=[], stage=lambda p, now: stager.staged.append((p, now)))
-        record = evolve_fold(SimpleNamespace(params=stager), FoldData(fold, ()), cfg=cfg, costs=costs,
-                             cache=cache, instruments=list(costs), logger=NullLogger())
-        return [Decision(train_end - US, train_end - US, "evolution", (repr(sorted(record.items())),
-                                                                       repr(stager.staged)))]
-    ref = run(None, "truncate")
-    _both(ref, run, [train_end, train_end + timedelta(hours=1)], 2)
-    assert "('champions', 0)" not in ref[0].payload[0]      # and a champion was staged: not vacuous
+    class _Cache(LabelledBarCache):
+        def history(self, instrument, regime, start, end, n):
+            return super().history(instrument, regime, start, end + peek, n)
+    cache = _Cache(tmp_path / f"evo-{uuid.uuid4().hex[:8]}", spec)
+    for instrument in costs:
+        cache.write(instrument, T0.year, bars)
+    stager = SimpleNamespace(staged=[], stage=lambda p, now: stager.staged.append((p, now)))
+    record = evolve_fold(SimpleNamespace(params=stager), FoldData(fold, ()), cfg=cfg, costs=costs,
+                         cache=cache, instruments=list(costs), logger=NullLogger())
+    return [Decision(EVO_TRAIN_END - US, EVO_TRAIN_END - US, "evolution",
+                     (repr(sorted(record.items())), repr(stager.staged)))], record
+
+
+def evolution_variant(bars, t: datetime, mode: str) -> list:
+    return bar_tape_variant(bars, sum(1 for b in bars if b.ts < t), mode)
+
+
+def test_evolution_decides_nothing_from_bars_after_its_train_end(tmp_path, acis_config) -> None:
+    cfg, bars = _cfg(acis_config), evolution_tape()
+    ref, record = evolution_run(tmp_path, cfg, bars)
+    staged = record["regimes"]["STRONG_TREND_UP"]["candidates"][0]
+    assert record["champions"] >= 1 and staged["fitness"] < 0.8          # not vacuous, not saturated
+    _both(ref, lambda t, mode: evolution_run(tmp_path, cfg, evolution_variant(bars, t, mode))[0],
+          [EVO_TRAIN_END, EVO_TRAIN_END + timedelta(hours=1)], 2)

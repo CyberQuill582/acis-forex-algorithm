@@ -31,7 +31,11 @@ from tests.backtest.leakage_tapes import bar_cuts, bar_tape, bar_tape_variant, t
 from tests.backtest.regime_labels import label_bars
 from tests.backtest.synthetic_grade import START, plan
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket
-from tests.backtest.test_leakage_components import LABEL_START, LABEL_TICKS, _labels, _small_regime
+from tests.backtest.test_evolve_step import _cfg
+from tests.backtest.test_leakage_components import (AGON_START, EVO_TRAIN_END, LABEL_START, LABEL_TICKS, _agon,
+                                                    _bars, _labels, _small_regime, agon_tapes, evolution_run,
+                                                    evolution_tape, evolution_variant)
+from tests.backtest.leakage_tapes import tick_tape, tick_tape_variant
 from tests.optimizer_fixtures import TEST_COSTS, make_paramset
 
 UTC = timezone.utc
@@ -75,6 +79,66 @@ def test_the_market_variants_leave_the_past_bit_identical_and_change_every_later
 def test_a_decision_cannot_claim_it_was_emitted_before_its_own_horizon() -> None:
     with pytest.raises(ValueError, match="before its horizon"):
         Decision(2.0, 1.0, "signal", ())
+
+
+# -- controls that bite where the honest sweeps could only be silent (MEDIUM-3 / MEDIUM-4) ---- #
+# Each goes RED if the perturbation is switched off (falsify.cases.json "perturbation off").
+
+def test_evolution_that_peeks_past_its_train_end_is_caught_by_t2_alone(tmp_path, acis_config) -> None:
+    """MEDIUM-3: before, T2 had never caught an evolution leak (the honest record was saturated
+    and every leaky reference staged nothing). Here the peeking reference still stages a
+    champion, and T2 on its own sees the record move with the perturbed future."""
+    cfg, bars = _cfg(acis_config), evolution_tape()
+    peek = timedelta(minutes=30)
+    ref, record = evolution_run(tmp_path, cfg, bars, peek=peek)
+    assert record["champions"] >= 1                                       # a real record to compare
+    t2 = future_perturbation(ref, lambda t: evolution_run(tmp_path, cfg, evolution_variant(bars, t, "perturb"),
+                                                          peek=peek)[0], [EVO_TRAIN_END])
+    assert t2.violations, t2.summary()
+
+
+class _ClosingTickAggregator(BarAggregator):
+    """A completed bar whose close is the tick that COMPLETED it: one tick of the future."""
+
+    def add(self, ts, mid, spread):
+        bar = super().add(ts, mid, spread)
+        return None if bar is None else replace(bar, close=mid, high=max(bar.high, mid), low=min(bar.low, mid))
+
+
+def test_a_bar_builder_that_closes_on_the_completing_tick_is_caught_by_t2() -> None:
+    tape = tick_tape(datetime(2026, 7, 6, 19, 0, tzinfo=UTC), 160, seed=5, gap_s=(5, 40))
+
+    def make():
+        return _ClosingTickAggregator(60)
+    t2 = future_perturbation(_bars(tape, make), lambda t: _bars(tick_tape_variant(tape, t, "perturb"), make),
+                             tape.ts[1:])
+    assert t2.violations, t2.summary()
+
+
+def _whole_tape_median(tapes):
+    """AGON's session-median channel answered from the WHOLE tape (the F3 class at AGON's input:
+    a median computed on a materialised stream)."""
+    med = {i: sorted(tp.velocity)[len(tp.velocity) // 2] for i, tp in tapes.items()}
+    return lambda instrument, session, kind: med[instrument]
+
+
+def test_a_whole_tape_median_on_agons_channel_is_caught_by_t2(tmp_path) -> None:
+    """MEDIUM-4: AGON is fed one tick at a time, so its own code has no path to a later datum;
+    its only channels are its callbacks. A future-reading median there moves the scalp's surge
+    ratio and conviction on EARLIER ticks, and T2 must see it. (T1 need not: a median of the
+    truncated sample flips no earlier decision at these cuts, so it is reported, not asserted.)"""
+    from core.signals.canonical import register_canonical
+    from core.signals.provenance import ProvenanceStore
+    store = ProvenanceStore(tmp_path / "provenance.db", 90, NullLogger())
+    register_canonical(store, AGON_START)
+    tapes = agon_tapes()
+
+    def run(t, mode):
+        variant = {i: tick_tape_variant(tp, t, mode) for i, tp in tapes.items()}
+        return _agon(store, variant, t if mode == "perturb" else None, median=_whole_tape_median(variant))
+    ref = _agon(store, tapes, median=_whole_tape_median(tapes))
+    t2 = future_perturbation(ref, lambda t: run(t, "perturb"), tapes["EUR_USD"].ts[4::6])
+    assert t2.violations, t2.summary()
 
 
 # -- a centered indicator inside the real fitness simulator --------------------------------- #

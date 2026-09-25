@@ -265,6 +265,38 @@
       "mutation": "                exit_spread = bar.spread",
       "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k no_gap_exit",
       "expect": "test_no_gap_exit_is_decided_from_its_own_bars_later_data"
+    },
+    {
+      "id": "GAP-P12D-83 M4 tick-tape perturbation off: the bar-builder control goes red",
+      "file": "tests/backtest/leakage_tapes.py",
+      "anchor": "    return TickTape(tape.ts, perturb_path(tape.mid, k), tail(tape.spread), tail(tape.velocity))",
+      "mutation": "    return tape",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k closes_on",
+      "expect": "test_a_bar_builder_that_closes_on_the_completing_tick_is_caught_by_t2"
+    },
+    {
+      "id": "GAP-P12D-83 M4 tick-tape perturbation off: the AGON channel control goes red",
+      "file": "tests/backtest/leakage_tapes.py",
+      "anchor": "    return TickTape(tape.ts, perturb_path(tape.mid, k), tail(tape.spread), tail(tape.velocity))",
+      "mutation": "    return tape",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k agons_channel",
+      "expect": "test_a_whole_tape_median_on_agons_channel_is_caught_by_t2"
+    },
+    {
+      "id": "GAP-P12D-83 M3 bar-tape perturbation off: the evolution control goes red",
+      "file": "tests/backtest/leakage_tapes.py",
+      "anchor": "    return list(bars[:k]) + bars_from_path(perturb_path(path, p),",
+      "mutation": "    return list(bars) or bars_from_path(perturb_path(path, p),",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k peeks_past",
+      "expect": "test_evolution_that_peeks_past_its_train_end_is_caught_by_t2_alone"
+    },
+    {
+      "id": "GAP-P12D-83 M3 bar-tape perturbation off: the fitness controls go red",
+      "file": "tests/backtest/leakage_tapes.py",
+      "anchor": "    return list(bars[:k]) + bars_from_path(perturb_path(path, p),",
+      "mutation": "    return list(bars) or bars_from_path(perturb_path(path, p),",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k reads_its_own_close",
+      "expect": "test_a_gap_exit_that_reads_its_own_close_is_caught_by_t1_and_t2"
     }
   ]
 }
