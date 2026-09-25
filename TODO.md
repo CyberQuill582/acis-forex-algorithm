@@ -83,6 +83,7 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
   - **Order:** (1) BUILDER, after its fixes are verified; (2) BUILDER-2, RE-MERGED onto BUILDER's final head, because it stacks on the old `9b9ec80` snapshot and BUILDER has added commits since; (3) BUILDER-3.
   - **Measured file overlap (2026-09-25):** BUILDER ∩ BUILDER-2 = `tests/backtest/oracle.py` and `synthetic_grade.py`; BUILDER-3 overlaps neither.
   - **After EACH merge, before the next:** the full suite, `python scripts/governance_gate.py --session` and `ledger_check`, all on the COMBINED tree.
+  - **FIRST change after the merges:** fix [[GAP-P12D-84]] (the graded book fills gapped stops at the stop, pre-existing on main). It is deferred only because the BUILDER branch edits the same file.
   - **Watch the behavioural interaction.** BUILDER-3's always-on pre-close ban, weekend flatten and lot rounding act on code that BUILDER's oracle and BUILDER-2's leakage suite exercise. Anything that passes alone but fails combined is a finding, fixed before the next merge.
 
 **BUILDER-3 IS IN (2026-09-25):** branch `worktree-agent-a9e00713d15bb5082`, BUILT, PENDING AUDIT. The lead re-ran the suite on it: **842 passed, 6 skipped**.

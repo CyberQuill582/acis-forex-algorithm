@@ -144,6 +144,18 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-84: PRE-EXISTING ON MAIN — the graded backtest book fills a gapped-through stop AT THE STOP, not at the gap price, so every graded result flatters gap losses
+- Severity: high · Likelihood: high
+- Status: open (2026-09-25 — found by AUDIT-EXTERNAL (X1) in the BUILDER-2 branch audit. The lead VERIFIED it on main: tests/backtest/book.py `maybe_close` runs `if price <= pos.stop_loss: return self.close_at(pos, pos.stop_loss, …)`, so the fill is the stop level however far the tick has gapped past it. The auditor's reproduction: a gap to 1.0950 against a 1.0990 stop books −100 instead of −500 per 100k)
+- Area: tests/backtest/book.py `maybe_close` (the graded tick book behind every §14 grade, the falsification runs and the cost ladder); master §8.5's gap law (ACIS_SPEC.md "gap" / black-swan preparedness)
+- Description:
+  - **The mismatch with real venues.** Real venues fill a triggered stop at the first price equal to or worse than the trigger. OANDA's v20 docs: "filled … by the first price that is equal to or worse than the threshold"; backtrader fills gapped stops at the open.
+  - **What the book does instead.** It books the stop level exactly, so weekend gaps, news gaps and thin-liquidity jumps all land at the stop. Every graded result understates gap losses: the "false encouragement" class this project exists to prevent.
+  - **The selection side is now stricter than grading.** BUILDER-2's T6 made the selection-side fitness simulator fill gaps at the open.
+  - **An earlier test covered a different path.** The phase-9 "weekend gap through stop books loss at gap price" test exercises the Risk Monitor, not this graded book.
+- Justification: open. The fix is a TIGHTENING one-liner that fills at `min(price, stop)` for longs and `max(price, stop)` for shorts, pinned by hand-worked tests for a gap through the stop, falsified. It is DEFERRED until after the BUILDER branch merges, because that branch also edits tests/backtest/book.py and a fix on main now would conflict. It is the first change applied after the merges. Until then, any graded number is optimistic on gaps. The ladder's verdict (the engine loses, [[GAP-P12D-49]]) only gets worse, so no conclusion flips.
+- Linked: [[GAP-P12D-83]], [[GAP-P12D-65]], [[GAP-P12D-49]], [[GAP-0001]]
+
 ## GAP-P12D-82: four latent look-ahead or artifact paths in the research instrument, found by the structural leakage suite (pre-existing on main)
 - Severity: medium · Likelihood: medium
 - Status: open (2026-09-25 — surfaced by BUILDER-2's T1/T2 leakage sweeps; see its branch report `BUILDER2_REPORT_2026-09-24.md` §2 and §5. Each has a named mechanism and `file:line` evidence. None leaks on the current production call paths, which the sweeps checked clean: 102,998 / 102,961 decisions compared)
@@ -166,7 +178,25 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Severity: medium · Likelihood: high
 - Status: open (2026-09-25 — the constitution's two lenses only, launched under the pinned brief `AUDIT_BRIEF_BUILDER2_2026-09-25.md`. The branch `worktree-agent-a8937e82f9a7a5391` is at head `5d96570`, and BUILDER-2's own work sits on top of the BUILDER-branch merge `577d882`. Lead pre-checks: `report.py` gains only an informational `look` field and the `passed` gate is byte-identical; no guard, spec or ledger file is touched; the lead re-ran the full branch suite independently: 864 passed, 6 skipped, which matches the author)
 - Area: the BUILDER-2 branch — the leakage suite (T1/T2/T7), the look register and its `run_walk_forward` refusal, and T6 gap-through exits in `core/optimizer/fitness.py`
-- Description: BUILT, PENDING AUDIT. Findings are appended here when the two reports land.
+- Description: BUILT, PENDING AUDIT.
+  - **EXTERNAL lens IN (2026-09-25, archive/AUDIT_BUILDER2_BRANCH_EXTERNAL_2026-09-25.md)**, every finding reproduced by the auditor:
+    - **X1:** pre-existing on main, and verified by the lead. It has its own entry, [[GAP-P12D-84]].
+    - **X2 (MED-HIGH):** `trade_path_decisions` stamps every exit at bar j+0.5, so a planted leak where a gap exit reads the bar's close gives 0 T1 and 0 T2 violations over 479 cuts. The detector is blind to re-stamped exits. T6's gap exit also pays the bar's CLOSING spread for a fill at the open, the exit-side twin of [[GAP-P12D-82]] F1.
+    - **X4 (MED): the register's completeness rests on caller diligence.**
+      - a look in a throwaway directory passes `verify_look`;
+      - deleting the latest line is undetectable;
+      - dirty-tree real-data looks are accepted;
+      - `dukascopy-mirror` counts as tier 0;
+      - renaming a family resets its history;
+      - one empty line, as after a power loss, breaks every later registration;
+      - it lives in git-ignored /data/;
+      - no per-look outcome is recorded, so the DSR and PBO trial variance cannot be derived.
+    - **X5/X7 (MED): honesty wording.** The suite's "clean: no decision depends on data after it" overclaims; an empirical detector certifies nothing by its silence (Fonseca). It also cites Gençay's "structural guardrail" for what is a two-run detector (T8 would be the structural one).
+    - **X3 (MED-LOW):** a bar that opens beyond the target and then touches the stop is booked as a stop.
+    - **X6/X8/X9 (LOW):** the labeller tape is too short to show F3; the engine grid is anchored at 00:00 UTC, not 17:00 New York; tier "forward" starts 2026-01, before the June-2026 model cutoff ([[GAP-P12D-66]]).
+    - **Honest negatives:** whole-tail statistic leaks are caught; exclusive create is atomic; looks survive crashed grades; T6's stop-at-open matches OANDA and backtrader.
+    - **The auditor's verdict:** a strict empirical detector for value look-ahead on price data, not a certificate.
+  - **INTERNAL lens:** running.
 - Justification: open until both lenses' findings are triaged and the branch merges on the owner's go. It merges AFTER the BUILDER branch, which it stacks on.
 - Linked: [[GAP-P12D-64]], [[GAP-P12D-65]], [[GAP-P12D-82]], [[GAP-P12D-72]]
 
