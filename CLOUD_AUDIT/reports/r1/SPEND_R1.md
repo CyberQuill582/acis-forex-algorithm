@@ -23,3 +23,4 @@
 | 07:35–07:55 | P0: review tree at BASE `974dbda`; handoff `_context` unpacked to `/tmp/handoff`; baseline 850 passed / 6 skipped; ledger 221 / 0 | 1 | ~$1 |
 | 07:55–07:58 | P1: read the prior SYNTHESIS, C1, ARC and VAL; `BRIEF_R1.md` pinned and pushed (`0200443`) | 1 | ~$3 |
 | ~07:59 | **P2 launch:** R1-A, R1-B, R1-C and R1-D in one message (`opus`, general-purpose; web caps 30 / 40 / 25 / 40; boxes 2 h 30 min each) | 4 lanes + lead | ~$4 at launch |
+| 08:05 | **Metered** `cost_usd` = **$11.31** at a turn boundary. It evidently includes the lanes' usage: 21.7 M cached reads, 0.71 M cache writes and 135 k output tokens. R1-B and R1-D have posted their first PARTIALs | 4 lanes + lead | **$11.31 metered** |
