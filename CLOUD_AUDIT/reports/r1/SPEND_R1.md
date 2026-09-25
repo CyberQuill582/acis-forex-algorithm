@@ -28,3 +28,5 @@
 | 08:18 | **PLAN_R1 v1 pushed** (all six sections, plus disagreements and P3 status). Ledger check with the reports copied into the review tree: 221 / 0. The meter can't be read mid-turn; see the next row | 4 lanes + lead | see next row |
 | 08:19 | PLAN_R1 v1 pushed (`a12c6cf`); P3 (8 claims confirmed) pushed at 08:21 (`ffc4b25`). **Metered at v1 ≈ $35–38**, interpolated between the 08:14 reading ($24.03) and the 08:23 reading below | lead | ≈ $35–38 |
 | 08:23 | **Metered $38.83.** R1-D (finished 08:21, 290 k tokens) and R1-B (finished ~08:23, 329 k tokens) are done; R1-A and R1-C are finishing | 2 lanes + lead | **$38.83 metered** |
+| 09:07 | **Metered $55.96.** All four lanes are finished: R1-D 08:21, R1-B ~08:23, R1-C ~08:40, R1-A 09:08. Remaining is lead-only work: P3, PLAN v2 and the close | lead | **$55.96 metered** |
+| 09:14 | **PLAN_R1 v2 (final) pushed**, with P3 row 13 (R1-A register verdict re-run at R = 80) and the lead receipts. Ledger check with the reports copied into the review tree: 221 / 0 | lead | see the close row |
