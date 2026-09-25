@@ -33,6 +33,334 @@
       "mutation": "        self._instruments_halted.clear()\n        self._session_halted = False\n        self._equity_flattened = True",
       "test": "python -m pytest tests/unit/test_guardrails.py -q -x -p no:cacheprovider",
       "expect": "test_equity_breaker_re_fires_after_human_rearm"
+    },
+    {
+      "id": "GAP-P12D-65 a completed bar holds only its own ticks",
+      "file": "core/data/bars.py",
+      "anchor": "            open=self._o, high=self._h, low=self._l, close=self._c,",
+      "mutation": "            open=self._o, high=max(self._h, mid), low=min(self._l, mid), close=mid,",
+      "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k bar_builder",
+      "expect": "test_the_bar_builder_decides_nothing_from_later_ticks"
+    },
+    {
+      "id": "GAP-P12D-65 a bar is labelled with the regime before its completing tick",
+      "file": "tests/backtest/regime_labels.py",
+      "anchor": "        ctx = engine.regime_store.get(st.instrument)      # the regime BEFORE this tick",
+      "mutation": "        engine.observe(st); engine.classify(st); ctx = engine.regime_store.get(st.instrument)",
+      "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k regime_labeller",
+      "expect": "test_the_regime_labeller_decides_nothing_from_later_ticks"
+    },
+    {
+      "id": "GAP-P12D-65 the fitness entry is decided on the signal bar's close",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "        crossed_up = ema_f[i - 1] <= ema_s[i - 1] and ema_f[i] > ema_s[i]",
+      "mutation": "        crossed_up = ema_f[i] <= ema_s[i] and ema_f[i + 1] > ema_s[i + 1]",
+      "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k fitness_simulator",
+      "expect": "test_the_fitness_simulator_decides_nothing_from_later_bars"
+    },
+    {
+      "id": "GAP-P12D-65 evolution reads only bars that close by its train end",
+      "file": "tests/backtest/evolve_step.py",
+      "anchor": "            history = cache.history(instrument, regime, window_start, train_end, None)",
+      "mutation": "            history = cache.history(instrument, regime, window_start, train_end + timedelta(hours=2), None)",
+      "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k evolution_decides",
+      "expect": "test_evolution_decides_nothing_from_bars_after_its_train_end"
+    },
+    {
+      "id": "GAP-P12D-65 T2 compares the perturbed run, not the reference with itself",
+      "file": "tests/backtest/leakage.py",
+      "anchor": "        k, v = _compare(T2, t, reference, perturbed(t), lambda d, t=t: d.horizon < t)",
+      "mutation": "        k, v = _compare(T2, t, reference, reference, lambda d, t=t: d.horizon < t)",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k next_close",
+      "expect": "test_an_ema_that_reads_the_next_close_is_caught_by_t1_and_t2"
+    },
+    {
+      "id": "GAP-P12D-65 T1 compares the truncated run, not the reference with itself",
+      "file": "tests/backtest/leakage.py",
+      "anchor": "        k, v = _compare(T1, t, reference, truncated(t), lambda d, t=t: d.emitted < t)",
+      "mutation": "        k, v = _compare(T1, t, reference, reference, lambda d, t=t: d.emitted < t)",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k next_close",
+      "expect": "test_an_ema_that_reads_the_next_close_is_caught_by_t1_and_t2"
+    },
+    {
+      "id": "GAP-P12D-65 the perturbation changes the future",
+      "file": "tests/backtest/leakage.py",
+      "anchor": "    return list(returns[:cut]) + [-2.0 * r for r in reversed(returns[cut:])]",
+      "mutation": "    return list(returns)",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k moves_every_later_price",
+      "expect": "test_the_perturbation_moves_every_later_price_and_its_scale_and_nothing_earlier"
+    },
+    {
+      "id": "GAP-P12D-64 a real re-look must say what changed",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "        if tier > 0 and previous is not None and not changed.strip():",
+      "mutation": "        if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k say_what_changed",
+      "expect": "test_a_real_family_that_looked_before_must_say_what_changed"
+    },
+    {
+      "id": "GAP-P12D-64 no grade without its look-register line",
+      "file": "tests/backtest/oos_runner.py",
+      "anchor": "    begin_grade(inp.look, cfg=cfg, loader=inp.loader, source=inp.source, instruments=instruments,",
+      "mutation": "    (lambda *a, **k: None)(inp.look, cfg=cfg, loader=inp.loader, source=inp.source, instruments=instruments,",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k refuses_before_any_compute",
+      "expect": "test_the_grade_refuses_before_any_compute_without_its_own_line"
+    },
+    {
+      "id": "GAP-P12D-64 every grade records its outcome",
+      "file": "tests/backtest/oos_runner.py",
+      "anchor": "    register.record_outcome(inp.look, _plain({",
+      "mutation": "    (lambda *a: None)(inp.look, _plain({",
+      "test": "python -m pytest tests/backtest/test_oos_runner.py -q -x -p no:cacheprovider",
+      "expect": "test_the_runner_grades_two_folds_end_to_end"
+    },
+    {
+      "id": "GAP-P12D-64 a look line is created exclusively, never overwritten",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "        os.link(tmp, path)                       # FileExistsError if the name is taken",
+      "mutation": "        os.replace(tmp, path); tmp.touch()       # FileExistsError if the name is taken",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k one_line_is_one_grade",
+      "expect": "test_one_line_is_one_grade"
+    },
+    {
+      "id": "GAP-P12D-64 the tier comes from the source object's declared provenance",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "    if provenance != \"real\":",
+      "mutation": "    if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k source_object",
+      "expect": "test_the_tier_comes_from_the_source_object"
+    },
+    {
+      "id": "GAP-P12D-64 a loader key must be its source object's own name",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "    if getattr(src, \"name\", None) != source:",
+      "mutation": "    if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k source_object",
+      "expect": "test_the_tier_comes_from_the_source_object"
+    },
+    {
+      "id": "GAP-P12D-64 a real-data look lives in the canonical register",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "    if tier > 0 and register.root.resolve() != CANONICAL.resolve():",
+      "mutation": "    if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k outside_the_canonical",
+      "expect": "test_a_real_data_look_outside_the_canonical_register_is_refused"
+    },
+    {
+      "id": "GAP-P12D-64 one line is one grade",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "    register.consume(look)",
+      "mutation": "    pass",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k one_line_is_one_grade",
+      "expect": "test_one_line_is_one_grade"
+    },
+    {
+      "id": "GAP-P12D-64 an edited line breaks the chain",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "            if line is not None and line[\"prev_hash\"] != head:",
+      "mutation": "            if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k chain_and_the_register_fails_closed",
+      "expect": "test_forged_deleted_or_edited_lines_break_the_chain"
+    },
+    {
+      "id": "GAP-P12D-64 a buried line leaves its grade marker behind",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "            if int(marker.name[:6]) > len(files):",
+      "mutation": "            if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k chain_and_the_register_fails_closed",
+      "expect": "test_forged_deleted_or_edited_lines_break_the_chain"
+    },
+    {
+      "id": "GAP-P12D-64 a torn line never escapes as JSONDecodeError",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "            except ValueError:",
+      "mutation": "            except TypeError:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k torn_line",
+      "expect": "test_a_torn_line_is_reported_and_counted"
+    },
+    {
+      "id": "GAP-P12D-64 a real-data look needs a clean tree",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "        if tier > 0 and (dirty or commit == \"unknown\"):",
+      "mutation": "        if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k clean_tree",
+      "expect": "test_a_real_look_needs_a_clean_tree"
+    },
+    {
+      "id": "GAP-P12D-64 a real-data grade re-checks the commit",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "        if dirty or commit != look.git_commit:",
+      "mutation": "        if False:",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k clean_tree",
+      "expect": "test_a_real_look_needs_a_clean_tree"
+    },
+    {
+      "id": "GAP-P12D-64 a concurrent loser re-reads before it decides",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "                continue                                     # another registrant won: re-read, re-decide",
+      "mutation": "                return look",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k concurrent",
+      "expect": "test_concurrent_first_looks_are_unambiguous"
+    },
+    {
+      "id": "GAP-P12D-83 M1 every variant carries a distinct source name",
+      "file": "tests/backtest/leakage_markets.py",
+      "anchor": "        self.name = f\"{self.name}~{mode}@{cut:%Y%m%dT%H%M%S}\"",
+      "mutation": "        self.name = self.name",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k memoised",
+      "expect": "test_a_whole_file_statistic_memoised_on_the_source_name_is_caught"
+    },
+    {
+      "id": "GAP-P12D-83 M1 every engine variant runs in a fresh spawned process",
+      "file": "scripts/leakage_suite.py",
+      "anchor": "    return ProcessPoolExecutor(max_workers=workers, mp_context=get_context(\"spawn\"), max_tasks_per_child=1)",
+      "mutation": "    return ProcessPoolExecutor(max_workers=workers)",
+      "test": "python -m pytest tests/backtest/test_leakage_suite.py -q -x -p no:cacheprovider -k spawned",
+      "expect": "test_every_engine_variant_runs_in_a_fresh_spawned_process"
+    },
+    {
+      "id": "GAP-P12D-65 T6 a long gapped through its stop exits at the open",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                    exit_mid, kind = (bar.open, \"gap\") if bar.open < sl else (sl, \"stop\")",
+      "mutation": "                    exit_mid, kind = (sl, \"gap\") if bar.open < sl else (sl, \"stop\")",
+      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k opens_through_the_stop",
+      "expect": "test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop"
+    },
+    {
+      "id": "GAP-P12D-65 T6 a short gapped through its stop exits at the open",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                    exit_mid, kind = (bar.open, \"gap\") if bar.open > sl else (sl, \"stop\")",
+      "mutation": "                    exit_mid, kind = (sl, \"gap\") if bar.open > sl else (sl, \"stop\")",
+      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k opens_through_the_stop",
+      "expect": "test_a_bar_that_opens_through_the_stop_exits_at_the_open_not_the_stop"
+    },
+    {
+      "id": "GAP-P12D-83 M4 tick-tape perturbation off: the bar-builder control goes red",
+      "file": "tests/backtest/leakage_tapes.py",
+      "anchor": "    return TickTape(tape.ts, perturb_path(tape.mid, k), tail(tape.spread), tail(tape.velocity))",
+      "mutation": "    return tape",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k closes_on",
+      "expect": "test_a_bar_builder_that_closes_on_the_completing_tick_is_caught_by_t2"
+    },
+    {
+      "id": "GAP-P12D-83 M4 tick-tape perturbation off: the AGON channel control goes red",
+      "file": "tests/backtest/leakage_tapes.py",
+      "anchor": "    return TickTape(tape.ts, perturb_path(tape.mid, k), tail(tape.spread), tail(tape.velocity))",
+      "mutation": "    return tape",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k agons_channel",
+      "expect": "test_a_whole_tape_median_on_agons_channel_is_caught_by_t2"
+    },
+    {
+      "id": "GAP-P12D-83 M3 bar-tape perturbation off: the evolution control goes red",
+      "file": "tests/backtest/leakage_tapes.py",
+      "anchor": "    return list(bars[:k]) + bars_from_path(perturb_path(path, p),",
+      "mutation": "    return list(bars) or bars_from_path(perturb_path(path, p),",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k peeks_past",
+      "expect": "test_evolution_that_peeks_past_its_train_end_is_caught_by_t2_alone"
+    },
+    {
+      "id": "GAP-P12D-83 M3 bar-tape perturbation off: the fitness controls go red",
+      "file": "tests/backtest/leakage_tapes.py",
+      "anchor": "    return list(bars[:k]) + bars_from_path(perturb_path(path, p),",
+      "mutation": "    return list(bars) or bars_from_path(perturb_path(path, p),",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k reads_its_own_close",
+      "expect": "test_a_gap_exit_that_reads_its_own_close_is_caught_by_t1_and_t2"
+    },
+    {
+      "id": "GAP-P12D-83 M2 a gap exit is stamped at its bar's open",
+      "file": "tests/backtest/leakage_tapes.py",
+      "anchor": "        if t.exit_kind in AT_THE_OPEN:              # decided at bar j's OPEN (MEDIUM-2 / X2 / X3)",
+      "mutation": "        if False:",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k reads_its_own_close",
+      "expect": "test_a_gap_exit_that_reads_its_own_close_is_caught_by_t1_and_t2"
+    },
+    {
+      "id": "GAP-P12D-83 X3 a long that opens beyond its target fills there at the open",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                if bar.open > tp:",
+      "mutation": "                if False:",
+      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k beyond_the_target",
+      "expect": "test_a_bar_that_opens_beyond_the_target"
+    },
+    {
+      "id": "GAP-P12D-83 X3 a short that opens beyond its target fills there at the open",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                if bar.open < tp:",
+      "mutation": "                if False:",
+      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k beyond_the_target",
+      "expect": "test_a_bar_that_opens_beyond_the_target"
+    },
+    {
+      "id": "GAP-P12D-83 X3 a target gap pays the prior bar's closing spread",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "AT_THE_OPEN = frozenset({\"gap\", \"target_gap\"})   # exit kinds settled by the bar's opening price",
+      "mutation": "AT_THE_OPEN = frozenset({\"gap\"})   # exit kinds settled by the bar's opening price",
+      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k fills_there_at_the_open",
+      "expect": "test_a_bar_that_opens_beyond_the_target_fills_there_at_the_open"
+    },
+    {
+      "id": "GAP-P12D-83 X2 a gap exit pays the prior bar's closing spread",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                exit_spread = bars[i - 1].spread if kind in AT_THE_OPEN else bar.spread",
+      "mutation": "                exit_spread = bar.spread",
+      "test": "python -m pytest tests/unit/test_fitness_exits.py -q -x -p no:cacheprovider -k never_pays",
+      "expect": "test_a_gap_exit_never_pays_the_gap_bars_own_closing_spread"
+    },
+    {
+      "id": "GAP-P12D-83 X2 the leakage sweep sees a gap exit that pays its own closing spread",
+      "file": "core/optimizer/fitness.py",
+      "anchor": "                exit_spread = bars[i - 1].spread if kind in AT_THE_OPEN else bar.spread",
+      "mutation": "                exit_spread = bar.spread",
+      "test": "python -m pytest tests/backtest/test_leakage_components.py -q -x -p no:cacheprovider -k no_gap_exit",
+      "expect": "test_no_gap_exit_is_decided_from_its_own_bars_later_data"
+    },
+    {
+      "id": "GAP-P12D-65 the perturbed market changes the future at its source",
+      "file": "tests/backtest/leakage_markets.py",
+      "anchor": "            self._variant[instrument] = (array(\"d\", perturb_returns(base, self._k))",
+      "mutation": "            self._variant[instrument] = (array(\"d\", base)",
+      "test": "python -m pytest tests/backtest/test_leakage_controls.py -q -x -p no:cacheprovider -k harness_level",
+      "expect": "test_the_harness_level_controls_honest_oracle_silent_and_next_tick_peek_caught"
+    },
+    {
+      "id": "GAP-P12D-83 X5 a silent sweep is never reported as clean",
+      "file": "scripts/leakage_suite.py",
+      "anchor": "    return finish(0, f\"no violation detected at {len(cuts)} cuts ({compared} decisions compared under T1 and T2): \"",
+      "mutation": "    return finish(0, f\"clean: no violation detected at {len(cuts)} cuts ({compared} decisions compared under T1 and T2): \"",
+      "test": "python -m pytest tests/backtest/test_leakage_suite.py -q -x -p no:cacheprovider -k silent_engine",
+      "expect": "test_every_decision_day_is_swept_by_both_tests_and_a_silent_engine_exits_0"
+    },
+    {
+      "id": "GAP-P12D-83 X8 the engine grid cuts one tick after each 17:00 New York rollover",
+      "file": "tests/backtest/leakage_markets.py",
+      "anchor": "            cuts.add(rollover_utc(day) + tick)",
+      "mutation": "            cuts.add(rollover_utc(day).replace(hour=0, minute=0) + _DAY)",
+      "test": "python -m pytest tests/backtest/test_leakage_suite.py -q -x -p no:cacheprovider -k decision_epochs",
+      "expect": "test_the_grid_is_the_17h_new_york_decision_epochs_plus_the_fold_boundaries"
+    },
+    {
+      "id": "GAP-P12D-83 X9 the forward tier starts after the model's knowledge cutoff",
+      "file": "tests/backtest/look_register.py",
+      "anchor": "FORWARD_START = datetime(2026, 7, 1, tzinfo=timezone.utc)   # after the June-2026 model cutoff (X9)",
+      "mutation": "FORWARD_START = datetime(2026, 1, 1, tzinfo=timezone.utc)   # after the June-2026 model cutoff (X9)",
+      "test": "python -m pytest tests/backtest/test_look_register.py -q -x -p no:cacheprovider -k forward_starts",
+      "expect": "test_tiers_follow_the_test_windows_and_forward_starts_after_the_model_cutoff"
+    },
+    {
+      "id": "GAP-P12D-83 LOW the engine tap records every order",
+      "file": "tests/backtest/leakage_engine.py",
+      "anchor": "            self.decisions += order_decisions(loop.book.orders[n:], loop.book.strategy_of,",
+      "mutation": "            self.decisions += order_decisions([], loop.book.strategy_of,",
+      "test": "python -m pytest tests/backtest/test_leakage_engine.py -q -x -p no:cacheprovider -k the_tap_records",
+      "expect": "test_the_tap_records_signals_orders_and_regimes_and_passes_them_through"
+    },
+    {
+      "id": "GAP-P12D-83 LOW a reference that ordered nothing is vacuous",
+      "file": "tests/backtest/leakage_engine.py",
+      "anchor": "    if not any(d.kind == \"order\" for d in reference):",
+      "mutation": "    if False:",
+      "test": "python -m pytest tests/backtest/test_leakage_engine.py -q -x -p no:cacheprovider -k vacuity",
+      "expect": "test_vacuity_is_empty_only_when_a_champion_was_staged_and_an_order_placed"
     }
   ]
 }

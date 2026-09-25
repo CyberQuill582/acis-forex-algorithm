@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from core.data.normaliser import RawTick
 from core.regime.regime_types import RegimeType
 from tests.backtest.data_loader import BacktestDataLoader, TickSource
+from tests.backtest.look_register import LookRegister
 from tests.backtest.oos_runner import RunInputs, missing_labels, report_json, run_walk_forward, train_years
 from tests.backtest.regime_labels import LabelledBarCache, LabelSpec
 from tests.backtest.walk_forward import Fold
@@ -23,6 +24,7 @@ PRICE = {"EUR_USD": 1.10, "USD_JPY": 150.0}
 class _Synthetic(TickSource):
     """A tick every 5 minutes on weekdays, a small random walk per instrument."""
     name = "synthetic"
+    provenance = "synthetic"
 
     def load(self, instrument, start, end):
         rng = random.Random({"EUR_USD": 1, "USD_JPY": 2}[instrument])   # hash() is salted per process
@@ -58,10 +60,13 @@ def test_the_runner_grades_two_folds_end_to_end(tmp_path, acis_config) -> None:
     assert missing_labels(cache, instruments, folds) == [] and train_years(folds) == [2014]
 
     log = CapturingLogger()
+    look = LookRegister(tmp_path / "looks").register(cfg=acis_config, source=_Synthetic(), instruments=instruments,
+                                                     folds=folds, family="test:runner", account="dev_paper",
+                                                     git=("test", False))
     report = run_walk_forward(RunInputs(
         cfg=acis_config, account="dev_paper", source="synthetic",
         loader=BacktestDataLoader({"synthetic": _Synthetic()}, log), cache=cache, folds=folds,
-        spx_closes={}, financing=None, work_dir=tmp_path / "engine", logger=log))
+        spx_closes={}, financing=None, work_dir=tmp_path / "engine", logger=log, look=look))
 
     assert report.account == "dev_paper" and report.n_folds == 2
     assert [r["fold"] for r in report.in_sample_evolution] == [0, 1]
@@ -70,3 +75,10 @@ def test_the_runner_grades_two_folds_end_to_end(tmp_path, acis_config) -> None:
     assert len(log.events("BACKTEST_RUN")) == 1
     loaded = json.loads(report_json(report))
     assert loaded["account"] == "dev_paper" and loaded["n_folds"] == 2
+    assert {k: loaded["look"][k] for k in ("look_id", "family", "tier", "family_looks", "tier_totals")} == {
+        "look_id": "000001", "family": "test:runner", "tier": "synthetic",           # GAP-P12D-64
+        "family_looks": {"test:runner": {"synthetic": 1}}, "tier_totals": {"synthetic": 1}}
+    outcome = json.loads((tmp_path / "looks" / "000001.outcome.json").read_text(encoding="utf-8"))
+    assert outcome["passed"] is False and outcome["n_trades"] == report.out_of_sample.n_trades
+    assert set(outcome) >= {"annual_sharpe", "deflated_sharpe", "trial_count", "targets_met", "trade_returns"}
+    assert (tmp_path / "looks" / "000001.graded.json").exists()                   # the line was consumed

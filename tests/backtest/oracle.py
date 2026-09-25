@@ -37,6 +37,7 @@ from config.schemas import AcisConfig
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.evolve_step import cost_model
 from tests.backtest.harness import Backtest, FoldData
+from tests.backtest.metrics import ClosedTrade
 from tests.backtest.oracle_loop import OracleLoop, OracleTick
 from tests.backtest.report import _MIN_FOLDS, _MIN_TRADES, _MIN_YEARS, ValidationReport
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, synthetic_spx
@@ -65,12 +66,16 @@ class OracleGrade:
     kind: str
     report: ValidationReport
     net_pnl: Decimal
+    trades: tuple[ClosedTrade, ...] = ()    # the book's closed trades (the leakage suite's fills)
+    orders: tuple = ()                      # the loop's SizedOrders (the leakage suite's decisions)
 
 
 def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequence[Fold], logger,
-                 *, instruments: Sequence[str] | None = None, sign_error: float = 0.0) -> OracleGrade:
-    """`sign_error` > 0 grades a weaker rung of the same oracle (oracle_loop.py, audit E1)."""
-    market = SyntheticMarket(spec)
+                 *, instruments: Sequence[str] | None = None, sign_error: float = 0.0,
+                 market: SyntheticMarket | None = None, loop_cls: type[OracleLoop] = OracleLoop) -> OracleGrade:
+    """`sign_error` > 0 grades a weaker rung of the same oracle (oracle_loop.py, audit E1). The
+    leakage suite passes a perturbed `market` and a leaky `loop_cls` (GAP-P12D-65)."""
+    market = market if market is not None else SyntheticMarket(spec)
     insts = sorted(instruments if instruments is not None else cfg.instruments.enabled)
     specs = cfg.instruments.instruments
     rulebook = cfg.platform_rules.accounts[account]
@@ -84,9 +89,10 @@ def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequenc
         return oracle_ticks(cfg, loader, market.name, insts, start, end)
 
     limits = guardrail_hash(cfg.guardrails)
+    loop = loop_cls(market, nav=bt.portfolio_state().nav, rulebook=rulebook,
+                    flat_before=[f.test_end for f in folds], sign_error=sign_error)
     report = bt.run(
-        loop=OracleLoop(market, nav=bt.portfolio_state().nav, rulebook=rulebook,
-                        flat_before=[f.test_end for f in folds], sign_error=sign_error),
+        loop=loop,
         folds=[FoldData(f, stream(f.test_start, f.test_end), warmup_states=stream(f.train_end, f.test_start))
                for f in folds],
         evolve_fn=lambda lp, fd: {"fold": fd.fold.index, "champions": 0, "trial_sharpes": [], "regimes": {}},
@@ -94,7 +100,8 @@ def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequenc
         expected_guardrail_hash=limits, extra_caveats=(CAVEAT,))
     trades = bt.graded_trades()
     return OracleGrade(kind=spec.kind, report=report,
-                       net_pnl=sum((t.pnl for t in trades), Decimal("0")))
+                       net_pnl=sum((t.pnl for t in trades), Decimal("0")), trades=trades,
+                       orders=tuple(loop.book.orders))
 
 
 def non_dsr_failures(report: ValidationReport, expected_guardrail_hash: str) -> tuple[str, ...]:

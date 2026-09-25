@@ -30,6 +30,7 @@ from config.schemas import AcisConfig, load_config
 from core.data.jsonl_logging import JsonlEventLogger
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.deflated_sharpe import sharpe_threshold
+from tests.backtest.look_register import LookRegister
 from tests.backtest.oos_plan import EMBARGO
 from tests.backtest.oos_runner import RunInputs, report_json, run_walk_forward
 from tests.backtest.oracle import grade_oracle, non_dsr_failures
@@ -43,19 +44,21 @@ FIRST_MID = {"EUR_USD": 1.10, "GBP_USD": 1.30, "USD_JPY": 110.0, "AUD_USD": 0.75
              "USD_CHF": 0.95, "USD_CAD": 1.30, "NZD_USD": 0.70, "XAU_USD": 1800.0}
 
 
-def plan(train_days: int, test_days: int, n_folds: int, start: datetime = START) -> list[Fold]:
+def plan(train_days: int, test_days: int, n_folds: int, start: datetime = START, *,
+         embargo: timedelta = EMBARGO) -> list[Fold]:
     """Non-overlapping folds (GAP-P12D-35). Each fold's warm-up window is [train_end,
     test_start) — the embargo — so successive test windows must be separated by the embargo
     too, or the warm-up replays days the previous fold already graded and the engine's clock
     jumps backwards. The ratified `oos_plan.plan_folds` has this shape; the pre-2026-09-17
     falsification plan did not, which silently suspended `max_hold` and pushed out-of-order
-    timestamps into the equity curve of every run before then."""
-    first_test = start + timedelta(days=train_days) + EMBARGO
-    step = timedelta(days=test_days) + EMBARGO
+    timestamps into the equity curve of every run before then. A shorter `embargo` (the
+    leakage suite's short tapes) must still cover the 48 h max hold: the harness checks it."""
+    first_test = start + timedelta(days=train_days) + embargo
+    step = timedelta(days=test_days) + embargo
     folds = []
     for k in range(n_folds):
         test_start = first_test + k * step
-        train_end = test_start - EMBARGO
+        train_end = test_start - embargo
         folds.append(Fold(k, train_end - timedelta(days=train_days), train_end, test_start,
                           test_start + timedelta(days=test_days)))
     return folds
@@ -112,11 +115,15 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
     t0, cfg, market = time.perf_counter(), load_config(root / "config"), SyntheticMarket(spec)
     tag = tag or spec.kind
     log = run_logger(out, f"run_{tag}", "backtest", 200)
+    look = LookRegister(out / "looks").register(      # tier 0: a synthetic look, still written first
+        cfg=cfg, source=market, instruments=sorted(cfg.instruments.enabled), folds=folds,
+        family=f"synthetic:{tag}", account=account, cost_stress=cost_stress, spread_floor=spread_floor)
     report = run_walk_forward(RunInputs(
         cfg=cfg, account=account, source=market.name,
         loader=BacktestDataLoader({market.name: market}, log), cache=market_cache(cfg, out, market.name),
         folds=folds, spx_closes=synthetic_spx(START, spec.days), financing=None,
-        work_dir=out / "engine" / tag, logger=log, cost_stress=cost_stress, spread_floor=spread_floor))
+        work_dir=out / "engine" / tag, logger=log, look=look, cost_stress=cost_stress,
+        spread_floor=spread_floor))
     log.close()
     (out / f"{tag}.json").write_text(report_json(report), encoding="utf-8")
     oos = report.out_of_sample

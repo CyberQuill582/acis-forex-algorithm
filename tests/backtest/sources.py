@@ -66,6 +66,7 @@ def _tick(ts: datetime, instrument: str, bid: float, ask: float, vol: float,
 
 class HistDataTickSource(TickSource):
     name = "histdata"
+    provenance = "real"
 
     def __init__(self, root: Path) -> None:
         self._root = Path(root)
@@ -110,6 +111,7 @@ class HistDataTickSource(TickSource):
 
 class DukascopyTickSource(TickSource):
     name = "dukascopy"
+    provenance = "real"
 
     def __init__(self, root: Path) -> None:
         self._root = Path(root)
