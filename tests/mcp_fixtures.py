@@ -55,7 +55,7 @@ _DEFAULT_BOUNDS = {
 def mk_plane(*, providers=None, tunable_bounds=None, validation_ok=True,
              control=None, stager=None, initial_mode="paper",
              guardrail_hash=GUARDRAIL_HASH, rulebook_hash=RULEBOOK_HASH,
-             heartbeat_monitor=None, heartbeat_getter=None, now_fn=None):
+             heartbeat_monitor=None, heartbeat_getter=None, now_fn=None, practice_ok=False):
     """Assemble a ControlPlane over test doubles. Returns (plane, control,
     stager, mode_controller)."""
     control = control or RecordingControl()
@@ -64,7 +64,7 @@ def mk_plane(*, providers=None, tunable_bounds=None, validation_ok=True,
     mode = ModeController(
         initial_mode=initial_mode, guardrail_hash=guardrail_hash,
         rulebook_hash=rulebook_hash, validation_record_ok=lambda: validation_ok,
-        logger=logger)
+        logger=logger, practice_eligible=lambda: practice_ok)
     plane = ControlPlane(
         control=control, auth=HumanTokenVerifier.from_secret(HUMAN_SECRET),
         mode_controller=mode, stager=stager,

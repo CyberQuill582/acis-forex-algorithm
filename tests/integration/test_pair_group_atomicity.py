@@ -11,7 +11,8 @@ from __future__ import annotations
 from dataclasses import replace
 from decimal import Decimal
 
-from core.execution.venue import FillStatus, MockExecutionFace
+from core.execution.venue import FillStatus
+from core.execution.mock_face import MockExecutionFace
 from tests.unit.test_execution import mk_order, mk_orchestrator
 
 

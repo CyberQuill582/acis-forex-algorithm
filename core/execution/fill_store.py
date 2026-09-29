@@ -7,7 +7,8 @@ Invariants:
   * Every venue hit leaves a row under that venue's name; boundary refusals that never
     reached a venue are written under venue "none". So the rows under a venue's name
     are a restart-proof lower bound on the requests sent to it (`request_times`,
-    GAP-P12D-57) — a restart cannot hand the engine a fresh request budget.
+    GAP-P12D-57) — a restart cannot hand the engine a fresh request budget. A fill the
+    venue made on its own (order_id "venue:…") is logged too but is not a request.
   * Every close sent to a venue leaves a `close_attempt` row (filled or not), kept for
     24 h, so the close pace (close_pacing.py, audit X6/F5) survives a restart too. The
     table is additive: `fill_report` is unchanged.
@@ -55,10 +56,15 @@ class FillReportStore:
              str(r.remaining_units), r.session_id))
         self._conn.commit()
 
+    def has(self, fill_id: str) -> bool:
+        return self._conn.execute("SELECT 1 FROM fill_report WHERE fill_id = ?",
+                                  (fill_id,)).fetchone() is not None
+
     def request_times(self, venue: str, since: datetime) -> list[datetime]:
-        """When each logged request to `venue` at or after `since` was made."""
-        rows = self._conn.execute("SELECT ts FROM fill_report WHERE venue = ?",
-                                  (venue,)).fetchall()
+        """When each logged request to `venue` at or after `since` was made. A fill the
+        venue made on its own (order_id "venue:…", ACIS-06 v1.4) was no request."""
+        rows = self._conn.execute("SELECT ts FROM fill_report WHERE venue = ? AND "
+                                  "order_id NOT LIKE 'venue:%'", (venue,)).fetchall()
         stamps = (datetime.fromisoformat(ts) for (ts,) in rows)
         return sorted(t for t in stamps if t >= since)
 

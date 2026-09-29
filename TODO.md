@@ -73,7 +73,8 @@
    - [x] 2026-09-29 venue chosen under the owner's delegation: a **Pepperstone cTrader demo** via the cTrader Open API, JSON over WebSocket via `aiohttp` ([[GAP-P12D-43]]).
    - [x] 2026-09-29 practice mode and `venue_fills()` RATIFIED and applied: master v2.23, ACIS-06 v1.4, ACIS-08 v1.4, ACIS-13 v0.2 ([[GAP-P12D-69]], [[GAP-P12D-70]]).
    - [x] 2026-09-29 the ACIS-13 review pass (ACIS-13 §15.3), LOCKED v1.0: reconciled with ACIS-06 v1.3 (exits never blocked by the budget), sources re-fetched;
-   - [ ] build: the cTrader session + feed + execution faces, `venue_fills()`, practice mode in `monitoring/mode.py`, and the attach gate;
+   - [x] 2026-09-29 built: practice mode (`monitoring/mode.py`, `account_class` in the rulebook) and the `venue_fills()` channel (face contract, mock, orchestrator); 1072 passed on the server;
+   - [ ] build: the cTrader session + feed + execution faces (ACIS-13 §3.1), the AttachReport and its practice eligibility, the watchdog plugin;
    - [ ] the three-loop runtime, [[GAP-0091b]] / [[GAP-0099]] / [[GAP-0075]] (no venue before the firehose fix);
    - [ ] feed reconnect, [[GAP-0020]]; host on the Google server.
    - **OWNER actions:** open a Pepperstone cTrader demo (Razor, USD, $10,000, since the equity floor is $9,000); register an app named `ACIS` at https://openapi.ctrader.com/apps and report when Spotware approves it; commit a demo rulebook with `account_class: practice` (the session drafts it). Never paste a token into chat: the session gives the steps to place it on the server.

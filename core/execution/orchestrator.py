@@ -18,6 +18,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import AsyncIterator
 
 from config.schemas import ExecutionConfig
 from core.data.errors import DataQualityError
@@ -125,6 +126,12 @@ class ExecutionOrchestrator:
         for leg in legs:
             out.extend(await self._submit(leg, valid_for_seconds))
         return tuple(out)
+
+    async def venue_fills(self, venue: str) -> AsyncIterator[FillReport]:
+        """ACIS-06 v1.4: `venue`'s unsolicited fills, each recorded once, yielded for Risk."""
+        async for report in self._faces[venue].venue_fills():
+            if self._reports.record_unsolicited(report):
+                yield report
 
     def _sendable(self, leg: SizedOrder, valid_for_seconds: int, requests: int,
                   now: datetime) -> Decimal:

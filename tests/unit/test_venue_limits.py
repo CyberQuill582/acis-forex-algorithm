@@ -11,7 +11,7 @@ import pytest
 
 from core.data.errors import DataQualityError
 from core.execution.fragmenter import plan
-from core.execution.venue import MockExecutionFace
+from core.execution.mock_face import MockExecutionFace
 from core.execution.venue_limits import RequestBudget, venue_quantity
 from tests.optimizer_fixtures import CapturingLogger
 from tests.unit.test_execution import exec_cfg

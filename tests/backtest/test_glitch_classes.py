@@ -80,7 +80,7 @@ def test_symbol_suffix_incomplete_map_rejected_at_attach() -> None:
 
     from core.data.errors import DataQualityError
     from core.execution.attach import verify_attach
-    from core.execution.venue import MockExecutionFace
+    from core.execution.mock_face import MockExecutionFace
     from tests.optimizer_fixtures import CapturingLogger
 
     face = MockExecutionFace()

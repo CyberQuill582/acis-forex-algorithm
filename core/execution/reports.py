@@ -5,6 +5,7 @@ orchestrator.py (legibility budget, GAP-P12M-01). Invariants:
     `remaining_units` is what went unsent, on the side the engine would have traded.
   * Every report updates venue quality, is written to the fill log and is logged; a fill
     worse than the slippage alert level raises SLIPPAGE_ALERT and nothing more (F10).
+  * An unsolicited fill (ACIS-06 v1.4) is recorded exactly once, by `fill_id`.
 """
 
 from __future__ import annotations
@@ -44,6 +45,21 @@ class ReportBook:
                             instrument=report.instrument,
                             slippage_bps=round(report.slippage_bps, 4),
                             alert_bps=self._alert_bps)
+
+    def record_unsolicited(self, report: FillReport) -> bool:
+        """Log a fill the venue made on its own; False if already recorded (a reconnect
+        re-sends missed deals), so Risk never counts one twice. It is no request and says
+        nothing about the venue's execution of ours, so venue quality is untouched."""
+        if self._store.has(report.fill_id):
+            self._log.event("UNSOLICITED_FILL_DUPLICATE", fill_id=report.fill_id)
+            return False
+        self._store.write(report)
+        self._log.event("UNSOLICITED_FILL", fill_id=report.fill_id, venue=report.venue,
+                        instrument=report.instrument, direction=report.direction,
+                        filled_units=str(report.filled_units), fill_px=report.fill_price,
+                        stop_px=report.requested_price,
+                        slippage_bps=round(report.slippage_bps, 4))
+        return True
 
     def reject(self, order: SizedOrder, side: int, *, fragment_id: str = "",
                venue: str = "none", units: Decimal | None = None) -> FillReport:

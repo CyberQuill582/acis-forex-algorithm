@@ -12,7 +12,8 @@ import asyncio
 from dataclasses import replace
 from decimal import Decimal
 
-from core.execution.venue import BrokerPosition, FillReport, FillStatus, MockExecutionFace
+from core.execution.venue import BrokerPosition, FillReport, FillStatus
+from core.execution.mock_face import MockExecutionFace
 from tests.unit.test_execution import T0, mk_order, mk_orchestrator
 
 LOT = Decimal("100000")

@@ -17,7 +17,7 @@ import math
 from typing import Callable, Protocol, runtime_checkable
 
 from monitoring.auth import HumanTokenVerifier
-from monitoring.mode import ModeChangeRejected, ModeController
+from monitoring.mode import MODES, ModeChangeRejected, ModeController
 from monitoring.store import AuditRecord, McpAuditStore
 
 
@@ -141,7 +141,7 @@ class ControlTools:
 
         if name == "acis_set_mode":
             mode = args.get("mode")
-            if mode not in ("backtest", "paper", "live"):
+            if mode not in MODES:
                 return f"rejected:bad_mode:{mode}", True
             try:
                 self._mode.set_mode(

@@ -23,9 +23,9 @@ from core.execution.venue import (
     CapabilityDescriptor,
     FillReportStore,
     FillStatus,
-    MockExecutionFace,
     slippage_bps,
 )
+from core.execution.mock_face import MockExecutionFace
 from core.execution.venue_quality import VenueQuality
 from core.governor.portfolio_types import SizedOrder
 from tests.optimizer_fixtures import CapturingLogger

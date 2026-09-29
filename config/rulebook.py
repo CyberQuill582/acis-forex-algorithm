@@ -14,6 +14,10 @@ Invariants:
     static rule reads LOWER than a first-observed anchor would: faithful to the firm's
     static rule, not stricter (audit F6/F3, accepted as the lead's delegated decision).
   * Per-account taper fractions may only be STRICTER than the ratified 0.60/0.80 floor.
+  * `account_class: practice` marks an account with nothing of value at stake (no fee, no
+    deposit). Only such an account, on a venue that reports it as demo, may take orders in
+    practice mode (master v2.23, ACIS-13 §7.1 A2). Absent means not practice: a paid prop
+    challenge also reports as demo, so the venue's flag alone never suffices.
 """
 
 from __future__ import annotations
@@ -68,6 +72,7 @@ class AccountRulebook(_Strict):
     taper_start_fraction: float | None = Field(default=None, gt=0, le=0.60)
     entry_halt_fraction: float | None = Field(default=None, gt=0, le=0.80)
     initial_capital: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    account_class: Literal["practice"] | None = None
 
     @model_validator(mode="after")
     def _initial_declared(self) -> "AccountRulebook":

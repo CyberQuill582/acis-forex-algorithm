@@ -10,7 +10,7 @@ from __future__ import annotations
 import inspect
 import re
 from dataclasses import fields
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -19,8 +19,8 @@ from core.execution.venue import (
     BrokerAccount,
     CapabilityDescriptor,
     FillStatus,
-    MockExecutionFace,
 )
+from core.execution.mock_face import MockExecutionFace
 
 T0 = datetime(2026, 7, 14, 8, 0, tzinfo=timezone.utc)
 
@@ -384,3 +384,47 @@ async def test_close_position_larger_than_the_holding_never_flips(adapter) -> No
     report = await _close(face, 3000)
     assert report.filled_units == Decimal("1000") and report.direction == -1
     assert await face.open_positions() == ()                      # flat, not short 2,000
+
+
+# ACIS-06 v1.4 (GAP-P12D-70, ACIS-13 §14.2 case 4): a fill the venue makes on its own — its
+# resting stop firing — reaches Risk as a fill through `venue_fills()`, once, and is never
+# read as drift. A real venue proves it with a tight stop on its demo; the mock fires its own.
+
+async def test_a_stop_hit_reaches_risk_as_a_fill_and_never_as_drift(adapter, acis_config,
+                                                                    tmp_path) -> None:
+    from tests.risk_fixtures import RecordingSink, build_monitor
+    face = adapter()
+    orch, log = _orchestrator(face, tmp_path)
+    opened = await _submit(face, units="1000", stop_loss=1.09)
+    sink = RecordingSink()
+    mon, *_ = build_monitor(acis_config, sink)
+    mon.ingest(opened)
+
+    face.trigger_stop("EUR_USD", 1.085, T0)                   # the weekend gap runs through it
+    fill = await anext(orch.venue_fills(face.name))
+    assert fill.order_id.startswith("venue:") and fill.direction == -1
+    assert fill.filled_units == Decimal("1000") and fill.status is FillStatus.FILLED
+    assert fill.requested_price == 1.09 and fill.fill_price == 1.085
+    assert fill.slippage_bps > 0                              # the gap, measured and adverse
+    assert log.events("UNSOLICITED_FILL")
+
+    mon.ingest(fill)
+    assert mon.positions() == () and await face.open_positions() == ()
+    assert mon.reconcile_on_restart(await face.open_positions(), T0) is False
+    assert sink.halts == []                                   # a stop hit is never drift
+    assert await face.resting_stops() == {}
+
+
+async def test_a_resent_venue_fill_reaches_risk_once_and_is_not_a_request(adapter,
+                                                                          tmp_path) -> None:
+    from core.execution.venue import FillReportStore
+    face = adapter()
+    store = FillReportStore(tmp_path / "f.db")
+    orch, log = _orchestrator(face, tmp_path, store=store)
+    await _submit(face, units="1000", stop_loss=1.09)
+    fill = face.trigger_stop("EUR_USD", 1.09, T0)
+    assert orch._reports.record_unsolicited(fill) is True
+    assert orch._reports.record_unsolicited(fill) is False    # a reconnect re-sends it
+    assert log.events("UNSOLICITED_FILL_DUPLICATE")
+    assert store.has(fill.fill_id)
+    assert store.request_times(face.name, T0 - timedelta(days=1)) == []   # no budget spent

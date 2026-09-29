@@ -19,8 +19,8 @@ from core.governor.units import usd_per_base_unit
 from core.execution.venue import (
     FillReportStore,
     FillStatus,
-    MockExecutionFace,
 )
+from core.execution.mock_face import MockExecutionFace
 from core.execution.venue_quality import VenueQuality
 from core.regime.regime_types import RegimeType
 from tests.optimizer_fixtures import CapturingLogger, make_paramset

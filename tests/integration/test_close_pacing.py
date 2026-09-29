@@ -14,7 +14,8 @@ from random import Random
 from core.execution.close_pacing import BASE_S, CEILING, MAX_S
 from core.execution.fill_store import FillReportStore
 from core.execution.orchestrator import ExecutionOrchestrator
-from core.execution.venue import FillStatus, MockExecutionFace
+from core.execution.venue import FillStatus
+from core.execution.mock_face import MockExecutionFace
 from core.execution.venue_quality import VenueQuality
 from tests.optimizer_fixtures import CapturingLogger
 from tests.unit.test_execution import T0, exec_cfg, mk_order
