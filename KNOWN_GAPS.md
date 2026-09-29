@@ -146,7 +146,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-124: every synthetic verdict recorded before 2026-09-29 was made on the old tick market (demeaned, 3.3× volatility, oracle Sharpe ~157) — each must be re-stated, and the falsification tape's oracle rungs re-calibrated first
 - Severity: high · Likelihood: certain
-- Status: open (2026-09-29 — opened when R1.1 C-1/C-2 changed the tick generator, [[GAP-P12D-91]] and [[GAP-P12D-90]]; R1-D12 requires the re-statement)
+- Status: fixed (2026-09-29, the same day — all four items re-stated on the Google compute server. Opened when R1.1 C-1/C-2 changed the tick generator, [[GAP-P12D-91]] and [[GAP-P12D-90]]; R1-D12 requires the re-statement)
 - Area: `tests/backtest/oracle.py` `RUNGS`, `scripts/falsify_engine.py`, `scripts/cost_stress_ladder.py`, every recorded synthetic run under `data/validation/`
 - Description:
   - **Already re-stated by the change itself** (they run in the suite and are green on the new market): the oracle control, the coarse oracle ladder (`COARSE_RUNGS` 0.20 / 0.22), and the leakage suite.
@@ -155,12 +155,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
        - The old 0.42 / 0.46 were calibrated on the OLD falsification tape, plan(60, 30, 25), 20 s ticks, EUR_USD + USD_JPY.
        - Re-calibrated on the committed generator on the Google compute server: the perfect oracle grades PF 1.853; 0.14→1.522, 0.15→1.505, 0.16→1.468, 0.17→1.446, **0.18→1.414 (every clause met)**, **0.19→1.398 (refused by PF alone)**, 0.20→1.387, 0.22→1.377.
        - RUNGS = 0.18 / 0.19.
-    2. **[[GAP-P12D-49]]'s cost-stress ladder:** re-run on the new market, 25 folds, hours. "~89% direction, not friction" was measured on a market where friction was 3.3× cheaper relative to a daily move.
-    3. **The full `falsify_engine.py` run** ([[GAP-P12D-28]]): never completed; run it on the new market.
-    4. **The attribution verdicts** of [[GAP-P12D-31]] / [[GAP-P12D-40]], if still relevant after (2).
+    2. ~~**[[GAP-P12D-49]]'s cost-stress ladder**~~ **DONE 2026-09-29** (1 h 20 min on 16 vCPUs, against ~10.5 h on the laptop). The verdict holds, ~98% direction; the attribution changed: no module captures the edge. See GAP-P12D-49's re-statement.
+    3. ~~**The full `falsify_engine.py` run**~~ **DONE 2026-09-29.** Stage 1 passes at full scale; the engine fails planted. See [[GAP-P12D-31]] and [[GAP-P12D-28]].
+    4. ~~**The attribution verdicts**~~ **DONE 2026-09-29**, from the per-strategy blocks of the same runs. [[GAP-P12D-40]]'s MEAN_REVERSION ranking stays superseded: MR is −0.31 on 38 trades.
   - **Where to run them:** these are the long runs the laptop's power cuts kill ([[GAP-P12D-76]]). They are the first candidate job for the Google Cloud compute server (TODO ☁ TWO-CLOUD block), once the owner has signed Google Cloud in.
 - Justification: open. Nothing reads these verdicts for a decision yet: the engine's strategy layer is being replaced under R-1. But GAP-P12D-49 is cited in the read path as the engine's standing verdict, so it stays marked "made on the old market" until (2) lands.
-- Residual: GAP-P12D-124 — this entry owns items 1–4.
+- Proof: `data/validation/cost_stress/20260929T114406Z-gce/` and `data/validation/falsification/20260929T114406Z-gce/` (the JSON reports; the engine stores and both logs are in `gs://acis-compute-0929-data/runs/20260929/`); `test_the_harness_passes_a_rung_just_above_the_cut_offs_and_refuses_one_just_below`, `test_the_planted_oracle_clears_every_non_dsr_clause_at_full_fold_scale`.
+- Residual: GAP-P12D-49 — the ladder verdict and its attribution; GAP-P12D-31 — the engine failing the planted market. Both are open and own what the re-statement found.
 - Linked: [[GAP-P12D-90]], [[GAP-P12D-91]], [[GAP-P12D-49]], [[GAP-P12D-28]], [[GAP-P12D-76]]
 
 ## GAP-P12D-123: the low-to-medium batch from the R1 dual audit — twelve clarifications, one disposition each
@@ -1343,7 +1344,18 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **It blocks other modules.** Because TSMOM emits on every tradeable tick, it vetoes every opposite-direction signal on its instrument (the §2 opposite-discard rule). All 360 promotion stalls begin on 2015-02-03, when TSMOM went live. So its damage exceeds its own P&L.
   - **The per-trade bucketing is BLOCKED:** memory was under 2 GB, and no per-trade records are on disk. The run spec is in the report.
   - **This moves the owner's module decision:** retire TSMOM from the 1-minute event loop, or rebuild it as a faithful slow sleeve ([[GAP-P12D-53]]: its evidence base is portfolio breadth).
-- Linked: [[GAP-P12D-46]], [[GAP-P12D-41]], [[GAP-P12D-45]], [[GAP-P12D-43]], [[GAP-P12D-31]], [[GAP-P12D-40]], [[GAP-P12D-38]], [[GAP-P12D-33]], [[GAP-0035]]
+- **RE-STATED 2026-09-29 on the C-BT-12 market** ([[GAP-P12D-124]]; nothing demeaned, compounded prices, planted oracle Sharpe 10 variance-matched at one weekday). The run: the Google compute server, code `daf7bd2`, 25 folds, 985 days, 4 rungs, 1 h 20 min. Results: `data/validation/cost_stress/20260929T114406Z-gce/` and `data/validation/falsification/20260929T114406Z-gce/` (the JSON reports; the engine stores and both logs are in `gs://acis-compute-0929-data/runs/20260929/`).
+  - **The verdict HOLDS.** The engine loses at every rung:
+    - 1x net −70.84, Sharpe −1.92, PF 0.67, 1,690 trades;
+    - 2x −76.48; 3x −21.18; 5x −82.95.
+    - The harness's own split: friction is ~2% of the 1x→2x loss, and the rest is DIRECTION (it was ~89% on the old market).
+  - **The attribution CHANGED.** At a realistic edge, NO module captures the planted trend:
+    - TSMOM −57.44 (446 trades, PF 0.68, average hold **55 h** against 1–4 h episodes): 81% of the loss;
+    - TREND −10.44 (PF 0.64); BREAKOUT −2.65 (PF 0.60); MEAN_REVERSION −0.31.
+    - On the old oracle-157 market, TREND (+13.14, PF 2.04) and BREAKOUT (+1.66) "captured the edge". That was an artifact of an edge ~16× too strong: an oracle Sharpe of ~157 against 10.
+    - TREND, BREAKOUT and MEAN_REVERSION hold ~12 minutes on average, below §14's 30-minute floor (`avg_duration` fails at every rung).
+  - **What this changes.** Nothing in the reframing above, except that "TREND and BREAKOUT genuinely work" is WITHDRAWN. The engine as built has no module that captures a planted intraday trend of a realistic strength. The R-1 direction (fixed, pooled, economically motivated rules graded on the daily lab) is where that gets rebuilt.
+- Linked: [[GAP-P12D-46]], [[GAP-P12D-41]], [[GAP-P12D-45]], [[GAP-P12D-43]], [[GAP-P12D-31]], [[GAP-P12D-40]], [[GAP-P12D-38]], [[GAP-P12D-33]], [[GAP-0035]], [[GAP-P12D-124]]
 
 ## GAP-P12D-48: the labelled-bar cache key does not cover the synthetic MarketSpec — two different price paths under one source name would share labels silently
 - Severity: medium · Likelihood: medium
@@ -1595,7 +1607,18 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - **VERDICT WITHDRAWN (2026-09-16), see [[GAP-P12D-37]]:** the pass gate was unsatisfiable before the run began (planted needed an annualised Sharpe above 76), so a planted failure says nothing about the engine. What survives is the weaker, still-serious observation that the composed engine did not convert an edge its own fitness proxy finds in isolation, plus the independent module-level evidence in [[GAP-P12D-39]].
 - **EVIDENCE CONTAMINATED (2026-09-16):** the run these numbers come from rewound the clock 7 days at each of 24 fold boundaries ([[GAP-P12D-35]]) and never charged the spread ([[GAP-P12D-36]]). Do not quote the numbers above again; re-run after both are fixed. The FINDING stands on independent evidence — the fitness proxy finds the planted edge in isolation while the composed engine does not — but its magnitudes are unreliable.
 - Justification: open and blocking. This is the guard-2 evidence bar (CLAUDE.md "Operational correctness"): until the engine can capture an edge that is provably present, a §14 grade on real data cannot mean anything, and no paid training run is justified. It does NOT invalidate the GAP-P12D-29 fix — champions and trades exist now, which is what made this failure visible at all.
-- Linked: [[GAP-P12D-28]], [[GAP-P12D-29]], [[GAP-0035]], [[GAP-0075]], [[GAP-0002]], [[GAP-0091b]]
+- **RE-RUN 2026-09-29, the FULL falsification, on the C-BT-12 market** (the Google compute server, code `daf7bd2`, 25 folds, 985 days, ~1 h 25 min; `data/validation/cost_stress/20260929T114406Z-gce/` and `data/validation/falsification/20260929T114406Z-gce/` (the JSON reports; the engine stores and both logs are in `gs://acis-compute-0929-data/runs/20260929/`)).
+  - **Stage 1, the grader's positive control, PASSED at full scale:**
+    - the perfect oracle PF 1.853, Sharpe 9.02, and near-pass (0.18) Sharpe 5.64: every non-DSR clause met;
+    - near-fail (0.19): refused by profit factor alone;
+    - null and permuted: refused by §14 rows.
+    So the verdict is not VOID.
+  - **Stage 2, the engine, STILL FAILS:**
+    - planted Sharpe −1.92 (1,690 trades): wrong answer;
+    - null −1.19 and permuted −0.45: right answers.
+    - "FALSIFICATION FAILED — wrong answer on: planted" (exit 1). The engine loses MORE on the market that holds an edge than on the two that hold none.
+  - **This finding is now stronger than on 2026-09-16:** the grader is proven calibrated at full scale on a market that differs from its null in drift only. The attribution is in [[GAP-P12D-49]]'s 2026-09-29 re-statement.
+- Linked: [[GAP-P12D-28]], [[GAP-P12D-29]], [[GAP-0035]], [[GAP-0075]], [[GAP-0002]], [[GAP-0091b]], [[GAP-P12D-124]]
 
 ## GAP-P12D-30: evolving on a time span costs far more compute than 500 bars — about 36 minutes per instrument per fold on one core
 - Severity: medium · Likelihood: high
@@ -1621,7 +1644,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-28: the validator itself is unfalsified — no end-to-end run on data with a known answer, and the mutation gate has never actually run
 - Severity: high · Likelihood: high
-- Status: open (2026-09-15 — owner: "add those to the todo list"; to run locally on small synthetic data BEFORE any paid server run)
+- Status: fixed (2026-09-29 — the full `falsify_engine.py` run completed on the C-BT-12 market and its stage 1 passed at full scale: the harness recognises a strategy known to be good, passes the rung just above the §14 cut-off, and refuses the rung just below it by that row alone. It refuses the same logic on null and permuted by §14 rows. Opened 2026-09-15, owner: "add those to the todo list")
 - Area: the evolve-driver pipeline end to end (tick stream → labeller → per-fold evolution → harness → report and gates), `scripts/mutation_gate.py` (ACIS-09 §14 quality gate on core/optimizer/fitness.py, core/optimizer/costs.py, tests/backtest/metrics.py)
 - Description: every component is unit-tested and audited, but nothing yet shows the WHOLE driver gives the right verdict when the right verdict is known, so a pipeline that always passes, never passes, or leaks the future would go unnoticed. And the ACIS-09 mutation gate was only configured (`--check` smoke in CI); a mutation campaign against the metrics and cost code has never run, so a surviving mutant in a graded metric is unknown.
 - Justification: owner-directed falsification suite, cheap and local. (1) NULL: random-walk ticks or a no-edge strategy — the run must fail, with the Deflated Sharpe near chance. (2) PLANTED EDGE: synthetic data with a known tradeable pattern — the pipeline must find it and grade it sensibly (proves it can pass at all). (3) LOOK-AHEAD CANARY: deliberately leak future prices into evolution or labels — it must be caught by a guard, or produce an implausible result that a guard flags. (4) PERMUTATION: scramble the time order or the labels — any edge must disappear. Plus run `python scripts/mutation_gate.py` on its targets and triage every survivor. Both need the runner (GAP-P12D-23) to exist first.
@@ -1629,7 +1652,9 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Mutation triage record (every survivor class, with the reason it is not a test gap): [archive/MUTATION_TRIAGE_P12D28.md](archive/MUTATION_TRIAGE_P12D28.md). The second run (shim in place) left 81 survivors; hand-applying each claimed-killable one showed 2 more false survivors — same-size mutants run from a stale `.pyc` — so the shim now writes no bytecode; the rest were real gaps (now tested) or equivalent / tie-only (recorded).
 - Progress 2026-09-15 (quick engine run): `python scripts/falsify_engine.py --quick --workers 3` ran end to end (labels 221–286 s per instrument-year, grading 771–874 s per market) and exited 3 as designed, but made 0 trades on all three markets because no fold staged a champion — owned by GAP-P12D-29. The owner ratified GAP-P12D-29 option (a) the same day and it is built (master v2.18). The quick run on the fix (`20260915T222826Z-quick`, 2026-09-15) shows the pipeline working again: champions per fold null [2,3,2] / planted [2,6,1] / permuted [1,1,0], trades 122 / 250 / 14, Sharpe -4.42 / +0.92 / +1.93 — the planted edge earns, the no-edge market loses. It still exits 3 with no verdict (under two graded years, nothing can pass by design). The FULL run was launched detached 2026-09-15 23:11 UTC (PID 13656, log `data/validation/falsification/detached_full.log`): null and permuted must fail, planted must pass, and permuted's Deflated Sharpe must stay under the 0.95 gate (it reached 0.70 on 14 quick-run trades).
 - Proof (so far): `test_evolution_fed_future_prices_is_caught`, `test_the_honest_path_is_not_flagged`, `test_a_planted_edge_passes_every_gate`, `test_a_coin_flip_strategy_fails`, `test_only_the_planted_market_carries_the_scheduled_drift`, `test_permuting_keeps_every_move_and_changes_order_and_sign`, `test_every_failing_test_run_counts_as_a_kill`, `test_the_verdict_reads_mutmuts_exit_bits`, `test_wilder_rsi_hand_worked_gains_first`, `test_wilder_atr_hand_worked`, `test_a_stop_touched_exactly_exits_at_the_stop_even_when_the_target_is_touched_too`, `test_a_cross_on_the_first_bar_after_warm_up_is_taken`, `test_a_cross_is_decided_without_the_next_bar`, `test_evaluate_fitness_hand_worked_below_the_clamps`, `test_spx_correlation_skips_a_zero_equity_base_and_needs_three_samples`, `test_rolling_var_breach_rate_second_breach_and_divisors`, `test_the_trial_variance_is_the_sample_variance`
-- Linked: [[GAP-P12D-23]], [[GAP-P12D-25]], [[GAP-SP12E-01]]
+- Result (2026-09-29): `data/validation/cost_stress/20260929T114406Z-gce/` and `data/validation/falsification/20260929T114406Z-gce/` (the JSON reports; the engine stores and both logs are in `gs://acis-compute-0929-data/runs/20260929/`); `oracle.RUNGS` re-calibrated to 0.18 / 0.19 ([[GAP-P12D-124]]).
+- Residual: GAP-P12D-31 — the ENGINE fails the planted market, now against a calibrated grader; that is the engine's defect, not the validator's.
+- Linked: [[GAP-P12D-23]], [[GAP-P12D-25]], [[GAP-SP12E-01]], [[GAP-P12D-124]]
 
 ## GAP-P12D-27: sizes and money assume FX lots of 100,000 units, a USD account, and fresh cross rates
 - Severity: medium · Likelihood: medium
