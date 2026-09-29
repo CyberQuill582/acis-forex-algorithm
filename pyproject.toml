@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "numpy"]   # numpy: the R1.1 synthetic lab (tests/backtest/lab_*.py); named in SPEC §16
+dev = ["pytest", "pytest-asyncio", "numpy>=2.4,<2.5"]   # numpy: the R1.1 synthetic lab (tests/backtest/lab_*.py); named in SPEC §16
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

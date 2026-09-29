@@ -1,6 +1,6 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **STATUS (2026-09-25): SPEC COMPLETE (master v2.22). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). 1002 passed, 6 skipped; ledger 238 entries. The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
+> **STATUS (2026-09-29): SPEC COMPLETE (master v2.22). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: R1.1 (the lab) and R1.2 (register v2) are built; R1.1's dual audit is triaged ([[GAP-P12D-125]]). The full suite runs on the Google server. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
 > `ACIS_SPEC.md` v2.22 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
@@ -10,9 +10,9 @@
 
 > **2026-09-29 session:**
 > - Two clouds are now in play: AWS as the data server, Google as the compute server. The tick set's AWS copy is restored and verified ([[GAP-P12D-50]]). Read the ☁ TWO-CLOUD block below.
-> - R1.1 has started IN-SESSION (the owner's answer): the tick generator now obeys C-BT-12 ([[GAP-P12D-91]], [[GAP-P12D-90]] fixed; [[GAP-P12D-117]] mitigated). **1016 passed**, ledger 260 entries with 0 violations.
+> - R1.1 has started IN-SESSION (the owner's answer): the tick generator now obeys C-BT-12 ([[GAP-P12D-91]], [[GAP-P12D-90]] fixed; [[GAP-P12D-117]] fixed, then reopened as mitigated by the R1.1 audit). **1016 passed** at the time; after the R1.1 audit triage, 1059 passed on the server.
 > - **The governance gate is RED on the constitution v0.10 pin** (pre-existing since 2026-09-25; see the Constitution section).
-> - **R1.1 is COMPLETE** (the lab, the B0 machinery and the re-statement). C-11, the lab as the data validator's control, is a later phase per PLAN_R1. The full suite on the Google server: **1050 passed, 6 skipped**. Workflow: edit on the laptop, then test on the server with the scratchpad `remote.sh`, which ships the working tree as a bundle plus an overlay. The owner asked that no slow runs happen on the laptop.
+> - **R1.1 is BUILT; its dual audit found 23 issues, triaged in [[GAP-P12D-125]]** (21 fixed or declared; two owner decisions: D-R11-1 B0's criterion, D-R11-2 C-BT-12's horizon wording; the exact friction split is being re-measured on the server). ~~R1.1 is COMPLETE~~ (the lab, the B0 machinery and the re-statement). C-11, the lab as the data validator's control, is a later phase per PLAN_R1. The full suite on the Google server: **1050 passed, 6 skipped**. Workflow: edit on the laptop, then test on the server with the scratchpad `remote.sh`, which ships the working tree as a bundle plus an overlay. The owner asked that no slow runs happen on the laptop.
 > - **R1.1 AUDITS LAUNCHED 2026-09-29** (the owner's go: "Launch both audits now (Recommended)"). The pinned brief is `AUDIT_BRIEF_R1_1_2026-09-29.md`, on audited commit `b5c284a`. **In flight, so RESUME with SendMessage after any session limit; never relaunch:**
 >   - INTERNAL: agent `a817146544f41bee0`, writing `archive/AUDIT_R1_1_INTERNAL_2026-09-29.md`;
 >   - EXTERNAL: agent `aaa9000e43a0eb738`, writing `archive/AUDIT_R1_1_EXTERNAL_2026-09-29.md`.
@@ -22,7 +22,7 @@
 
 **State, verified at handover:**
 - `main` is clean and all work is committed.
-- The full suite: 1008 passed. The governance gate is green, and the ledger shows 259 entries, 0 violations.
+- The full suite: 1008 passed. The governance gate was green at 2026-09-25; it is RED since the constitution moved to v0.10 ([[GAP-C10-01]]). The ledger showed 259 entries, 0 violations.
 - The spec is at master **v2.22**, with ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-08 v1.3, ACIS-09 v1.8 and ACIS-11 v1.2.
 - **Nothing is running.** No agents, no worktrees, no background jobs.
 - The branches `worktree-agent-a128ab904780ce593`, `-a8937e82f9a7a5391` and `-a9e00713d15bb5082` are all merged. They are kept, and safe to delete.
@@ -42,7 +42,7 @@
      - [x] 2026-09-29 the daily-first lab, C-3, built in-session: `tests/backtest/lab_theory.py` (closed forms + power), `lab_market.py` (generate / permuted), `lab_intraday.py` (C-4), `lab_source.py` (the harness TickSource, C-5 truth, C-6 rate table, C-7 `lab_config`); C-8 stylized-facts gate `test_lab_stylized.py`; C-10 hygiene `test_lab_hygiene.py`. 36 lab tests; numpy added to the dev dependencies and CI (named in §16). Every test ran on the Google compute server (full suite 1,046 passed in 29 s);
      - [x] 2026-09-29 joint bridges, [[GAP-P12D-92]] FIXED (C-4);
      - [x] 2026-09-29 the B0 calibration machinery, [[GAP-P12D-105]] MITIGATED: `tests/backtest/lab_calibration.py`; B0 (a)+(b) hold on the lab (planted 37.8% vs theory 39.8%, null 5.5%), a bridged lab is refused (18.2%). Wiring into `passed` is R1.4;
-     - [x] 2026-09-29 re-stating every recorded synthetic verdict, [[GAP-P12D-124]] FIXED, on the Google compute server: RUNGS 0.18 / 0.19; the ladder HOLDS (~98% direction); TREND and BREAKOUT no longer capture the edge; the full falsification's stage 1 passes and the engine fails planted ([[GAP-P12D-49]], [[GAP-P12D-31]]).
+     - [x] 2026-09-29 re-stating every recorded synthetic verdict, [[GAP-P12D-124]] FIXED, on the Google compute server: RUNGS 0.18 / 0.19; the engine still loses at every rung (~~~98% direction~~, withdrawn by the R1.1 audit: a regression artifact; the short-hold modules are friction-bound on this market, [[GAP-P12D-125]]); the full falsification's stage 1 passes and the engine fails planted ([[GAP-P12D-49]], [[GAP-P12D-31]]).
    - **R1.2 — register v2:** the daily return vector, the search-space hash, origin/cutoff and the cycle-order row ([[GAP-P12D-98]]). **BUILT 2026-09-29** in-session: `tests/backtest/look_claims.py`, the register takes a mandatory claim for real data, cycle rows, content-addressed daily vectors, and `look_gate.py`. Full suite 1057 passed on the server. The residual `evaluate()` entry point arrives with RSIM, R1.3. The R1.2 audits are due with R1.3's, or on their own: ASK the owner when R1.1's triage closes.
    - **R1.3 — rules, RSIM and costs:**
      - the TREND family with Carver's scalars, [[GAP-P12D-122]];
@@ -460,7 +460,7 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
 1. **Build the oracle positive control** ([[GAP-P12D-37]]) — a rule with perfect knowledge of the planted drift sign, through the same harness. No evolution, no long run. The ledger's standing rule: *no paid compute until an oracle can pass this harness.*
 2. **Attribute TSMOM from data already on disk** — bucket its 455 trades by hold duration and by episode-boundary crossing. TSMOM ran **−0.335/trade** against TREND's **+0.022**, and an earlier run measured it holding **2.3 days** while the planted market's episodes are **1–4 hours**; the hypothesis is that it holds straight through the edge and out the other side. Minutes of work, confirms or kills it. Note both exits are findings, not parameters: either the market is wrong for TSMOM, or TSMOM is unfaithful to its literature (Moskowitz–Ooi–Pedersen is a monthly signal on a 12-month lookback — a 2.3-day hold is not TSMOM), which matches the owner's own external review having already flagged an unfaithful TSMOM.
 3. **Then the machinery fixes, as prerequisites:** [[GAP-P12D-34]] plateau law, then [[GAP-0035]] module-gene fitness.
-4. **Then the owner's module-composition decision** — reframed onto **TSMOM**, not MEAN_REVERSION. [[GAP-P12D-40]]'s ranking is superseded by [[GAP-P12D-49]]: TSMOM −152.49 is the whole loss, MEAN_REVERSION −10.05 is 15× smaller, and TREND (+13.14, PF 2.04) and BREAKOUT (+1.66, PF 1.86) genuinely work. **WITHDRAWN 2026-09-29:** on the corrected C-BT-12 market TREND is −10.44 and BREAKOUT −2.65; their gains were an artifact of the oracle-157 market ([[GAP-P12D-49]] re-statement).
+4. **Then the owner's module-composition decision** — reframed onto **TSMOM**, not MEAN_REVERSION. [[GAP-P12D-40]]'s ranking is superseded by [[GAP-P12D-49]]: TSMOM −152.49 is the whole loss, MEAN_REVERSION −10.05 is 15× smaller, and TREND (+13.14, PF 2.04) and BREAKOUT (+1.66, PF 1.86) genuinely work. **WITHDRAWN 2026-09-29:** on the corrected C-BT-12 market TREND is −10.44 and BREAKOUT −2.65; their gains were an artifact of the oracle-157 market ([[GAP-P12D-49]] re-statement). **Refined by the R1.1 audit ([[GAP-P12D-125]], R11I-01):** at their ~12-minute holds no rule can clear friction on this market even with perfect direction, so neither "works" nor "fails on direction" is established for TREND or BREAKOUT.
 
 **Do NOT move to real Dukascopy data for training yet.** No labelled bars exist and [[GAP-P12D-12]] makes a 14-year walk-forward infeasible at ~691 ticks/s — but the binding reason is that **until the positive control passes, a profitable real-data result is indistinguishable from overfitting.** That is the entire purpose of the falsification suite.
 
@@ -747,7 +747,7 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
 - [ ] **GAP-C09-01** — At the live-readiness terminal milestone, the dual-lens pass gains the
       practicality-and-code-efficiency lens and runs on Fable 5 (A3); if Fable is unavailable the
       lens still runs on the next superior tier and the report names what actually ran.
-- [ ] **Constitution v0.10 pin bump (found 2026-09-29).** `governance_gate.py --session` is RED on it,
+- [ ] **Constitution v0.10 pin bump (found 2026-09-29; ledgered as [[GAP-C10-01]]).** `governance_gate.py --session` is RED on it,
       and has been since the constitution moved on 2026-09-25: ACIS pins v0.9, while the constitution is
       at v0.10 (owner-ratified 2026-09-25). v0.10 adds one article, **A17 efficacy:** a gate is judged by
       what it stops, enforced by `checks/efficacy.mjs`. To discharge it:

@@ -34,11 +34,11 @@ def test_the_day_runs_rollover_to_rollover_and_never_touches_the_weekend() -> No
     assert day_bounds(monday)[0] == rollover_utc(monday - timedelta(days=1))   # opens Sunday 17:00 NY
     path = generate(LabSpec(seed=1, days=400))
     lengths = set()
-    for t in range(0, 400, 7):
+    for t in range(400):                             # every day, both 2012 DST switch weeks included
         day = intraday(path, t)
         lengths.add(day.inc.shape[1])
         assert not any(in_weekend(day.time(k)) for k in (0, day.inc.shape[1] - 1))
-    assert lengths >= {1440} and lengths <= {1380, 1440, 1500}          # DST days are 23 or 25 hours
+    assert lengths == {1440}                     # US DST changes inside the FX weekend (E-R11-08)
 
 
 def test_the_bridge_is_exact_and_a_zero_pinned_day_is_the_old_defect() -> None:
@@ -57,16 +57,37 @@ def test_the_bridge_is_exact_and_a_zero_pinned_day_is_the_old_defect() -> None:
 
 
 def test_joint_bridges_plant_no_lead_lag_edge_and_independent_ones_would() -> None:
-    """R1-C (3), the pairs trap: 'long i when its positively correlated j led it so far'."""
-    path = generate(LabSpec(seed=3, days=1500, rho=0.5))
+    """R1-C (3), the pairs trap: 'long i when its positively correlated j led it so far'. 3,000
+    days: the t(4.5) tails of the re-tuned lab make the statistic noisier than R1-C's t(8)."""
+    path = generate(LabSpec(seed=3, days=3000, rho=0.5))
     same = np.flatnonzero(np.sign(path.loadings) == np.sign(path.loadings[0]))
     i, j = same[0], same[1]
     edge = {True: [], False: []}
-    for t in range(1500):
+    for t in range(3000):
         for joint in (True, False):
             y = intraday(path, t, joint=joint).inc / path.sigma[t][:, None]
             edge[joint].append(np.sign(y[j, :MID].sum() - y[i, :MID].sum()) * y[i, MID:].sum())
-    assert abs(_t(edge[True])) < 3.0 and _t(edge[False]) > 4.0, (_t(edge[True]), _t(edge[False]))
+    assert abs(_t(edge[True])) < 3.0 and _t(edge[False]) > 3.0, (_t(edge[True]), _t(edge[False]))
+
+
+def test_a_hold_straddling_the_rollover_earns_nothing_on_a_financed_null() -> None:
+    """R11I-07: hold sign(rate) from the last quote before 17:00 New York to an hour after it.
+    The harness books that night's financing at the rollover, and the price steps down by the
+    same amount at the same instant, so the booked P&L is noise (per-day means over 20
+    instruments, t across days). Without the step, the same observations earn the accrual."""
+    booked, without_step, same_day = [], [], []
+    for seed in (1, 2):
+        path = generate(LabSpec(seed=seed, days=1000))
+        for t in range(1, 1000):
+            sign = np.sign(path.rate[t - 1])
+            inc = intraday(path, t).inc
+            move = inc[:, :60].sum(axis=1)                       # close of t-1 to 18:00 NY
+            day = sign * (move + path.accrual[t - 1])              # price + the night's financing
+            booked.append(day.mean())
+            without_step.append((day + sign * path.accrual[t - 1]).mean())
+            same_day.append((-np.sign(path.rate[t]) * inc[:, 60:].sum(axis=1)).mean())  # E-R11-04: no rollover held
+    assert abs(_t(booked)) < 3.0 and _t(without_step) > 3.0, (_t(booked), _t(without_step))
+    assert abs(_t(same_day)) < 3.0, _t(same_day)          # anti-carry inside one FX day books no spurious edge
 
 
 def test_session_shape_and_the_rollover_spread_spike_are_what_the_knobs_declare() -> None:

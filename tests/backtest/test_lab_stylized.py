@@ -4,8 +4,9 @@ so a rule cannot pass the lab by exploiting an iid-Gaussian world (the tick gene
 Targets are quoted in R1-C §2.5 from Cont, "Empirical properties of asset returns: stylized facts
 and statistical issues", Quantitative Finance 1 (2001) 223-236. A tolerance marked "lab" is R1-C's
 operationalisation of a qualitative fact, never a value fitted to market data. Not asserted: 5
-intermittency, 9 leverage (an equity fact), 10 volume, 11 time-scale asymmetry. Four seeds of 20
-instruments x 3,640 weekdays.
+intermittency, 9 leverage (an equity fact), 10 volume, 11 time-scale asymmetry. SEEDS = 24 seeds of
+20 instruments x 3,640 weekdays: a gate on four pinned seeds passed by draw, not by construction
+(audits R11I-02, E-R11-02), so beta is gated as a many-seed mean with a 2 se margin.
 """
 
 from __future__ import annotations
@@ -16,8 +17,10 @@ import numpy as np
 import pytest
 
 from tests.backtest.lab_market import LabSpec, generate
+from tests.backtest.lab_theory import tail_index
 
 LAGS, ABS_LAGS = np.arange(1, 21), np.arange(1, 101)
+SEEDS = range(1, 25)
 
 
 def _acf(x: np.ndarray, lags: np.ndarray) -> np.ndarray:
@@ -48,7 +51,7 @@ def _r2(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:
 def facts() -> dict[str, float]:
     out: dict[str, list[float]] = {}
     add = lambda k, v: out.setdefault(k, []).append(float(v))
-    for seed in range(1, 5):
+    for seed in SEEDS:
         p = generate(LabSpec(seed=seed))
         r, (T, N) = p.r, p.r.shape
         mean_abs_acf = np.zeros(len(ABS_LAGS))
@@ -74,7 +77,9 @@ def facts() -> dict[str, float]:
         add("beta", -slope)
         add("r2_power", r2_power)
         add("r2_exp", r2_exp)
-    return {k: float(np.mean(v)) for k, v in out.items()}
+    summary = {k: float(np.mean(v)) for k, v in out.items()}
+    summary["beta_se"] = float(np.std(out["beta"], ddof=1) / math.sqrt(len(out["beta"])))
+    return summary
 
 
 def test_1_linear_autocorrelations_are_insignificant(facts) -> None:
@@ -83,6 +88,13 @@ def test_1_linear_autocorrelations_are_insignificant(facts) -> None:
 
 
 def test_2_tails_are_heavy_with_a_tail_index_between_two_and_five(facts) -> None:
+    """Cont: "higher than two and less than five", "typically close to four". The MODEL's index
+    (min(nu, the GARCH Kesten root)) is gated, because a Hill estimate at one cutoff is biased:
+    the old lab showed 3.57 while its true index was ~7.8 (audit E-R11-03). The sample's Hill
+    at the 2.5% cutoff must also lie in (2, 5)."""
+    spec = LabSpec()
+    assert 2.0 < tail_index(spec.nu, spec.garch) < 5.0
+    assert tail_index(8.0, (0.04, 0.90)) > 5.0                  # the old knobs, which the gate now refuses
     assert 2.0 < facts["hill"] < 5.0, facts["hill"]
 
 
@@ -107,4 +119,5 @@ def test_7_tails_stay_heavy_after_correcting_for_volatility(facts) -> None:
 def test_8_absolute_return_autocorrelation_decays_as_a_power_law(facts) -> None:
     """Cont: beta in [0.2, 0.4], and a power law must fit better than an exponential (the shape
     test GARCH(1,1) alone fails)."""
-    assert 0.2 <= facts["beta"] <= 0.4 and facts["r2_power"] > facts["r2_exp"], facts
+    beta, se = facts["beta"], facts["beta_se"]
+    assert 0.2 + 2 * se <= beta <= 0.4 - 2 * se and facts["r2_power"] > facts["r2_exp"], facts

@@ -43,7 +43,7 @@ def test_nothing_is_demeaned_so_net_drift_is_zero_in_expectation_not_pinned_in_t
     """GAP-P12D-91: the old generator pinned every path's sum to exactly 0 (a bridge). Now each
     path keeps its sampled drift, and the drift is zero only on average over paths."""
     for kind in KINDS:
-        sums = [math.fsum(SyntheticMarket(MarketSpec(kind, START, 70, PRICES, tick_seconds=3600, seed=s))
+        sums = [math.fsum(SyntheticMarket(MarketSpec(kind, START, 14, PRICES, tick_seconds=300, seed=s))
                           .returns("EUR_USD")) for s in range(200)]
         assert sum(abs(x) < 1e-12 for x in sums) == 0, kind           # no path is pinned
         assert abs(_t(sums)) < 3.0, (kind, _t(sums))
@@ -93,18 +93,44 @@ def test_planted_matches_the_null_variance_exactly_at_the_decision_horizon() -> 
 def test_at_the_default_strength_no_horizon_tells_planted_from_null_by_volatility() -> None:
     """Measured on half a year: the one-tick, five-minute and hourly horizons sit a few percent
     below the null (the drift's share is taken out of the noise), and the daily horizon carries
-    only its sampling noise. The old planted market was 12.3x the null's daily variance."""
-    null, planted = _market("null", days=182), _market("planted", days=182)
+    only its sampling noise. The old planted market was 12.3x the null's daily variance. The
+    PERMUTED control is pinned too: every |move| is kept, so it sits ~4% under the null at EVERY
+    horizon (a declared deviation, audit R11I-06; the matched horizon is one weekday, while the
+    engine's modules decide on 60 s bars, GAP-P12D-125)."""
+    null, planted, permuted = _market("null", days=182), _market("planted", days=182), _market("permuted", days=182)
     for inst, _ in PRICES:
-        for steps in (1, 15, 180, 4320):                              # 20 s, 5 min, 1 h, 1 day
-            ratio = horizon_mean_square(planted.returns(inst), steps) / horizon_mean_square(null.returns(inst), steps)
-            assert 0.9 < ratio < 1.1, (inst, steps, ratio)
+        for steps in (1, 3, 15, 180, 4320):                           # 20 s, 1 min, 5 min, 1 h, 1 day
+            base = horizon_mean_square(null.returns(inst), steps)
+            # permuted shares no draws with null, so beyond 5 min its ratio is mostly sampling noise
+            # (+-4% at 1 h, +-17% at 1 day on this path); its model value is its tick ratio, ~0.96
+            for market in (planted, permuted) if steps <= 15 else (planted,):
+                ratio = horizon_mean_square(market.returns(inst), steps) / base
+                assert 0.9 < ratio < 1.1, (market.spec.kind, inst, steps, ratio)
 
 
-def test_the_oracle_sharpe_sets_the_drift_at_any_tick_size() -> None:
-    for tick in (20, 300, 3600):
-        spec = MarketSpec("planted", START, 7, PRICES, tick_seconds=tick, oracle_sharpe=10.0)
-        assert spec.drift_sigma * math.sqrt(252 * spec.ticks_per_day) == pytest.approx(10.0)
+def test_the_no_foresight_oracle_realises_its_stated_sharpe_and_short_episodes_are_refused() -> None:
+    """R11I-09: the oracle holds the episode in force (never the next), so it realises about
+    oracle_sharpe·(1 - 2p), p the share of steps that change sign. Measured on the returns at
+    20 s and 300 s ticks against that expectation, within 3 se (se ~ 1/sqrt(years x instruments)).
+    A planted spec whose shortest episode is under 10 ticks is refused."""
+    for tick, days in ((20, 364), (300, 1820)):
+        spec = MarketSpec("planted", START, days, PRICES, tick_seconds=tick)
+        market, pnl, flips = SyntheticMarket(spec), [], 0
+        for k, (inst, _) in enumerate(PRICES):
+            sign = [0.0] * len(market.returns(inst))
+            for ep in episodes(spec, k):
+                sign[ep.start:ep.end] = [ep.sign] * (ep.end - ep.start)
+            rets = market.returns(inst)
+            pnl.extend(sign[j - 1] * rets[j] for j in range(1, len(rets)))
+            flips += sum(sign[j] != sign[j - 1] for j in range(1, len(sign)))
+        per_year = 252 * spec.ticks_per_day
+        realised = statistics.fmean(pnl) / statistics.pstdev(pnl) * math.sqrt(per_year)
+        expected = spec.oracle_sharpe * (1 - 2 * flips / len(pnl))
+        se = 1 / math.sqrt(len(pnl) / per_year)
+        assert abs(realised - expected) < 3 * se, (tick, realised, expected, se)
+    assert spec.drift_sigma * math.sqrt(252 * spec.ticks_per_day) == pytest.approx(10.0)
+    with pytest.raises(ValueError, match="under 10 ticks"):
+        MarketSpec("planted", START, 7, PRICES, tick_seconds=3600)
 
 
 def test_only_the_planted_market_carries_the_scheduled_drift() -> None:

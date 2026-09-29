@@ -90,6 +90,21 @@ def test_the_book_charges_exactly_the_stressed_friction() -> None:
         assert close(stressed_cost) == pytest.approx(base - extra)
 
 
+def test_a_closed_trade_carries_its_exact_friction_and_carry() -> None:
+    """R11I-01: pnl = gross - friction + carry, and the book keeps the friction instead of
+    discarding it, so the ladder never has to estimate it."""
+    entry_ts = datetime(2024, 1, 2, 12, tzinfo=UTC)
+    book = BookState(last_price={"EUR_USD": 1.1050})
+    pos = OpenPos(instrument="EUR_USD", direction=1, entry_price=1.1000, size_units=Decimal("100000"),
+                  entry_ts=entry_ts, stop_loss=1.0950, take_profit=None, strategy_type="TREND",
+                  entry_spread=0.00020)
+    trade = PositionModel(costs={"EUR_USD": DECLARED}, max_hold_s=48 * 3600).close_at(
+        pos, 1.1050, entry_ts + timedelta(minutes=20), "target", book, exit_spread=0.00030)
+    friction = Decimal(str(DECLARED.round_trip_cost(0.00020, 0.00030))) * Decimal("100000")
+    assert trade.friction == pytest.approx(friction) and trade.carry == 0
+    assert trade.pnl == pytest.approx(Decimal("0.0050") * Decimal("100000") - trade.friction)
+
+
 def test_a_stressed_run_declares_itself_and_a_declared_run_stays_silent(acis_config, tmp_path) -> None:
     common = dict(cfg=acis_config, account="dev_paper", source="synthetic",
                   loader=None, cache=None, folds=(), spx_closes={}, financing=None,
@@ -177,20 +192,26 @@ def test_a_ratio_of_two_losses_is_never_reported_as_a_fraction_kept() -> None:
     assert "% of it left" not in line
 
 
-def test_the_decomposition_separates_friction_from_direction() -> None:
-    """The number the ladder exists for: net PnL is linear in the multiplier for a fixed trade
-    set, so the slope over the rungs recovers the friction charged at 1x — and with it whether
-    the result is priced by cost or by direction. A planted market that loses 89% of its money
-    on direction cannot be rescued by any venue."""
+def test_the_decomposition_is_exact_and_refuses_to_estimate() -> None:
+    """Audit R11I-01: the split is read from the friction and carry each graded trade carries,
+    so net = direction - friction + carry at 1x exactly, per strategy too. A ladder whose rows
+    carry no per-trade friction gets NO split: the old cross-rung regression measured a change
+    of trade set (1,690 -> 548 trades on 2026-09-29), not friction."""
     import sys
     sys.path.insert(0, str(ROOT_SCRIPTS))
-    from cost_stress_ladder import decompose
+    from cost_stress_ladder import decompose, verdict
 
-    # gross +100, friction -30 per 1x: net = 100 - 30k
-    rows = [{"cost_stress": k, "spread_floor": 0.0, "net_pnl": str(100.0 - 30.0 * k)}
-            for k in (1.0, 2.0, 3.0, 5.0)]
+    per = {"TREND": {"net_pnl": "-10.0", "friction": "9.0", "carry": "0.5"},
+           "TSMOM": {"net_pnl": "-60.0", "friction": "6.0", "carry": "-1.0"}}
+    rows = [{"cost_stress": 1.0, "spread_floor": 0.0, "passed": False, "net_pnl": "-70.0", "friction": "15.0",
+             "carry": "-0.5", "per_strategy": per},
+            {"cost_stress": 2.0, "spread_floor": 0.0, "passed": False, "net_pnl": "-80.0", "friction": "30.0",
+             "carry": "-0.5", "per_strategy": per}]
     d = decompose(rows)
-    assert d["friction_per_1x"] == pytest.approx(30.0)
-    assert d["gross_pnl_1x"] == pytest.approx(100.0)
-    assert d["friction_share_of_1x"] == pytest.approx(30.0 / 70.0)
-    assert decompose(rows[:1]) == {}
+    assert (d["net_1x"], d["friction_1x"], d["carry_1x"], d["direction_1x"]) == (-70.0, 15.0, -0.5, -54.5)
+    assert d["friction_share_of_loss_1x"] == pytest.approx(15.0 / 70.0)
+    assert d["per_strategy_1x"]["TREND"]["direction"] == pytest.approx(-10.0 + 9.0 - 0.5)
+    assert "exactly, at 1x: direction -54.50, friction 15.00" in verdict(rows, 2.0)
+    assert "the rest is direction" not in verdict(rows, 2.0)
+    old = [{k: v for k, v in r.items() if k not in ("friction", "carry")} for r in rows]
+    assert decompose(old) == {} and "exactly" not in verdict(old, 2.0)

@@ -27,6 +27,8 @@ class ClosedTrade:
     strategy_type: str
     notional_usd: Decimal | None = None   # entry value in USD: pnl / notional is the trade's return
     regime: str | None = None             # the regime ACTIVE at entry (GAP-P12D-31 attribution)
+    friction: Decimal = Decimal("0")      # C8 cost charged, account currency (pnl = gross - friction + carry)
+    carry: Decimal = Decimal("0")         # financing booked, account currency (R11I-01)
 
     @property
     def duration_s(self) -> float:
@@ -259,14 +261,10 @@ def compute_metrics(*, trades: Sequence[ClosedTrade],
 
 @dataclass(frozen=True)
 class SliceStats:
-    """Trade-level attribution for ONE regime or strategy.
-
-    Deliberately NOT a `MetricBlock`: a subset of trades has no continuous equity curve,
-    so Sharpe, max drawdown and positive-months are undefined on it. Inventing a per-slice
-    curve is the fabrication GAP-P11E-02 forbids. `avg_duration_s` covers every trade in the
-    slice (no §14 carve-out — this is attribution, not the graded duration band).
-    """
-
+    """Trade-level attribution for ONE regime or strategy. NOT a `MetricBlock`: a subset of
+    trades has no continuous equity curve, so no Sharpe, drawdown or positive months (the
+    fabrication GAP-P11E-02 forbids). `avg_duration_s` covers every trade (no §14 carve-out).
+    net = direction - friction + carry, each summed exactly (R11I-01)."""
     n_trades: int
     net_pnl: Decimal
     win_rate: float
@@ -274,20 +272,20 @@ class SliceStats:
     avg_duration_s: float
     gross_win: Decimal
     gross_loss: Decimal
+    friction: Decimal = Decimal("0")     # the C8 cost charged, account currency
+    carry: Decimal = Decimal("0")        # financing booked, account currency
 
 
 def slice_stats(trades: Sequence[ClosedTrade]) -> SliceStats:
-    wins = [t.pnl for t in trades if t.pnl > 0]
-    losses = [-t.pnl for t in trades if t.pnl < 0]
+    wins, losses = [t.pnl for t in trades if t.pnl > 0], [-t.pnl for t in trades if t.pnl < 0]
     durations = [t.duration_s for t in trades]
     return SliceStats(
-        n_trades=len(trades),
-        net_pnl=sum((t.pnl for t in trades), Decimal("0")),
-        win_rate=win_rate(trades),
-        profit_factor=profit_factor(trades),
+        n_trades=len(trades), net_pnl=sum((t.pnl for t in trades), Decimal("0")),
+        win_rate=win_rate(trades), profit_factor=profit_factor(trades),
         avg_duration_s=sum(durations) / len(durations) if durations else 0.0,
-        gross_win=sum(wins, Decimal("0")),
-        gross_loss=sum(losses, Decimal("0")))
+        gross_win=sum(wins, Decimal("0")), gross_loss=sum(losses, Decimal("0")),
+        friction=sum((t.friction for t in trades), Decimal("0")),
+        carry=sum((t.carry for t in trades), Decimal("0")))
 
 
 def slice_by(trades: Sequence[ClosedTrade], key: str) -> dict[str, SliceStats]:

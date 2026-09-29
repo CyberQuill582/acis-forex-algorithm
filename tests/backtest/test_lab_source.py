@@ -17,7 +17,7 @@ from tests.backtest.carry import financing_charge
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.financing import make_financing
 from tests.backtest.lab_intraday import day_bounds
-from tests.backtest.lab_market import Effect, LabSpec, generate
+from tests.backtest.lab_market import Effect, LabSpec, generate, permuted
 from tests.backtest.lab_source import LabTickSource, lab_config, lab_names
 from tests.backtest.lab_theory import detection_power
 from tests.optimizer_fixtures import CapturingLogger
@@ -36,9 +36,11 @@ def test_ticks_are_quotes_on_the_fx_clock_and_close_on_the_daily_bar() -> None:
     ticks = list(src.load(name, start, end))
     assert ticks and all(t.bid < t.ask and not in_weekend(t.event_time) for t in ticks)
     assert all(start <= t.event_time < end for t in ticks) and src.provenance == "synthetic"
-    day = src._day(3)                                   # the last grid mid is the daily close
-    prev = src.path.mids(1.1)[2, 1]
-    assert prev * (1.0 + day.inc[1].sum()) == pytest.approx(src.path.mids(1.1)[3, 1], rel=1e-12)
+    closes = src.path.mids(1.1)
+    for t in range(1, 60):                              # R11I-13: every day's LAST quote is its close
+        open_, close = day_bounds(src.path.dates[t].astype(object))
+        last = list(src.load(name, close - timedelta(minutes=1), close))
+        assert len(last) == 1 and (last[0].bid + last[0].ask) / 2 == pytest.approx(closes[t, 1], rel=1e-12)
 
 
 def test_loading_is_windowed_and_split_invariant() -> None:
@@ -60,13 +62,18 @@ def test_the_real_loader_takes_the_lab_and_rejects_its_spread_spikes() -> None:
     assert got.ticks and got.rejected > 0 and got.weekend_dropped == 0
 
 
-def test_truth_is_the_drift_in_force_now_never_the_next_days() -> None:
-    src = LabTickSource(generate(LabSpec(seed=2, days=400, n_inst=4, effect=Effect(trend_sharpe=0.5))))
+def test_truth_is_the_drift_in_force_now_never_the_next_days_and_the_same_on_every_kind() -> None:
+    """R11I-05: the oracle reads planted's drift on EVERY kind, so it trades the same days on
+    null and permuted as on planted, and only planted pays it."""
+    spec = LabSpec(seed=2, days=400, n_inst=4, effect=Effect(trend_sharpe=0.5))
+    src = LabTickSource(generate(spec))
+    others = (LabTickSource(generate(spec, null=True)), LabTickSource(permuted(generate(spec))))
     name = lab_names(4)[3]
     for t in (10, 11, 250):
         open_, close = day_bounds(src.path.dates[t].astype(object))
-        assert src.truth(name, open_) == src.path.m[t, 3]
+        assert src.truth(name, open_) == src.path.m[t, 3] != 0.0
         assert src.truth(name, close - timedelta(seconds=1)) == src.path.m[t, 3]
+        assert all(o.truth(name, open_) == src.truth(name, open_) for o in others)
     with pytest.raises(ValueError, match="not inside"):
         src.truth(name, day_bounds(src.path.dates[4].astype(object))[1] + timedelta(hours=10))  # a Saturday
     assert _source().truth(name, day_bounds(src.path.dates[7].astype(object))[0]) == 0.0
@@ -91,9 +98,9 @@ def test_a_spot_only_grader_would_see_a_carry_edge_the_financed_one_does_not() -
     spot_only, financed = [], []
     for seed in range(8):
         p = generate(LabSpec(seed=seed, days=1260))
-        pos = -np.sign(p.rate)
-        spot_only.extend((pos * p.spot).mean(axis=0))
-        financed.extend((pos * (p.spot + p.accrual)).mean(axis=0))
+        pos = -np.sign(p.rate[:-1])                    # decided at close t-1, held across its rollover
+        spot_only.extend((pos * p.spot[1:]).mean(axis=0))
+        financed.extend((pos * (p.spot[1:] + p.accrual[:-1])).mean(axis=0))
     t = lambda v: np.mean(v) / (np.std(v, ddof=1) / math.sqrt(len(v)))
     assert t(spot_only) > 3.0 and abs(t(financed)) < 3.0, (t(spot_only), t(financed))
 
@@ -110,6 +117,15 @@ def test_the_lab_config_copies_a_declared_cost_block_and_touches_no_real_file() 
         assert spec.costs == tpl.costs and spec.max_plausible_spread == tpl.max_plausible_spread
         assert (spec.base_ccy, spec.quote_ccy) == (n[:3], "USD")
     assert not set(names) & set(load_config(ROOT / "config").instruments.instruments)
+    gold = lab_config(cfg, names, template="XAU_USD")          # E-R11-06: a Friday-triple template
+    assert cfg.instruments.instruments["XAU_USD"].swap_convention != "tom_next"
+    assert {gold.instruments.instruments[n].swap_convention for n in names} == {"tom_next"}
+    src, hook = _source(), make_financing(_source().rate_table(), broker_fee_pct=Decimal("0"))
+    for t in range(10):                                        # the harness bills what the lab accrues
+        night = src.path.dates[t].astype(object)
+        charge = financing_charge(instrument=lab_names(4)[0], direction=1, value=Decimal("1000"), nights=[night],
+                                  rate=hook, swap_convention=gold.instruments.instruments[names[0]].swap_convention)
+        assert float(charge) == pytest.approx(1000 * src.path.accrual[t, 0], rel=1e-9, abs=1e-12)
 
 
 def test_the_power_statement_matches_r1cs_calibration_table() -> None:

@@ -247,26 +247,30 @@ def test_a_recognised_oracle_hands_over_to_the_unchanged_engine_stage(monkeypatc
 
 
 def test_the_harness_recognises_the_oracle_on_planted_and_refuses_it_on_null(cfg) -> None:
-    """The positive control itself: six folds of the falsification plan's shape on one
-    instrument, every declared C8 cost charged. On planted the oracle must make money after
-    costs with a strongly positive Sharpe, significant by the harness's own PSR; on null the
-    SAME trades (same schedule, same timing) must show no edge. Six folds, not two: the
-    variance-matched market (C-BT-12) plants an oracle Sharpe of 10, not ~157, and 14 test days
-    of a per-trade Sharpe near 0.18 are not reliably significant (PSR 0.82 measured)."""
-    folds = plan(1, 7, 6)
+    """The positive control itself: twelve folds of the falsification plan's shape on the pair,
+    every declared C8 cost charged. On planted the oracle must make money after costs with a
+    strongly positive Sharpe, significant by the harness's own PSR; on null the SAME trades (same
+    schedule, same timing) must show no edge. The variance-matched market (C-BT-12) plants an
+    oracle Sharpe of 10, not ~157, so the sample must be large enough to be significant on ANY
+    seed, not only the committed one (audit R11I-10). Seeds 7-11, measured 2026-09-29 on this
+    design: planted Sharpe 5.7-8.3 with PSR 1.000; null PSR at most 0.84. The Sharpe bar of 4.0
+    sits ~2 se under that range; a halved oracle (~3.5) mostly fails it. The null's net is at
+    most half the planted's: on the oracle-157 market the ratio was 1/10, but at this strength
+    the null's sampling noise alone reaches ~16% (seed 10)."""
+    folds = plan(1, 7, 12)
     days = (folds[-1].test_end - START).days
     graded = {}
     for kind in ("planted", "null"):
-        spec = MarketSpec(kind, START, days, (("EUR_USD", FIRST_MID["EUR_USD"]),))
+        spec = MarketSpec(kind, START, days, tuple((i, FIRST_MID[i]) for i, _ in PAIR))
         graded[kind] = grade_oracle(spec, cfg, cfg.system.active_account, folds, CapturingLogger(),
-                                    instruments=["EUR_USD"])
+                                    instruments=[i for i, _ in PAIR])
     planted, null = graded["planted"], graded["null"]
     p, n = planted.report.out_of_sample, null.report.out_of_sample
     assert p.n_trades == n.n_trades >= 30                                  # identical oracle logic
     assert set(planted.report.per_strategy) == {STRATEGY}
-    assert planted.net_pnl > 0 and p.annual_sharpe > SHARPE_MIN, (planted.net_pnl, p)   # §14's own row
+    assert planted.net_pnl > 0 and p.annual_sharpe > 4.0 > SHARPE_MIN, (planted.net_pnl, p)
     assert planted.report.deflated_sharpe >= 0.95                         # PSR vs 0: no trials
     assert planted.report.trial_count == 0 and planted.report.passed is False   # the gate's own refusal
     assert null.report.deflated_sharpe < 0.95, null.report.deflated_sharpe   # no significant edge
-    assert null.net_pnl < planted.net_pnl / 10
+    assert null.net_pnl < planted.net_pnl / 2
     assert any(f.startswith("section-14") for f in non_dsr_failures(null.report, guardrail_hash(cfg.guardrails)))

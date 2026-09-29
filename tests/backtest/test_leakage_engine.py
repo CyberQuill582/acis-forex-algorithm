@@ -26,8 +26,9 @@ T = datetime(2014, 1, 7, 10, 0, tzinfo=timezone.utc)
 def test_the_production_path_is_tapped_end_to_end_on_a_tiny_tape(tmp_path) -> None:
     cfg = leak_config(ROOT, small_optimizer=True)
     folds = plan(3, 1, 1, embargo=timedelta(days=2))
-    spec = MarketSpec("planted", START, (folds[-1].test_end - START).days,
-                      tuple((i, FIRST_MID[i]) for i in sorted(cfg.instruments.enabled)), tick_seconds=600)
+    spec = MarketSpec("planted", START, (folds[-1].test_end - START).days,        # 2-5 h episodes: >= 10
+                      tuple((i, FIRST_MID[i]) for i in sorted(cfg.instruments.enabled)),   # ticks at 600 s (R11I-09)
+                      tick_seconds=600, episode_hours=(2.0, 5.0))
     ref = engine_decisions(spec, cfg, "dev_paper", folds, tmp_path / "ref")
     kinds = Counter(d.kind for d in ref)
     assert kinds["label"] > 500 and kinds["regime"] > 200 and kinds["evolution"] == 1

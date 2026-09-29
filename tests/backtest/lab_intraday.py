@@ -4,7 +4,9 @@ of correlated daily bars bridges the common factor jointly" (GAP-P12D-92). Desig
 Mental model:
   * THE DAY IS THE FX DAY. Weekday d runs [rollover(d - 1), rollover(d)): 17:00 New York to 17:00
     New York on core/data/fx_clock, DST-correct, with Monday opening on Sunday at 17:00. So no
-    tick falls in the weekend window, and a day lasts 23, 24 or 25 hours.
+    tick falls in the weekend window. Every FX day lasts 24 hours: US clocks change at 02:00 on a
+    Sunday, inside the FX weekend. The hour profiles are fixed in UTC, so the session shape does
+    not follow DST (a declared simplification; audit E-R11-08).
   * EXACT. A day's diffusive part is Gaussian GIVEN (sigma, the mixing draws), so a Brownian
     bridge pinned at the day's own endpoint has exactly the law of generating forward. That is
     the lawful bridge; GAP-P12D-91's whole-path demeaning pinned an endpoint no forward process
@@ -13,8 +15,10 @@ Mental model:
   * JOINT. One bridge for the common factor plus one per idiosyncratic shock, so no instrument's
     path so far predicts another's rest of day. Bridging each instrument's combined shock on its
     own (joint=False, kept only to prove the test's power) plants a spurious lead-lag edge.
-  * The drift and the financing accrual spread in proportion to session variance; a jump lands
-    on one random tick; Monday's gap lands on the first tick.
+  * The drift spreads in proportion to session variance; a jump lands on one random tick; the
+    first tick carries Monday's gap AND the previous rollover's financing step, at the rollover
+    instant the harness books that night (so a hold straddling 17:00 New York earns nothing on a
+    financed null). The last tick always publishes, so the tape closes on the daily bar.
   * Spreads and quote thinning are knobs, NOT a calibration: the hour shapes are R1-C's
     (LLM-chosen), and the rollover spike sits inside ACIS_SPEC's recorded 6-13x. Spikes above an
     instrument's max_plausible_spread exercise the loader's rejection path on purpose.
@@ -86,10 +90,14 @@ def intraday(path: LabPath, t: int, tick_seconds: int = 60, *, joint: bool = Tru
     for i in np.flatnonzero(path.jumps[t]):
         y[i, rng.integers(n)] += path.scale * path.jumps[t, i]
     y[:, 0] += path.scale * path.gap[t]
-    inc = path.sigma[t][:, None] * y - w * path.accrual[t][:, None]
+    inc = path.sigma[t][:, None] * y
+    if t > 0:
+        inc[:, 0] -= path.accrual[t - 1]                       # the previous night's rollover step
+    if (1.0 + np.cumsum(inc, axis=1)).min() <= 0.0:
+        raise ValueError(f"day {t}: an intraday price would reach zero: lower ann_vol or jump_sd")
     spread = np.asarray(base_spread, float).reshape(-1, 1) * HOUR_SPREAD[hours]
     spread = np.where(secs < roll_minutes * 60, spread * roll_mult, spread)
     spread = np.where(rng.random(inc.shape) < spike_prob, spread * spike_mult, spread)
     emit = rng.random(inc.shape) < np.clip(tick_rate * HOUR_VAR[hours] / HOUR_VAR.mean(), 0.0, 1.0)
-    emit[:, 0] = True
+    emit[:, 0] = emit[:, -1] = True
     return DayTicks(open_, tick_seconds, inc, spread, emit)

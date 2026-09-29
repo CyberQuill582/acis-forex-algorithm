@@ -4,20 +4,26 @@ data is read, fitted or resampled here (C-10, pinned by test_lab_hygiene). The d
 (CLOUD_AUDIT/reports/r1/R1C_SYNTH_LAB.md §2.4, prototype evidence/R1C/gen_lab.py).
 
 Mental model (every invariant the lab promises):
-  * VOLATILITY UNITS. y = scale·(m + e + J + G): planted drift m, a conditionally Gaussian
+  * VOLATILITY UNITS. y = scale·(m + e + J + G): the APPLIED drift m, a conditionally Gaussian
     diffusive part e with one common factor, compound-Poisson jumps J, a Monday gap G. The day's
-    SIMPLE excess return is r = sigma·y; a long financed on the harness's own rollover calendar
-    (carry.swap_multiplier, /365) earns exactly r, so a financing-on null is null in the P&L the
-    grader books (C-6), before the broker fee, which is friction.
+    SIMPLE excess return is r = sigma·y.
+  * FINANCING IS A STEP AT THE ROLLOVER. Day t ends at its 17:00-New-York rollover, which the
+    harness bills accrual[t] = rate x swap_multiplier / 365 (tom_next: Wednesday x3). The price
+    drops by that accrual at the next day's open tick, the same instant, so spot[t] = r[t] -
+    accrual[t-1]: a long held across a rollover and financed by the harness earns exactly r, and
+    a financing-on null is null in the P&L the grader books (C-6), before the broker fee.
   * NOTHING IS DEMEANED (except xsmom's per-day cross-section, which is the effect itself).
-    The null (m = 0) has E[r_t | the past] = 0: sigma is known at the day's start and y is a
-    zero-mean shock, so every non-anticipating rule earns nothing in expectation.
-  * PRICES COMPOUND SIMPLE RETURNS: mid_t = mid_(t-1)·(1 + spot_t), spot = r - accrual. A
-    long-biased rule earns nothing in PRICE units on the null (exp-built prices would pay it
-    sigma²/2 a day). A simple return <= -1 is refused, never floored.
+    The null has E[r_t | the past] = 0: sigma is known at the day's start and y is a zero-mean
+    shock, so every non-anticipating rule earns nothing in expectation.
+  * PRICES COMPOUND SIMPLE RETURNS: mid_t = mid_(t-1)·(1 + spot_t). A long-biased rule earns
+    nothing in PRICE units on the null (exp-built prices would pay it sigma²/2 a day). A spot
+    return <= -1 is refused, never floored.
   * PLANTED DIFFERS FROM NULL IN DRIFT ONLY. The same seed gives the same noise (effects draw
     from a second generator), and `scale` makes planted's MODEL variance of y over the decision
     horizon (one weekday) equal the null's exactly: scale² · (Var m + other) = other.
+  * ONE TRUTH ON EVERY KIND (the tick generator's contract). `truth` is planted's drift in
+    calendar order: planted applies it, `generate(..., null=True)` and `permuted` carry it
+    UNAPPLIED, so an oracle reading it trades the same days on every kind.
   * PERMUTED shuffles whole days (every instrument together, so the cross-section is kept) and
     flips each day's sign: given the pool, r is a martingale difference in price units.
   * sigma = GARCH(1,1) feedback x an exogenous multi-scale log-volatility (AR(1) components with
@@ -57,19 +63,22 @@ class Effect:
 
 @dataclass(frozen=True)
 class LabSpec:
-    """Knob defaults are R1-C's lab tuning toward Cont (2001)'s qualitative facts, never a fit
-    to data (R1-C §2.5 declares the ~6 sweeps). FX anchor: Baillie & Bollerslev (1989), daily FX
-    as a t-GARCH."""
+    """Knob defaults are tuned toward Cont (2001)'s qualitative facts, never fitted to data: R1-C's
+    sweeps (§2.5), then the R1.1 audit re-tune of 2026-09-29 (E-R11-02/03, R11I-02). FX anchor:
+    Baillie & Bollerslev (1989), daily FX as a t-GARCH. A "year" is 252 weekdays throughout the
+    lab; the calendar has ~261 (E-R11-05)."""
     n_inst: int = 20
-    days: int = 3640                              # weekdays (~14.4 years)
+    days: int = 3640                              # weekdays (~13.9 calendar years)
     seed: int = 1
     start: str = "2012-01-02"                     # a Monday
     ann_vol: tuple[float, float] = (0.06, 0.14)   # per-instrument annual vol, spread evenly
     rho: float = 0.3                              # the one factor's |loading|² (corr b_i·b_j)
-    nu: float = 8.0                               # Student-t by variance mixing, > 2
-    garch: tuple[float, float] = (0.04, 0.90)     # (a, b) on the standardised squared return
-    sv_sd: float = 0.5                            # multi-scale log-vol: total sd of log sigma
-    sv_halflives: tuple[float, ...] = (3.0, 15.0, 75.0, 375.0, 1875.0)
+    nu: float = 4.5                               # Student-t by variance mixing: the tail index,
+                                                  # Cont §5.3 "typically close to four"
+    garch: tuple[float, float] = (0.02, 0.90)     # (a, b): small feedback, so the multi-scale
+                                                  # log-vol carries Cont fact 8's power law
+    sv_sd: float = 0.6                            # multi-scale log-vol: total sd of log sigma
+    sv_halflives: tuple[float, ...] = (5.0, 25.0, 125.0, 625.0, 3125.0)   # log-spaced: beta ~0.36
     jumps_per_year: float = 2.0                   # compound Poisson
     jump_sd: float = 3.0                          # Laplace size sd, in daily-sigma units
     weekend_var: float = 0.25                     # Monday gap variance, share of a weekday's
@@ -90,11 +99,19 @@ class LabSpec:
             raise ValueError("carry cannot be planted when the grader books no financing")
         if np.datetime64(self.start, "D").astype(object).weekday() != 0:
             raise ValueError("start must be a Monday")
+        if not (0.0 < min(self.ann_vol) <= max(self.ann_vol) <= 1.0 and 0.0 <= self.rate_sd <= 0.5):
+            raise ValueError("ann_vol must lie in (0, 1] and rate_sd in [0, 0.5]: an FX-like lab")
 
     @property
     def other(self) -> float:
         """Var(e + J + G) of y per weekday, averaged over the week (Mondays carry the gap)."""
         return 1.0 + self.weekend_var / 5.0
+
+    @property
+    def common(self) -> float:
+        """|Cov(noise_i, noise_j)| of two instruments' y: the factor's share of the diffusive part
+        only, since jumps and gaps are independent across instruments."""
+        return (1.0 - self.jumps_per_year / YEAR * self.jump_sd ** 2) * self.rho
 
 
 @dataclass(frozen=True)
@@ -106,10 +123,11 @@ class LabPath:
     sigma: np.ndarray        # conditional daily sd, known at the day's start
     y: np.ndarray            # the excess return in volatility units
     r: np.ndarray            # the simple excess return = sigma·y
-    spot: np.ndarray         # the simple spot return = r - accrual
+    spot: np.ndarray         # the simple spot return = r - accrual of the previous day's rollover
     accrual: np.ndarray      # a long's financing for the day's rollover: rate x its days / 365
     rate: np.ndarray         # the annual rate differential (base minus quote)
-    m: np.ndarray            # the planted drift in vol units, before `scale` (the truth)
+    m: np.ndarray            # the drift APPLIED in y, vol units before `scale` (0 on the null)
+    truth: np.ndarray        # planted's drift in calendar order, on every kind: what an oracle reads
     scale: float             # the variance match (1.0 on the null)
     fac: np.ndarray          # the common factor's diffusive shock (T,)
     idio: np.ndarray         # the idiosyncratic diffusive shocks
@@ -156,7 +174,9 @@ def _ar1(eta: np.ndarray, phi: float, var: float) -> np.ndarray:
     return out
 
 
-def generate(spec: LabSpec) -> LabPath:
+def generate(spec: LabSpec, *, null: bool = False) -> LabPath:
+    """The planted path of `spec`, or with `null=True` its null: the same noise with the effect
+    computed (as `truth`) but not applied."""
     rng = np.random.default_rng(spec.seed)
     T, N, E, other = spec.days, spec.n_inst, spec.effect, spec.other
     dates, tom, monday = calendar(spec)
@@ -201,6 +221,9 @@ def generate(spec: LabSpec) -> LabPath:
         s = season_size_for(E.season_sharpe, float(tom.mean()), other)
         m += s * tom[:, None] * season_dir
         v_m += s * s * float(tom.mean())
+    truth = m                                                  # every kind carries planted's drift
+    if null:
+        m, v_m = np.zeros((T, N)), 0.0                         # ...unapplied: the same noise, no edge
     scale = math.sqrt(other / (other + v_m))
     y = scale * (m + diffusive + jumps + gap)
 
@@ -215,22 +238,30 @@ def generate(spec: LabSpec) -> LabPath:
         sigma[t] = vol_d * np.sqrt(h) * svf[t]
         h = (1.0 - a - bb) + a * h * y[t] ** 2 + bb * h
     r = sigma * y
-    if (r <= -1.0).any():
-        raise ValueError("a simple return <= -1 was drawn: lower ann_vol or jump_sd")
     # ONE financing calendar (C-6): the day ends at its 17:00-New-York rollover, which the harness
-    # bills rate x swap_multiplier / 365 (tom_next: Wednesday x3), so a financed long earns r
+    # bills rate x swap_multiplier / 365 (tom_next: Wednesday x3); the price steps down by it at
+    # the next day's open, so a long financed across the rollover earns exactly r
     nights = np.array([swap_multiplier(d.astype(object)) for d in dates], float)
     accrual = rate * nights[:, None] / 365.0
+    spot = r - np.vstack([np.zeros((1, N)), accrual[:-1]])
+    _refuse_nonpositive(spot)
     kind = "planted" if v_m else "null"
     return LabPath(spec, kind, **_frozen(
-        dates=dates, sigma=sigma, y=y, r=r, spot=r - accrual, accrual=accrual, rate=rate, m=m,
+        dates=dates, sigma=sigma, y=y, r=r, spot=spot, accrual=accrual, rate=rate, m=m, truth=truth,
         fac=fac, idio=idio, wf=wf, we=we, loadings=b, jumps=jumps, gap=gap, tom=tom,
         season_dir=season_dir), scale=scale, diff_scale=diff_scale)
 
 
+def _refuse_nonpositive(spot: np.ndarray) -> None:
+    """Prices compound spot, so a spot return <= -1 would take a price to or below zero."""
+    if (spot <= -1.0).any():
+        raise ValueError("a spot return <= -1 was drawn: lower ann_vol, jump_sd or rate_sd")
+
+
 def permuted(path: LabPath, seed: int = 0) -> LabPath:
     """Whole days shuffled, every instrument together, then one random sign per day. Rates,
-    dates and the calendar keep their order; the grader charges financing on its own path."""
+    dates, the calendar and `truth` keep their order: the oracle reads planted's schedule, now
+    unapplied, and the grader charges financing on its own path."""
     rng = np.random.default_rng([path.spec.seed, 31337, seed])
     order, flip = rng.permutation(len(path.dates)), rng.choice((-1.0, 1.0), size=len(path.dates))
 
@@ -238,7 +269,9 @@ def permuted(path: LabPath, seed: int = 0) -> LabPath:
         return a[order] * (flip if a.ndim == 1 else flip[:, None])
 
     r = signed(path.r)
+    spot = r - np.vstack([np.zeros((1, r.shape[1])), path.accrual[:-1]])
+    _refuse_nonpositive(spot)
     return replace(path, kind="permuted", **_frozen(
-        sigma=path.sigma[order], y=signed(path.y), r=r, spot=r - path.accrual, m=signed(path.m),
+        sigma=path.sigma[order], y=signed(path.y), r=r, spot=spot, m=signed(path.m),
         fac=signed(path.fac), idio=signed(path.idio), wf=path.wf[order], we=path.we[order],
         jumps=signed(path.jumps), gap=signed(path.gap)))

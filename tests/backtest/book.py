@@ -165,7 +165,8 @@ class PositionModel:
         return ClosedTrade(entry_ts=pos.entry_ts, exit_ts=ts,
                            pnl=(gross - friction + carry) * to_acct,
                            strategy_type=pos.strategy_type, regime=pos.regime,
-                           notional_usd=pos.size_units * Decimal(str(pos.entry_price)) * to_acct)
+                           notional_usd=pos.size_units * Decimal(str(pos.entry_price)) * to_acct,
+                           friction=friction * to_acct, carry=carry * to_acct)
 
     def unrealised(self, book: BookState) -> Decimal:
         total = Decimal("0")

@@ -39,24 +39,23 @@ def rung_tag(stress: float, floor: float) -> str:
 
 
 def decompose(rows: list[dict]) -> dict:
-    """Split the 1x result into direction and friction — the number the ladder exists for.
-    Net PnL is linear in the stress multiplier for a FIXED trade set, so the least-squares slope
-    over the rungs estimates the 1x friction and the gross PnL before cost. Selection also moves
-    with cost, so it is an estimate, not an identity: is the result priced by cost or direction?"""
-    pts = [(r["cost_stress"], float(r["net_pnl"])) for r in rows if not r["spread_floor"]]
-    if len(pts) < 2:
+    """Split the 1x result into direction, friction and carry EXACTLY — the number the ladder
+    exists for. Every graded trade carries the C8 friction and the financing it was charged
+    (audit R11I-01), so net = direction - friction + carry at 1x, per strategy too, with no
+    estimate. The old least-squares slope over the rungs assumed a FIXED trade set; the rungs of
+    2026-09-29 traded 1,690 / 1,568 / 665 / 548 times, so it measured selection, not friction.
+    A row without per-trade friction (a pre-R11I-01 ladder) gets no split at all."""
+    one = next((r for r in rows if r["cost_stress"] == 1.0 and not r["spread_floor"]), None)
+    if one is None or "friction" not in one:
         return {}
-    n = len(pts)
-    sx, sy = sum(x for x, _ in pts), sum(y for _, y in pts)
-    denom = n * sum(x * x for x, _ in pts) - sx * sx
-    if not denom:
-        return {}
-    slope = (n * sum(x * y for x, y in pts) - sx * sy) / denom
-    net_1x = dict(pts).get(1.0)
-    friction_1x = -slope
-    return {"friction_per_1x": friction_1x,
-            "gross_pnl_1x": (net_1x + friction_1x) if net_1x is not None else None,
-            "friction_share_of_1x": (abs(friction_1x) / abs(net_1x)) if net_1x else None}
+    net, friction, carry = float(one["net_pnl"]), float(one["friction"]), float(one["carry"])
+
+    def split(net: float, friction: float, carry: float) -> dict:
+        return {"net": net, "friction": friction, "carry": carry, "direction": net + friction - carry}
+    return {**{f"{k}_1x": v for k, v in split(net, friction, carry).items()},
+            "friction_share_of_loss_1x": friction / -net if net < 0 else None,
+            "per_strategy_1x": {k: split(float(v["net_pnl"]), float(v["friction"]), float(v["carry"]))
+                                for k, v in one.get("per_strategy", {}).items()}}
 
 
 def verdict(rows: list[dict], bar: float) -> str:
@@ -79,11 +78,11 @@ def verdict(rows: list[dict], bar: float) -> str:
         # a ratio of two losses is not a "fraction kept" — 115% of a loss means it GREW by 15%
         tail = (f"net PnL {n1:,.2f} at 1x is ALREADY A LOSS before stressing; "
                 f"{bar:g}x deepens it by a further {n1 - n2:,.2f}")
-    share = decompose(rows).get("friction_share_of_1x")
-    if share is not None:
-        tail += f", and friction is only ~{share:.0%} of it — the rest is direction"
-    return (f"NO EDGE TO STRESS: §14 fails at 1x already ({tail}) — no cost calibration and no "
-            "venue choice can rescue this")
+    d = decompose(rows)
+    if d:
+        tail += (f"; exactly, at 1x: direction {d['direction_1x']:+,.2f}, friction {d['friction_1x']:,.2f}, "
+                 f"carry {d['carry_1x']:+,.2f}")
+    return f"NO EDGE TO STRESS: §14 fails at 1x already ({tail})"
 
 
 def ladder_document(*, kind: str, account: str, folds: int, days: int, bar: float, quick: bool,

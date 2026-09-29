@@ -87,22 +87,40 @@ def ewmac_sharpe(v_m: float, phi: float, other: float, fast: int, slow: int) -> 
     return sign_rule_sharpe(SQ2PI * cov / math.sqrt(var_x), v_m + other)
 
 
-def pooled_ewmac_sharpe(v_m: float, phi: float, other: float, rho: float, n: int,
+def pooled_ewmac_sharpe(v_m: float, phi: float, other: float, common: float, n: int,
                         fast: int, slow: int) -> float:
-    """The annual Sharpe of the equal-risk pool of n instruments each running EWMAC fast/slow on
-    an independent planted trend, under one common noise factor of correlation rho: the
-    per-instrument Sharpe times sqrt(n / (1 + (n-1)·rho_pnl)). The sign-rule P&L correlation
-    follows the arcsine law, rho_pnl = (2/pi)·asin(rho_X)·rho/(v_m + other), with rho_X the
-    correlation of two instruments' crossover signals (R1-C §2.8)."""
+    """The annual Sharpe of the equal-weight pool of n instruments, each holding sign(EWMAC
+    fast/slow) of its own y on an independent planted trend: the per-instrument Sharpe times
+    sqrt(n / (1 + (n-1)·rho_pnl)). `common` is |Cov(noise_i, noise_j)| (LabSpec.common: the
+    factor's share of the diffusive part only). The sign-rule P&L correlation follows the
+    arcsine law, rho_pnl = (2/pi)·asin(rho_X)·common/(v_m + other), with rho_X the correlation of
+    two instruments' crossover signals (R1-C §2.8, corrected by audit R11I-04)."""
     w = ewmac_weights(fast, slow, int(12 * slow) + 50)
     double, acc = 0.0, 0.0
     for j in range(len(w)):
         acc = phi * (acc + (w[j - 1] if j else 0.0))
         double += w[j] * (w[j] + 2.0 * acc)
     wsq = float(np.sum(w * w))
-    rho_x = rho * wsq / (other * wsq + v_m * double)
-    rho_pnl = (2.0 / math.pi) * math.asin(rho_x) * rho / (v_m + other)
+    rho_x = common * wsq / (other * wsq + v_m * double)
+    rho_pnl = (2.0 / math.pi) * math.asin(rho_x) * common / (v_m + other)
     return ewmac_sharpe(v_m, phi, other, fast, slow) * math.sqrt(n / (1.0 + (n - 1) * rho_pnl))
+
+
+def tail_index(nu: float, garch: tuple[float, float]) -> float:
+    """The model's tail index for returns: min(nu, the GARCH(1,1) Kesten root alpha with
+    E[(a·y² + b)^(alpha/2)] = 1, y a unit-variance t(nu)). The multi-scale log-vol factor has
+    every moment, so it keeps the index (Breiman). Estimated on 400,000 fixed draws; a Hill
+    estimate at one cutoff is biased and is not this (audit E-R11-03)."""
+    a, b = garch
+    if a == 0.0:
+        return nu
+    rng = np.random.default_rng(0)
+    y2 = rng.standard_normal(400_000) ** 2 * (nu - 2.0) / rng.chisquare(nu, 400_000)
+    root = lambda al: float(np.mean((a * y2 + b) ** (al / 2.0))) - 1.0
+    hi = min(nu, 60.0)
+    if root(hi) < 0.0:
+        return nu                     # the Kesten root lies above nu: the shock's tail binds
+    return min(nu, solve_increasing(lambda al: root(al), 0.0, 1e-6, hi))
 
 
 def detection_power(sharpe: float, years: float, alpha: float = 0.05) -> float:

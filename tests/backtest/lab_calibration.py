@@ -9,6 +9,13 @@ Mental model:
   * B0 holds only if (a) the planted detection rate is within 2 se of the power its theory Sharpe
     implies at this length (lab_theory.detection_power), and (b) the null's false-detect rate is
     at most alpha + 2 se. The se is binomial at the rate theory predicts.
+  * THE RULE MATCHES ITS THEORY. `ewmac_pool` holds sign(EWMAC) of each instrument's y (returns
+    in volatility units) with equal weights, exactly the premise of pooled_ewmac_sharpe. A rule
+    that estimates volatility realises ~4% less and needs its own theory (audit R11I-04).
+  * DECLARED ERROR RATES (audit R11I-03). A correct lab still fails (a) about 4.6% of the time and
+    (b) about 2.3%. At the declared block of B0_N = 2,000 seeds (1..2,000), the band resolves a
+    miscalibration of about ±5% in pooled Sharpe. The block is fixed here and never re-drawn to
+    clear a failure: a re-seed is a forking path.
   * Where the rest of B0 lives: (c) a leaky oracle refused by structure is the leakage suite
     (GAP-P12D-65); (e) planted variance-matched to its null is pinned in both generators; (d) the
     research simulator equal to the engine on lab tapes arrives with R1.3 and R1.6. The verdict
@@ -39,21 +46,23 @@ def one_sided_t(alpha: float = 0.05) -> Detector:
     return lambda pnl: bool(pnl.mean() / pnl.std(ddof=1) * math.sqrt(pnl.size) > crit)
 
 
-def ewmac_pool(fast: int = 16, slow: int = 64, vol_span: int = 36) -> Rule:
-    """sign(EWMA_fast - EWMA_slow) of each instrument's cumulative return, sized to equal risk by
-    an EWMA variance estimate, pooled with equal weights; decided from data up to t-1."""
-    a_f, a_s, a_v = 2 / (fast + 1), 2 / (slow + 1), 2 / (vol_span + 1)
+B0_N = 2000                    # the declared seed block: 1..B0_N
+B0_SEEDS = range(1, B0_N + 1)
+
+
+def ewmac_pool(fast: int = 16, slow: int = 64) -> Rule:
+    """sign(EWMA_fast - EWMA_slow) of each instrument's cumulative y, pooled with equal weights and
+    decided from data up to t-1: the premise of lab_theory.pooled_ewmac_sharpe."""
+    a_f, a_s = 2 / (fast + 1), 2 / (slow + 1)
 
     def rule(path: LabPath) -> np.ndarray:
-        r = path.r
-        cum = np.cumsum(r, axis=0)
-        ef, es = np.zeros(r.shape[1]), np.zeros(r.shape[1])
-        var, out = np.mean(r[:60] ** 2, axis=0), np.empty(len(r))
-        for t in range(len(r)):
-            out[t] = np.mean(np.sign(ef - es) / np.sqrt(var) * r[t])
+        y = path.y
+        cum = np.cumsum(y, axis=0)
+        ef, es, out = np.zeros(y.shape[1]), np.zeros(y.shape[1]), np.empty(len(y))
+        for t in range(len(y)):
+            out[t] = np.mean(np.sign(ef - es) * y[t])
             ef += a_f * (cum[t] - ef)
             es += a_s * (cum[t] - es)
-            var += a_v * (r[t] ** 2 - var)
         return out
     return rule
 
@@ -70,6 +79,16 @@ class Calibration:
     @property
     def theory_power(self) -> float:
         return detection_power(self.theory_sharpe, self.years, self.alpha)
+
+    @property
+    def implied_sharpe_gap(self) -> float:
+        """The planted rate read back as a Sharpe through the same sampling law, relative to the
+        theory Sharpe: (Phi^-1(rate) + z_alpha)/sqrt(years)/theory - 1. Reported, not gated: it
+        is the quantity an equivalence-test B0 would bound (audit E-R11-01, an owner decision)."""
+        unit = NormalDist()
+        rate = min(max(self.planted_hits / self.n, 1e-9), 1 - 1e-9)
+        implied = (unit.inv_cdf(rate) + unit.inv_cdf(1 - self.alpha)) / math.sqrt(self.years)
+        return implied / self.theory_sharpe - 1.0 if self.theory_sharpe else float("nan")
 
     def failures(self) -> list[str]:
         out = []
@@ -96,7 +115,8 @@ def calibrate(rule: Rule, spec: LabSpec, effect: Effect, theory_sharpe: float, s
     detect = detector or one_sided_t(alpha)
     null_hits = planted_hits = n = 0
     for seed in seeds:
-        null_hits += detect(rule(distort(generate(replace(spec, seed=seed))))[burn:])
-        planted_hits += detect(rule(distort(generate(replace(spec, seed=seed, effect=effect))))[burn:])
+        this = replace(spec, seed=seed, effect=effect)
+        null_hits += detect(rule(distort(generate(this, null=True)))[burn:])
+        planted_hits += detect(rule(distort(generate(this)))[burn:])
         n += 1
     return Calibration(theory_sharpe, (spec.days - burn) / YEAR, alpha, n, null_hits, planted_hits)

@@ -10,7 +10,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from tests.backtest.lab_calibration import Calibration, calibrate, ewmac_pool
+from tests.backtest.lab_calibration import B0_SEEDS, Calibration, calibrate, ewmac_pool
 from tests.backtest.lab_market import Effect, LabSpec
 from tests.backtest.lab_theory import (ar_phi, drift_variance_for, ewmac_sharpe, oracle_sharpe,
                                        pooled_ewmac_sharpe, solve_increasing)
@@ -25,20 +25,21 @@ def _planted() -> tuple[Effect, float]:
     v_m = solve_increasing(lambda v: ewmac_sharpe(v, phi, other, 16, 64), TARGET, 1e-9, 5.0)
     effect = Effect(trend_sharpe=oracle_sharpe(v_m, other), trend_halflife=HALFLIFE)
     assert drift_variance_for(effect.trend_sharpe, other) == pytest.approx(v_m, rel=1e-9)
-    return effect, pooled_ewmac_sharpe(v_m, phi, other, SPEC.rho, SPEC.n_inst, 16, 64)
+    return effect, pooled_ewmac_sharpe(v_m, phi, other, SPEC.common, SPEC.n_inst, 16, 64)
 
 
 def _demeaned(path):
     """GAP-P12D-91's defect re-applied: every instrument's path pinned to a zero sum."""
-    return replace(path, r=path.r - path.r.mean(axis=0))
+    return replace(path, y=path.y - path.y.mean(axis=0))
 
 
 def test_b0_holds_on_the_lab_detection_at_theory_power_and_the_null_at_alpha() -> None:
     effect, theory = _planted()
-    assert theory == pytest.approx(0.828, abs=0.03)                  # R1-C's pooled theory
-    cal = calibrate(ewmac_pool(), SPEC, effect, theory, range(1, 401))
+    assert theory == pytest.approx(0.8555, abs=0.002)                # audit R11I-04; Monte Carlo 0.8569 +- 0.0096
+    cal = calibrate(ewmac_pool(), SPEC, effect, theory, B0_SEEDS)
     assert cal.holds, cal.failures()
-    assert cal.theory_power == pytest.approx(0.40, abs=0.03)
+    assert cal.theory_power == pytest.approx(0.4155, abs=0.002) and cal.n == 2000
+    assert abs(cal.implied_sharpe_gap) < 0.05, cal.implied_sharpe_gap      # reported: ~5% resolution at n = 2000
 
 
 def test_b0_fails_on_a_bridged_lab_its_power_is_lost() -> None:

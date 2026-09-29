@@ -6,9 +6,11 @@ Mental model:
   * TICKS. `LabTickSource.load` yields each FX day's published quotes (lab_intraday), mid =
     the previous close · (1 + the running sum of the day's increments), bid/ask = mid ∓ spread/2.
     The day's last mid is the daily close, so the tick tape and the daily bars are one path.
-  * TRUTH (C-5). `truth(instrument, ts)` is the planted drift in force on ts's FX day: fixed at
-    the day's open, never the next day's. The oracle reads its sign; `detection_power`
-    (lab_theory) states the power a grade has at its length.
+  * TRUTH (C-5). `truth(instrument, ts)` is planted's drift in force on ts's FX day: fixed at
+    the day's open, never the next day's, and the SAME on every kind (null and permuted carry it
+    unapplied), so an oracle reading its sign trades the same days everywhere and only planted
+    pays it. `detection_power` (lab_theory) states the power in VOLATILITY units, i.e. for P&L
+    sized by the true sigma; a fixed-notional grade in price units earns ~10% less.
   * FINANCING (C-6). `rate_table` hands the lab's own rate differentials to the harness's
     RateTable / make_financing, and the lab's accrual uses the harness's rollover calendar, so a
     financed long on the null earns nothing but the broker fee. With `financing=False` the rates
@@ -34,6 +36,7 @@ from tests.backtest.lab_intraday import DayTicks, day_bounds, intraday
 from tests.backtest.lab_market import LabPath
 
 QUOTE = "USD"                  # every lab instrument is quoted in a currency whose rate is zero
+LAB_SWAP_CONVENTION = "tom_next"   # lab_market's accrual calendar: carry.swap_multiplier's default
 _KEEP_DAYS = 4                 # intraday days cached: the harness streams one instrument at a time
 
 
@@ -85,11 +88,11 @@ class LabTickSource(TickSource):
                               book=None, provider=self.name, raw_payload={})
 
     def truth(self, instrument: str, ts: datetime) -> float:
-        """The planted drift (vol units) in force on ts's FX day; 0.0 everywhere on the null."""
+        """Planted's drift (vol units) in force on ts's FX day, whatever the path's kind."""
         t = bisect.bisect_right(self._opens, ts) - 1
         if t < 0 or ts >= day_bounds(self.path.dates[t].astype(object))[1]:
             raise ValueError(f"{ts.isoformat()} is not inside a lab trading day")
-        return float(self.path.m[t, self._index[instrument]])
+        return float(self.path.truth[t, self._index[instrument]])
 
     def rate_table(self) -> RateTable:
         """C-6: each instrument's base currency carries its rate differential (% p.a.), the
@@ -103,9 +106,12 @@ class LabTickSource(TickSource):
 
 def lab_config(cfg: AcisConfig, names: Sequence[str], template: str = "EUR_USD") -> AcisConfig:
     """C-7: a test-only config whose enabled instruments are exactly the lab's, each a copy of
-    `template`'s declared spec (C8 costs, max_plausible_spread, swap convention, calendar)."""
+    `template`'s declared spec (C8 costs, max_plausible_spread, calendar). The swap convention is
+    the LAB's (`tom_next`, the calendar its accrual uses), never the template's: one financing
+    calendar (audit E-R11-06)."""
     spec = cfg.instruments.instruments[template]
-    lab = {n: spec.model_copy(update={"enabled": True, "base_ccy": n.split("_")[0], "quote_ccy": QUOTE})
+    lab = {n: spec.model_copy(update={"enabled": True, "base_ccy": n.split("_")[0], "quote_ccy": QUOTE,
+                                      "swap_convention": LAB_SWAP_CONVENTION})
            for n in names}
     real = {s: sp.model_copy(update={"enabled": False}) for s, sp in cfg.instruments.instruments.items()}
     return cfg.model_copy(update={"instruments": cfg.instruments.model_copy(

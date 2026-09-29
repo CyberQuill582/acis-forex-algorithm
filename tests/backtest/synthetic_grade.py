@@ -134,6 +134,8 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
             # every trade carries a strategy, so the per-strategy slices partition the book:
             # their net PnLs sum to the run's net PnL exactly (Decimal, no re-derivation)
             "net_pnl": str(sum((v.net_pnl for v in report.per_strategy.values()), Decimal("0"))),
+            "friction": str(sum((v.friction for v in report.per_strategy.values()), Decimal("0"))),
+            "carry": str(sum((v.carry for v in report.per_strategy.values()), Decimal("0"))),
             "dsr": report.deflated_sharpe, "trials": report.trial_count,
             # the per-trade SR0 the ratified gate demands of this run's selection (audit E4: a
             # HURDLE; the DSR's own trial filter and N, deflated_sharpe.sharpe_threshold)
@@ -141,8 +143,9 @@ def grade(spec: MarketSpec, out: Path, account: str, folds: list[Fold], root: Pa
                                             for s in r.get("trial_sharpes", ()) if s is not None],
                                            report.trial_count),
             "champions": [r["champions"] for r in report.in_sample_evolution],
-            "per_strategy": {k: {"n_trades": v.n_trades, "net_pnl": str(v.net_pnl),
-                                 "win_rate": v.win_rate, "profit_factor": v.profit_factor}
+            "per_strategy": {k: {"n_trades": v.n_trades, "net_pnl": str(v.net_pnl), "friction": str(v.friction),
+                                 "carry": str(v.carry), "win_rate": v.win_rate, "profit_factor": v.profit_factor,
+                                 "avg_duration_s": v.avg_duration_s}
                              for k, v in report.per_strategy.items()},
             "failed": sorted(k for k, ok in report.targets_met.items() if not ok),
             # every clause of `passed` but the trial count and the DSR (audit E2): empty while

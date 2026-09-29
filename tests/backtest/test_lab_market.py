@@ -8,6 +8,9 @@ import math
 import numpy as np
 import pytest
 
+from dataclasses import replace
+
+from tests.backtest.lab_intraday import intraday
 from tests.backtest.lab_market import Effect, LabSpec, calendar, generate, permuted
 from tests.backtest.lab_theory import (YEAR, ar_phi, drift_variance_for, ewmac_sharpe,
                                        ewmac_weights, oracle_sharpe)
@@ -62,6 +65,10 @@ def test_planted_is_the_nulls_noise_plus_the_drift_times_one_exact_scale() -> No
     assert planted.kind == "planted"
     assert planted.scale ** 2 * (v_m + spec.other) == pytest.approx(spec.other, rel=1e-12)
     assert np.allclose(planted.y / planted.scale - planted.m, null.y, rtol=0, atol=1e-12)
+    unapplied = generate(spec, null=True)                        # the tick generator's contract (R11I-05)
+    assert unapplied.kind == "null" and unapplied.scale == 1.0 and not unapplied.m.any()
+    assert np.array_equal(unapplied.y, null.y) and np.array_equal(unapplied.truth, planted.truth)
+    assert np.array_equal(planted.truth, planted.m) and planted.truth.any()
 
 
 def test_the_null_is_a_martingale_and_the_old_bridge_is_caught() -> None:
@@ -96,6 +103,7 @@ def test_permuting_keeps_every_day_and_its_cross_section_and_is_a_martingale() -
     rows = lambda a: sorted(map(tuple, np.round(np.abs(a), 15)))
     assert rows(perm.r) == rows(base.r) and not np.array_equal(perm.r, base.r)
     assert np.array_equal(perm.accrual, base.accrual) and np.array_equal(perm.dates, base.dates)
+    assert np.array_equal(perm.truth, base.truth)                # planted's schedule, unapplied
     moves = []
     for seed in range(20):
         moves.extend(_momentum(permuted(generate(LabSpec(seed=seed, days=705))).y, 126))
@@ -117,7 +125,7 @@ def test_each_effect_delivers_its_stated_sharpe(name) -> None:
                 "trend": {"oracle": 0.5,
                           "ewmac": ewmac_sharpe(drift_variance_for(0.5, other), ar_phi(60), other, 16, 64)},
                 "carry": {"carry": 0.5}, "xsmom": {"oracle": 0.5}, "season": {"season": 0.5}}[name]
-    rules = {"oracle": lambda p: np.sign(p.m), "ewmac": lambda p: _ewmac(p.y, 16, 64),
+    rules = {"oracle": lambda p: np.sign(p.truth), "ewmac": lambda p: _ewmac(p.y, 16, 64),
              "carry": lambda p: np.sign(p.rate),
              "season": lambda p: p.tom[:, None] * p.season_dir * np.ones_like(p.y)}
     realised: dict[str, list[float]] = {}
@@ -153,4 +161,18 @@ def test_a_bad_spec_is_refused() -> None:
         LabSpec(garch=(0.2, 0.85))
     with pytest.raises(ValueError, match="trend_scope"):
         Effect(trend_scope="sector")
+    for bad in (dict(ann_vol=(0.0, 0.1)), dict(ann_vol=(0.1, 1.6)), dict(rate_sd=0.6)):
+        with pytest.raises(ValueError, match="FX-like"):
+            LabSpec(**bad)
     assert not generate(LabSpec(seed=1, days=400, financing=False)).rate.any()
+
+
+def test_a_spot_return_at_or_below_minus_one_is_refused_daily_and_intraday() -> None:
+    """R11I-11: prices compound SPOT, so spot is what is checked, and so is the intraday level."""
+    with pytest.raises(ValueError, match="spot return <= -1"):
+        generate(LabSpec(seed=1, ann_vol=(0.99, 0.99), jumps_per_year=1.0, jump_sd=10.0))
+    path = generate(LabSpec(seed=1, days=400))
+    wild = replace(path, sigma=path.sigma * 400.0)
+    with pytest.raises(ValueError, match="reach zero"):
+        for t in range(400):
+            intraday(wild, t)

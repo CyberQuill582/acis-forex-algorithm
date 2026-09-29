@@ -47,6 +47,7 @@ from tests.backtest.data_loader import TickSource
 
 UTC = timezone.utc
 KINDS = ("null", "planted", "permuted")
+MIN_EPISODE_TICKS = 10         # the no-foresight oracle keeps >= 1 - 1/10 of oracle_sharpe
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,9 @@ class MarketSpec:
             raise ValueError("days must be positive and tick_seconds must divide a day")
         if self.oracle_sharpe < 0 or self.match_seconds <= 0 or self.match_seconds % self.tick_seconds:
             raise ValueError("oracle_sharpe must be >= 0 and match_seconds a positive multiple of tick_seconds")
+        if self.kind == "planted" and round(self.episode_hours[0] * 3600 / self.tick_seconds) < MIN_EPISODE_TICKS:
+            raise ValueError(f"the shortest planted episode is under {MIN_EPISODE_TICKS} ticks: an oracle that "
+                             "knows only the episode in force would lose its edge at the boundaries (R11I-09)")
 
     @property
     def end(self) -> datetime:
@@ -84,8 +88,11 @@ class MarketSpec:
 
     @property
     def drift_sigma(self) -> float:
-        """The planted drift per step in step σ. The oracle holding the episode's sign earns it on
-        every step, iid given the schedule, so its annual Sharpe is drift_sigma·√(252·ticks/day)."""
+        """The planted drift per step in step σ, so that an oracle holding each step's own episode
+        sign earns drift_sigma·√(252·ticks/day) = oracle_sharpe a year (252 weekdays). The built
+        oracle knows only the episode IN FORCE (no foresight) and is wrong on the first step after
+        a sign change, so it earns about oracle_sharpe·(1 - 2p), p the share of steps that change
+        sign: 9.98 at 20 s ticks, 9.66 at 300 s (audit R11I-09; hence MIN_EPISODE_TICKS)."""
         return self.oracle_sharpe / math.sqrt(252 * self.ticks_per_day)
 
     def weekdays(self) -> int:
