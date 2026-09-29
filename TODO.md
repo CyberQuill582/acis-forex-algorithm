@@ -32,9 +32,9 @@
 1. **The R1 build** (PLAN_R1 §2; the spec is now ready). ~~ASK the owner FIRST: build in-session, or launch a builder agent?~~ **ANSWERED 2026-09-29: "In this session".** R1.1 is built in the main session; no builder agent. Any later launch still needs the owner's explicit go. Then:
    - **R1.1 — the lab:**
      - [x] 2026-09-29 the generator fix (demean nothing), [[GAP-P12D-91]] — FIXED in the tick generator;
-     - [x] 2026-09-29 variance-matched planting at the decision horizon and a price-unit null, [[GAP-P12D-90]] FIXED, [[GAP-P12D-117]] MITIGATED (ACIS-09 C-BT-12). In the TICK generator: oracle Sharpe 10 (was ~157), a model-exact match at one weekday, arithmetic prices. The daily lab (C-3) must do the same;
-     - [ ] the daily-first lab, C-3 (four modules of ≤ 300 lines; R1-C's `gen_lab.py` is the prototype, numpy, which §16 already names), plus C-5 truth API, C-6 synthetic rates, C-7 cost shim, C-8 stylized-facts gate, C-10 hygiene law;
-     - [ ] joint bridges, [[GAP-P12D-92]] (C-4);
+     - [x] 2026-09-29 variance-matched planting at the decision horizon and a price-unit null, [[GAP-P12D-90]] and [[GAP-P12D-117]] FIXED (ACIS-09 C-BT-12), in the TICK generator (oracle Sharpe 10, was ~157; a model-exact match at one weekday; compounded simple returns) and in the daily lab (below);
+     - [x] 2026-09-29 the daily-first lab, C-3, built in-session: `tests/backtest/lab_theory.py` (closed forms + power), `lab_market.py` (generate / permuted), `lab_intraday.py` (C-4), `lab_source.py` (the harness TickSource, C-5 truth, C-6 rate table, C-7 `lab_config`); C-8 stylized-facts gate `test_lab_stylized.py`; C-10 hygiene `test_lab_hygiene.py`. 36 lab tests; numpy added to the dev dependencies and CI (named in §16). Every test ran on the Google compute server (full suite 1,046 passed in 29 s);
+     - [x] 2026-09-29 joint bridges, [[GAP-P12D-92]] FIXED (C-4);
      - [ ] the B0 calibration machinery, [[GAP-P12D-105]];
      - [x] 2026-09-29 re-stating every recorded synthetic verdict, [[GAP-P12D-124]] FIXED, on the Google compute server: RUNGS 0.18 / 0.19; the ladder HOLDS (~98% direction); TREND and BREAKOUT no longer capture the edge; the full falsification's stage 1 passes and the engine fails planted ([[GAP-P12D-49]], [[GAP-P12D-31]]).
    - **R1.2 — register v2:** the daily return vector, the search-space hash, origin/cutoff and the cycle-order row ([[GAP-P12D-98]]).

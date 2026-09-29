@@ -226,7 +226,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-117: the synthetic-lab law has two holes — the variance match names no horizon, and the ±1-sign null has zero edge only in log units
 - Severity: medium-high · Likelihood: certain
-- Status: mitigated (2026-09-29 — both holes closed in the TICK generator, the only generator that exists; the daily-first lab, R1.1 C-3, is not built yet and must close them too. First raised 2026-09-25 by the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Status: fixed (2026-09-29 — both holes closed in the tick generator AND in the daily-first lab, R1.1 C-3, built the same day. First raised 2026-09-25 by the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
 - Area: ACIS-09 v1.7 C-BT-12, tests/backtest/synthetic_market.py
 - Description: the confounded generator passes "1 ± 0.05" at its 20 s step (1.023) while its daily ratio is 14.7; and exp-built prices give a long-biased rule σ²/2 a day (SR +0.31 at NATGAS-like volatility) (archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E3, E7, seeded).
 - Justification: mitigated. Disposition: C10: match at the decision horizon by construction; flip arithmetic increments, or add antithetic paths; add a price-unit null test. APPLIED to the spec: the owner ratified the triage 2026-09-25 ("Ratify all"); the spec is corrected in master v2.22 and the deep specs.
@@ -237,7 +237,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - a simple return ≤ −1 is refused, never floored.
   - **For the daily lab (C-3):** R1-C's prototype builds the mid as the exponential of the cumulative return, which is exactly this hole. It takes the same compounded-simple-return law, which stays positive at any volatility the lab uses.
 - Proof: `test_prices_compound_simple_returns_so_a_long_bias_earns_nothing_in_price_units` (the identity mid_k = mid_(k-1)·(1 + r_k); a buy-and-hold's price P&L centres on 0 over 2,000 paths at 2% daily vol; the same draws built as exp(Σ) earn σ²T/2 more, at t > 10), `test_a_simple_return_at_or_below_minus_one_is_refused`, `test_planted_matches_the_null_variance_exactly_at_the_decision_horizon`. The first cut's tests are former `test_prices_are_arithmetic_so_a_long_bias_earns_nothing_in_price_units` and former `test_a_path_that_would_cross_zero_is_refused`.
-- Residual: GAP-P12D-117 — this entry still owns both holes for the daily lab, R1.1 C-3.
+- Residual: none — the daily lab (`tests/backtest/lab_market.py`) takes the same law: prices compound the zero-mean simple return; the planted market's MODEL variance of y over the decision horizon (one weekday) equals the null's by construction (scale² · (Var m + other) = other, common random numbers); the permuted control flips whole days' arithmetic increments. Proof there: `test_planted_is_the_nulls_noise_plus_the_drift_times_one_exact_scale`, `test_a_long_bias_earns_nothing_in_price_units_on_either_null` (the same draws built as exp(sum r), R1-C's prototype law, earn the convexity at t > 10), `test_permuting_keeps_every_day_and_its_cross_section_and_is_a_martingale`.
 - Linked: [[GAP-P12D-90]], [[GAP-P12D-91]], [[GAP-P12D-103]], [[GAP-P12D-124]]
 
 ## GAP-P12D-116: the TREND family's "MOP-2012 12-month sign" baseline points to a 3-horizon SPOT vote, not MOP's 12-month EXCESS-return sign
@@ -466,10 +466,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-92: any intraday refinement of correlated daily bars must bridge the common factor jointly — independent bridges plant a spurious lead-lag/pairs edge (t 6–9)
 - Severity: medium · Likelihood: medium
-- Status: open [impl] (2026-09-25 — from PLAN_R1 §9 #4, R1-C's own simulation; a DESIGN constraint on the proposed lab, C-4, not a defect of the current generator)
+- Status: fixed (2026-09-29, R1.1 C-4: `tests/backtest/lab_intraday.py` bridges one common factor plus one idiosyncratic shock per instrument, each pinned to its own daily endpoint, on the FX day (17:00 New York to 17:00 New York via `core/data/fx_clock`). First raised 2026-09-25 from PLAN_R1 §9 #4, R1-C's own simulation, as a DESIGN constraint on the lab)
 - Area: the R1.1 synthetic lab (tick tapes derived from daily factor bars)
 - Description: bridging each instrument's day independently decorrelates the intraday path from the common factor, which a pairs or lead-lag rule then harvests as a fake edge (t 6.3–8.6 in R1-C's receipt).
 - Justification: open; the lab's C-4 builds one factor bridge plus idiosyncratic bridges, pinned by a no-lead-lag test.
+- Proof: `test_joint_bridges_plant_no_lead_lag_edge_and_independent_ones_would` (R1-C's pairs trap, "long i when its correlated j led it so far", on 1,500 days at rho 0.5: joint |t| < 3, while the same days bridged independently show the spurious edge at t > 4), `test_each_days_ticks_sum_to_its_spot_return_on_every_kind`, `test_the_bridge_is_exact_and_a_zero_pinned_day_is_the_old_defect`.
+- Residual: none — the lab is the only intraday refinement of correlated daily bars in the repo, and it bridges jointly; the tick generator's instruments are independent, so it holds no common factor to split.
 - Linked: [[GAP-P12D-91]]
 
 ## GAP-P12D-91: the synthetic null and permuted markets are bridges — every path is demeaned, and two unit tests encode it
