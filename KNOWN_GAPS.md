@@ -334,10 +334,17 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-105: the applied claim ladder dropped B0, "machinery proven first", which the ratified A6 draft required
 - Severity: high · Likelihood: medium
-- Status: open [impl — spec corrected v2.22; build R1.1/R1.4 (the lab gate)] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Status: mitigated (2026-09-29 — the B0 MACHINERY is built, R1.1: `tests/backtest/lab_calibration.py` measures a detector's null false-detect rate and planted power against theory on the daily lab; not yet wired into the verdict, R1.4. Raised 2026-09-25 by the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
 - Area: master v2.21 §14 rung 1, ACIS-09 C-BT-11 v2
 - Description: R1_LEAD_REVIEW's ratified A6 made rung 1 = B0–B5. The applied text has no lab-calibration precondition, which is the GAP-P12D-37 class: a grader that is itself wrong (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I2).
-- Justification: open. Disposition: C2: restore B0 as a precondition of any real-data verdict. APPLIED to the spec: the owner ratified the triage 2026-09-25 ("Ratify all"); the spec is corrected in master v2.22 and the deep specs. The build is owed; the as-built v2.20 behaviour stands until it lands.
+- Justification: mitigated. Disposition: C2: restore B0 as a precondition of any real-data verdict. APPLIED to the spec: the owner ratified the triage 2026-09-25 ("Ratify all"); the spec is corrected in master v2.22 and the deep specs. The build is owed; the as-built v2.20 behaviour stands until it lands.
+- Built 2026-09-29 (the Google compute server; 400 paths of 2.8 graded years, EWMAC 16/64 pooled over 20 instruments):
+  - **B0 (a) and (b) HOLD on the lab:** planted detection **37.8%** against a theory power of 39.8% (pooled theory Sharpe 0.828, within 2 se); null false-detect **5.5%** (limit alpha + 2 se = 7.2%).
+  - **The check has power:** the same paths demeaned per instrument (GAP-P12D-91's defect) detect the planted trend at **18.2%** and B0 refuses them; a detector that always finds an edge is refused on its false-detect rate.
+  - **Where the rest of B0 lives:** (c) a leaky oracle refused by structure is the leakage suite ([[GAP-P12D-65]]); (e) planted variance-matched to its null is pinned in both generators ([[GAP-P12D-90]], [[GAP-P12D-117]]); (d) the research simulator equal to the engine on lab tapes needs RSIM (R1.3) and the engine reconciliation (R1.6).
+  - **The detector is a placeholder:** the plain one-sided t-test. R1.4's stage-A HAC bound ([[GAP-P12D-121]]) must pass through `calibrate` before it binds.
+- Proof: `test_b0_holds_on_the_lab_detection_at_theory_power_and_the_null_at_alpha`, `test_b0_fails_on_a_bridged_lab_its_power_is_lost`, `test_b0_fails_a_detector_that_always_finds_an_edge`, `test_the_verdict_arithmetic_is_binomial`.
+- Residual: GAP-P12D-105 — still owns wiring B0 into `passed` (R1.4) with all five conditions at the same `recon_commit`, including (d), which waits on R1.3/R1.6.
 - Linked: [[GAP-P12D-37]], [[GAP-P12D-103]]
 
 ## GAP-P12D-104: C-BT-11 v2 redefines `passed`, the field the live gate reads, without the §14 Max DD/SPX gates or C-BT-2/4/7

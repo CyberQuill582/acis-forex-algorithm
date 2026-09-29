@@ -87,6 +87,24 @@ def ewmac_sharpe(v_m: float, phi: float, other: float, fast: int, slow: int) -> 
     return sign_rule_sharpe(SQ2PI * cov / math.sqrt(var_x), v_m + other)
 
 
+def pooled_ewmac_sharpe(v_m: float, phi: float, other: float, rho: float, n: int,
+                        fast: int, slow: int) -> float:
+    """The annual Sharpe of the equal-risk pool of n instruments each running EWMAC fast/slow on
+    an independent planted trend, under one common noise factor of correlation rho: the
+    per-instrument Sharpe times sqrt(n / (1 + (n-1)·rho_pnl)). The sign-rule P&L correlation
+    follows the arcsine law, rho_pnl = (2/pi)·asin(rho_X)·rho/(v_m + other), with rho_X the
+    correlation of two instruments' crossover signals (R1-C §2.8)."""
+    w = ewmac_weights(fast, slow, int(12 * slow) + 50)
+    double, acc = 0.0, 0.0
+    for j in range(len(w)):
+        acc = phi * (acc + (w[j - 1] if j else 0.0))
+        double += w[j] * (w[j] + 2.0 * acc)
+    wsq = float(np.sum(w * w))
+    rho_x = rho * wsq / (other * wsq + v_m * double)
+    rho_pnl = (2.0 / math.pi) * math.asin(rho_x) * rho / (v_m + other)
+    return ewmac_sharpe(v_m, phi, other, fast, slow) * math.sqrt(n / (1.0 + (n - 1) * rho_pnl))
+
+
 def detection_power(sharpe: float, years: float, alpha: float = 0.05) -> float:
     """The power statement (C-5): the chance a one-sided t-test at `alpha` detects a true annual
     Sharpe over `years` of daily returns, Phi(SR·sqrt(years) - z_alpha)."""

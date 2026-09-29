@@ -12,7 +12,8 @@
 > - Two clouds are now in play: AWS as the data server, Google as the compute server. The tick set's AWS copy is restored and verified ([[GAP-P12D-50]]). Read the ☁ TWO-CLOUD block below.
 > - R1.1 has started IN-SESSION (the owner's answer): the tick generator now obeys C-BT-12 ([[GAP-P12D-91]], [[GAP-P12D-90]] fixed; [[GAP-P12D-117]] mitigated). **1016 passed**, ledger 260 entries with 0 violations.
 > - **The governance gate is RED on the constitution v0.10 pin** (pre-existing since 2026-09-25; see the Constitution section).
-> - `oracle.RUNGS` on the falsification tape are still to re-calibrate ([[GAP-P12D-124]] item 1).
+> - **R1.1 is COMPLETE** (the lab, the B0 machinery and the re-statement). C-11, the lab as the data validator's control, is a later phase per PLAN_R1. The full suite on the Google server: **1050 passed, 6 skipped**. Workflow: edit on the laptop, then test on the server with the scratchpad `remote.sh`, which ships the working tree as a bundle plus an overlay. The owner asked that no slow runs happen on the laptop.
+> - **OPEN ASK (2026-09-29): the constitution's two audits of R1.1** (internal-consistency + external-referent, Opus 5, fresh context). They wait on the owner's explicit go. Then comes R1.2.
 
 **State, verified at handover:**
 - `main` is clean and all work is committed.
@@ -35,7 +36,7 @@
      - [x] 2026-09-29 variance-matched planting at the decision horizon and a price-unit null, [[GAP-P12D-90]] and [[GAP-P12D-117]] FIXED (ACIS-09 C-BT-12), in the TICK generator (oracle Sharpe 10, was ~157; a model-exact match at one weekday; compounded simple returns) and in the daily lab (below);
      - [x] 2026-09-29 the daily-first lab, C-3, built in-session: `tests/backtest/lab_theory.py` (closed forms + power), `lab_market.py` (generate / permuted), `lab_intraday.py` (C-4), `lab_source.py` (the harness TickSource, C-5 truth, C-6 rate table, C-7 `lab_config`); C-8 stylized-facts gate `test_lab_stylized.py`; C-10 hygiene `test_lab_hygiene.py`. 36 lab tests; numpy added to the dev dependencies and CI (named in §16). Every test ran on the Google compute server (full suite 1,046 passed in 29 s);
      - [x] 2026-09-29 joint bridges, [[GAP-P12D-92]] FIXED (C-4);
-     - [ ] the B0 calibration machinery, [[GAP-P12D-105]];
+     - [x] 2026-09-29 the B0 calibration machinery, [[GAP-P12D-105]] MITIGATED: `tests/backtest/lab_calibration.py`; B0 (a)+(b) hold on the lab (planted 37.8% vs theory 39.8%, null 5.5%), a bridged lab is refused (18.2%). Wiring into `passed` is R1.4;
      - [x] 2026-09-29 re-stating every recorded synthetic verdict, [[GAP-P12D-124]] FIXED, on the Google compute server: RUNGS 0.18 / 0.19; the ladder HOLDS (~98% direction); TREND and BREAKOUT no longer capture the edge; the full falsification's stage 1 passes and the engine fails planted ([[GAP-P12D-49]], [[GAP-P12D-31]]).
    - **R1.2 — register v2:** the daily return vector, the search-space hash, origin/cutoff and the cycle-order row ([[GAP-P12D-98]]).
    - **R1.3 — rules, RSIM and costs:**

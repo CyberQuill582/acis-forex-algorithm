@@ -1,8 +1,16 @@
 # STATUS — ACIS current state (read first)
 
-**As of 2026-09-25.** One-screen digest. Authoritative sources: `TODO.md` (work queue), `CLAUDE.md` (rules), `KNOWN_GAPS.md` (live ledger). This file summarises them; if it ever disagrees with those, they win — update this.
+**As of 2026-09-29.** One-screen digest. Authoritative sources: `TODO.md` (work queue), `CLAUDE.md` (rules), `KNOWN_GAPS.md` (live ledger). This file summarises them; if it ever disagrees with those, they win — update this.
 
 ## Where we are
+
+> **2026-09-29 digest.** **R1.1, the synthetic lab, is BUILT**, in-session at the owner's choice. Every heavy run now goes to the Google compute server (`acis-compute-1`, TODO ☁ block): the full suite runs there in ~30 s. **1050 passed, 6 skipped** (the skips need real data kept only on the laptop).
+> - **The tick generator** obeys ACIS-09 C-BT-12: nothing demeaned, prices compound zero-mean simple returns, and the planted drift is set from an oracle Sharpe of 10 (it was ~157), variance-matched to the null at one weekday (GAP-P12D-90/91/117).
+> - **The daily-first lab** is new: `tests/backtest/lab_*.py`. It has five plantable effects of known Sharpe, joint intraday bridges (GAP-P12D-92), a harness tick source with one cost, financing and clock model, Cont's stylized facts as its gate, and a structural hygiene law.
+> - **B0 machinery** (GAP-P12D-105): a planted trend is detected at theory power (37.8% against 39.8%) and the null at alpha (5.5%). A bridged lab is refused.
+> - **Every old synthetic verdict was re-stated** on the corrected market (GAP-P12D-124). The engine still loses on its own positive control, ~98% of it direction (GAP-P12D-49/31). But TREND and BREAKOUT no longer capture the edge: their old gains came from a planted edge ~16x too strong.
+> - **The tick set's AWS copy is restored and sha256-verified** (GAP-P12D-50).
+> - **Next:** the constitution's two audits of R1.1 (owner's go), then R1.2 (register v2).
 
 > **2026-09-25 digest.** All three night-run branches are MERGED: the BUILDER branch (oracle control, plateau law), BUILDER-3 (prop-safety tightening, master v2.20) and BUILDER-2 (the structural leakage suite plus the look register, which every real-data grade must write first). **1002 passed, 6 skipped.** The owner RATIFIED the R-1 training direction:
 > - few pooled rules;
