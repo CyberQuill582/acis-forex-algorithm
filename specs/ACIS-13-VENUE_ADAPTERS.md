@@ -3,14 +3,14 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-VENUE-013` |
-| **Version** | 0.2 (2026-09-29 — the three BLOCKING questions ruled and folded in; first venue a Pepperstone cTrader demo) · 0.1 (authored 2026-09-24/25 by SPEC-AUTHOR) |
-| **Status** | **DRAFT — NOT LOCKED.** The BLOCKING rulings are in (OQ-01, OQ-02, OQ-03a, 2026-09-29). Locking needs the `_SPEC_REVIEW_PASS.md` pass (§15.3). Nothing here may be built until it is LOCKED (TODO Track A step 2). |
+| **Version** | 1.0 (**LOCKED** 2026-09-29 — the review pass, §15.3, by the lead) · 0.2 (2026-09-29 — the three BLOCKING questions ruled and folded in; first venue a Pepperstone cTrader demo) · 0.1 (authored 2026-09-24/25 by SPEC-AUTHOR) |
+| **Status** | **LOCKED 2026-09-29** after the review pass (§15.3; the record is the v1.0 changelog). The BLOCKING rulings (OQ-01, OQ-02, OQ-03a) are folded in. Every question left open is a probe or attach-gating, and none blocks the build (TODO Track A step 3). |
 | **Layer / DIR** | Platform adapters — `[DIR:core/data]` (shared transport+auth session, feed face) + `[DIR:core/execution]` (execution face) + `[DIR:scripts]` (the watchdog's cTrader flatten plugin) + `[DIR:tests/integration]` / `[DIR:tests/unit]` |
 | **Consumes** | the cTrader Open API (first adapter); `config/platform_rules.yaml` (the active account's rulebook); `config/instruments.yaml` (enabled universe + §3.7 contract metadata); `config/system_config.yaml` (`active_account` + the new `venue:` block, §6.1); venue credentials from the environment / secret store (never YAML) |
 | **Emits** | `RawTick` → ACIS-01 `MarketStateFactory`; `FillReport` / `BrokerPosition` / `BrokerAccount` / resting stops → ACIS-06 orchestrator and, downward, ACIS-07 Risk; `CapabilityDescriptor` + `AttachReport` → `acis://venues/adapters`; conformance verdicts |
 | **Depends On** | `../ACIS_SPEC.md` §3, §3.5, §3.7, §7.5, §8.5, §8.6, §9, §9.5, §10, §12, §13, §15, §16, §18 · `ACIS-01` (feed-face contract, `RawTick`) · `ACIS-06` §4/§7.5/§8/§9 (`ExecutionFace`, `CapabilityDescriptor`, `FillReport`, `verify_attach`, the conformance suite) · `ACIS-07` (restart reconciliation, platform-measured drawdown) · `ACIS-12` §2–§4 (watchdog plugin surface) |
 | **Blocks** | TODO Track A step 3 (the first real adapter build) and therefore the phase-12 demo run |
-| **Corrections applied** | none yet (v0.1 is the first draft). Corrections C-VEN-1…16 are registered in §13. |
+| **Corrections applied** | C-VEN-1…16 (§13); v1.0: the reconciliation with ACIS-06 v1.3/v1.4 (§5.2, §6.3, §6.5, §7.3), the mode-to-face rule (§7.1 A11), and the evidence re-fetch (Appendix A) |
 | **Ledger IDs served** | GAP-0013 (session = transport+auth only), GAP-0018 (flat-or-decide), GAP-0020 (reconnect/backoff), GAP-P12D-42 (a stop must never be voidable), GAP-P12D-43 (the venue the owner can use), GAP-P12D-57 (lot step, minimum lot, request budget); interfaces to GAP-0075 (position policy), GAP-P12D-55 (restart anchors), GAP-P12D-58 (pre-close ban), GAP-P12D-59 (daily semantics), GAP-P12D-51 (host clock) |
 | **Research base** | `../archive/RESEARCH_PROP_VENUES_2026-09-24.md` §3, §5, §7, §8; primary sources fetched 2026-09-24, quoted in Appendix A |
 
@@ -26,7 +26,7 @@
 **Purpose.** Attach ACIS to a real trading platform through the one master-§7.5 contract, so that the engine can trade a **demo account** (owner directive 2026-09-24) and, later, the owner's prop account on the same platform. The first concrete adapter is the **cTrader Open API**, for three reasons:
 - cTrader is **first in the ratified §7.5 adapter order** after the v1 trio (master §7.5, GAP-0012);
 - it is the platform of both prop firms that pass the automation filter, **FTMO and E8 Markets** (research §6);
-- it serves the **first demo venue** (master v2.23, owner's delegation 2026-09-29): a **Pepperstone cTrader demo** (Pepperstone Markets Kenya, CMA licence 128), which does not expire, unlike the 14-day FTMO Free Trial (§7.2). OANDA v20 is out: it excludes OANDA Global Markets, the division a Kenyan resident onboards to (GAP-P12D-43, re-verified 2026-09-24). The FTMO trial and a paid FTMO account attach later through the same protocol, behind the §15.2 preconditions.
+- it serves the **first demo venue** (master v2.23, owner's delegation 2026-09-29): a **Pepperstone cTrader demo** (Pepperstone Markets Kenya, CMA licence 128), which expires only after 90 days of inactivity (trading or logging in resets it), unlike the 14-day FTMO Free Trial (§7.2) [F-43]. OANDA v20 is out: it excludes OANDA Global Markets, the division a Kenyan resident onboards to (GAP-P12D-43, re-verified 2026-09-24). The FTMO trial and a paid FTMO account attach later through the same protocol, behind the §15.2 preconditions.
 
 cTrader's Open API works for demo and live accounts [F-36], serves every cTrader-affiliated broker's accounts by default [F-36], and is advertised by FTMO for its accounts [F-31].
 
@@ -54,7 +54,7 @@ cTrader's Open API works for demo and live accounts [F-36], serves every cTrader
 4. A position opened by ACIS carries a stop that **the venue** reports, and the stop survives the engine process being killed (§14.2, C-VEN-2).
 5. The watchdog plugin flattens a demo position while the engine is dead (§14.2), or [OQ-06] is ruled.
 6. Every glitch class of §14.3 has a test.
-7. Appendix B's BLOCKING questions are ruled and folded back into this text.
+7. Appendix B's BLOCKING questions are ruled and folded back into this text (done 2026-09-29).
 
 ## 2. Boot/entry contract & inputs
 
@@ -218,20 +218,20 @@ One `submit_order` call returns **one** `FillReport` for the whole venue order. 
 | `supports_ioc` | `True` | `timeInForce = IMMEDIATE_OR_CANCEL` exists [F-35]. That a MARKET order honours it is [OQ-17], proven in conformance. |
 | `account_model` | `"hedging"` if `ProtoOATrader.accountType == HEDGED`; `"netting"` if `NETTED` | `SPREAD_BETTING` is attach-fatal [F-21] |
 | `partial_close` | `True` | `ProtoOAClosePositionReq(positionId, volume)` [F-13] |
-| `min_lot`, `lot_step`, `max_order_lots` | the **strictest** across enabled symbols: max of minima, the coarsest step, min of maxima (in lots of `lot_size_units`) | The descriptor is per venue but cTrader's limits are **per symbol** [F-20]. So the face also enforces the exact per-symbol values at submit, and [OQ-03b] asks ACIS-06 for per-symbol fields. |
+| `min_lot`, `lot_step`, `max_order_lots` | the **strictest** across enabled symbols: max of minima, the coarsest step, min of maxima (in lots of `lot_size_units`) | The descriptor is per venue but cTrader's limits are **per symbol** [F-20]. The orchestrator rounds to these venue-wide values before dispatch (ACIS-06 v1.3 C-EXE-8, `venue_quantity`), and the face enforces the exact per-symbol values at submit, so no per-symbol descriptor field is needed (OQ-03b resolved). |
 | `symbol_map` | `{engine_symbol: venue_name}` from §5.1 | the §13 suffix law, solved once |
 | `quote_depth` | `False` | not subscribed (lean) |
 | `asset_classes` | the classes of the enabled symbols (`{"fx"}` for the demo universe) | |
 | `server_side_stops` | `True` | "server-side protections … remain active after your session ends" [F-16] |
 
-**Adapter-local venue profile**, published on `acis://venues/adapters` next to the descriptor. These fields are not ACIS-06 descriptor fields; adding them there is [OQ-03]:
+**Adapter-local venue profile**, published on `acis://venues/adapters` next to the descriptor. These fields are not ACIS-06 descriptor fields and stay adapter-local: above the face, only the conformance suite's relative-stop variant reads one (ACIS-06 v1.4):
 - `stop_semantics = "relative_on_market"`: an absolute `stopLoss` is "Not supported for MARKET orders", and only `relativeStopLoss` rides on a market order [F-13].
 - `quote_volume = False`.
 - `environment ∈ {demo, live}`.
 - `request_budget`, `close_reserve`.
 
 ### 5.3 `AttachReport` (frozen; logged and published)
-`venue`, `environment`, `host`, `ctid_trader_account_id`, `trader_login`, `broker_name`, `is_live` (from the account list [F-22]), `account_type`, `deposit_asset`, `money_digits`, `access_rights`, `is_limited_risk`, `leverage_in_cents`, `registration_ts`, `initial_balance_observed` (`balance` at the first-ever attach of this binding; recorded for GAP-P12D-55, whose anchor policy stays owner-owned), `symbols: tuple[VenueSymbolSpec]`, `rulebook_key`, `rulebook_hash` (§9.5), `open_positions`, `pending_orders`, `clock_skew_ms`, `verdict ∈ {ATTACHED, HALTED_OPEN_POSITIONS, FATAL}`, `reason`, `attached_at`.
+`venue`, `environment`, `host`, `ctid_trader_account_id`, `trader_login`, `broker_name`, `is_live` (from the account list [F-22]), `account_type`, `deposit_asset`, `money_digits`, `access_rights`, `is_limited_risk`, `leverage_in_cents`, `registration_ts`, `initial_balance_observed` (`balance` at the first-ever attach of this binding; recorded for GAP-P12D-55, whose anchor policy stays owner-owned), `symbols: tuple[VenueSymbolSpec]`, `rulebook_key`, `rulebook_hash` (§9.5), `account_class` (the rulebook's, §7.1 A2), `open_positions`, `pending_orders`, `clock_skew_ms`, `verdict ∈ {ATTACHED, HALTED_OPEN_POSITIONS, FATAL}`, `reason`, `attached_at`.
 
 ### 5.4 Account key
 `account_key = f"ctrader:{environment}:{ctid_trader_account_id}"`. Every piece of persisted adapter state is keyed by it (§10), so nothing leaks from a dead account into its successor (§7.2, C-VEN-5). Position ids can collide across brokers [F-37], so they are never used without this key.
@@ -253,6 +253,7 @@ venue:
   transport: json_ws               # json_ws (OQ-02, chosen) | protobuf_tcp (fallback, needs a §16 edit)
   daily_request_budget: 1000       # schema max 1000 (half the FTMO/E8 cap, GAP-P12D-57)
   close_reserve: 100               # requests only closes/flatten/stop-repair may spend
+  max_orders_per_day: 50           # the §6.5 order allowance; the 51st open in any rolling 24 h is refused
   heartbeat_s: 10                  # documented cadence [F-03]; schema max 10
   liveness_timeout_s: 30           # no inbound frame for this long = dead link
   order_ack_timeout_s: 10          # then reconcile by clientOrderId — never blind resubmit
@@ -276,7 +277,7 @@ Endpoints are constants, not config: demo `demo.ctraderapi.com`, live `live.ctra
 - **Lot-step rounding (GAP-P12D-57): down, never up.**
   - `quantize(sym, units) = floor(units / step) × step`, capped at `max_volume_units`.
   - A result below `min_volume_units` is **0**, which means "not placeable here". It is never rounded up, because rounding up breaks the Governor's clamp-only-downward law and C-EXE-6.
-  - The face exposes `quantize()`. The orchestrator must call it **before** fragmenting and dispatching [OQ-03b], so no request is spent on a volume the venue will refuse.
+  - The orchestrator already rounds down to the descriptor's strictest-of step before fragmenting and dispatching (ACIS-06 v1.3 C-EXE-8, `venue_quantity`; OQ-03b resolved). The face's `quantize()` applies the exact per-symbol values, so no request is spent on a volume the venue will refuse.
   - The face **also** validates on submit. A non-quantized or below-minimum volume returns a `REJECTED` `FillReport` with reason `VENUE_VOLUME_INVALID` **without contacting the venue**.
   - Every downward rounding is logged `VENUE_LOT_ROUNDED{requested, placed}`.
 - **Prices:** absolute prices sent to the venue are rounded to `digits` [F-14].
@@ -286,7 +287,7 @@ Endpoints are constants, not config: demo `demo.ctraderapi.com`, live `live.ctra
   - **The minimum stop distance as a price distance.** In points mode it is `slDistance / 10**digits`. In percentage mode it is `slDistance / 100` percent of the current price. The docs define both modes this way for `gslCharge`, and `distanceSetIn` governs `slDistance` with the same unit [F-41]. The probe of [OQ-09] confirms this before the pre-check is trusted.
   - `d = 0` or `d <` that minimum returns `REJECTED`, reason `VENUE_STOP_TOO_CLOSE`, **without contacting the venue**. If the probe disproves the unit, the pre-check is disabled (the venue rejects with `TRADING_BAD_STOPS`, which is safe) until the spec is corrected.
   - **Why relative is risk-faithful.** The venue sets `stop = fill ∓ d` [F-13]. The per-unit loss from the fill to the stop therefore equals the distance the Governor sized, whatever the entry slippage. With an absolute stop kept at the Governor's level, adverse slippage would add to the loss.
-  - **The consequence for the conformance gate.** On this venue the resting stop equals `fill ∓ d`, not the Governor's `stop_loss` value. The ACIS-06 suite asserts exact equality (`test_server_side_stop_rests_at_broker`), so it needs the relative variant of §14.2 [OQ-03d].
+  - **The consequence for the conformance gate.** On this venue the resting stop equals `fill ∓ d`, not the Governor's `stop_loss` value. The ACIS-06 suite asserts exact equality (`test_server_side_stop_rests_at_broker`), so this venue runs its relative variant (ACIS-06 v1.4; OQ-03d resolved).
 
 ### 6.4 Contract cross-check against `instruments.yaml` (master §3.7: "incomplete contract metadata ⇒ not tradeable")
 | Check | Rule |
@@ -304,14 +305,15 @@ Endpoints are constants, not config: demo `demo.ctraderapi.com`, live `live.ctra
 - **The cap:** `daily_request_budget ≤ 1000`, half the FTMO and E8 cap of 2,000 (GAP-P12D-57; the SCOUT's recommendation, repeated in the brief). The schema maximum is 1,000; a human may set it lower, never higher (C-VEN-4).
 - **The close reserve.** The last `close_reserve` requests (default 100) may be spent **only** on closes, flatten, stop repair (§7.3 step 6) and the reconciles those need.
   - When `used ≥ budget − close_reserve`, every **open** is refused with `EXEC_CAPABILITY_REJECT`, reason `VENUE_BUDGET_OPEN_EXHAUSTED`, and surfaced.
-  - When `used ≥ budget`, all venue requests stop and `VENUE_BUDGET_EXHAUSTED` is raised as a health event. Positions stay protected by their server-side stops (C-VEN-2), and the watchdog's flatten (§7.9) is outside this counter by design: the remaining 1,000 of the firm cap is its headroom.
+  - When `used ≥ budget`, opens, queries and subscriptions stop and `VENUE_BUDGET_EXHAUSTED` is raised as a health event. **Reduce-only closes and stop repair still pass, paced by ACIS-06 v1.3 C-EXE-8**: exits are never blocked (the v1.0 review resolved the draft's "all venue requests stop" in the locked spec's favour). The pacing bounds them (100 attempts, then one per 300 s: at most 388 in 24 h), so the budget, the paced closes and the watchdog's flatten (§7.9, outside this counter by design) stay inside the firm's 2,000. Positions stay protected by their server-side stops (C-VEN-2).
   - Exits are never starved by entries.
+- **Two meters, one rule (reconciled with ACIS-06 v1.3 C-EXE-8).** The orchestrator's `max_venue_requests_per_day` meters trading submits; this adapter meters every request. For a cTrader venue the orchestrator's limit is set ≤ `daily_request_budget − close_reserve`, checked at boot (A9), so the orchestrator refuses an open before the adapter has to.
 - **Fragments count.** Every fragment is its own `ProtoOANewOrderReq`. The orchestrator's fragmentation above `fragment_threshold_lots` multiplies requests (GAP-P12D-57).
 - **Feasibility check at boot** (deterministic; boot-fatal if it fails):
   `projected = connect_overhead × (1 + max_reconnects_per_day) + 86400 / equity_poll_s × 2 + 86400 / reconcile_interval_s + order_allowance`, which must be ≤ `budget − close_reserve`.
   - `connect_overhead` is about 8 requests: application auth, account list, account auth, trader, symbols list, symbol-by-id, reconcile, subscribe.
-  - `order_allowance` is `max_orders_per_day × 2`: an open and a close each, from the GAP-0075 position policy. Until that policy exists, this spec cannot certify feasibility, so **no venue attach before GAP-0075** (TODO Track A preconditions).
-  - Defaults: 8 × 11 + 576 + 96 = 760 leaves 140 for orders, which is **too tight**. So `equity_poll_s` must rise, or the unrealized-PnL poll must run only while positions are open (which it does), and the check must use expected hold time. The feasibility formula is binding; the defaults are placeholders the review pass must re-derive [OQ-04].
+  - `order_allowance` is `venue.max_orders_per_day × 2`: an open and a close each. The face refuses the (N+1)-th open in any rolling 24 h (`VENUE_ORDER_ALLOWANCE_SPENT`), so the check certifies without waiting on the position policy's own rate. **Still no venue attach before GAP-0075's firehose fix** (TODO Track A preconditions), whatever the check says.
+  - Defaults: 8 × 11 + 576 + 96 = 760 leaves 140 requests for orders, 70 round trips a day, and `max_orders_per_day = 50` uses 100 of them. **Re-derived by the v1.0 review:** under the ratified R-1 direction (daily rules behind Carver's no-trade band, GAP-P12D-118) the order rate is a few round trips a day, so the defaults stand. What FTMO counts stays [OQ-04].
 - The budget state (`used_24h`, `cap`, `reserve`, `projected`) is published on `acis://venues/adapters` and persisted (§10), so a restart does not reset it. **A restart is never a relaxation** (GAP-0050 principle, GAP-P12D-55).
 
 ### 6.6 Reconnect and backoff (GAP-0020)
@@ -356,7 +358,7 @@ Each step logs `ATTACH_STEP{n, result}`. Any failure stops the attach with a nam
   - Clock check (§2.4): refuse if the skew is out of tolerance. **Caveat:** the first event may be an old closing print when the market is closed [F-23]. The skew check therefore uses only events received while the venue schedule says the market is open. On a closed-market attach it is deferred to the first live tick, and entries stay blocked until it passes.
 - **A9 — The budget feasibility check** (§6.5).
 - **A10 — The prop-safety preconditions** (§15.2). An FTMO or E8 rulebook with any precondition unmet refuses to attach, with its reason.
-- **A11 — Report and start.** Emit the `AttachReport` and `ATTACH_VERIFIED`, publish on `acis://venues/adapters`, and start in **paper mode, always** (master §7.5). Only a human token changes mode (§12): to `practice` with the dual-hash attestation (master v2.23), to `live` with rung 2 as well.
+- **A11 — Report and start.** Emit the `AttachReport` and `ATTACH_VERIFIED`, publish on `acis://venues/adapters`, and start in **paper mode, always** (master §7.5). Only a human token changes mode (§12): to `practice` with the dual-hash attestation (master v2.23), to `live` with rung 2 as well. **The mode selects the face:** in `paper` the orchestrator dispatches to the paper face and the venue face sends nothing. `acis_set_mode(practice)` is refused unless this attach's `AttachReport` shows `environment = demo`, `is_live = false` and `account_class = practice` (A2). A mode switch never re-binds the account.
 
 ### 7.2 Account churn and re-attach (the FTMO Free Trial case)
 - **The facts.**
@@ -378,9 +380,9 @@ Each step logs `ATTACH_STEP{n, result}`. Any failure stops the attach with a nam
 - **The cadence cost.** One human step roughly every 14 days. Acceptable for a demo; recorded as operational load.
 
 ### 7.3 `submit_order` (the execution face)
-1. **Classify the intent.** `ExecutionFace.submit_order` carries no `action` field, although `SizedOrder.action ∈ {open, close}` exists. Until [OQ-03c] adds it, the face infers the intent **deterministically**: if an ACIS position exists on `instrument` with direction `−direction`, the order is a **reduce**; otherwise it is an **open**.
-   - A reduce larger than the position is **refused** (`VENUE_CROSS_THROUGH_FLAT`). A reversal is two ACIS orders, never one.
-   - An open on an instrument that already holds an ACIS position in the same direction is refused (`VENUE_ONE_POSITION_PER_INSTRUMENT`) unless it carries the same `order_id`: fragments of one order are allowed. This is the adapter's half of the GAP-0075 position policy (C-VEN-9).
+1. **The intent is carried, never inferred** (ACIS-06 v1.3 C-EXE-7; OQ-03c resolved). `submit_order` is an **open**; `close_position` is a **reduce**, reduce-only.
+   - A reduce larger than the ACIS holding on that side is **refused** (`VENUE_CROSS_THROUGH_FLAT`). A reversal is two ACIS orders, a close then an open, never one.
+   - An open on an instrument that already holds an ACIS position is refused (`VENUE_ONE_POSITION_PER_INSTRUMENT`) unless it is the same direction and carries the same `order_id`: fragments of one order are allowed. An open against an opposite ACIS position is refused too, so a hedging account never holds both sides and a netting account never nets by accident. This is the adapter's half of the GAP-0075 position policy (C-VEN-9).
 2. **Validate:** the symbol is mapped and `ENABLED`; the volume equals `quantize()` and is ≥ the minimum (§6.3); the venue schedule says the market is open, so no request is spent to learn `MARKET_CLOSED`.
    - **An open needs `stop_loss`.** An open without one is refused (`VENUE_UNPROTECTED_OPEN_REFUSED`). Master §8.6 says every `SizedOrder` carries a broker-side stop.
    - A reduce carries none.
@@ -392,7 +394,7 @@ Each step logs `ATTACH_STEP{n, result}`. Any failure stops the attach with a nam
      - No `MARKET_RANGE` or `STOP_LIMIT` for anything protective (C-VEN-14).
      - No `guaranteedStopLoss` (§7.1 A4).
      - No take-profit: exits are engine-driven. `SizedOrder.take_profit` is not on the ACIS-06 face.
-   - A **reduce** is `ProtoOAClosePositionReq{positionId, volume}` [F-13], on hedging **and** netting accounts. An explicit close can never open an opposite hedge by accident (C-VEN-9).
+   - A **reduce** (`close_position`) is `ProtoOAClosePositionReq{positionId, volume}` [F-13], on hedging **and** netting accounts. On a hedging account each fragment of an open is its own venue position, so a reduce spanning several sends one request per position, oldest first, each budgeted, and returns one aggregated `FillReport`. An explicit close can never open an opposite hedge by accident (C-VEN-9).
    - The `fragment_plan` was logged before dispatch (ACIS-06 §9). Record `venue_order_map` with state `SENT` before the frame leaves.
 6. **Await the terminal outcome** (§4.2), correlated by `clientMsgId` for the immediate response and by `orderId`/`clientOrderId` for the execution events.
    - **Timeout** (`order_ack_timeout_s`) or a **disconnect before the terminal event**: do **not** resend. Raise `ConnectionError`, as the ACIS-06 contract does. When the orchestrator retries with the same `fragment_id`, the face, now in `SYNCING` or `READY`, first searches the venue: `ProtoOAOrderListReq` over `[sent_ts − 60 s, now]`, filtered on `order.clientOrderId == fragment_id` [F-19]; then `ProtoOAOrderDetailsReq` for its deals.
@@ -429,7 +431,7 @@ Market IOC orders make this path rare. It must still be exact.
 ### 7.7 Unsolicited fills: stop hits, stop-outs and manual actions (C-VEN-7)
 A server-side stop that triggers produces a `ProtoOAExecutionEvent` that ACIS did not request. It can be a stop-loss fill, a stop-out marked `isServerEvent` [F-17], or a manual close by the human in the cTrader UI.
 
-The locked ACIS-06 `ExecutionFace` has **no channel for it**: `submit_order` returns only solicited reports. Without one, the next reconcile shows a position gone that Risk still holds. `reconcile_on_restart` treats that as drift and HALTs (`restart_drift`), and in-session accounting is wrong until then.
+Before v1.4 the locked ACIS-06 `ExecutionFace` had **no channel for it**: `submit_order` returns only solicited reports. Without one, the next reconcile shows a position gone that Risk still holds. `reconcile_on_restart` treats that as drift and HALTs (`restart_drift`), and in-session accounting is wrong until then.
 
 This spec therefore requires [OQ-03a, RESOLVED 2026-09-29: ACIS-06 v1.4 adds the channel, owner-ratified]:
 - `ExecutionFace.venue_fills() -> AsyncIterator[FillReport]`, which the orchestrator forwards to Risk;
@@ -583,7 +585,7 @@ CREATE TABLE venue_binding (
 - **C-VEN-4 — The budget is hard, and exits are never starved.** A rolling-24 h cap ≤ 1,000 with a close reserve. It persists across restarts and cannot be raised above 1,000 by config.
 - **C-VEN-5 — The account binding is explicit and per-account.** No selection by list position. The environment must match `isLive`. Churn means a full re-attach after a human re-grant. All state is keyed by `account_key`; no state crosses accounts.
 - **C-VEN-6 — The GAP-0013 structure.** The session holds transport + auth + metering only and routes by payload type without interpreting. It is asserted by attribute scan and import contract.
-- **C-VEN-7 — Unsolicited fills are reported.** A stop hit is a `FillReport`, never drift ([OQ-03a]).
+- **C-VEN-7 — Unsolicited fills are reported.** A stop hit is a `FillReport` through `venue_fills()` (ACIS-06 v1.4), never drift.
 - **C-VEN-8 — Secret hygiene.** No secret in YAML or logs. The rotated refresh token is persisted atomically **before** the new access token is used.
 - **C-VEN-9 — Hedging-account safety.** Closes use `ClosePositionReq`, so no accidental hedge. There is one ACIS position per instrument. A reduce can never cross through flat.
 - **C-VEN-10 — The strictest liveness source wins.** Heartbeat at 10 s (docs), not 20 s (SDK) or 30 s (proto).
@@ -617,7 +619,7 @@ The ACIS-06 cases, run through the real face:
 - **Reconnect mid-order:** drop the socket after send; the retry finds the order by `clientOrderId`, and there is no duplicate.
 - **Cancel semantics; Decimal account snapshot; descriptor honesty; symbol-map completeness.**
 
-Real-venue cases added by this spec (an amendment of `tests/integration/test_adapter_conformance.py` requested under [OQ-03d]):
+Real-venue cases added by this spec (the ACIS-06 v1.4 conformance amendment, OQ-03d):
 1. **Live-quote fixture.** Prices come from the current spot, not constants.
 2. **Relative-stop placement.** The venue-reported stop equals `fill ∓ d` within one tick and lies on the protective side.
 3. **Stop survives the engine.** After the open, kill the engine process, reconcile from a fresh session: the stop is still there. This is the master-§8.6 layer-1 proof.
@@ -649,8 +651,8 @@ Real-venue cases added by this spec (an amendment of `tests/integration/test_ada
 
 ### 15.1 What consumes this, and done-when
 - **ACIS-01** consumes `RawTick`s from `CTraderFeed`, with no change to its factory.
-- **ACIS-06** consumes `CTraderExecutionFace`, subject to the [OQ-03] amendments.
-- **ACIS-07** consumes `FillReport`s (solicited, plus unsolicited via [OQ-03a]), `BrokerAccount` and `BrokerPosition`, plus the restart deal ingestion.
+- **ACIS-06** consumes `CTraderExecutionFace`, as amended by ACIS-06 v1.3 (C-EXE-7/8) and v1.4 (`venue_fills()`, the conformance variant).
+- **ACIS-07** consumes `FillReport`s (solicited, plus unsolicited via `venue_fills()`), `BrokerAccount` and `BrokerPosition`, plus the restart deal ingestion.
 - **ACIS-08** publishes `acis://venues/adapters`.
 - **ACIS-12's watchdog** loads the cTrader plugin.
 
@@ -661,7 +663,7 @@ Real-venue cases added by this spec (an amendment of `tests/integration/test_ada
 |---|---|---|---|
 | 1 | a position-aware open policy exists (no per-tick firehose) | Track A step 4 | GAP-0075 |
 | 2 | request budget ≤ 1,000 per rolling 24 h with a close reserve, live in this adapter | this spec | GAP-P12D-57 |
-| 3 | lot-step rounding down + minimum-lot refusal wired through `quantize()` | this spec + [OQ-03b] | GAP-P12D-57 |
+| 3 | lot-step rounding down + minimum-lot refusal wired through `quantize()` | this spec + ACIS-06 v1.3 C-EXE-8 | GAP-P12D-57 |
 | 4 | the pre-close (2 h) and scheduled-news entry bans are **always on**, not tied to `weekend_holding_allowed` | Governor + owner | GAP-P12D-58 |
 | 5 | drawdown anchors survive a restart and are keyed per account | owner (guardrail-adjacent) | GAP-P12D-55 |
 | 6 | a correct `ftmo` rulebook, human-committed | owner | GAP-P12D-54 |
@@ -671,12 +673,12 @@ Real-venue cases added by this spec (an amendment of `tests/integration/test_ada
 
 Items 2 and 3 are machine-checked by the attach. The others are checked by the review pass and recorded in the `AttachReport` reason when refused. A **non-prop demo rulebook** (for example a cTrader demo at a broker, research §7 option C — the Pepperstone demo is this case) needs only 1–3 and 7, plus `account_class: practice`.
 
-### 15.3 Before LOCK: what the review pass must do
+### 15.3 Before LOCK: what the review pass must do — DONE 2026-09-29 (v1.0; the record is the changelog)
 1. Rule every BLOCKING question in Appendix B, and fold the rulings into §§3–7. (Done 2026-09-29 for OQ-01, OQ-02, OQ-03a; the pass verifies the folding.)
-2. Re-derive the §6.5 defaults from the GAP-0075 policy's real order rate.
+2. Re-derive the §6.5 defaults from the GAP-0075 policy's real order rate. (Done: the defaults stand under R-1's rate, and `max_orders_per_day` makes the check certifiable now.)
 3. Confirm the ACIS-06 amendments ([OQ-03a–d]) with ACIS-06's owner. ACIS-06 is LOCKED, so this is a versioned amendment, not an edit by stealth. (OQ-03a done: ACIS-06 v1.4.)
-4. Re-fetch every `[F-nn]` URL. A changed source is a finding.
-5. Verify that no requirement lacks a master § or ledger ID.
+4. Re-fetch every `[F-nn]` URL. A changed source is a finding. (Done for the demo path; see Appendix A. The FTMO sources are re-fetched before an FTMO attach.)
+5. Verify that no requirement lacks a master § or ledger ID. (Done: the v1.0 additions cite ACIS-06 C-EXE-7/8, master v2.23 and GAP-P12D-118.)
 
 ---
 
@@ -733,6 +735,10 @@ A forum answer is never an official document. It is used only where the docs are
 | F-41 | Docs model page (newer wording than the proto): `distanceSetIn` — "Whether slDistance, tpDistance, gslDistance and gslCharge are expressed in points or as a percentage of the price." `gslCharge` — "In points mode it is a price distance per unit of volume: divide by 10^digits … In percentage mode it is hundredths of a percent (100 means 1%)". `slDistance` — "Minimum allowed distance between stop loss and current market price." (no unit stated). | https://help.ctrader.com/open-api/model-messages/ (fetched 2026-09-25) | a |
 | F-42 | Finance Magnates, 2025-10-22: Spotware "has introduced free prop trial accounts for proprietary trading firms. The new account type provides time-limited demo access"; "Several firms, including FTMO … have already adopted the new accounts"; they run "in a controlled demo environment", "carry a 'FREE' flag … and expire automatically after the trial period"; "Traders have access to the full cTrader environment, including … algorithmic trading". | https://www.tradingview.com/news/financemagnates:eb90bf57c094b:0-ftmo-instant-funding-begin-using-spotware-demo-accounts-for-prop-firms-on-ctrader/ (fetched 2026-09-25) | b (trade press) |
 
+| F-43 | Pepperstone: "[c]Trader and TradingView demo accounts expire after 90 days of inactivity. Pepperstone, MT4 and MT5 demo accounts expire after 60 days of creation." (the fetched text dropped the leading "c"); for cTrader, "top up your virtual funds at any time". CMA register of licensees: "Pepperstone Markets Kenya Limited", licence number 128. | https://pepperstone.com/en/ways-to-trade/demo-accounts/ ; https://licensees.cma.or.ke/licenses/5/?q=Pepperstone (both fetched 2026-09-29) | a |
+
+**Re-fetched 2026-09-29 by the review pass (§15.3 step 4).** F-01, F-02, F-03, F-07, F-08, F-11, F-16, F-27, F-28, F-33 and F-36 read as quoted (F-28's last commit is still 2025-11-13). F-07's page adds that the envelope's `payloadType` is an integer in JSON (its example: `"payloadType": 2100`), half of OQ-12. F-10's page now words the Playground redirect as "As it does not work outside the playground environment, you cannot use it in your code"; the substance holds. The FTMO sources (F-29–F-32, F-42) were not re-fetched: they gate an FTMO attach, not the demo, and are re-fetched before one.
+
 ## Appendix B — Open questions
 **BLOCKING** means the spec cannot LOCK until it is ruled. **Attach-gating** means the spec can lock, but no attach to the named venue until it is ruled. **Probe** means the first recorded demo session settles it (it cannot be settled from documents).
 
@@ -740,7 +746,7 @@ A forum answer is never an official document. It is used only where the docs are
 |---|---|---|---|---|
 | OQ-01 | **May ACIS send orders to a venue *demo/practice* account while in `paper` mode?** Master §7.5 says "paper mode is never granted a real-order path", and ACIS-11 defines PAPER as "live data, no real orders". Yet master §15 phase 12 orders "OANDA practice account first … live only after §14 minimums met and human sign-off", which puts practice trading **before** live. As written, a demo run needs either a "real-order path" in paper mode or `live` mode, and `live` needs §14, which the engine fails (GAP-P12D-49). **Proposed ruling (for the owner, not applied):** "Paper mode may route orders to a platform adapter only when (i) the venue reports the bound account as non-live (`isLive = false` on cTrader), **and** (ii) the account's human-committed rulebook declares `account_class: practice` (no fee, no deposit, nothing of value at risk); any other account requires `live` mode with the §12 human token and the §14 gates." Clause (ii) matters because FTMO's *paid* challenges are also "demo accounts with fictitious funds" [F-30] and could sit on the same environment as the trial, which trade press places in "a controlled demo environment" [F-42][OQ-10]. `isLive` alone therefore cannot tell a free trial from a paid challenge. | Mode semantics are human-only (CLAUDE.md). Without a ruling, Track A has no lawful mode to run in. | **RULED 2026-09-29** — owner chose a new `practice` mode (master v2.23; ACIS-08 v1.4), with clause (ii) kept as `account_class: practice` | Owner (master §7.5/§12/§15 amendment) |
 | OQ-02 | **Transport and dependency:** JSON over WebSocket via `aiohttp` (no new dependency), Protobuf over TLS/TCP with the `protobuf` runtime (a §16 edit), or the official SDK (rejected, §3.3)? | §16: "nothing without a spec edit". | **RULED 2026-09-29** — route C, JSON over WebSocket via `aiohttp` (the owner delegated the setup; no §16 edit) | Owner / review; confirmed by the first probe |
-| OQ-03 | **ACIS-06 amendments this adapter needs** (ACIS-06 is LOCKED): (a) `venue_fills()`, an unsolicited-fill channel, so stop hits reach Risk and do not read as drift (§7.7) — **blocking**; (b) per-symbol quantity constraints and a `quantize()` call in the orchestrator before fragmenting (§6.3); (c) `action` (open or close) on `submit_order` instead of the face's inference (§7.3 step 1); (d) conformance-suite changes for real venues: a live-quote fixture, the relative-stop assertion, recorded-frame partial fills, a triggerable mock stop (§14.2). | Without (a), the first stop-out HALTs the engine as restart drift, and in-session accounting is wrong. | (a) **RULED 2026-09-29** — owner-ratified, ACIS-06 v1.4 `venue_fills()`; (b)–(d) review | ACIS-06 owner via the review pass |
+| OQ-03 | **ACIS-06 amendments this adapter needs** (ACIS-06 is LOCKED): (a) `venue_fills()`, an unsolicited-fill channel, so stop hits reach Risk and do not read as drift (§7.7) — **blocking**; (b) per-symbol quantity constraints and a `quantize()` call in the orchestrator before fragmenting (§6.3); (c) `action` (open or close) on `submit_order` instead of the face's inference (§7.3 step 1); (d) conformance-suite changes for real venues: a live-quote fixture, the relative-stop assertion, recorded-frame partial fills, a triggerable mock stop (§14.2). | Without (a), the first stop-out HALTs the engine as restart drift, and in-session accounting is wrong. | (a) **RULED 2026-09-29** — owner-ratified, ACIS-06 v1.4 `venue_fills()`; (b) and (c) **resolved** by ACIS-06 v1.3 (C-EXE-8 rounds before dispatch, C-EXE-7 `close_position` carries the intent); (d) **resolved** by the v1.0 review as ACIS-06 v1.4's conformance variant (test contract only) | ACIS-06 owner via the review pass |
 | OQ-04 | **Which messages count toward FTMO's (and E8's) 2,000/day?** ACIS assumes every request except heartbeats (§6.5). The §6.5 defaults need re-deriving from the GAP-0075 policy's real order rate. | Too loose risks "hyperactivity"; too tight starves the demo. | Attach-gating (FTMO/E8) | FTMO email Q2 (research §9.1), E8 Q4 |
 | OQ-05 | **Does FTMO permit unattended Open API trading on its accounts, the Free Trial included, and does the trial use the same servers and feed as paid products?** | Standing risk at the destination firm (T&C 7.9, research §2.1). | Attach-gating (FTMO) | FTMO email Q1, Q5 |
 | OQ-06 | **Can a second connection (the watchdog) authorise the same account while the engine's connection is alive?** And does an engine token refresh break the watchdog mid-flatten? Also for the review pass: the account binding now lives in two human-committed files (`system_config.yaml` and `watchdog.yaml`, §7.9), and ACIS-12 forbids the engine to read `watchdog.yaml`, so neither side can detect a mismatch. The review must choose where the single binding lives. | Master §8.6 layer 2 depends on it; a binding mismatch would make the watchdog flatten the wrong account, or none. | Probe (§14.2 case 8); a live gate if it fails | First demo session; Spotware support if negative |
@@ -749,7 +755,7 @@ A forum answer is never an official document. It is used only where the docs are
 | OQ-09 | **Confirm that `slDistance` in points mode means `slDistance / 10**digits` of price.** The docs define points mode this way for `gslCharge` and say `distanceSetIn` governs `slDistance` too [F-41]; `slDistance`'s own row states no unit. | The client-side "stop too close" pre-check (§6.3). A wrong unit only costs a venue-side reject, never an unprotected position. | Probe (non-blocking) | First demo session |
 | OQ-10 | **Which host (`isLive`) do FTMO Free Trial accounts and paid challenge accounts sit on?** Trade press reports that the FTMO trial on cTrader is Spotware's "free prop trial" account, run "in a controlled demo environment" [F-42], so the trial very likely reports `isLive = false`. Paid challenges are "simulated" too [F-30]; their environment is unknown. | Feeds OQ-01's criterion and §7.1 A2. | Probe + FTMO | Account list on the first grant |
 | OQ-11 | **FTMO's cTrader symbol names, `minVolume`/`stepVolume`/`lotSize`, commission, and whether its 0.7% currency adjustment (T&C 5.3.4) is `pnlConversionFeeRate = 70`.** Is the trial Swing or Standard? | The symbol map, lot rounding, the C8 cost model (GAP-P12D-52 item 12). | Attach reads them; FTMO email Q6 | First attach + email |
-| OQ-12 | **The JSON encoding of enums (names or integers) and WebSocket frame type (text or binary)**, if OQ-02 picks JSON. | `wire.py` correctness. | Probe | First demo session |
+| OQ-12 | **The JSON encoding of enums (names or integers) and WebSocket frame type (text or binary)**; OQ-02 picked JSON. Half answered 2026-09-29: the envelope's `payloadType` is an integer [F-07]; enums inside `payload` and the frame type remain. | `wire.py` correctness. | Probe | First demo session |
 | OQ-13 | **Spotware's application approval lead time**, and a **production redirect URI** for a headless single-user deployment (Playground tokens are for development [F-10]). | Track A's calendar; production auth. | Attach-gating (live only) | Owner registers the app (human) |
 | OQ-14 | **Does cTrader deduplicate `clientOrderId`?** ACIS assumes not (§7.3 step 4). | Only a defence-in-depth question; ACIS does not rely on it. | Non-blocking | Probe |
 | OQ-15 | **Does `netUnrealizedPnL` include swap and the opening commission?** | The equity definition (§4.4, C-VEN-12). | Probe | Compare against the cTrader UI on the demo |
@@ -758,6 +764,12 @@ A forum answer is never an official document. It is used only where the docs are
 | OQ-18 | **How does an expiring or breached FTMO trial account present on the API?** (Access rights? A disconnect event? An error code?) Spotware's trial accounts "expire automatically after the trial period" and carry a "FREE" flag [F-42]; the flag is not in the Open API model, and the API-side signal of expiry is undocumented. | The §7.2 `DETACHED` trigger. | Probe (day 14 or first breach) | First trial cycle |
 
 ## Changelog
+- **1.0 (LOCKED — 2026-09-29).** The review pass by the lead, who did not author the draft (§15.3; the `_SPEC_REVIEW_PASS.md` checks 3A–3F):
+  - **Reconciled with ACIS-06 v1.3, merged after the draft was written:** `close_position` carries the close intent (OQ-03c resolved; §7.3 no longer infers it); the orchestrator rounds lots down before dispatch (OQ-03b resolved); the request budget no longer stops exits: at `used ≥ budget` closes and stop repair pass, paced by C-EXE-8, where the draft stopped everything. A hedging-account reduce spanning several fragment positions is specified (§7.3 step 5).
+  - **OQ-03d resolved** as ACIS-06 v1.4's conformance variant (relative stop within one tick, live-quote fixture, recorded-frame partials, the stop-hit case).
+  - **Added:** the mode-to-face rule and the practice-mode refusal (§7.1 A11), `account_class` in the `AttachReport`, and `venue.max_orders_per_day`, so the §6.5 feasibility check certifies now; the §6.5 defaults re-derived under R-1.
+  - **Evidence:** the demo-path sources re-fetched and unchanged; F-43 added (Pepperstone: CMA licence 128; its cTrader demo expires after 90 days of inactivity, so v0.2's "does not expire" is corrected); OQ-12 half answered.
+  - No guardrail, HALT/veto semantics, equity floor or rulebook value changed.
 - **0.2 (DRAFT, NOT LOCKED — 2026-09-29).** The three BLOCKING questions ruled and folded in: OQ-01 (the owner chose a new `practice` mode, master v2.23; §7.1 A2 keeps the proposed clause (ii) as `account_class: practice`), OQ-02 (route C, JSON over WebSocket via `aiohttp`, the lead's choice under the owner's delegation), OQ-03a (ACIS-06 v1.4 `venue_fills()`, owner-ratified). First venue: a Pepperstone cTrader demo (non-expiring); OANDA v20 dropped (GAP-P12D-43). No guardrail, HALT/veto semantics, equity floor or rulebook value changed.
 - **0.1, continued (DRAFT, NOT LOCKED — 2026-09-25, after a session-limit break).** The same draft, corrected before hand-off:
   - Source grades tightened: two forum posts were downgraded to (c) because their authors cannot be shown to speak for Spotware (F-04, F-05). The `ALREADY_LOGGED_IN` citation was re-pointed to the proto; a third-party repository had been summarised as Spotware.

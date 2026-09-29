@@ -1459,7 +1459,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - The SCOUT's recommended demo of record: the FTMO Free Trial on cTrader via the Open API. That is a SPEC §15 deviation, and the draft amendment text is in the report's §7.
 
   Side note, grade (a): FTMO has owned OANDA Global Corporation since 1 Dec 2025.
-- **2026-09-29, venue decided under the owner's delegation** ("pick a good broker or whichever setup you deem best"): the first venue is a Pepperstone cTrader demo (Pepperstone Markets Kenya, CMA licence 128; the demo does not expire) through the cTrader Open API. Master v2.23 §15 now says so, and ACIS-13 v0.2 drops the OANDA section. The OANDA token test is dropped. Still open here: master §3/§7.5 name OANDA v20 in the v1 trio and as the primary feed (v2.23 marks it not pursued); the cost calibration of [[GAP-P12D-41]] moves to the cTrader demo feed.
+- **2026-09-29, venue decided under the owner's delegation** ("pick a good broker or whichever setup you deem best"): the first venue is a Pepperstone cTrader demo (Pepperstone Markets Kenya, CMA licence 128; its cTrader demo expires only after 90 days of inactivity, ACIS-13 F-43) through the cTrader Open API. Master v2.23 §15 now says so, and ACIS-13 v0.2 drops the OANDA section. The OANDA token test is dropped. Still open here: master §3/§7.5 name OANDA v20 in the v1 trio and as the primary feed (v2.23 marks it not pursued); the cost calibration of [[GAP-P12D-41]] moves to the cTrader demo feed.
 - Linked: [[GAP-P12D-41]], [[GAP-0108]], [[GAP-0001]], [[GAP-0109]]
 
 ## GAP-P12D-44: a prop account is a SIMULATED environment — guard 2 and the operational-referent audit lose their external referent there

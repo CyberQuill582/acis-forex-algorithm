@@ -23,7 +23,7 @@
 **State, verified at handover:**
 - `main` is clean and all work is committed.
 - The full suite: 1008 passed. The governance gate was green at 2026-09-25; it is RED since the constitution moved to v0.10 ([[GAP-C10-01]]). The ledger showed 259 entries, 0 violations.
-- The spec is at master **v2.23**, with ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-06 v1.4, ACIS-08 v1.4, ACIS-09 v1.9, ACIS-11 v1.2 and ACIS-13 v0.2 (draft).
+- The spec is at master **v2.23**, with ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-06 v1.4, ACIS-08 v1.4, ACIS-09 v1.9, ACIS-11 v1.2 and ACIS-13 v1.0.
 - **Nothing is running.** No agents, no worktrees, no background jobs.
 - The branches `worktree-agent-a128ab904780ce593`, `-a8937e82f9a7a5391` and `-a9e00713d15bb5082` are all merged. They are kept, and safe to delete.
 - **GitHub:** `main` was pushed to origin on 2026-09-25 with the owner's go (`43f881a..e447207`, plus this note), and again on 2026-09-29 at the owner's request (`63034ef..72bc88a`). The laptop is not the only copy of the code. `gh` is NOT signed in on the laptop (HTTP 401), so CI results are read on github.com → Actions. The tick data was single-copy until 2026-09-29, when the AWS copy was restored and verified (GAP-P12D-50; see the TWO-CLOUD block).
@@ -72,7 +72,7 @@
 2. **Track A (the demo, the owner's priority):**
    - [x] 2026-09-29 venue chosen under the owner's delegation: a **Pepperstone cTrader demo** via the cTrader Open API, JSON over WebSocket via `aiohttp` ([[GAP-P12D-43]]).
    - [x] 2026-09-29 practice mode and `venue_fills()` RATIFIED and applied: master v2.23, ACIS-06 v1.4, ACIS-08 v1.4, ACIS-13 v0.2 ([[GAP-P12D-69]], [[GAP-P12D-70]]).
-   - [ ] the ACIS-13 review pass (`_SPEC_REVIEW_PASS.md`, ACIS-13 §15.3), then LOCK v1.0;
+   - [x] 2026-09-29 the ACIS-13 review pass (ACIS-13 §15.3), LOCKED v1.0: reconciled with ACIS-06 v1.3 (exits never blocked by the budget), sources re-fetched;
    - [ ] build: the cTrader session + feed + execution faces, `venue_fills()`, practice mode in `monitoring/mode.py`, and the attach gate;
    - [ ] the three-loop runtime, [[GAP-0091b]] / [[GAP-0099]] / [[GAP-0075]] (no venue before the firehose fix);
    - [ ] feed reconnect, [[GAP-0020]]; host on the Google server.
