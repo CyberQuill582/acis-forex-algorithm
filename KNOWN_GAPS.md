@@ -425,10 +425,18 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-98: the look register stores per-trade returns, not the daily net-return vector a portfolio-level verdict needs
 - Severity: high · Likelihood: certain
-- Status: open [impl] (2026-09-25 — from PLAN_R1 §9 #10; after merge 3 each grade records its outcome with per-trade returns, which is not enough for daily-series tests)
+- Status: mitigated (2026-09-29, R1.2 built in-session: register v2. `tests/backtest/look_claims.py` + `look_register.py`. The single `evaluate()` entry point waits on RSIM, R1.3. First raised 2026-09-25 from PLAN_R1 §9 #10: after merge 3 each grade recorded per-trade returns only)
 - Area: tests/backtest/look_register.py (`record_outcome`), the verdict module
 - Description: search-aware tests over the register (Holm or fixed-sequence on family portfolio series, SPA/StepM, CPCV/PBO for explored families) need each registered run's DAILY portfolio net-return vector, content-addressed. The register now keeps pass fields and per-trade returns only. It also lacks the declared-search-space hash, origin + model cutoff, cost-map hash and universe id that PLAN_R1 R1.2 lists.
-- Justification: open; additive fields, tightening only, no ratification needed.
+- Justification: mitigated; additive fields, tightening only, no ratification needed.
+- Built 2026-09-29 (R1.2):
+  - **The claim.** A real-data look REFUSES to register without its claim (`look_claims.Claim`). The claim holds: the declared search space (grid, formula, instrument list; canonical-JSON sha256), the variant and its `variant_hash` (rule, parameters, combination and universe, never the family's name), the `universe_id`, the origin (literature + dated reference / human / LLM + model + knowledge cutoff), the simulator, the `recon_commit` at which B0 held, and the cost-map hash (every graded instrument's C8 block, spread limit, swap convention, stress and floor).
+  - **LLM repeats.** An LLM plan that repeats a registered `variant_hash` is refused (§5.6, R1-D13).
+  - **Cycle rows.** A cycle's testing order is a `kind: cycle` line in the same hash chain: at most 5 distinct family-versions, alpha in (0, 0.05], a unique id, at most one cycle a calendar quarter. Counting skips cycle rows.
+  - **The daily vector.** `record_outcome(..., daily=(dates, returns))` stores the portfolio's daily net-return vector once, content-addressed, under `vectors/`; the outcome carries its hash, and `load_vector` refuses an edited file.
+  - **Housekeeping.** `begin_grade` moved to `tests/backtest/look_gate.py` (A12 budget: the register is 290 lines). `scripts/run_oos_validation.py` now takes `--origin` and `--recon-commit`.
+- Proof: `test_a_real_look_must_carry_its_own_familys_claim_and_the_line_records_it`, `test_the_declared_space_is_hashed_and_any_change_to_it_changes_the_hash`, `test_an_origin_records_what_the_contamination_law_needs`, `test_an_llm_plan_that_repeats_a_registered_variant_is_refused`, `test_the_cost_map_hash_separates_grades_priced_differently`, `test_a_cycle_row_is_a_chain_line_that_counting_skips_and_that_obeys_its_rules`, `test_the_daily_vector_is_stored_once_by_its_hash_and_an_edit_is_caught`, `test_the_real_data_script_writes_its_line_before_it_grades`.
+- Residual: GAP-P12D-98 — still owns the single `evaluate(plan, tier, span)` entry point, the only producer of a graded number: it writes the claim, runs RSIM, stores the vector and feeds `ProvenanceStore.record_attempt`. It is built with RSIM, R1.3.
 - Linked: [[GAP-P12D-64]], [[GAP-P12D-89]], [[GAP-P12D-100]]
 
 ## GAP-P12D-97: the holdout kill at SR̂ < 0 wrongly kills 18–32% of real edges
@@ -513,6 +521,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Area: the verdict (C-BT-11 v2), the look register, master §5 (rule parameters)
 - Description: when a researcher hill-climbs, the set of tried runs depends on the data, so a union bound over tried runs leaks: max-t over the registered union passes noise 10–16% of the time and Bonferroni over runs 6.5–13%. Max-t over a pre-DECLARED grid holds ~5.2–5.5%; Holm over fixed family combinations 1.5%, with higher power.
 - Justification: open; A2 and A4 in R1_LEAD_REVIEW_2026-09-25.md. It extends [[GAP-P12D-64]].
+- Progress 2026-09-29 (R1.2): the DECLARE-AND-HASH half is built. Every real-data look records its declared search space's sha256 (grid, formula, instrument list), and a changed grid changes the hash (`test_the_declared_space_is_hashed_and_any_change_to_it_changes_the_hash`). Grading families as fixed combinations, with max-t over the declared grid for explored ones, is the verdict, R1.4.
 - Linked: [[GAP-P12D-64]], [[GAP-P12D-98]], [[GAP-P12D-100]], [[GAP-P12D-102]]
 
 ## GAP-P12D-88: two tooling tickets — the governance gate cannot find the constitution checks from a worktree, and three A16 anchors cannot match on a CRLF checkout
@@ -949,6 +958,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - an LLM-originated or LLM-refined hypothesis may be KILLED on any history, but counts toward a pass only on data after that cutoff, i.e. forward on the demo;
   - hypotheses fully specified by a dated paper are exempt.
 - Justification: open, owner-owned (§5.6/§5.7 are master-spec text). It makes forward incubation on the demo account the certifying stage, not a formality, which aligns Track B with the owner's demo priority.
+- Progress 2026-09-29 (R1.2): the origin/cutoff FIELD is built. A real-data look records its origin (literature + dated reference / human / LLM + model + knowledge cutoff) and refuses an LLM origin without its cutoff (`test_an_origin_records_what_the_contamination_law_needs`). The grader that refuses a pass on pre-cutoff data for an LLM origin is the verdict, R1.4.
 - Linked: [[GAP-P12D-52]], [[GAP-P12D-68]], [[GAP-P12D-65]], [[GAP-P12D-62]]
 
 ## GAP-P12D-65: look-ahead leakage passes every statistical gate — only a structural future-scramble test over EVERY decision day catches it, and ACIS has no such test

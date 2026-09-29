@@ -16,7 +16,7 @@ command line around it (paths, holdout guard, report file). Invariants:
     strategy families (GAP-P12D-25).
   * With no historical event calendar, MACRO_EVENT never fires and news blackouts never
     apply; the report says so (GAP-P12D-03).
-  * No grade without its look (GAP-P12D-64): `look_register.begin_grade` proves, BEFORE any
+  * No grade without its look (GAP-P12D-64): `look_gate.begin_grade` proves, BEFORE any
     compute, that `inp.look` is an unconsumed line of an intact register (the canonical one for
     real data) for exactly this run, then consumes it; the outcome is recorded against it after
     the grade, and the report carries the look and the register's counts.
@@ -41,7 +41,8 @@ from tests.backtest.carry import FinancingRate
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.evolve_step import cost_model, evolve_fold
 from tests.backtest.harness import Backtest, FoldData
-from tests.backtest.look_register import LookRegister, begin_grade
+from tests.backtest.look_gate import begin_grade
+from tests.backtest.look_register import LookRegister
 from tests.backtest.metrics import MetricBlock
 from tests.backtest.regime_labels import LabelledBarCache
 from tests.backtest.report import ValidationReport

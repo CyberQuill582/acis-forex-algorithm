@@ -7,7 +7,7 @@ line is written BEFORE the grade runs. Complete by construction, not by caller d
 (dual audit GAP-P12D-83, HIGH-1 / X4):
 
   * ONE register for real data. A look whose data tier is > 0 must live in `CANONICAL`;
-    `begin_grade` refuses any other location. Synthetic (tier 0) looks, unlimited by protocol,
+    `look_gate.begin_grade` refuses any other location. Synthetic (tier 0) looks, unlimited by protocol,
     may live in a run's own directory.
   * The tier is derived from the source OBJECT the grade reads: its class declares
     `provenance` ("real" / "synthetic"), its key must equal its `name`, and a source that
@@ -20,13 +20,16 @@ line is written BEFORE the grade runs. Complete by construction, not by caller d
     A missing number, an edited or inserted line, or a grade marker whose line is gone breaks
     the chain, and a broken register refuses every registration and grade (fail closed).
     A torn line (unparseable bytes) is REPORTED and counted, never fatal, never JSONDecodeError.
-  * One line is one grade: `begin_grade` consumes the line (<N>.graded.json, exclusive), after
+  * One line is one grade: `look_gate.begin_grade` consumes the line (<N>.graded.json, exclusive), after
     re-checking the source, run properties, chain and — for real data — the git commit on a
     clean tracked tree. `record_outcome` writes the grade's Sharpe, trade count, pass fields and
     per-trade returns (<N>.outcome.json), so the DSR/PBO trial variance can be derived.
   * A real re-look by a family must say what changed; a concurrent registration that loses the
-    number re-reads the register first, so "first look" is unambiguous.
-  * Counting only. Nothing here reads a threshold or touches a gate.
+    number re-reads the register first, so "first look" is unambiguous. Counting only: nothing
+    here reads a threshold or touches a gate.
+  * v2 (R1.2, look_claims): a real-data look carries its CLAIM (declared-space hash, variant,
+    origin + model cutoff, cost map, universe, simulator, recon_commit); a cycle's testing order is
+    a `kind: cycle` line in the same chain; an outcome may store its daily return vector.
 """
 
 from __future__ import annotations
@@ -41,9 +44,11 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 from config.schemas import AcisConfig
+from tests.backtest.look_claims import (Claim, cost_map_hash, cycle_line, refuse_repeated_llm_variant,
+                                        store_vector)
 from tests.backtest.oos_plan import DATA_START, HOLDOUT_END, HOLDOUT_START
 from tests.backtest.walk_forward import Fold
 
@@ -86,6 +91,8 @@ class Look:
     previous: tuple[str, str, str] | None     # the family's previous look: (id, commit, config hash)
     operator: str
     prev_hash: str                   # sha256 of the previous line's bytes (GENESIS for the first)
+    kind: str = "look"               # every line is a look or a cycle row (R1.2)
+    claim: dict | None = None        # the registered family-version (look_claims.Claim.line)
 
 
 def config_hash(cfg: AcisConfig) -> str:
@@ -179,50 +186,84 @@ class LookRegister:
         return Scan(tuple(lines), head, tuple(broken), tuple(torn))
 
     def looks(self) -> list[dict]:
-        return [x for x in self.scan().lines if x is not None]
+        return [x for x in self.scan().lines if x is not None and x.get("kind", "look") == "look"]
 
     def family_counts(self) -> dict[str, dict[str, int]]:
         counts: dict[str, Counter] = {}
         for line in self.scan().lines:
+            if line is not None and line.get("kind") == "cycle":
+                continue
             family, tier = (line["family"], line["tier_name"]) if line else (TORN, "unknown")
             counts.setdefault(family, Counter())[tier] += 1
         return {f: dict(sorted(c.items())) for f, c in sorted(counts.items())}
 
-    def register(self, *, cfg: AcisConfig, source: object, instruments: Sequence[str], folds: Sequence[Fold],
-                 family: str, account: str, changed: str = "", operator: str | None = None,
-                 cost_stress: float = 1.0, spread_floor: float = 0.0,
-                 git: tuple[str, bool] | None = None) -> Look:
-        if not family.strip():
-            raise LookRefused("a look must name its hypothesis family")
-        tier = data_tier(source, folds)
-        if tier > 0 and self.root.resolve() != CANONICAL.resolve():
-            raise LookRefused(f"a {TIER_NAMES[tier]} look must be registered in {CANONICAL}, not {self.root}")
-        commit, dirty = git if git is not None else git_state()
-        if tier > 0 and (dirty or commit == "unknown"):
-            raise LookRefused("a real-data look needs a clean tracked tree at a known commit: commit first")
+    def _append(self, build: Callable[[Scan, Path], "Look | dict"]) -> "Look | dict":
+        """Write build(scan, path) as the next line: exclusive, re-deciding if another writer wins."""
         self.root.mkdir(parents=True, exist_ok=True)
         while True:
             scan = self.scan()
             if scan.broken:
                 raise LookRefused("the look register is broken, refusing to add to it: " + "; ".join(scan.broken))
-            prior = [x for x in scan.lines if x is not None and x["family"] == family]
+            path = self.root / f"{scan.next_seq:06d}.json"
+            line = build(scan, path)
+            try:
+                _write_new(path, json.dumps(asdict(line) if isinstance(line, Look) else line,
+                                            sort_keys=True).encode("utf-8"))
+                return line
+            except FileExistsError:
+                continue                                     # another registrant won: re-read, re-decide
+
+    def register(self, *, cfg: AcisConfig, source: object, instruments: Sequence[str], folds: Sequence[Fold],
+                 family: str, account: str, changed: str = "", operator: str | None = None,
+                 cost_stress: float = 1.0, spread_floor: float = 0.0,
+                 git: tuple[str, bool] | None = None, claim: Claim | None = None) -> Look:
+        if not family.strip():
+            raise LookRefused("a look must name its hypothesis family")
+        tier = data_tier(source, folds)
+        if tier > 0 and self.root.resolve() != CANONICAL.resolve():
+            raise LookRefused(f"a {TIER_NAMES[tier]} look must be registered in {CANONICAL}, not {self.root}")
+        if tier > 0 and claim is None:
+            raise LookRefused("a real-data look carries its claim: declared space, origin, cost map, universe "
+                              "(ACIS-09 C-BT-11 v2 step 1, GAP-P12D-98)")
+        if claim is not None and claim.family != family:
+            raise LookRefused(f"the claim is family {claim.family!r}'s, not {family!r}'s")
+        commit, dirty = git if git is not None else git_state()
+        if tier > 0 and (dirty or commit == "unknown"):
+            raise LookRefused("a real-data look needs a clean tracked tree at a known commit: commit first")
+        claimed = claim.line(cost_map_hash(cfg, instruments, cost_stress, spread_floor)) if claim else None
+
+        def build(scan: Scan, path: Path) -> Look:
+            looks = [x for x in scan.lines if x is not None and x.get("kind", "look") == "look"]
+            if claim is not None:
+                try:
+                    refuse_repeated_llm_variant(claim, looks)
+                except ValueError as e:
+                    raise LookRefused(str(e)) from None
+            prior = [x for x in looks if x["family"] == family]
             previous = (prior[-1]["look_id"], prior[-1]["git_commit"], prior[-1]["config_hash"]) if prior else None
             if tier > 0 and previous is not None and not changed.strip():
                 raise LookRefused(f"family {family!r} last looked at {previous[0]}: say what changed since")
-            fold_span = (min(f.train_start for f in folds).isoformat(), max(f.test_end for f in folds).isoformat())
-            path = self.root / f"{scan.next_seq:06d}.json"
-            look = Look(look_id=path.stem, path=str(path), registered_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            span = (min(f.train_start for f in folds).isoformat(), max(f.test_end for f in folds).isoformat())
+            return Look(look_id=path.stem, path=str(path), registered_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                         git_commit=commit, git_dirty=dirty, config_hash=config_hash(cfg), family=family, tier=tier,
                         tier_name=TIER_NAMES[tier], source=source.name, source_class=type(source).__qualname__,
-                        instruments=tuple(sorted(instruments)), start=fold_span[0], end=fold_span[1], account=account,
+                        instruments=tuple(sorted(instruments)), start=span[0], end=span[1], account=account,
                         cost_stress=float(cost_stress), spread_floor=float(spread_floor),
                         changed=changed.strip() or ("first look" if previous is None else ""),
-                        previous=previous, operator=operator or getpass.getuser(), prev_hash=scan.head)
+                        previous=previous, operator=operator or getpass.getuser(), prev_hash=scan.head, claim=claimed)
+        return self._append(build)
+
+    def register_cycle(self, *, cycle_id: str, order: Sequence[str], alpha: float, operator: str | None = None) -> dict:
+        """A cycle's testing order (variant hashes, in order), written before any stage-A look of it."""
+        def build(scan: Scan, path: Path) -> dict:
+            now = datetime.now(timezone.utc)
             try:
-                _write_new(path, json.dumps(asdict(look), sort_keys=True).encode("utf-8"))
-                return look
-            except FileExistsError:
-                continue                                     # another registrant won: re-read, re-decide
+                line = cycle_line(cycle_id=cycle_id, order=order, alpha=alpha, lines=scan.lines, now=now)
+            except ValueError as e:
+                raise LookRefused(str(e)) from None
+            return {**line, "look_id": path.stem, "registered_utc": now.isoformat(timespec="seconds"),
+                    "operator": operator or getpass.getuser(), "prev_hash": scan.head}
+        return self._append(build)
 
     def consume(self, look: Look) -> None:
         try:
@@ -231,7 +272,10 @@ class LookRegister:
         except FileExistsError:
             raise LookRefused(f"look {look.look_id} was already graded: one line is one grade") from None
 
-    def record_outcome(self, look: Look, outcome: dict) -> None:
+    def record_outcome(self, look: Look, outcome: dict, daily: tuple[Sequence, Sequence[float]] | None = None) -> None:
+        """The grade's outcome; `daily` = (dates, portfolio net returns), stored by its hash."""
+        if daily is not None:
+            outcome = {**outcome, "daily_vector": store_vector(self.root, *daily)}
         _write_new(self.root / f"{look.look_id}.outcome.json",
                    json.dumps(outcome, sort_keys=True, allow_nan=False).encode("utf-8"))
 
@@ -239,40 +283,8 @@ class LookRegister:
         """What a report carries: per-family and per-tier counts (a renamed family still adds to
         its tier's total), the chain head (an anchor outside the register), torn lines."""
         scan = self.scan()
-        tiers = Counter(x["tier_name"] if x else "unknown" for x in scan.lines)
+        tiers = Counter(x["tier_name"] if x else "unknown" for x in scan.lines if not x or x.get("kind") != "cycle")
         return {"family_looks": self.family_counts(), "tier_totals": dict(sorted(tiers.items())),
+                "cycles": [x["cycle_id"] for x in scan.lines if x and x.get("kind") == "cycle"],
                 "chain_head": scan.head, "torn_lines": list(scan.torn)}
 
-
-def begin_grade(look: object, *, cfg: AcisConfig, loader, source: str, instruments: Sequence[str],
-                folds: Sequence[Fold], account: str, cost_stress: float, spread_floor: float) -> dict:
-    """Everything a grade must prove BEFORE any compute; then it consumes the line."""
-    if not isinstance(look, Look):
-        raise LookRefused("no registered look: a grade must write its look-register line first (GAP-P12D-64)")
-    src = loader.source_object(source)
-    if getattr(src, "name", None) != source:
-        raise LookRefused(f"the loader key {source!r} names a source whose own name is {getattr(src, 'name', None)!r}")
-    tier = data_tier(src, folds)
-    register = LookRegister(Path(look.path).parent)
-    if tier > 0 and register.root.resolve() != CANONICAL.resolve():
-        raise LookRefused(f"a {TIER_NAMES[tier]} grade needs its look in {CANONICAL}, not {register.root}")
-    scan = register.scan()
-    if scan.broken:
-        raise LookRefused("the look register is broken: " + "; ".join(scan.broken))
-    on_disk = scan.lines[int(look.look_id) - 1] if 0 < int(look.look_id) <= len(scan.lines) else None
-    if on_disk != json.loads(json.dumps(asdict(look))):
-        raise LookRefused(f"look {look.look_id} is not on disk as registered ({look.path})")
-    run = (source, type(src).__qualname__, tuple(sorted(instruments)), min(f.train_start for f in folds).isoformat(),
-           max(f.test_end for f in folds).isoformat(), config_hash(cfg), tier, account, float(cost_stress),
-           float(spread_floor))
-    registered = (look.source, look.source_class, look.instruments, look.start, look.end, look.config_hash,
-                  look.tier, look.account, look.cost_stress, look.spread_floor)
-    if registered != run:
-        raise LookRefused(f"look {look.look_id} was registered for another run: {registered} != {run}")
-    if tier > 0:
-        commit, dirty = git_state()
-        if dirty or commit != look.git_commit:
-            raise LookRefused(f"look {look.look_id} was registered at {look.git_commit}; the tree is now "
-                              f"{commit}{' (dirty)' if dirty else ''}: the line would not pin the code that grades")
-    register.consume(look)
-    return register.summary()

@@ -1,6 +1,6 @@
 """Run the §14 out-of-sample walk-forward validation for one account (ACIS-09 §7, GAP-P12D-23).
 
-    python scripts/run_oos_validation.py --family trend-v1                 # development plan, test years 2014–2023
+    python scripts/run_oos_validation.py --family trend-v1 --origin human --recon-commit <sha>   # development plan, 2014–2023
     python scripts/run_oos_validation.py --family trend-v1 --changed "gene ranges narrowed" \\
         --first-test-year 2014 --last-test-year 2015
     python scripts/run_oos_validation.py --family trend-v1 --changed "frozen" --final-holdout   # 2024–2025, ONCE
@@ -29,7 +29,8 @@ from config.schemas import load_config  # noqa: E402
 from core.data.jsonl_logging import JsonlEventLogger  # noqa: E402
 from tests.backtest.data_loader import BacktestDataLoader  # noqa: E402
 from tests.backtest.financing import load_rate_table, make_financing  # noqa: E402
-from tests.backtest.look_register import LookRefused, LookRegister  # noqa: E402
+from tests.backtest.look_claims import ORIGINS, Claim, Origin  # noqa: E402
+from tests.backtest.look_register import LookRefused, LookRegister, config_hash  # noqa: E402
 from tests.backtest.oos_plan import DATA_START, HOLDOUT_END, HOLDOUT_START, HoldoutGuard, plan_folds  # noqa: E402
 from tests.backtest.oos_runner import (RunInputs, load_spx_closes, missing_labels,  # noqa: E402
                                        report_json, run_walk_forward)
@@ -50,7 +51,23 @@ def main() -> int:
     ap.add_argument("--family", required=True, help="the hypothesis family this look belongs to (GAP-P12D-64)")
     ap.add_argument("--changed", default="", help="what changed since the family's previous look (required after its first)")
     ap.add_argument("--operator", default=None, help="who ran it (default: the OS user)")
+    ap.add_argument("--origin", required=True, choices=ORIGINS, help="who originated the hypothesis (master §5.6)")
+    ap.add_argument("--model-id", default="", help="an LLM origin's generating model")
+    ap.add_argument("--model-cutoff", default="", help="that model's knowledge cutoff, YYYY-MM-DD")
+    ap.add_argument("--reference", default="", help="a literature origin's citation")
+    ap.add_argument("--published", default="", help="its publication date, YYYY-MM-DD")
+    ap.add_argument("--recon-commit", required=True, help="the commit at which B0 held (ACIS-09 C-BT-11 v2)")
     a = ap.parse_args()
+    instruments = sorted(cfg.instruments.enabled)
+    try:   # the engine's searched space is its config: the QIEA gene ranges and module switches
+        claim = Claim(family=a.family, variant="engine", universe_id="enabled:" + ",".join(instruments),
+                      declared_space={"grid": {"config_hash": config_hash(cfg)}, "instruments": instruments,
+                                      "formula": "ACIS engine: AGON modules routed by NVMA, QIEA per instrument x regime per fold"},
+                      origin=Origin(a.origin, a.model_id, a.model_cutoff, a.reference, a.published),
+                      simulator="engine", recon_commit=a.recon_commit)
+    except ValueError as exc:
+        print("refused:", exc)
+        return 2
 
     folds = (plan_folds(HOLDOUT_START.year, HOLDOUT_END.year - 1) if a.final_holdout
              else plan_folds(a.first_test_year, a.last_test_year))
@@ -64,8 +81,8 @@ def main() -> int:
     source = DukascopyTickSource(ROOT / "data" / "dukascopy")
     try:   # GAP-P12D-64: the line is written BEFORE any grade, and before the holdout's marker
         look = LookRegister(ROOT / "data" / "validation" / "looks").register(
-            cfg=cfg, source=source, instruments=sorted(cfg.instruments.enabled), folds=folds,
-            family=a.family, account=a.account, changed=a.changed, operator=a.operator)
+            cfg=cfg, source=source, instruments=instruments, folds=folds,
+            family=a.family, account=a.account, changed=a.changed, operator=a.operator, claim=claim)
     except LookRefused as exc:
         print("refused:", exc)
         return 2

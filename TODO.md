@@ -43,7 +43,7 @@
      - [x] 2026-09-29 joint bridges, [[GAP-P12D-92]] FIXED (C-4);
      - [x] 2026-09-29 the B0 calibration machinery, [[GAP-P12D-105]] MITIGATED: `tests/backtest/lab_calibration.py`; B0 (a)+(b) hold on the lab (planted 37.8% vs theory 39.8%, null 5.5%), a bridged lab is refused (18.2%). Wiring into `passed` is R1.4;
      - [x] 2026-09-29 re-stating every recorded synthetic verdict, [[GAP-P12D-124]] FIXED, on the Google compute server: RUNGS 0.18 / 0.19; the ladder HOLDS (~98% direction); TREND and BREAKOUT no longer capture the edge; the full falsification's stage 1 passes and the engine fails planted ([[GAP-P12D-49]], [[GAP-P12D-31]]).
-   - **R1.2 — register v2:** the daily return vector, the search-space hash, origin/cutoff and the cycle-order row ([[GAP-P12D-98]]).
+   - **R1.2 — register v2:** the daily return vector, the search-space hash, origin/cutoff and the cycle-order row ([[GAP-P12D-98]]). **BUILT 2026-09-29** in-session: `tests/backtest/look_claims.py`, the register takes a mandatory claim for real data, cycle rows, content-addressed daily vectors, and `look_gate.py`. Full suite 1057 passed on the server. The residual `evaluate()` entry point arrives with RSIM, R1.3. The R1.2 audits are due with R1.3's, or on their own: ASK the owner when R1.1's triage closes.
    - **R1.3 — rules, RSIM and costs:**
      - the TREND family with Carver's scalars, [[GAP-P12D-122]];
      - the faithful MOP member, [[GAP-P12D-116]];

@@ -19,7 +19,9 @@ import tests.backtest.look_register as lr
 from config.schemas import load_config
 from tests.backtest.data_loader import BacktestDataLoader, TickSource
 from tests.backtest.harness import NOT_REPLAYED
-from tests.backtest.look_register import LookRefused, LookRegister, begin_grade, config_hash, data_tier
+from tests.backtest.look_claims import Claim, Origin
+from tests.backtest.look_gate import begin_grade
+from tests.backtest.look_register import LookRefused, LookRegister, config_hash, data_tier
 from tests.backtest.oos_plan import plan_folds
 from tests.backtest.report import build_report
 from tests.backtest.sources import DukascopyTickSource
@@ -56,8 +58,17 @@ def canonical(tmp_path, monkeypatch):
     return LookRegister(root)
 
 
+def _claim(family: str) -> Claim:
+    """A real-data look carries its declared family-version (register v2, GAP-P12D-98)."""
+    return Claim(family=family, variant="fixed", universe_id="test-universe", origin=Origin("human"),
+                 declared_space={"grid": {}, "formula": "sign(ewmac 16/64)", "instruments": ["EUR_USD"]},
+                 simulator="engine", recon_commit=GIT[0])
+
+
 def _real(reg, cfg, family="trend-v1", **kw):
     kw.setdefault("git", GIT)
+    if family.strip():                                      # a blank family is refused before any claim
+        kw.setdefault("claim", _claim(family))
     return reg.register(cfg=cfg, source=_StandInMirror(), instruments=sorted(cfg.instruments.enabled),
                         folds=REAL_FOLDS, family=family, account="dev_paper", **kw)
 
@@ -281,7 +292,8 @@ def test_the_real_data_script_writes_its_line_before_it_grades(monkeypatch, tmp_
     with pytest.raises(SystemExit):                          # no family, no look, no grade
         mod.main()
     assert seen == [] and not (tmp_path / "data" / "validation" / "looks").exists()
-    monkeypatch.setattr(sys, "argv", sys.argv + ["--family", "trend-v1", "--operator", "owner"])
+    monkeypatch.setattr(sys, "argv", sys.argv + ["--family", "trend-v1", "--operator", "owner",
+                                               "--origin", "human", "--recon-commit", "c0ffee"])
     assert mod.main() == 0
     assert seen[0]["family"] == "trend-v1" and seen[0]["tier_name"] == "validation" and seen[0]["operator"] == "owner"
     assert seen[0]["source_class"] == "DukascopyTickSource" and seen[0]["git_commit"] == "c0ffee"
