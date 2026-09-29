@@ -9,7 +9,7 @@
 ## ▶ NEXT SESSION — START HERE (handover written 2026-09-29, late; the owner closed the session)
 
 **State, verified at handover (2026-09-29):**
-- `main` is clean, everything is committed AND pushed to origin (`63034ef..2aeffac` and this note).
+- `main` is clean, everything is committed AND pushed to origin (`507ed97..c879e09`, then this correction).
 - The full suite on the Google server: **1131 passed, 6 skipped** at `7913cdb`; `2aeffac`'s changes re-ran green on the server (the register and ledger tests, 32 passed). Ledger: 264 entries, 0 violations. The governance gate is RED only on the constitution v0.10 pin ([[GAP-C10-01]]).
 - The spec: master **v2.24**; ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-06 v1.4, ACIS-08 v1.4, ACIS-09 v1.10, ACIS-11 v1.2, **ACIS-13 v1.1 (LOCKED)**.
 - **Nothing is running.** No agents (both R1.2 auditors finished and were triaged), no background jobs. The Google server `acis-compute-1` is STOPPED. On 2026-09-29 its zone (europe-west1-b) twice had no capacity; retrying `gcloud compute instances start` for ~5 minutes worked both times. If it persists, ASK the owner about moving zones.
