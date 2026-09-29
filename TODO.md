@@ -493,6 +493,9 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
     - four projects, all created 2025-02-16..18 (`gen-lang-client-0032192124` "Gemini API", `lexical-period-451308-h3`, `peppy-vertex-451308-k7`, `turnkey-tribute-451318-p6`), none with billing enabled.
     - A trial started then would have ended around May 2025. The July 2026 Dukascopy attempt was most likely made from Cloud Shell, which is free and needs no billing.
     - Without open billing, Google creates no VM and no bucket.
+  - **CORRECTED the same day, from the owner's console** (read by the agent, read-only). That same account `01CC3D-DCF236-A54E46` IS the **Free Trial: $300 credit, 21 days remaining, ending 2026-10-21**. The trial is live; the lead's "expired around May 2025" was wrong. BUT its Account management page says **"This billing account is closed. Reopen it to continue using linked projects."**, and the API confirms it: enabling Compute fails with `UREQ_PROJECT_BILLING_NOT_OPEN`.
+    - **Done 2026-09-29:** project `acis-compute-0929` ("ACIS compute") was created and linked to that billing account (`billingEnabled: false` until it reopens). It is the dedicated ACIS project; the four 2025 projects are untouched.
+    - **OWNER:** click **Reopen billing account** (Billing → Manage billing account). It may ask for payment verification, which only the owner may do. If the dialog says it UPGRADES to a paid account, that keeps the $300. The card is charged only beyond the credit, or for anything left running after 2026-10-21; the agent stops VMs when idle, and a budget alert is set on reopening.
   - **AWS:** the Free plan ends 2027-03-11.
 
 **Done 2026-09-29:**
@@ -501,7 +504,7 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
 
 **Open:**
 - [x] 2026-09-29 **OWNER** signed Google Cloud in (`gcloud auth login`); the agent never handles credentials.
-- [ ] **OPEN ASK — the owner is checking Google first** (answered 2026-09-29: "I'll check Google first"): look at console.cloud.google.com/billing, or at another Google account, for the $300. The options offered:
+- [ ] **OPEN — waiting on the owner to REOPEN the Google billing account** (found 2026-09-29 as above). Then enable Compute + Storage on `acis-compute-0929`, set a budget alert, read the CPU quota, and make the tick-copy-3 bucket. The earlier ask, now resolved by the owner's check: ~~the owner is checking Google first~~ (answered 2026-09-29: "I'll check Google first"): look at console.cloud.google.com/billing, or at another Google account, for the $300. The options offered:
   - (a) **AWS for compute** — the lead's recommendation. $197.97 of credit, a 16-vCPU quota, 2-vCPU types only;
   - (b) **wait for the owner's check;**
   - (c) **reopen the Google billing account as paid** — real money.
