@@ -907,7 +907,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-70: fills the venue makes on its own — a server-side stop firing, a broker close — have no path into ACIS; the position view goes stale until a restart calls it drift and halts
 - Severity: high · Likelihood: high
-- Status: open (2026-09-25 — raised as OQ-03a by the SPEC-AUTHOR drafting ACIS-13. The lead VERIFIED it by absence: no unsolicited, venue-initiated or stop-trigger handling exists in specs/ACIS-06, specs/ACIS-07, core/execution or core/risk/monitor.py, and `reconcile_on_restart` is called only by tests)
+- Status: open [impl — spec RATIFIED and APPLIED 2026-09-29 as ACIS-06 v1.4 `venue_fills()`; build it in the cTrader face, the mock face and the orchestrator] (2026-09-25 — raised as OQ-03a by the SPEC-AUTHOR drafting ACIS-13. The lead VERIFIED it by absence: no unsolicited, venue-initiated or stop-trigger handling exists in specs/ACIS-06, specs/ACIS-07, core/execution or core/risk/monitor.py, and `reconcile_on_restart` is called only by tests)
 - Area: specs/ACIS-06 (the FillReport contract; `ExecutionFace`), core/risk/monitor.py (position accounting from FillReports), the three-loop runtime ([[GAP-0091b]]/[[GAP-0075]]), specs/ACIS-13 (draft)
 - Description: the Risk Monitor builds its view of open positions only from FillReports for orders ACIS itself sent. Several things close a position without that:
   - a protective stop resting on the venue's server (master §279), which cTrader keeps "active after your session ends" (ACIS-13 draft F-16);
@@ -920,11 +920,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **[impl]:** that path, in the adapter and the monitor.
   - **Where it gets decided:** in the ACIS-13 review pass together with the other ACIS-06 amendments (a)–(d) the draft lists.
   - **It blocks** any live or demo attach that relies on server-side stops, which is all of them.
+  - **RATIFIED 2026-09-29:** the owner chose "Yes, amend ACIS-06 (Recommended)". ACIS-06 v1.4 adds `ExecutionFace.venue_fills() -> AsyncIterator[FillReport]`, forwarded to Risk like a solicited fill, and a triggerable mock stop. Periodic runtime reconciliation stays with the three-loop runtime ([[GAP-0091b]]).
 - Linked: [[GAP-P12D-69]], [[GAP-0075]], [[GAP-0091b]], [[GAP-P12D-55]], [[GAP-0018]]
 
 ## GAP-P12D-69: the spec has no lawful mode for a demo account — paper mode may never send an order, and live mode needs §14 plus human sign-off
 - Severity: high · Likelihood: high
-- Status: open (2026-09-25 — raised as OQ-01 by the SPEC-AUTHOR drafting ACIS-13. The lead VERIFIED it in the master spec: `acis_set_mode(backtest|paper|live)` offers only three modes, and the GAP-0018 attach law reads "paper mode never gains a real-order path", while §15 orders "OANDA practice account first" before live)
+- Status: open [impl — spec RATIFIED and APPLIED 2026-09-29 as master v2.23, ACIS-08 v1.4, ACIS-13 v0.2; build `practice` in monitoring/mode.py and the attach gate] (2026-09-25 — raised as OQ-01 by the SPEC-AUTHOR drafting ACIS-13. The lead VERIFIED it in the master spec: `acis_set_mode(backtest|paper|live)` offers only three modes, and the GAP-0018 attach law reads "paper mode never gains a real-order path", while §15 orders "OANDA practice account first" before live)
 - Area: ACIS_SPEC.md §7.5 (the attach law, GAP-0018), §12 (modes, `acis_set_mode`, the human token), §15 (phase 12), monitoring/mode.py, specs/ACIS-08, specs/ACIS-13 (draft)
 - Description: the owner's top priority is to see ACIS trade a demo account, and a demo trade is an order sent to a venue.
   - **In paper mode** it is forbidden by construction.
@@ -938,6 +939,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - Paper mode keeps its "never an order path" law untouched.
   - **Why it is safe:** it adds an order path only where no real money exists. It must land in master §7.5/§12 and ACIS-08 as spec text, with tests proving that a live-flagged venue is refused in practice mode.
   - **When the text lands:** in the ACIS-13 review pass. The SPEC-AUTHOR drafted wording for this in the draft's Appendix B.
+  - **RATIFIED 2026-09-29:** the owner chose "New 'practice' mode (Recommended)". Applied as master v2.23 §7.5/§12/§15, ACIS-08 v1.4 and ACIS-13 v0.2 §7.1 A2. The attach gate needs all three: `environment: demo`, the venue's `isLive = false`, and the rulebook's `account_class: practice`. The last is the proposed ruling's clause (ii), kept by the lead as a tightening: a paid prop challenge also reports as demo, and it costs a fee. Still to build: the mode, the attach gate, and a test that a live-flagged account and a non-practice rulebook are each refused in practice mode.
 - Linked: [[GAP-P12D-70]], [[GAP-P12D-43]], [[GAP-0018]], [[GAP-P12D-52]]
 
 ## GAP-P12D-68: the strategy-layer redesign — the coupled owner decisions the five-agent pass produced
@@ -1457,6 +1459,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - The SCOUT's recommended demo of record: the FTMO Free Trial on cTrader via the Open API. That is a SPEC §15 deviation, and the draft amendment text is in the report's §7.
 
   Side note, grade (a): FTMO has owned OANDA Global Corporation since 1 Dec 2025.
+- **2026-09-29, venue decided under the owner's delegation** ("pick a good broker or whichever setup you deem best"): the first venue is a Pepperstone cTrader demo (Pepperstone Markets Kenya, CMA licence 128; the demo does not expire) through the cTrader Open API. Master v2.23 §15 now says so, and ACIS-13 v0.2 drops the OANDA section. The OANDA token test is dropped. Still open here: master §3/§7.5 name OANDA v20 in the v1 trio and as the primary feed (v2.23 marks it not pursued); the cost calibration of [[GAP-P12D-41]] moves to the cTrader demo feed.
 - Linked: [[GAP-P12D-41]], [[GAP-0108]], [[GAP-0001]], [[GAP-0109]]
 
 ## GAP-P12D-44: a prop account is a SIMULATED environment — guard 2 and the operational-referent audit lose their external referent there

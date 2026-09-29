@@ -1,7 +1,7 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **STATUS (2026-09-29): SPEC COMPLETE (master v2.22). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: R1.1 (the lab) and R1.2 (register v2) are built; R1.1's dual audit is triaged ([[GAP-P12D-125]]). The full suite runs on the Google server. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
-> `ACIS_SPEC.md` v2.22 is the build authority. All master-spec guardrail decisions are human-ratified.
+> **STATUS (2026-09-29): SPEC COMPLETE (master v2.23 — the demo track: practice mode, Pepperstone cTrader demo). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: R1.1 (the lab) and R1.2 (register v2) are built; R1.1's dual audit is triaged ([[GAP-P12D-125]]). The full suite runs on the Google server. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
+> `ACIS_SPEC.md` v2.23 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
@@ -23,7 +23,7 @@
 **State, verified at handover:**
 - `main` is clean and all work is committed.
 - The full suite: 1008 passed. The governance gate was green at 2026-09-25; it is RED since the constitution moved to v0.10 ([[GAP-C10-01]]). The ledger showed 259 entries, 0 violations.
-- The spec is at master **v2.22**, with ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-08 v1.3, ACIS-09 v1.8 and ACIS-11 v1.2.
+- The spec is at master **v2.23**, with ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-06 v1.4, ACIS-08 v1.4, ACIS-09 v1.9, ACIS-11 v1.2 and ACIS-13 v0.2 (draft).
 - **Nothing is running.** No agents, no worktrees, no background jobs.
 - The branches `worktree-agent-a128ab904780ce593`, `-a8937e82f9a7a5391` and `-a9e00713d15bb5082` are all merged. They are kept, and safe to delete.
 - **GitHub:** `main` was pushed to origin on 2026-09-25 with the owner's go (`43f881a..e447207`, plus this note), and again on 2026-09-29 at the owner's request (`63034ef..72bc88a`). The laptop is not the only copy of the code. `gh` is NOT signed in on the laptop (HTTP 401), so CI results are read on github.com → Actions. The tick data was single-copy until 2026-09-29, when the AWS copy was restored and verified (GAP-P12D-50; see the TWO-CLOUD block).
@@ -70,11 +70,15 @@
    - **At each phase's end:** the constitution's two audits. ASK the owner to launch them; never launch them unasked.
    - **The first real-data look** comes only after R1.1–R1.4 are green on the lab. At that point the owner decides R1-D9 + R1-D14 (the venue's swap regime and the account size / vol target, [[GAP-P12D-94]], [[GAP-P12D-101]]) and registers stage A's order.
 2. **Track A (the demo, the owner's priority):**
-   - the practice-mode spec, [[GAP-P12D-69]] (rung 2 needs it);
-   - the ACIS-13 review pass, [[GAP-P12D-70]];
-   - the three-loop runtime, [[GAP-0091b]].
+   - [x] 2026-09-29 venue chosen under the owner's delegation: a **Pepperstone cTrader demo** via the cTrader Open API, JSON over WebSocket via `aiohttp` ([[GAP-P12D-43]]).
+   - [x] 2026-09-29 practice mode and `venue_fills()` RATIFIED and applied: master v2.23, ACIS-06 v1.4, ACIS-08 v1.4, ACIS-13 v0.2 ([[GAP-P12D-69]], [[GAP-P12D-70]]).
+   - [ ] the ACIS-13 review pass (`_SPEC_REVIEW_PASS.md`, ACIS-13 §15.3), then LOCK v1.0;
+   - [ ] build: the cTrader session + feed + execution faces, `venue_fills()`, practice mode in `monitoring/mode.py`, and the attach gate;
+   - [ ] the three-loop runtime, [[GAP-0091b]] / [[GAP-0099]] / [[GAP-0075]] (no venue before the firehose fix);
+   - [ ] feed reconnect, [[GAP-0020]]; host on the Google server.
+   - **OWNER actions:** open a Pepperstone cTrader demo (Razor, USD, $10,000, since the equity floor is $9,000); register an app named `ACIS` at https://openapi.ctrader.com/apps and report when Spotware approves it; commit a demo rulebook with `account_class: practice` (the session drafts it). Never paste a token into chat: the session gives the steps to place it on the server.
 3. **Owner-only items:**
-   - the OANDA practice-token test, with the FTMO free trial as fallback;
+   - ~~the OANDA practice-token test~~ dropped 2026-09-29: the venue is a Pepperstone cTrader demo (Track A);
    - committing the corrected `ftmo` rulebook, [[GAP-P12D-54]];
    - the equity floor per account, [[GAP-P12D-56]];
    - the VPS, [[GAP-P12D-76]];
@@ -444,7 +448,7 @@ The pinned brief is `FIVE_AGENT_BRIEF_2026-09-24.md`: §0 is shared context, the
 ### TRACK A — get a demo account trading (the owner's priority)
 Critical path, in order. Steps 1 and 2 are the real blockers; do not start 3 before 2 is LOCKED.
 
-1. **Verify whether an OANDA PRACTICE token works for this owner — do this FIRST, it is one HTTP call and it decides the venue.** [[GAP-P12D-43]] found OANDA's **v20 live** API documented as unavailable to OANDA Global Markets Ltd (BVI), the division a Kenyan resident onboards to — but that finding was **never re-verified**, and it concerned the LIVE division. A **practice** account is a separate platform, and [[GAP-P12D-14]] already refers to *"OANDA practice M1 candles (owner-held token via env var)"*, so a practice token may already exist. Test `GET https://api-fxpractice.oanda.com/v3/accounts` with it. **If it answers, the spec's ordained path is open and Track A is unblocked at the venue level.** If it does not, the venue falls back to the chosen prop firm's platform (cTrader's Open API has the right schema per [[GAP-P12D-46]]; MT5's PyPI package ships **Windows-only wheels**, which breaks the `python:3.11-slim` deployment-gate assumption — [[GAP-P12D-43]]).
+1. ~~**Verify whether an OANDA PRACTICE token works for this owner**~~ **SUPERSEDED 2026-09-29:** the venue is a Pepperstone cTrader demo (master v2.23; the live list is in the NEXT SESSION block). Kept for the record: **Verify whether an OANDA PRACTICE token works for this owner — do this FIRST, it is one HTTP call and it decides the venue.** [[GAP-P12D-43]] found OANDA's **v20 live** API documented as unavailable to OANDA Global Markets Ltd (BVI), the division a Kenyan resident onboards to — but that finding was **never re-verified**, and it concerned the LIVE division. A **practice** account is a separate platform, and [[GAP-P12D-14]] already refers to *"OANDA practice M1 candles (owner-held token via env var)"*, so a practice token may already exist. Test `GET https://api-fxpractice.oanda.com/v3/accounts` with it. **If it answers, the spec's ordained path is open and Track A is unblocked at the venue level.** If it does not, the venue falls back to the chosen prop firm's platform (cTrader's Open API has the right schema per [[GAP-P12D-46]]; MT5's PyPI package ships **Windows-only wheels**, which breaks the `python:3.11-slim` deployment-gate assumption — [[GAP-P12D-43]]).
 2. **Author and LOCK `specs/ACIS-13-VENUE_ADAPTERS.md`** (platform adapters + attach protocol, master §7.5/§9.5 rulebook load; `[DIR:core/data + core/execution]`). It is **TO AUTHOR** in `specs/ACIS-00-INDEX.md`, and the standing rule is binding: *a layer's spec must reach LOCKED (via `_SPEC_REVIEW_PASS.md`) before its phase is built.* This is the formal blocker between here and a real adapter.
 3. **Build the practice adapter against the EXISTING §7.5 conformance suite.** Phase 8 already shipped the adapter contract, fragmentation, and a conformant **mock** adapter — the contract and its tests exist; only a real adapter is missing. The new one must pass that suite plus the master-§279 per-adapter server-side-stop conformance the VPS gate added (ACIS-06 v1.2).
 4. **Build the three-loop production runtime** — [[GAP-0091b]] / [[GAP-0099]] / [[GAP-0075]]. This fills the engine's systemd `ExecStart` (currently empty), feeds VaR marks each `evaluate`, threads `SizedOrder.stop_loss` through to the venue's server-side stop, and adds the position/holding policy the backtest book stands in for today. **[[GAP-0075]] matters doubly here:** the composed loop opens a NEW position on EVERY tradeable tick, which against a live feed is an order firehose. **Do not point the runtime at a venue until that is fixed.**

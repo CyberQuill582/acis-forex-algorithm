@@ -41,7 +41,7 @@ One unit: `provenance.py` (records + registry + rung ladder + graveyard + readin
 ```python
 class Rung(str, Enum):
     INCUBATION = "INCUBATION"   # backtest only
-    PAPER      = "PAPER"        # live data, no real orders
+    PAPER      = "PAPER"        # live data, no real-money orders (practice-mode demo orders count: master v2.23)
     LIVE       = "LIVE"         # real orders (human sign-off to enter)
     DECAYED    = "DECAYED"      # failed re-validation from LIVE/PAPER; exits managed, no new entries
     RETIRED    = "RETIRED"      # graveyard, revival condition declared

@@ -39,12 +39,10 @@ def rung_tag(stress: float, floor: float) -> str:
 
 
 def decompose(rows: list[dict]) -> dict:
-    """Split the 1x result into direction, friction and carry EXACTLY — the number the ladder
-    exists for. Every graded trade carries the C8 friction and the financing it was charged
-    (audit R11I-01), so net = direction - friction + carry at 1x, per strategy too, with no
-    estimate. The old least-squares slope over the rungs assumed a FIXED trade set; the rungs of
-    2026-09-29 traded 1,690 / 1,568 / 665 / 548 times, so it measured selection, not friction.
-    A row without per-trade friction (a pre-R11I-01 ladder) gets no split at all."""
+    """Split the 1x result EXACTLY: net = direction - friction + carry, per strategy too, from
+    the friction and financing every graded trade carries (audit R11I-01). A slope over the
+    rungs measured selection, not friction: the rungs trade different sets (1,690 vs 548).
+    A pre-R11I-01 ladder, with no per-trade friction, gets no split at all."""
     one = next((r for r in rows if r["cost_stress"] == 1.0 and not r["spread_floor"]), None)
     if one is None or "friction" not in one:
         return {}
