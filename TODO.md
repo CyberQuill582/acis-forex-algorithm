@@ -1,39 +1,32 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **STATUS (2026-09-29): SPEC COMPLETE (master v2.24 — the demo track: practice mode, Pepperstone cTrader demo; the stricter LLM-certification boundary). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: R1.1 (the lab) and R1.2 (register v2) are built; R1.1's dual audit is triaged ([[GAP-P12D-125]]). The full suite runs on the Google server. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
+> **STATUS (2026-09-29): SPEC COMPLETE (master v2.24 — the demo track: practice mode, Pepperstone cTrader demo; the stricter LLM-certification boundary). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the cTrader adapter is BUILT (Track A step 3); R1.1 and R1.2 are built, dual-audited and triaged ([[GAP-P12D-125]], [[GAP-P12D-127]]). The full suite runs on the Google server. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
 > `ACIS_SPEC.md` v2.24 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
 
-## ▶ NEXT SESSION — START HERE (handover written 2026-09-25, evening; the owner wound the session up)
+## ▶ NEXT SESSION — START HERE (handover written 2026-09-29, late; the owner closed the session)
 
-> **2026-09-29 session:**
-> - Two clouds are now in play: AWS as the data server, Google as the compute server. The tick set's AWS copy is restored and verified ([[GAP-P12D-50]]). Read the ☁ TWO-CLOUD block below.
-> - R1.1 has started IN-SESSION (the owner's answer): the tick generator now obeys C-BT-12 ([[GAP-P12D-91]], [[GAP-P12D-90]] fixed; [[GAP-P12D-117]] fixed, then reopened as mitigated by the R1.1 audit). **1016 passed** at the time; after the R1.1 audit triage, 1059 passed on the server.
-> - **The governance gate is RED on the constitution v0.10 pin** (pre-existing since 2026-09-25; see the Constitution section).
-> - **R1.1 is BUILT; its dual audit found 23 issues, triaged in [[GAP-P12D-125]]** (21 fixed or declared; the owner RATIFIED both decisions the same day, D-R11-1 B0 by equivalence in Sharpe and D-R11-2 C-BT-12's horizon wording, applied as ACIS-09 v1.9; the exact split was measured the same day on the server: at 1x, direction 78% and friction 22% of the loss, TSMOM's 92% direction; GAP-P12D-125 FIXED). ~~R1.1 is COMPLETE~~ (the lab, the B0 machinery and the re-statement). C-11, the lab as the data validator's control, is a later phase per PLAN_R1. The full suite on the Google server: **1050 passed, 6 skipped**. Workflow: edit on the laptop, then test on the server with the scratchpad `remote.sh`, which ships the working tree as a bundle plus an overlay. The owner asked that no slow runs happen on the laptop.
-> - **R1.1 audits: DONE and triaged** ([[GAP-P12D-125]] fixed; brief and reports in `archive/`).
-> - **R1.2 AUDITS LAUNCHED 2026-09-29** (the owner's go: "Launch both now (Recommended)"). The pinned brief is `archive/AUDIT_BRIEF_R1_2_2026-09-29.md`, on audited commit `192c1fa`. **In flight, so RESUME with SendMessage after any session limit; never relaunch:**
->   - INTERNAL: agent `ac7a16425ee411c8f`, writing `archive/AUDIT_R1_2_INTERNAL_2026-09-29.md`;
->   - EXTERNAL: agent `ae1bcd690494d245a`, writing `archive/AUDIT_R1_2_EXTERNAL_2026-09-29.md`.
->   - Both run their probes on the Google server in their own checkouts (the scratchpad `remote_audit_r12.sh`).
->   - **BOTH DONE and TRIAGED 2026-09-29:** 26 findings ([[GAP-P12D-127]], mitigated): 13 fixed with tests; real-data looks and cycle rows CLOSED until R1.4; the owner ruled both decisions (master v2.24: the stricter LLM-certification boundary, built; the register's GitHub anchor, [[GAP-P12D-86]], to build at R1.4). The rest is owned by R1.3/R1.4 before the gate opens.
->   - Meanwhile: the demo track (the cTrader adapter, TODO Track A).
+**State, verified at handover (2026-09-29):**
+- `main` is clean, everything is committed AND pushed to origin (`63034ef..2aeffac` and this note).
+- The full suite on the Google server: **1131 passed, 6 skipped** at `7913cdb`; `2aeffac`'s changes re-ran green on the server (the register and ledger tests, 32 passed). Ledger: 264 entries, 0 violations. The governance gate is RED only on the constitution v0.10 pin ([[GAP-C10-01]]).
+- The spec: master **v2.24**; ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-06 v1.4, ACIS-08 v1.4, ACIS-09 v1.10, ACIS-11 v1.2, **ACIS-13 v1.1 (LOCKED)**.
+- **Nothing is running.** No agents (both R1.2 auditors finished and were triaged), no background jobs. The Google server `acis-compute-1` is STOPPED. On 2026-09-29 its zone (europe-west1-b) twice had no capacity; retrying `gcloud compute instances start` for ~5 minutes worked both times. If it persists, ASK the owner about moving zones.
+- Workflow: edit on the laptop; test on the server with the scratchpad `remote.sh` (recreate it per session, see the memory `google-compute-workflow`). Note: `remote.sh` ships modified and untracked files only, so a staged `git mv` reaches the server only after a commit. No slow runs on the laptop (owner).
 
-**State, verified at handover:**
-- `main` is clean and all work is committed.
-- The full suite: 1008 passed. The governance gate was green at 2026-09-25; it is RED since the constitution moved to v0.10 ([[GAP-C10-01]]). The ledger showed 259 entries, 0 violations.
-- The spec is at master **v2.24**, with ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-06 v1.4, ACIS-08 v1.4, ACIS-09 v1.10, ACIS-11 v1.2 and ACIS-13 v1.1.
-- **Nothing is running.** No agents, no worktrees, no background jobs.
-- The branches `worktree-agent-a128ab904780ce593`, `-a8937e82f9a7a5391` and `-a9e00713d15bb5082` are all merged. They are kept, and safe to delete.
-- **GitHub:** `main` was pushed to origin on 2026-09-25 with the owner's go (`43f881a..e447207`, plus this note), and again on 2026-09-29 at the owner's request (`63034ef..72bc88a`). The laptop is not the only copy of the code. `gh` is NOT signed in on the laptop (HTTP 401), so CI results are read on github.com → Actions. The tick data was single-copy until 2026-09-29, when the AWS copy was restored and verified (GAP-P12D-50; see the TWO-CLOUD block).
+**First actions next session, in order:**
+1. **ASK the owner** whether the Pepperstone cTrader demo is open (USD, $10,000) and whether Spotware approved the Open API app `ACIS` (https://openapi.ctrader.com/apps). If both:
+   - give the owner the secret-safe steps to place `ACIS_CTRADER_CLIENT_ID`, `ACIS_CTRADER_CLIENT_SECRET` and the token store (`ACIS_CTRADER_TOKEN_STORE`, a Playground token for the owner's cTID) on the server, typed by the owner, never through chat;
+   - the owner commits the account's `ctid_trader_account_id` in `config/system_config.yaml → venue:` (0 = uncommitted, the attach refuses);
+   - run `python scripts/ctrader_probe.py --rulebook pepperstone_demo` (read-only); `--trade` (one minimum-lot round trip) only on the owner's go;
+   - record its answers to ACIS-13 OQ-07/08/09/12/17 in Appendix B and `OPERATIONS_LEDGER.md`.
+2. **Build Track A step 4, the three-loop runtime** ([[GAP-0091b]], [[GAP-0099]], [[GAP-0075]]). The position policy comes FIRST (no venue before the per-tick firehose is fixed). Also: wire `AttachReport.practice_eligible` into the ModeController, the A8 first-live-tick clock check ([[GAP-P12D-126]]'s residual), periodic venue reconciliation, and feed reconnect with backoff ([[GAP-0020]]).
+3. **When the runtime lands, ASK the owner** to launch the constitution's two audits of Track A steps 3–5 (the adapter and the runtime together).
+4. **R1 is paused behind the demo.** R1.3 is next. Before `REAL_LOOKS_OPEN` may become True (R1.4): the R1.3/R1.4 items owned by [[GAP-P12D-127]] and the register's GitHub anchor ([[GAP-P12D-86]]).
 
-**What happened on 2026-09-25** (details further down in this file and in the ledger):
-1. **Merges 1–3.** The BUILDER, BUILDER-3 and BUILDER-2 branches (the leakage suite and the look register) were merged, each on the owner's go.
-2. **The cloud R1 plan.** It was imported by path to `CLOUD_AUDIT/reports/r1/` and reviewed in `R1_LEAD_REVIEW_2026-09-25.md`. The lead's disagreements, with evidence, are GAP-P12D-101/102 and GAP-P12D-95.
-3. **The owner ratified** the R-1 direction, then all fourteen decisions R1-D1..D14, which were applied as v2.21. R1-D9 and R1-D14 (the swap regime, and the account size / vol target) are decided at the FIRST REAL-DATA LOOK.
-4. **The two audits** (owner-launched) found 37 issues in v2.21. They were triaged in `R1_AUDIT_TRIAGE_2026-09-25.md`; the owner said "Ratify all"; they are applied as v2.22. The ledger entries are GAP-P12D-103..123.
+**What happened on 2026-09-29** (details in the ledger): two clouds (AWS data, Google compute; [[GAP-P12D-50]] mitigated); R1.1 built, dual-audited and triaged ([[GAP-P12D-125]]; the exact 1x split is 78% direction, 22% friction); R1.2 built, dual-audited and triaged ([[GAP-P12D-127]]; real-data looks CLOSED until R1.4); master v2.23 (the `practice` mode, the Pepperstone demo) and v2.24 (the stricter LLM-certification boundary, the register's GitHub anchor); ACIS-13 LOCKED v1.1; the cTrader adapter built (`d4ade2a`).
+**2026-09-25:** merges 1–3, R-1 ratified and applied as v2.21/v2.22 (`R1_AUDIT_TRIAGE_2026-09-25.md`, GAP-P12D-101..123).
 
 **NEXT, in order:**
 1. **The R1 build** (PLAN_R1 §2; the spec is now ready). ~~ASK the owner FIRST: build in-session, or launch a builder agent?~~ **ANSWERED 2026-09-29: "In this session".** R1.1 is built in the main session; no builder agent. Any later launch still needs the owner's explicit go. Then:
@@ -44,7 +37,7 @@
      - [x] 2026-09-29 joint bridges, [[GAP-P12D-92]] FIXED (C-4);
      - [x] 2026-09-29 the B0 calibration machinery, [[GAP-P12D-105]] MITIGATED: `tests/backtest/lab_calibration.py`; B0 (a)+(b) hold on the lab (planted 37.8% vs theory 39.8%, null 5.5%), a bridged lab is refused (18.2%). Wiring into `passed` is R1.4;
      - [x] 2026-09-29 re-stating every recorded synthetic verdict, [[GAP-P12D-124]] FIXED, on the Google compute server: RUNGS 0.18 / 0.19; the engine still loses at every rung (~~~98% direction~~, withdrawn by the R1.1 audit: a regression artifact; the short-hold modules are friction-bound on this market, [[GAP-P12D-125]]); the full falsification's stage 1 passes and the engine fails planted ([[GAP-P12D-49]], [[GAP-P12D-31]]).
-   - **R1.2 — register v2:** the daily return vector, the search-space hash, origin/cutoff and the cycle-order row ([[GAP-P12D-98]]). **BUILT 2026-09-29** in-session: `tests/backtest/look_claims.py`, the register takes a mandatory claim for real data, cycle rows, content-addressed daily vectors, and `look_gate.py`. Full suite 1057 passed on the server. The residual `evaluate()` entry point arrives with RSIM, R1.3. The R1.2 audits are due with R1.3's, or on their own: ASK the owner when R1.1's triage closes.
+   - **R1.2 — register v2:** the daily return vector, the search-space hash, origin/cutoff and the cycle-order row ([[GAP-P12D-98]]). **BUILT 2026-09-29** in-session: `tests/backtest/look_claims.py`, the register takes a mandatory claim for real data, cycle rows, content-addressed daily vectors, and `look_gate.py`. Full suite 1057 passed on the server. The residual `evaluate()` entry point arrives with RSIM, R1.3. **Dual-audited and triaged 2026-09-29 ([[GAP-P12D-127]]); real-data looks CLOSED until R1.4.**
    - **R1.3 — rules, RSIM and costs:**
      - the TREND family with Carver's scalars, [[GAP-P12D-122]];
      - the faithful MOP member, [[GAP-P12D-116]];
@@ -80,15 +73,15 @@
    - [ ] the constitution's two audits of the adapter phase (ASK the owner when the runtime lands; one pass can cover Track A steps 3–5).
    - [ ] the three-loop runtime, [[GAP-0091b]] / [[GAP-0099]] / [[GAP-0075]] (no venue before the firehose fix);
    - [ ] feed reconnect, [[GAP-0020]]; host on the Google server.
-   - **OWNER actions:** open a Pepperstone cTrader demo (Razor, USD, $10,000, since the equity floor is $9,000); register an app named `ACIS` at https://openapi.ctrader.com/apps and report when Spotware approves it; commit a demo rulebook with `account_class: practice` (the session drafts it). Never paste a token into chat: the session gives the steps to place it on the server.
+   - **OWNER actions:** open a Pepperstone cTrader demo (Razor, USD, $10,000, since the equity floor is $9,000); register an app named `ACIS` at https://openapi.ctrader.com/apps and report when Spotware approves it. (The `pepperstone_demo` rulebook is drafted and RATIFIED.) Never paste a token into chat: the session gives the steps to place it on the server.
 3. **Owner-only items:**
    - ~~the OANDA practice-token test~~ dropped 2026-09-29: the venue is a Pepperstone cTrader demo (Track A);
    - committing the corrected `ftmo` rulebook, [[GAP-P12D-54]];
    - the equity floor per account, [[GAP-P12D-56]];
    - the VPS, [[GAP-P12D-76]];
-   - a second copy of the tick set, [[GAP-P12D-50]];
+   - a DURABLE second copy of the tick set (the AWS copy is restored but its free plan ends 2027-03-11), [[GAP-P12D-50]];
    - the laptop clock, [[GAP-P12D-51]];
-   - the look register's outside anchor, [[GAP-P12D-86]];
+   - ~~the look register's outside anchor~~ DECIDED 2026-09-29 (push the chain head to GitHub); the per-look push needs the owner's standing OK at R1.4, [[GAP-P12D-86]];
    - OPTIONAL: whether to drop NVMA's confidence < 0.55 veto (it was KEPT);
    - marking R-1 "relayed" in `cloud-handoff/RATIFICATIONS.md`.
 
