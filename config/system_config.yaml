@@ -119,7 +119,8 @@ execution:                       # ACIS-06 v1.1 (SPEC 7) - required block
   fast_decay_seconds: 30
   signature_lot_variance: 0.15
   dispatch_budget_ms: 100        # v2.10(c) observability value - never a guardrail
-  max_venue_requests_per_day: 1000  # GAP-P12D-57: HARD cap per venue over any rolling 24 h
+  max_venue_requests_per_day: 900   # GAP-P12D-57: HARD cap per venue over any rolling 24 h; <= the
+                                 # cTrader budget minus its close reserve (ACIS-13 v1.0 section 6.5)
                                  # (every submit attempt) - half FTMO's and E8's 2,000/day;
                                  # spent -> opens refused, closes still go through
 monitoring:                      # ACIS-08 v1.1 (SPEC 12) - required block
@@ -133,3 +134,20 @@ monitoring:                      # ACIS-08 v1.1 (SPEC 12) - required block
     - {path: signals.conviction_discard, min: 0.45, max: 0.95}
     - {path: governor.marginal_alpha_window, min: 10, max: 500}
     - {path: regime.stability_window, min: 5, max: 200}
+venue:                           # ACIS-13 v1.0 §6.1 - the real venue; absent = mock only
+  adapter: ctrader               # master v2.23: the cTrader Open API, first venue a Pepperstone demo
+  environment: demo              # must equal the account's isLive (A2); practice mode needs demo
+  ctid_trader_account_id: 0      # HUMAN-committed; 0 = not yet committed, so attach refuses
+  symbol_names: {EUR_USD: EURUSD, USD_JPY: USDJPY}   # exact venue names, verified at attach
+  transport: json_ws             # OQ-02: JSON over WebSocket via aiohttp (no new dependency)
+  daily_request_budget: 1000     # schema max 1000 (half the FTMO/E8 cap, GAP-P12D-57)
+  close_reserve: 100             # only closes, flatten and stop repair may spend these
+  max_orders_per_day: 50         # the section 6.5 order allowance (open + close each)
+  heartbeat_s: 10                # the documented cadence (F-03); schema max 10
+  liveness_timeout_s: 30
+  order_ack_timeout_s: 10        # then search by clientOrderId - never a blind resend
+  stop_confirm_timeout_s: 3
+  equity_poll_s: 300             # the unrealized-PnL poll while positions are open
+  reconcile_interval_s: 900
+  backoff: {base_s: 1, factor: 2, cap_s: 60, max_consecutive: 10}
+  rate_limit_per_s: {general: 25, historical: 2}     # half the documented 50 / 5 (F-05)

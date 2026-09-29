@@ -24,7 +24,7 @@ A production-grade, **deterministic (no-LLM-in-the-fast-loop)** autonomous forex
 core/{data,regime,optimizer,signals,governor,execution,risk}/  # 7 layers, downward-only data flow ✅
 monitoring/        # MCP monitoring/control plane (SPEC §12) ✅
 config/            # system_config.yaml, instruments.yaml, guardrail_limits.yaml (human-only)
-tests/{unit,integration,backtest}/                             # 1008 passed
+tests/{unit,integration,backtest}/                             # 1124 passed
 deploy/  Dockerfile  docker-compose.yml  .github/workflows/    # VPS deployment-readiness gate ✅
 scripts/  logs/  specs/
 ```

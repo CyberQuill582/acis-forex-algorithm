@@ -20,7 +20,7 @@ WORKDIR /app
 
 # Runtime deps only (no dev/test tooling in the deployment image — CI runs tests).
 RUN pip install --no-cache-dir \
-    structlog "pydantic>=2" pydantic-settings PyYAML
+    structlog "pydantic>=2" pydantic-settings PyYAML "aiohttp>=3.9,<4"
 
 # Source tree (.dockerignore trims tests, .git, logs, scratch).
 COPY . .

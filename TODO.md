@@ -13,12 +13,13 @@
 > - R1.1 has started IN-SESSION (the owner's answer): the tick generator now obeys C-BT-12 ([[GAP-P12D-91]], [[GAP-P12D-90]] fixed; [[GAP-P12D-117]] fixed, then reopened as mitigated by the R1.1 audit). **1016 passed** at the time; after the R1.1 audit triage, 1059 passed on the server.
 > - **The governance gate is RED on the constitution v0.10 pin** (pre-existing since 2026-09-25; see the Constitution section).
 > - **R1.1 is BUILT; its dual audit found 23 issues, triaged in [[GAP-P12D-125]]** (21 fixed or declared; the owner RATIFIED both decisions the same day, D-R11-1 B0 by equivalence in Sharpe and D-R11-2 C-BT-12's horizon wording, applied as ACIS-09 v1.9; the exact split was measured the same day on the server: at 1x, direction 78% and friction 22% of the loss, TSMOM's 92% direction; GAP-P12D-125 FIXED). ~~R1.1 is COMPLETE~~ (the lab, the B0 machinery and the re-statement). C-11, the lab as the data validator's control, is a later phase per PLAN_R1. The full suite on the Google server: **1050 passed, 6 skipped**. Workflow: edit on the laptop, then test on the server with the scratchpad `remote.sh`, which ships the working tree as a bundle plus an overlay. The owner asked that no slow runs happen on the laptop.
-> - **R1.1 AUDITS LAUNCHED 2026-09-29** (the owner's go: "Launch both audits now (Recommended)"). The pinned brief is `archive/AUDIT_BRIEF_R1_1_2026-09-29.md`, on audited commit `b5c284a`. **In flight, so RESUME with SendMessage after any session limit; never relaunch:**
->   - INTERNAL: agent `a817146544f41bee0`, writing `archive/AUDIT_R1_1_INTERNAL_2026-09-29.md`;
->   - EXTERNAL: agent `aaa9000e43a0eb738`, writing `archive/AUDIT_R1_1_EXTERNAL_2026-09-29.md`.
->   - Both run their probes on the Google server in their own checkouts (the scratchpad `remote_audit.sh`).
->   - Triage every finding before R1.2 is declared complete. `git mv` the brief to `archive/` once the pass closes.
->   - Meanwhile: R1.2, register v2.
+> - **R1.1 audits: DONE and triaged** ([[GAP-P12D-125]] fixed; brief and reports in `archive/`).
+> - **R1.2 AUDITS LAUNCHED 2026-09-29** (the owner's go: "Launch both now (Recommended)"). The pinned brief is `AUDIT_BRIEF_R1_2_2026-09-29.md`, on audited commit `192c1fa`. **In flight, so RESUME with SendMessage after any session limit; never relaunch:**
+>   - INTERNAL: agent `ac7a16425ee411c8f`, writing `archive/AUDIT_R1_2_INTERNAL_2026-09-29.md`;
+>   - EXTERNAL: agent `ae1bcd690494d245a`, writing `archive/AUDIT_R1_2_EXTERNAL_2026-09-29.md`.
+>   - Both run their probes on the Google server in their own checkouts (the scratchpad `remote_audit_r12.sh`).
+>   - **BOTH DONE 2026-09-29:** 26 findings, logged as [[GAP-P12D-127]]; triage is in progress (two are owner decisions). Triage every finding before R1.3 starts. `git mv` the brief to `archive/` once the pass closes.
+>   - Meanwhile: the demo track (the cTrader adapter, TODO Track A).
 
 **State, verified at handover:**
 - `main` is clean and all work is committed.
@@ -74,7 +75,9 @@
    - [x] 2026-09-29 practice mode and `venue_fills()` RATIFIED and applied: master v2.23, ACIS-06 v1.4, ACIS-08 v1.4, ACIS-13 v0.2 ([[GAP-P12D-69]], [[GAP-P12D-70]]).
    - [x] 2026-09-29 the ACIS-13 review pass (ACIS-13 §15.3), LOCKED v1.0: reconciled with ACIS-06 v1.3 (exits never blocked by the budget), sources re-fetched;
    - [x] 2026-09-29 built: practice mode (`monitoring/mode.py`, `account_class` in the rulebook) and the `venue_fills()` channel (face contract, mock, orchestrator); 1072 passed on the server;
-   - [ ] build: the cTrader session + feed + execution faces (ACIS-13 §3.1), the AttachReport and its practice eligibility, the watchdog plugin;
+   - [x] 2026-09-29 built: the cTrader adapter (ACIS-13 v1.0): `core/data/ctrader/` (schema, wire, transport, session, meter, tokens, feed), `core/execution/ctrader_*` (symbols, orders, events, sync, store, account, face, attach with A9 and practice eligibility), the watchdog plugin, the `venue:` config block, the `pepperstone_demo` rulebook DRAFT, and `scripts/ctrader_probe.py` for the first demo session; 60 offline tests against an in-process fake venue (`tests/ctrader_fixtures.py`).
+   - [ ] OWNER: ratify ACIS-13 v1.1, the five build-found corrections ([[GAP-P12D-126]]), and the `pepperstone_demo` rulebook draft.
+   - [ ] the constitution's two audits of the adapter phase (ASK the owner when the runtime lands; one pass can cover Track A steps 3–5).
    - [ ] the three-loop runtime, [[GAP-0091b]] / [[GAP-0099]] / [[GAP-0075]] (no venue before the firehose fix);
    - [ ] feed reconnect, [[GAP-0020]]; host on the Google server.
    - **OWNER actions:** open a Pepperstone cTrader demo (Razor, USD, $10,000, since the equity floor is $9,000); register an app named `ACIS` at https://openapi.ctrader.com/apps and report when Spotware approves it; commit a demo rulebook with `account_class: practice` (the session drafts it). Never paste a token into chat: the session gives the steps to place it on the server.

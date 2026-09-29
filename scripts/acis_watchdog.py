@@ -50,7 +50,17 @@ class MockFlattenPlugin:
         return FlattenResult(ok=True, positions_closed=1)
 
 
-_PLUGINS = {"mock": MockFlattenPlugin}
+def _ctrader_plugin(cfg: dict):
+    """ACIS-13 §7.9: loaded by path, so it runs the same as a script and under tests."""
+    import importlib.util
+    path = Path(__file__).parent / "watchdog_plugins" / "ctrader_flatten.py"
+    spec = importlib.util.spec_from_file_location("acis_ctrader_flatten", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.CTraderFlattenPlugin(cfg, result_type=FlattenResult)
+
+
+_PLUGINS = {"mock": lambda cfg: MockFlattenPlugin(), "ctrader": _ctrader_plugin}
 
 
 class WatchdogLogger:
@@ -174,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = load_watchdog_config(args.config)
     plugin_name = cfg.get("flatten_plugin", "mock")
-    plugin = _PLUGINS[plugin_name]()
+    plugin = _PLUGINS[plugin_name](cfg)
     logger = WatchdogLogger(args.log)
     wd = Watchdog(cfg, plugin, logger, marker_path=args.marker,
                   started_at=time.time())

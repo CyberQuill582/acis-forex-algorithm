@@ -8,6 +8,7 @@ dependencies = [
     "pydantic>=2",
     "pydantic-settings",
     "PyYAML",
+    "aiohttp>=3.9,<4",   # the cTrader adapter's JSON-over-WebSocket transport (ACIS-13 §3.3, route C; named in SPEC §16)
 ]
 
 [project.optional-dependencies]

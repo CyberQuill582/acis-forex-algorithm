@@ -109,3 +109,17 @@ accounts:
         limit_pct: 10.0
     consistency_max_day_profit_pct: 40.0   # no single day > 40% of total profit
     min_trading_days: 5
+
+  # ── The first demo venue (master v2.23, ACIS-13 v1.0) — DRAFT by the lead 2026-09-29, NOT ratified.
+  # Human-committed like every rulebook: it becomes binding only when the owner ratifies it, and it
+  # is used only once the owner sets `active_account: pepperstone_demo` (still dev_paper).
+  pepperstone_demo:               # a Pepperstone cTrader demo (Pepperstone Markets Kenya, CMA 128)
+    platform: ctrader
+    account_class: practice       # a free demo: no fee, no deposit, nothing of value at stake (A2)
+    news:
+      restricted: false           # a retail demo imposes no news rule; ACIS's own §3.5 blackouts still apply
+    min_hold_seconds: 0
+    weekend_holding_allowed: true # the broker allows it; the R-1 rules hold positions for days
+    drawdown_rules: []            # no platform limit to model; ACIS's own guardrails bind (stricter-of).
+                                  # Open the demo at $10,000 (the equity floor is $9,000); no rule here
+                                  # sizes on initial capital, so none is declared.

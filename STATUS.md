@@ -4,6 +4,8 @@
 
 ## Where we are
 
+> **2026-09-29, the demo track (the owner's top priority).** The venue is a **Pepperstone cTrader demo** in the new `practice` mode (master v2.23, owner-ratified). ACIS-13 is LOCKED at v1.0, and the **cTrader adapter is BUILT**: session, feed face, execution face, attach, restart sync, the watchdog's flatten plugin and `scripts/ctrader_probe.py` for the first live session, tested offline against an in-process fake venue. **1124 passed, 6 skipped** on the server. Before the first demo trade: the owner's Pepperstone demo and Spotware app, ACIS-13 v1.1 and the demo rulebook to ratify (GAP-P12D-126), and the three-loop runtime with its position policy (GAP-0091b/0075). The R1.2 audits found 26 issues (GAP-P12D-127); their triage is in progress.
+
 > **2026-09-29 digest.** **R1.1, the synthetic lab, is BUILT**, in-session at the owner's choice. Every heavy run now goes to the Google compute server (`acis-compute-1`, TODO ☁ block): the full suite runs there in ~30 s. **1050 passed, 6 skipped** (the skips need real data kept only on the laptop).
 > - **The tick generator** obeys ACIS-09 C-BT-12: nothing demeaned, prices compound zero-mean simple returns, and the planted drift is set from an oracle Sharpe of 10 (it was ~157), variance-matched to the null at one weekday (GAP-P12D-90/91/117).
 > - **The daily-first lab** is new: `tests/backtest/lab_*.py`. It has five plantable effects of known Sharpe, joint intraday bridges (GAP-P12D-92), a harness tick source with one cost, financing and clock model, Cont's stylized facts as its gate, and a structural hygiene law.
