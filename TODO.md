@@ -16,7 +16,8 @@
 - Workflow: edit on the laptop; test on the server with the scratchpad `remote.sh` (recreate it per session, see the memory `google-compute-workflow`). Note: `remote.sh` ships modified and untracked files only, so a staged `git mv` reaches the server only after a commit. No slow runs on the laptop (owner).
 
 **First actions next session, in order:**
-1. **ASK the owner** whether the Pepperstone cTrader demo is open (USD, $10,000) and whether Spotware approved the Open API app `ACIS` (https://openapi.ctrader.com/apps). If both:
+1. **Owner progress (2026-09-30):** the Pepperstone cTrader demo is OPEN — account number (trader login) **5350811**, Demo, Hedging, USD 10,000, leverage 1:400 (the owner's screenshot). The Open API app `ACIS` is SUBMITTED to Spotware, awaiting approval. The owner has NOT copied the client ID/secret (they stay on the Spotware apps page until the server setup). The internal `ctidTraderAccountId` is not shown in cTrader: read it from the grant's account list (match `traderLogin` 5350811) once a token exists.
+   **ASK the owner** whether Spotware approved the app. Once it has:
    - give the owner the secret-safe steps to place `ACIS_CTRADER_CLIENT_ID`, `ACIS_CTRADER_CLIENT_SECRET` and the token store (`ACIS_CTRADER_TOKEN_STORE`, a Playground token for the owner's cTID) on the server, typed by the owner, never through chat;
    - the owner commits the account's `ctid_trader_account_id` in `config/system_config.yaml → venue:` (0 = uncommitted, the attach refuses);
    - run `python scripts/ctrader_probe.py --rulebook pepperstone_demo` (read-only); `--trade` (one minimum-lot round trip) only on the owner's go;
@@ -73,7 +74,7 @@
    - [ ] the constitution's two audits of the adapter phase (ASK the owner when the runtime lands; one pass can cover Track A steps 3–5).
    - [ ] the three-loop runtime, [[GAP-0091b]] / [[GAP-0099]] / [[GAP-0075]] (no venue before the firehose fix);
    - [ ] feed reconnect, [[GAP-0020]]; host on the Google server.
-   - **OWNER actions:** open a Pepperstone cTrader demo (Razor, USD, $10,000, since the equity floor is $9,000); register an app named `ACIS` at https://openapi.ctrader.com/apps and report when Spotware approves it. (The `pepperstone_demo` rulebook is drafted and RATIFIED.) Never paste a token into chat: the session gives the steps to place it on the server.
+   - **OWNER actions:** [x] 2026-09-30 the Pepperstone cTrader demo is open (5350811, Hedging, USD 10,000); [x] 2026-09-30 the app `ACIS` is registered and SUBMITTED; [ ] report when Spotware approves it. (The `pepperstone_demo` rulebook is drafted and RATIFIED.) Never paste a token into chat: the session gives the steps to place it on the server.
 3. **Owner-only items:**
    - ~~the OANDA practice-token test~~ dropped 2026-09-29: the venue is a Pepperstone cTrader demo (Track A);
    - committing the corrected `ftmo` rulebook, [[GAP-P12D-54]];
