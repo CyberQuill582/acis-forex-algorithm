@@ -13,7 +13,12 @@
 > - R1.1 has started IN-SESSION (the owner's answer): the tick generator now obeys C-BT-12 ([[GAP-P12D-91]], [[GAP-P12D-90]] fixed; [[GAP-P12D-117]] mitigated). **1016 passed**, ledger 260 entries with 0 violations.
 > - **The governance gate is RED on the constitution v0.10 pin** (pre-existing since 2026-09-25; see the Constitution section).
 > - **R1.1 is COMPLETE** (the lab, the B0 machinery and the re-statement). C-11, the lab as the data validator's control, is a later phase per PLAN_R1. The full suite on the Google server: **1050 passed, 6 skipped**. Workflow: edit on the laptop, then test on the server with the scratchpad `remote.sh`, which ships the working tree as a bundle plus an overlay. The owner asked that no slow runs happen on the laptop.
-> - **OPEN ASK (2026-09-29): the constitution's two audits of R1.1** (internal-consistency + external-referent, Opus 5, fresh context). They wait on the owner's explicit go. Then comes R1.2.
+> - **R1.1 AUDITS LAUNCHED 2026-09-29** (the owner's go: "Launch both audits now (Recommended)"). The pinned brief is `AUDIT_BRIEF_R1_1_2026-09-29.md`, on audited commit `b5c284a`. **In flight, so RESUME with SendMessage after any session limit; never relaunch:**
+>   - INTERNAL: agent `a817146544f41bee0`, writing `archive/AUDIT_R1_1_INTERNAL_2026-09-29.md`;
+>   - EXTERNAL: agent `aaa9000e43a0eb738`, writing `archive/AUDIT_R1_1_EXTERNAL_2026-09-29.md`.
+>   - Both run their probes on the Google server in their own checkouts (the scratchpad `remote_audit.sh`).
+>   - Triage every finding before R1.2 is declared complete. `git mv` the brief to `archive/` once the pass closes.
+>   - Meanwhile: R1.2, register v2.
 
 **State, verified at handover:**
 - `main` is clean and all work is committed.
