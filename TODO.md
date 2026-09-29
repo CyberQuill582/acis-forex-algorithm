@@ -504,12 +504,22 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
 
 **Open:**
 - [x] 2026-09-29 **OWNER** signed Google Cloud in (`gcloud auth login`); the agent never handles credentials.
-- [ ] **OPEN — waiting on the owner to REOPEN the Google billing account** (found 2026-09-29 as above). Then enable Compute + Storage on `acis-compute-0929`, set a budget alert, read the CPU quota, and make the tick-copy-3 bucket. The earlier ask, now resolved by the owner's check: ~~the owner is checking Google first~~ (answered 2026-09-29: "I'll check Google first"): look at console.cloud.google.com/billing, or at another Google account, for the $300. The options offered:
+- [x] 2026-09-29 **The owner REOPENED the Google billing account** (a disputed $30 card hold, re-submitted). The API now reads open: True and billingEnabled: True on `acis-compute-0929`.
+- [x] 2026-09-29 **Google set up:**
+  - **APIs:** Compute, Storage and Budgets enabled.
+  - **Budget alert** "ACIS trial credit guard" (`8d550d45-…`): $300 gross, emails at 25/50/90/100%.
+  - **Quota:** 32 vCPUs in all regions, C2D allowed.
+  - **Bucket** `gs://acis-compute-0929-data` (europe-west1, private, uniform access).
+  - **Server** `acis-compute-1`: c2d-standard-16 (16 vCPU, 64 GB), europe-west1-b, Debian 12 / Python 3.11, venv at `/opt/acis/venv`, code at `/opt/acis/repo` from a git bundle in `gs://…/code/`. Reached with `gcloud compute ssh acis-compute-1 --zone=europe-west1-b` (key at `~/.ssh/google_compute_engine`). About 3× the laptop per core.
+- [ ] **RUNNING on `acis-compute-1` since 2026-09-29 ~11:40 UTC** ([[GAP-P12D-124]] items 2 and 3, code `daf7bd2`): `cost_stress_ladder.py --workers 8` and `falsify_engine.py --workers 8`, concurrently, via `/opt/acis/run_restatement.sh`.
+  - **Logs** sync every 5 min to `gs://acis-compute-0929-data/runs/20260929/logs/`.
+  - **At the end** the script copies `data/validation` to `…/runs/20260929/validation` and POWERS THE SERVER OFF. A stopped server bills only its 40 GB disk.
+  - **Afterwards:** read the verdicts, write them into GAP-P12D-124 / GAP-P12D-49, and delete the server when no further run is planned. The earlier ask, now resolved by the owner's check: ~~the owner is checking Google first~~ (answered 2026-09-29: "I'll check Google first"): look at console.cloud.google.com/billing, or at another Google account, for the $300. The options offered:
   - (a) **AWS for compute** — the lead's recommendation. $197.97 of credit, a 16-vCPU quota, 2-vCPU types only;
   - (b) **wait for the owner's check;**
   - (c) **reopen the Google billing account as paid** — real money.
   Until the owner answers, no compute is set up. The R1.1 code continues in-session.
-- [ ] **Then, if Google has credit:** read the trial end date and the CPU quota, and create a Cloud Storage bucket in `europe-west1` for tick copy 3, fed from AWS by signed links.
+- [ ] **Tick copy 3 in the bucket** (optional; the re-statement runs need no real data). Pull from Dukascopy's requester-pays archive with presigned URLs made on the laptop, verify against the manifest, and write to `gs://acis-compute-0929-data/ticks/`. Note: the Google trial ends 2026-10-21, and its resources are deleted 30 days later unless the account is upgraded.
 - [ ] **Create the compute VM only when a run is ready,** because it bills while it runs. The first candidate: R1.1's re-statement of every recorded synthetic verdict ([[GAP-P12D-49]] included), which takes hours on the laptop.
 - [ ] **OWNER, before the Google trial ends:** upgrade, or let it lapse; a copy held there dies 30 days after the end.
 - [ ] **OWNER, before 2027-03-11:** the durable tick copy (the [[GAP-P12D-50]] residual).
