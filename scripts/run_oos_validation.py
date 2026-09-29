@@ -1,7 +1,7 @@
 """Run the §14 out-of-sample walk-forward validation for one account (ACIS-09 §7, GAP-P12D-23).
 
     python scripts/run_oos_validation.py --family trend-v1 --origin llm --model-id <model> \\
-        --model-cutoff <YYYY-MM-DD> --recon-commit <sha>                      # development plan, 2014–2023
+        --model-cutoff <YYYY-MM-DD> --proposed <YYYY-MM-DD> --exposure repository --recon-commit <sha>
     (add --changed "..." after a family's first look; --final-holdout grades 2024–2025, ONCE)
 
 LLM agents designed and refined the engine, so its origin is `llm` (master §5.6). A human label on an
@@ -50,8 +50,10 @@ def main() -> int:
     ap.add_argument("--changed", default="", help="what changed since the family's previous look (required after its first)")
     ap.add_argument("--operator", default=None, help="who ran it (default: the OS user)")
     ap.add_argument("--origin", required=True, choices=ORIGINS, help="who originated the hypothesis (master §5.6)")
-    ap.add_argument("--model-id", default="", help="an LLM origin's generating model")
-    ap.add_argument("--model-cutoff", default="", help="that model's knowledge cutoff, YYYY-MM-DD")
+    ap.add_argument("--model-id", default="", help="the model that proposed (or selected) the hypothesis")
+    ap.add_argument("--model-cutoff", default="", help="that model's training-data cutoff, YYYY-MM-DD")
+    ap.add_argument("--proposed", default="", help="when the model proposed or selected it, YYYY-MM-DD")
+    ap.add_argument("--exposure", default="", help="none | web | repository: what the proposer could read")
     ap.add_argument("--reference", default="", help="a literature origin's citation")
     ap.add_argument("--published", default="", help="its publication date, YYYY-MM-DD")
     ap.add_argument("--recon-commit", required=True, help="the commit at which B0 held (ACIS-09 C-BT-11 v2)")
@@ -62,7 +64,9 @@ def main() -> int:
                       declared_space={"grid": {"config_hash": config_hash(cfg), "code": git_state()[0]},
                                       "instruments": instruments,
                                       "formula": "ACIS engine: AGON modules routed by NVMA, QIEA per instrument x regime per fold"},
-                      origin=Origin(a.origin, a.model_id, a.model_cutoff, a.reference, a.published),
+                      origin=Origin(a.origin, model_id=a.model_id, model_cutoff=a.model_cutoff,
+                                    proposed=a.proposed, exposure=a.exposure, reference=a.reference,
+                                    published=a.published),
                       simulator="engine", recon_commit=a.recon_commit)
     except ValueError as exc:
         print("refused:", exc)

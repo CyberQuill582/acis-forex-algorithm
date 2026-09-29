@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-VENUE-013` |
-| **Version** | 1.0 (**LOCKED** 2026-09-29 — the review pass, §15.3, by the lead) · 0.2 (2026-09-29 — the three BLOCKING questions ruled and folded in; first venue a Pepperstone cTrader demo) · 0.1 (authored 2026-09-24/25 by SPEC-AUTHOR) |
+| **Version** | 1.1 (**LOCKED** 2026-09-29 — five build-found corrections, owner-ratified, GAP-P12D-126) · 1.0 (**LOCKED** 2026-09-29 — the review pass, §15.3, by the lead) · 0.2 (2026-09-29 — the three BLOCKING questions ruled and folded in; first venue a Pepperstone cTrader demo) · 0.1 (authored 2026-09-24/25 by SPEC-AUTHOR) |
 | **Status** | **LOCKED 2026-09-29** after the review pass (§15.3; the record is the v1.0 changelog). The BLOCKING rulings (OQ-01, OQ-02, OQ-03a) are folded in. Every question left open is a probe or attach-gating, and none blocks the build (TODO Track A step 3). |
 | **Layer / DIR** | Platform adapters — `[DIR:core/data]` (shared transport+auth session, feed face) + `[DIR:core/execution]` (execution face) + `[DIR:scripts]` (the watchdog's cTrader flatten plugin) + `[DIR:tests/integration]` / `[DIR:tests/unit]` |
 | **Consumes** | the cTrader Open API (first adapter); `config/platform_rules.yaml` (the active account's rulebook); `config/instruments.yaml` (enabled universe + §3.7 contract metadata); `config/system_config.yaml` (`active_account` + the new `venue:` block, §6.1); venue credentials from the environment / secret store (never YAML) |
@@ -153,7 +153,7 @@ No new boundary dataclass crosses a layer. The adapter produces the **locked** A
 | `recv_time` | local clock at frame receipt | injected clock (ACIS-06 §5 pattern) |
 | `instrument` | reverse `symbol_map[symbolId]` | an unknown `symbolId` is logged `FEED_UNKNOWN_SYMBOL` and dropped (never guessed) |
 | `bid`, `ask` | `bid` / `ask` ÷ 100 000, rounded to `digits` [F-23] | **Both sides are optional per event** [F-23]. The face keeps the last known bid and ask per symbol and emits a `RawTick` only once both are known. Every emitted tick carries `raw_payload.sides_updated ∈ {bid, ask, both}`, so a carried-forward side is visible, never silent. |
-| `volume` | — | Spot events carry no volume. The field is omitted, and the descriptor declares `quote_volume = False` (§5.2). This interacts with GAP-P12D-47: volume-reading modules have no venue volume here. |
+| `volume` | — | Spot events carry no volume. The locked ACIS-01 `RawTick` requires the field, so it is `0.0` (v1.1), and the venue profile declares `quote_volume = False` (§5.2). This interacts with GAP-P12D-47: volume-reading modules have no venue volume here. |
 | `book` | — | not subscribed (`quote_depth = False`) |
 | `provider` | `"ctrader"` | |
 | `raw_payload` | the decoded event plus `snapshot: bool` | `snapshot = True` on the first ("technical") event after each subscription, which carries "latest spot prices even if market is closed" [F-23]. ACIS-01's staleness flag then does its job. |
@@ -349,13 +349,13 @@ Each step logs `ATTACH_STEP{n, result}`. Any failure stops the attach with a nam
   - **Any** position **or pending order** raises `AttachHalt`. A pending order is a position in waiting.
   - The human decides: flatten on the platform, or manage manually until flat. ACIS never trades alongside positions it did not open.
 - **A7 — Restart instead of attach**, for a binding **with** persisted ACIS state:
-  - Deal ingestion (§7.8) runs **first**, so that stop-outs while ACIS was down become `FillReport`s before reconciliation.
+  - §7.8 runs in its v1.1 order: ACIS's own in-flight fragments are resolved first, then the deals missed while down are ingested, skipping every deal of an ACIS order, so a stop-out while ACIS was down becomes one `FillReport` before reconciliation and a crashed open's fill is never reported twice.
   - Then `reconcile_on_restart` (ACIS-07 C-RSK-5) receives the ACIS-labelled positions. A foreign position is an `AttachHalt`.
   - Every ACIS position must show a stop, else the §7.3 step-6 repair runs.
 - **A8 — Subscribe to spots and check the clock.**
   - `ProtoOASubscribeSpotsReq(symbolId = [...], subscribeToSpotTimestamp = true)` [F-23].
   - Await the first (technical) event per symbol.
-  - Clock check (§2.4): refuse if the skew is out of tolerance. **Caveat:** the first event may be an old closing print when the market is closed [F-23]. The skew check therefore uses only events received while the venue schedule says the market is open. On a closed-market attach it is deferred to the first live tick, and entries stay blocked until it passes.
+  - Clock check (§2.4): refuse if the skew is out of tolerance. **Caveat:** the first event may be an old closing print when the market is closed [F-23]. The skew check therefore uses only events received while the venue schedule says the market is open. The check needs a live tick, so it cannot finish inside the attach (v1.1): the runtime performs it on the first live tick per symbol (GAP-0091b), and entries stay blocked until it passes.
 - **A9 — The budget feasibility check** (§6.5).
 - **A10 — The prop-safety preconditions** (§15.2). An FTMO or E8 rulebook with any precondition unmet refuses to attach, with its reason.
 - **A11 — Report and start.** Emit the `AttachReport` and `ATTACH_VERIFIED`, publish on `acis://venues/adapters`, and start in **paper mode, always** (master §7.5). Only a human token changes mode (§12): to `practice` with the dual-hash attestation (master v2.23), to `live` with rung 2 as well. **The mode selects the face:** in `paper` the orchestrator dispatches to the paper face and the venue face sends nothing. `acis_set_mode(practice)` is refused unless this attach's `AttachReport` shows `environment = demo`, `is_live = false` and `account_class = practice` (A2). A mode switch never re-binds the account.
@@ -397,7 +397,7 @@ Each step logs `ATTACH_STEP{n, result}`. Any failure stops the attach with a nam
    - A **reduce** (`close_position`) is `ProtoOAClosePositionReq{positionId, volume}` [F-13], on hedging **and** netting accounts. On a hedging account each fragment of an open is its own venue position, so a reduce spanning several sends one request per position, oldest first, each budgeted, and returns one aggregated `FillReport`. An explicit close can never open an opposite hedge by accident (C-VEN-9).
    - The `fragment_plan` was logged before dispatch (ACIS-06 §9). Record `venue_order_map` with state `SENT` before the frame leaves.
 6. **Await the terminal outcome** (§4.2), correlated by `clientMsgId` for the immediate response and by `orderId`/`clientOrderId` for the execution events.
-   - **Timeout** (`order_ack_timeout_s`) or a **disconnect before the terminal event**: do **not** resend. Raise `ConnectionError`, as the ACIS-06 contract does. When the orchestrator retries with the same `fragment_id`, the face, now in `SYNCING` or `READY`, first searches the venue: `ProtoOAOrderListReq` over `[sent_ts − 60 s, now]`, filtered on `order.clientOrderId == fragment_id` [F-19]; then `ProtoOAOrderDetailsReq` for its deals.
+   - **Timeout** (`order_ack_timeout_s`) or a **disconnect before the terminal event**: do **not** resend. Raise `ConnectionError`, as the ACIS-06 contract does. When the orchestrator retries with the same `fragment_id`, the face, now in `SYNCING` or `READY`, first searches the venue: `ProtoOAOrderListReq` over `[sent_ts − 60 s, now]`, filtered on `order.clientOrderId == fragment_id` [F-19]; then `ProtoOAOrderDetailsReq` for its deals. **A close carries no `clientOrderId`** (`ProtoOAClosePositionReq` has none, v1.1): each close is recorded per venue position before it leaves, and an unknown outcome is searched as the MARKET closing order on that position, skipping any order already recorded as ACIS's.
      - **If found:** return the report built from venue truth.
      - **If not found:** the order never reached the venue, and only then is it sent.
      - Either way it is exactly once (C-EXE-5).
@@ -441,8 +441,8 @@ The mock face must gain a way to trigger its resting stop, so that the shared su
 
 ### 7.8 Restart reconciliation and deal ingestion (feeds ACIS-07 C-RSK-5)
 On every start and every reconnect (`SYNCING`):
-1. **Deals missed while down.** `ProtoOADealListReq(from = deal_cursor, to = now)` [F-19], paging on `hasMore`. For each deal not already covered by a `FillReport` (`fill_report` PK, ACIS-06 §10), emit it through `venue_fills()` (§7.7). Advance `deal_cursor` (persisted per `account_key`).
-2. **Fragments in flight at the crash.** Every `FRAGMENT_PLAN` fragment without a terminal `venue_order_map` row is resolved by the §7.3 step-6 search. Anything found is reported; anything absent is marked `NOT_SENT`. **Nothing is resubmitted automatically**; the orchestrator decides afresh.
+1. **Fragments in flight at the crash** (first, v1.1). Every fragment without a terminal `venue_order_map` row is resolved by the §7.3 step-6 search. Anything found is reported once, under its ACIS order id, and its venue order is recorded; anything absent is marked `NOT_SENT`. **Nothing is resubmitted automatically**; the orchestrator decides afresh.
+2. **Deals missed while down.** `ProtoOADealListReq(from = deal_cursor, to = now)` [F-19], paging on `hasMore`. Every deal of an order ACIS sent is skipped (step 1 reported it); every other deal on an ACIS position goes out through `venue_fills()` (§7.7). Advance `deal_cursor` (persisted per `account_key`). (v1.0 ran this step first, which reported a crashed open's fill twice.)
 3. **Positions.** `ProtoOAReconcileReq` → `reconcile_on_restart(ACIS-labelled positions)`. Any residual drift is a genuine surprise, and ACIS-07 HALTs as it already does.
 4. **Stops.** Every ACIS position must show a stop, else the §7.3 step-6 repair runs.
 5. **Balance history, for GAP-P12D-55.** The face can supply the venue's balance path: closing deals carry `closePositionDetail.balance` [F-38], and `ProtoOACashFlowHistoryListReq` returns deposits and withdrawals in windows of at most one week [F-39], from `registrationTimestamp` [F-21]. That is a **provision**, one of the fix options GAP-P12D-55 names ("reconstruct them from the broker's balance history at boot"). Choosing it is the owner's call. The intraday equity high-water mark cannot be rebuilt from balance history.
@@ -467,7 +467,8 @@ The conformance case of §14.2 settles it. A failure is `WATCHDOG_FLATTEN_FAILED
 ```
 DISCONNECTED → CONNECTING → APP_AUTH → ACCOUNT_AUTH → SYNCING → READY
 READY → DEGRADED   (rate-limited, budget below reserve, or a symbol CLOSE_ONLY) → READY
-any → DISCONNECTED (link dead, ProtoOAClientDisconnectEvent, AccountDisconnect) → backoff → CONNECTING
+any → DISCONNECTED (link dead, ProtoOAClientDisconnectEvent) → backoff → CONNECTING
+READY/SYNCING → REAUTH (ProtoOAAccountDisconnectEvent) → ACCOUNT_AUTH
 READY/SYNCING → REAUTH (token refreshed or invalidated) → ACCOUNT_AUTH
 any → DETACHED     (account disabled or deleted, token DEAD, access rights lost) — terminal; human re-grant + re-attach
 ```
@@ -563,7 +564,8 @@ CREATE TABLE venue_binding (
 | `SERVER_IS_UNDER_MAINTENANCE`, `maintenanceEndTimestamp`, `CH_SERVER_NOT_REACHABLE`, `CANT_ROUTE_REQUEST` | backoff until the stated end (§6.6); not a HALT |
 | `OA_AUTH_TOKEN_EXPIRED`, `CH_ACCESS_TOKEN_INVALID`, `ProtoOAAccountsTokenInvalidatedEvent` | refresh (§6.7) → `REAUTH`; a failed refresh means `DETACHED` |
 | `ACCOUNT_NOT_AUTHORIZED`, `ProtoOAAccountDisconnectEvent` | `REAUTH` (account auth on the same connection) |
-| `ProtoOAClientDisconnectEvent`, `CH_CLIENT_AUTH_FAILURE`, `CH_OA_CLIENT_NOT_FOUND` | the application itself is refused → `DETACHED`; human |
+| `ProtoOAClientDisconnectEvent` | the server cancelled the connection → `DISCONNECTED`, backoff, reconnect (§8.1; v1.1) |
+| `CH_CLIENT_AUTH_FAILURE`, `CH_OA_CLIENT_NOT_FOUND` on (re)authorisation | the application itself is refused → `DETACHED`; human |
 | `RET_ACCOUNT_DISABLED`, `RET_NO_SUCH_LOGIN`, `CH_CTID_TRADER_ACCOUNT_NOT_FOUND`, `TRADING_NOT_ALLOWED`, `CHANNEL_IS_BLOCKED` | `DETACHED` (§7.2) |
 | `ALREADY_LOGGED_IN` | success on this connection (§7.1 A3) |
 | `CONNECTIONS_LIMIT_EXCEEDED` | engine: backoff + `VENUE_UNREACHABLE`; watchdog: `WATCHDOG_FLATTEN_FAILED` [OQ-06] |
@@ -764,6 +766,7 @@ A forum answer is never an official document. It is used only where the docs are
 | OQ-18 | **How does an expiring or breached FTMO trial account present on the API?** (Access rights? A disconnect event? An error code?) Spotware's trial accounts "expire automatically after the trial period" and carry a "FREE" flag [F-42]; the flag is not in the Open API model, and the API-side signal of expiry is undocumented. | The §7.2 `DETACHED` trigger. | Probe (day 14 or first breach) | First trial cycle |
 
 ## Changelog
+- **1.1 (LOCKED — 2026-09-29, owner-ratified: "Ratify both (Recommended)").** Five corrections the build found (GAP-P12D-126), each already implemented with a test: (a) §7.8 and A7 resolve ACIS's in-flight fragments BEFORE ingesting missed deals, so a crashed open's fill is never reported twice; (b) §7.3 step 6 searches a close as the market closing order on its recorded position, since `ProtoOAClosePositionReq` carries no `clientOrderId`; (c) `ProtoOAClientDisconnectEvent` is a disconnect (§8.1) and only a refused (re)authorisation detaches (§12), where v1.0's two sections disagreed; (d) `RawTick.volume` is 0.0, since the locked ACIS-01 type requires it; (e) A8's clock check runs at the runtime's first live tick. No guardrail, HALT/veto semantics, equity floor or rulebook value changed.
 - **1.0 (LOCKED — 2026-09-29).** The review pass by the lead, who did not author the draft (§15.3; the `_SPEC_REVIEW_PASS.md` checks 3A–3F):
   - **Reconciled with ACIS-06 v1.3, merged after the draft was written:** `close_position` carries the close intent (OQ-03c resolved; §7.3 no longer infers it); the orchestrator rounds lots down before dispatch (OQ-03b resolved); the request budget no longer stops exits: at `used ≥ budget` closes and stop repair pass, paced by C-EXE-8, where the draft stopped everything. A hedging-account reduce spanning several fragment positions is specified (§7.3 step 5).
   - **OQ-03d resolved** as ACIS-06 v1.4's conformance variant (relative stop within one tick, live-quote fixture, recorded-frame partials, the stop-hit case).

@@ -5,8 +5,9 @@ Mental model:
   * A CLAIM is one registered family-version: its DECLARED SEARCH SPACE (the grid, the formula,
     the instrument list — those keys only) hashed before the first look (GAP-P12D-89), the variant
     inside it, the universe, its ORIGIN (a dated paper, a human, or an LLM with its model and
-    knowledge cutoff; master §5.6), the simulator that grades it, and the `recon_commit` at which
-    B0 held. The claim must describe the run it registers: the same instruments.
+    training-data cutoff, proposal date and exposure; master v2.24 §5.6) with the certifying
+    boundary it implies, the simulator that grades it, and the `recon_commit` at which B0 held.
+    The claim must describe the run it registers: the same instruments.
   * Hashes are sha256 of Python `json.dumps(sort_keys=True, allow_nan=False)` over a NORMALISED
     payload (not RFC 8785): strings NFC and stripped, integral floats as ints, −0.0 as 0, grid
     values and instruments as sorted sets, the formula's whitespace collapsed and case-folded. So
@@ -44,6 +45,7 @@ from config.schemas import AcisConfig
 
 ORIGINS = ("literature", "human", "llm")
 SIMULATORS = ("engine", "rsim")
+EXPOSURES = ("none", "web", "repository")
 SPACE_KEYS = frozenset({"grid", "formula", "instruments"})
 MAX_CYCLE = 5
 REAL_LOOKS_OPEN = False          # GAP-P12D-127: opened by R1.4, with the recording fixes
@@ -86,28 +88,45 @@ def canonical_hash(payload: object) -> str:
 
 @dataclass(frozen=True)
 class Origin:
+    """Master v2.24 §5.6 (E-R12-02): who proposed the hypothesis, and from when it may be certified."""
     kind: str                            # "literature" | "human" | "llm"
-    model_id: str = ""                   # llm: the generating model
-    model_cutoff: str = ""               # llm: its knowledge cutoff, ISO date
+    model_id: str = ""                   # llm: the proposing model; literature: the model that SELECTED it
+    model_cutoff: str = ""               # that model's TRAINING-DATA cutoff (the vendor's broader date)
+    proposed: str = ""                   # when the model proposed or selected the plan, ISO date
+    exposure: str = ""                   # "none" | "web" | "repository": what the proposer could read
     reference: str = ""                  # literature: the citation
     published: str = ""                  # literature: the publication date, ISO date
 
     def __post_init__(self) -> None:
-        for name in ("model_id", "model_cutoff", "reference", "published"):
+        for name in ("model_id", "model_cutoff", "proposed", "exposure", "reference", "published"):
             object.__setattr__(self, name, getattr(self, name).strip())
         if self.kind not in ORIGINS:
             raise ValueError(f"origin must be one of {ORIGINS}")
-        if self.kind == "llm" and not (self.model_id and self.model_cutoff):
-            raise ValueError("an LLM origin records its model and that model's knowledge cutoff (§5.6)")
+        if self.kind == "llm" and not self.model_id:
+            raise ValueError("an LLM origin records its model and that model's training-data cutoff (§5.6)")
         if self.kind == "literature" and not (self.reference and self.published):
             raise ValueError("a literature origin records its dated reference (§5.6)")
-        if self.kind != "llm" and (self.model_id or self.model_cutoff):
-            raise ValueError("model fields belong to an LLM origin only: say llm if a model made it")
+        if self.kind == "human" and (self.model_id or self.model_cutoff or self.proposed or self.exposure):
+            raise ValueError("model fields belong to an LLM origin or an LLM-selected paper: say llm if a model made it")
         if self.kind != "literature" and (self.reference or self.published):
             raise ValueError("a reference belongs to a literature origin only")
-        for name in ("model_cutoff", "published"):
+        if self.model_id and not (self.model_cutoff and self.proposed and self.exposure in EXPOSURES):
+            raise ValueError(f"a model records its training-data cutoff, the proposal date and exposure in {EXPOSURES}")
+        for name in ("model_cutoff", "proposed", "published"):
             if getattr(self, name):
                 object.__setattr__(self, name, date.fromisoformat(getattr(self, name)).isoformat())
+
+    @property
+    def llm_touched(self) -> bool:
+        """LLM-originated, or a paper an LLM selected: the model's memory is in the plan."""
+        return bool(self.model_id)
+
+    def boundary(self) -> date | None:
+        """The first day data can certify this hypothesis on (§5.6 v2.24); None: no restriction."""
+        if self.llm_touched:
+            cutoff = date.fromisoformat(self.model_cutoff)
+            return cutoff if self.exposure == "none" else max(cutoff, date.fromisoformat(self.proposed))
+        return date.fromisoformat(self.published) if self.kind == "literature" else None
 
 
 @dataclass(frozen=True)
@@ -145,6 +164,7 @@ class Claim:
         return {"family": self.family, "variant": self.variant, "variant_hash": self.variant_hash,
                 "declared_space_hash": self.declared_space_hash, "universe_id": self.universe_id,
                 "origin": asdict(self.origin), "simulator": self.simulator,
+                "certifying_boundary": (lambda b: b.isoformat() if b else None)(self.origin.boundary()),
                 "recon_commit": self.recon_commit, "cost_map_hash": cost_map_hash}
 
 
@@ -162,11 +182,11 @@ def admit_claim(claim: Claim, instruments: Sequence[str], lines: Sequence[dict |
     if claim.declared_space["instruments"] != sorted(set(instruments)):
         raise ValueError("the claim's declared instruments are not the instruments this look grades (R12I-03)")
     prior = [(x.get("claim") or {}) for x in lines if x is not None and x.get("kind", "look") == "look"]
-    origins = {c["origin"]["kind"] for c in prior if c.get("variant_hash") == claim.variant_hash}
-    if "llm" in origins and claim.origin.kind != "llm":
+    origins = [c["origin"] for c in prior if c.get("variant_hash") == claim.variant_hash]
+    if any(o.get("model_id") for o in origins) and not claim.origin.llm_touched:
         raise ValueError(f"variant {claim.variant_hash[:12]} was registered as an LLM plan: its origin is "
                          "the hypothesis's, and a new label does not remove the model's memory (§5.6)")
-    if claim.origin.kind == "llm" and origins:
+    if claim.origin.llm_touched and origins:
         raise ValueError(f"an LLM plan repeats registered variant {claim.variant_hash[:12]} (§5.6, R1-D13)")
 
 

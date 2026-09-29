@@ -144,9 +144,9 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
-## GAP-P12D-127: the R1.2 dual audit — 26 findings (15 internal, 11 external) on the look register v2; triaged, real-data looks closed until R1.4, two owner decisions
+## GAP-P12D-127: the R1.2 dual audit — 26 findings (15 internal, 11 external) on the look register v2; triaged, real-data looks closed until R1.4, both owner decisions ruled
 - Severity: high · Likelihood: certain
-- Status: open (2026-09-29 — the constitution's two audits of R1.2, launched on the owner's go ("Launch both now (Recommended)"), brief `AUDIT_BRIEF_R1_2_2026-09-29.md` on `192c1fa`; reports `archive/AUDIT_R1_2_INTERNAL_2026-09-29.md` and `archive/AUDIT_R1_2_EXTERNAL_2026-09-29.md`. The lead's three claims held: 1,057 passed, the eight proof tests pass, the register is 290 lines)
+- Status: mitigated (2026-09-29, triaged the same day; the constitution's two audits of R1.2, launched on the owner's go ("Launch both now (Recommended)"), brief `archive/AUDIT_BRIEF_R1_2_2026-09-29.md` on `192c1fa`; reports `archive/AUDIT_R1_2_INTERNAL_2026-09-29.md` and `archive/AUDIT_R1_2_EXTERNAL_2026-09-29.md`. The lead's three claims held: 1,057 passed, the eight proof tests pass, the register is 290 lines)
 - Area: tests/backtest/look_claims.py, look_register.py, look_gate.py, scripts/run_oos_validation.py, the verdict module (R1.4), master §5.6, ACIS-09 C-BT-11 v2 steps 1–3
 - Description — the findings, by cluster (the reports are the full log):
   - **The LLM-repeat refusal can be dodged.** By relabelling the origin (R12I-02, E-R12-01, high: an LLM plan re-registers as `human` or `literature`, and literature is exempt on post-publication data) and by respelling (R12I-01, E-R12-08: instrument order, 8 vs 8.0, formula whitespace or case, the universe label; the hash is not RFC 8785).
@@ -178,14 +178,14 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - R12I-08 / E-R12-06's outcome as a chained line, verified by `scan`: R1.4.
     - R12I-11's graveyard-motif refusal, declarative-plan schema and void rule: R1.3 (the plan schema) and R1.4 (the motif veto, the void rule).
     - R12I-12's ungated `Backtest.run`: R1.4's `evaluate()` becomes the only producer of a graded number, with a required consumed-look token (GAP-P12D-98's residual).
-  - **OWNER DECISIONS (asked 2026-09-29):** E-R12-02, the origin's cutoff date and tool exposure (a master §5.6 change); E-R12-07, an external anchor for the register (raises [[GAP-P12D-86]]).
-- Justification: open until the two owner decisions are ruled; every other finding is fixed with a test or mitigated by the closed gate with its owner phase named. No real-data look has been registered (`data/validation/looks` does not exist), so nothing has been graded wrongly.
-- Residual: GAP-P12D-127 — the owner decisions E-R12-02 and E-R12-07, and the R1.3/R1.4 items listed above, which must land before `REAL_LOOKS_OPEN` becomes True.
+  - **OWNER DECISIONS, RULED 2026-09-29:** E-R12-02 "The stricter boundary (Recommended)" — applied as master v2.24 §5.6 and ACIS-09 v1.10, and BUILT: `Origin` records the training-data cutoff, the proposal date and the exposure, an LLM-selected paper is LLM-touched, and the claim line records its certifying boundary (`test_the_certifying_boundary_is_the_later_of_the_cutoff_and_an_exposed_proposal`). E-R12-07 "Push the chain head to GitHub (Recommended)" — applied as ACIS-09 v1.10; built at R1.4 ([[GAP-P12D-86]]).
+- Justification: mitigated; the gate stays closed until the R1.3/R1.4 items and the GitHub anchor land. No real-data look has been registered (`data/validation/looks` does not exist), so nothing has been graded wrongly.
+- Residual: GAP-P12D-127 — the R1.3/R1.4 items listed above and the GitHub anchor ([[GAP-P12D-86]]), which must land before `REAL_LOOKS_OPEN` becomes True.
 - Linked: [[GAP-P12D-98]], [[GAP-P12D-64]], [[GAP-P12D-66]], [[GAP-P12D-86]], [[GAP-P12D-89]], [[GAP-P12D-111]]
 
 ## GAP-P12D-126: building the cTrader adapter found five defects in ACIS-13 v1.0's text; the build follows the corrected behaviour, and the spec text needs a v1.1
 - Severity: medium · Likelihood: high
-- Status: open [spec — ACIS-13 v1.1 awaits the owner's ratification; the code already implements the corrections with tests] (2026-09-29, found by the lead building Track A step 3 the day ACIS-13 locked)
+- Status: fixed (2026-09-29: the owner ratified "Ratify both (Recommended)", applied as ACIS-13 v1.1 the same day; found by the lead building Track A step 3 the day ACIS-13 locked)
 - Area: specs/ACIS-13-VENUE_ADAPTERS.md §4.1, §7.1 A7–A8, §7.3 step 6, §7.8, §8.1 vs §12; core/execution/ctrader_sync.py, core/data/ctrader/session.py, core/data/ctrader/feed.py
 - Description:
   - **(a) The restart order double-counts (§7.8, §7.1 A7).** The spec ingests missed deals BEFORE resolving the fragments in flight at the crash. A crashed open's own fill would then reach Risk twice: once as "unsolicited", once when its fragment resolves. Built: fragments first, then only deals of orders ACIS did not send. Proof: `test_an_open_in_flight_at_the_crash_is_reported_once_under_its_own_order`, `test_a_stop_that_fires_while_acis_is_down_reaches_risk_once_at_restart`.
@@ -193,7 +193,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **(c) §8.1 and §12 disagree on `ProtoOAClientDisconnectEvent`** (DISCONNECTED and backoff, vs DETACHED). Built: a disconnect; an application refused on the reconnect's authorisation detaches.
   - **(d) §4.1 says `RawTick.volume` is omitted,** but the locked ACIS-01 type requires it. Built: 0.0, with `quote_volume = False` in the venue profile.
   - **(e) The A8 clock check needs a live tick,** so it cannot finish inside the attach; it is the runtime's first-live-tick check ([[GAP-0091b]]), and entries stay blocked until it passes.
-- Justification: open until ACIS-13 v1.1 is ratified. Every correction makes the adapter stricter or exact-once; none touches a guardrail, HALT/veto semantics or the equity floor.
+- Justification: fixed. ACIS-13 v1.1 states each correction; the code implemented them first, with the tests named above. Every correction makes the adapter stricter or exact-once; none touches a guardrail, HALT/veto semantics or the equity floor. The `pepperstone_demo` rulebook was ratified in the same answer.
+- Residual: GAP-0091b — (e), the first-live-tick clock check, is the runtime's to perform.
 - Linked: [[GAP-P12D-70]], [[GAP-P12D-69]], [[GAP-0091b]], [[GAP-0020]]
 
 ## GAP-P12D-125: the R1.1 dual audit — 23 findings (14 internal, 9 external), every one triaged; the two owner decisions ratified
@@ -623,12 +624,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Linked: [[GAP-P12D-84]], [[GAP-P12D-83]], [[GAP-P12D-82]]
 
 ## GAP-P12D-86: the look register's durability limits — tail deletion is undetectable without an outside anchor, the chain is unsigned, and family names are honour-system
-- Severity: medium · Likelihood: low
-- Status: open [owner decision — where the anchor lives] (2026-09-25 — BUILDER-2's R8–R10, merged with merge 3)
+- Severity: high · Likelihood: medium (raised 2026-09-29 by the R1.2 audit, E-R12-07: the register now feeds the α budget, the cycle order and the LLM refusal)
+- Status: open [impl — the owner DECIDED 2026-09-29: "Push the chain head to GitHub (Recommended)"; ACIS-09 v1.10 / master v2.24; built at R1.4, before real-data looks open] (2026-09-25 — BUILDER-2's R8–R10, merged with merge 3)
 - Area: tests/backtest/look_register.py, `data/validation/looks` (git-ignored, one copy on this laptop, GAP-P12D-50/76)
 - Description: deleting the LAST line with its markers leaves no trace inside the register (each report now carries the chain head as an outside anchor). Anyone running the code can append a valid line, though an appended line is itself a counted look. A renamed family resets its "what changed" history; the per-tier totals do not reset.
-- Justification: open. Recommendation: commit the chain head to git with each real-data grade, or copy the register off the laptop with the tick-set second copy (GAP-P12D-50). The owner decides.
-- Linked: [[GAP-P12D-64]], [[GAP-P12D-50]], [[GAP-P12D-76]]
+- Justification: open until built. The ruling: after every appended line, the chain head goes into a tracked file, committed and pushed to the project's GitHub remote, whose server timestamps are the external record (Crosby & Wallach 2009: a commitment no auditor sees makes nothing tamper-evident). A register whose head is not anchored refuses a real-data grade. It is a precondition of `REAL_LOOKS_OPEN` ([[GAP-P12D-127]]); the per-look push needs the owner's standing approval, asked when R1.4 lands.
+- Linked: [[GAP-P12D-64]], [[GAP-P12D-50]], [[GAP-P12D-76]], [[GAP-P12D-127]]
 
 ## GAP-P12D-85: the walk-forward harness carries open positions through the embargo, where nothing can act — so on weekend-flat accounts every position open at a fold's end is booked as a `weekend_holding` violation
 - Severity: medium · Likelihood: high

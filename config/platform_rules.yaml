@@ -110,9 +110,9 @@ accounts:
     consistency_max_day_profit_pct: 40.0   # no single day > 40% of total profit
     min_trading_days: 5
 
-  # ── The first demo venue (master v2.23, ACIS-13 v1.0) — DRAFT by the lead 2026-09-29, NOT ratified.
-  # Human-committed like every rulebook: it becomes binding only when the owner ratifies it, and it
-  # is used only once the owner sets `active_account: pepperstone_demo` (still dev_paper).
+  # ── The first demo venue (master v2.23, ACIS-13 v1.1) — drafted by the lead and RATIFIED by the owner
+  # 2026-09-29 ("Ratify both (Recommended)"). Used once `active_account: pepperstone_demo` is set at
+  # demo time (it is still dev_paper).
   pepperstone_demo:               # a Pepperstone cTrader demo (Pepperstone Markets Kenya, CMA 128)
     platform: ctrader
     account_class: practice       # a free demo: no fee, no deposit, nothing of value at stake (A2)

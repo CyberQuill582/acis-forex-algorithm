@@ -21,7 +21,7 @@ from tests.backtest.sources import DukascopyTickSource
 GIT = ("c0ffee", False)
 FOLDS = plan_folds(2014, 2015)
 SPACE = {"grid": {"fast": [8, 16, 32]}, "formula": "sign(ewmac fast/4fast)", "instruments": ["EUR_USD", "USD_JPY"]}
-LLM = Origin("llm", model_id="claude-opus-5-5", model_cutoff="2026-06-01")
+LLM = Origin("llm", model_id="claude-opus-5-5", model_cutoff="2026-06-01", proposed="2026-09-29", exposure="web")
 
 
 class _Real(DukascopyTickSource):
@@ -72,7 +72,9 @@ def test_a_real_look_must_carry_its_own_familys_claim_and_the_line_records_it(ca
     line = json.loads(Path(look.path).read_text(encoding="utf-8"))["claim"]
     assert line["declared_space_hash"] == canonical_hash(canonical_space(SPACE)) and line["universe_id"] == "R1-23"
     assert line["origin"] == {"kind": "llm", "model_id": "claude-opus-5-5", "model_cutoff": "2026-06-01",
-                              "reference": "", "published": ""}                         # R12I-10 mutant 6
+                              "proposed": "2026-09-29", "exposure": "web", "reference": "",
+                              "published": ""}                                           # R12I-10 mutant 6
+    assert line["certifying_boundary"] == "2026-09-29"                                # v2.24: the later date
     assert line["simulator"] == "rsim" and line["recon_commit"] == "c0ffee"
     assert line["cost_map_hash"] == cost_map_hash(acis_config, sorted(acis_config.instruments.enabled), 1.0, 0.0)
 
@@ -100,17 +102,30 @@ def test_the_same_plan_respelled_is_the_same_variant(respelled) -> None:
 
 
 def test_an_origin_records_what_the_contamination_law_needs() -> None:
-    """Master §5.6: an LLM origin names its model and cutoff; a literature origin its dated reference;
-    no origin carries another kind's fields (R12I-02, R12I-14)."""
-    for bad, why in (({"kind": "llm", "model_id": "claude-opus-5-5"}, "model"),
+    """Master v2.24 §5.6: an LLM origin names its model, training-data cutoff, proposal date and
+    exposure; a literature origin its dated reference; no origin carries another kind's fields."""
+    model = dict(model_id="claude-opus-5-5", model_cutoff="2026-06-01", proposed="2026-09-29", exposure="web")
+    for bad, why in (({"kind": "llm", "model_id": "claude-opus-5-5"}, "training-data cutoff"),
+                     ({"kind": "llm", **model, "exposure": "telepathy"}, "exposure"),
                      ({"kind": "literature", "reference": "Moskowitz, Ooi, Pedersen (2012)"}, "dated reference"),
                      ({"kind": "oracle"}, "origin must be"),
-                     ({"kind": "human", "model_id": "claude-opus-5-5", "model_cutoff": "2026-06-01"}, "LLM origin only"),
-                     ({"kind": "llm", "model_id": " ", "model_cutoff": "2026-06-01"}, "model")):
+                     ({"kind": "human", **model}, "say llm"),
+                     ({"kind": "llm", **model, "model_id": " "}, "model")):
         with pytest.raises(ValueError, match=why):
             Origin(**bad)
-    assert Origin("llm", model_id=" m ", model_cutoff="20260601").model_cutoff == "2026-06-01"
-    Origin("literature", reference="Moskowitz, Ooi, Pedersen (2012), JFE 104(2)", published="2012-05-01")
+    assert Origin("llm", **{**model, "model_cutoff": "20260601"}).model_cutoff == "2026-06-01"
+
+
+def test_the_certifying_boundary_is_the_later_of_the_cutoff_and_an_exposed_proposal() -> None:
+    """E-R12-02 (owner-ratified): a web-using proposer's horizon is the day it proposed the plan."""
+    model = dict(model_id="m", model_cutoff="2026-06-01", proposed="2026-09-29")
+    assert Origin("llm", **model, exposure="web").boundary() == date(2026, 9, 29)
+    assert Origin("llm", **model, exposure="none").boundary() == date(2026, 6, 1)
+    paper = dict(reference="Moskowitz, Ooi, Pedersen (2012), JFE 104(2)", published="2012-05-01")
+    assert Origin("literature", **paper).boundary() == date(2012, 5, 1)
+    picked = Origin("literature", **paper, **model, exposure="repository")          # an LLM selected it
+    assert picked.llm_touched and picked.boundary() == date(2026, 9, 29)
+    assert Origin("human").boundary() is None
 
 
 def test_an_llm_variant_is_refused_again_under_any_origin(canonical, acis_config) -> None:
@@ -119,7 +134,7 @@ def test_an_llm_variant_is_refused_again_under_any_origin(canonical, acis_config
     _look(canonical, acis_config, claim=_claim(origin=LLM))
     with pytest.raises(LookRefused, match="repeats registered variant"):
         _look(canonical, acis_config, claim=_claim(family="trend-v2", origin=LLM), family="trend-v2")
-    for origin in (Origin("human"), Origin("literature", reference="MOP (2012)", published="2012-05-01")):
+    for origin in (Origin("human"), Origin("literature", reference="MOP (2012)", published="2012-05-01")):   # E-R12-01
         with pytest.raises(LookRefused, match="registered as an LLM plan"):
             _look(canonical, acis_config, claim=_claim(origin=origin), changed="relabelled")
     _look(canonical, acis_config, claim=_claim(variant="fast=16"), changed="a different, human plan")
