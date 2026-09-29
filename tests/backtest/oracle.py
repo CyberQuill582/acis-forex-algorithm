@@ -127,11 +127,12 @@ def non_dsr_failures(report: ValidationReport, expected_guardrail_hash: str) -> 
 EXPECTED = {"planted": "pass", "planted-near-pass": "pass", "planted-near-fail": "refuse",
             "null": "refuse", "permuted": "refuse"}
 # The rungs' per-episode sign-error rates, calibrated on the falsification default plan
-# (plan(60, 30, 25), the 20 s tape, dev_paper). Profit factor (1.4) binds first for this trade
-# structure: near-pass 0.42 graded PF 1.593 on EUR_USD + USD_JPY, every clause met; near-fail
-# 0.46 graded PF 1.251 (EUR_USD) and 1.316 (USD_JPY), so the pooled PF lies between them
-# (the oracle decides per instrument), failing that row alone.
-RUNGS = {"planted-near-pass": 0.42, "planted-near-fail": 0.46}
+# (plan(60, 30, 25), the 20 s tape, EUR_USD + USD_JPY, dev_paper). Profit factor (1.4) binds
+# first for this trade structure. Re-calibrated 2026-09-29 on the C-BT-12 market (GAP-P12D-124;
+# the old 0.42 / 0.46 bracketed the oracle-157 market): the perfect oracle grades PF 1.853,
+# near-pass 0.18 grades PF 1.414 with every clause met, near-fail 0.19 grades PF 1.398,
+# failing that row alone (sweep 0.14-0.22 on the Google compute server, 111 s a grade).
+RUNGS = {"planted-near-pass": 0.18, "planted-near-fail": 0.19}
 
 
 def void_reasons(failures: Mapping[str, Sequence[str]]) -> list[str]:

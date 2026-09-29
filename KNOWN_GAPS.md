@@ -151,7 +151,10 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Description:
   - **Already re-stated by the change itself** (they run in the suite and are green on the new market): the oracle control, the coarse oracle ladder (`COARSE_RUNGS` 0.20 / 0.22), and the leakage suite.
   - **Still owed, in order:**
-    1. **`oracle.RUNGS`** (0.42 / 0.46) were calibrated on the OLD falsification tape, plan(60, 30, 25), 20 s ticks, EUR_USD + USD_JPY. A falsification run before re-calibration grades against the wrong bracket and is VOID by construction. A first sweep on the laptop, 2026-09-29, was stopped unfinished when the price law changed from additive to compounded; re-run it on the committed generator.
+    1. ~~**`oracle.RUNGS`**~~ **DONE 2026-09-29.**
+       - The old 0.42 / 0.46 were calibrated on the OLD falsification tape, plan(60, 30, 25), 20 s ticks, EUR_USD + USD_JPY.
+       - Re-calibrated on the committed generator on the Google compute server: the perfect oracle grades PF 1.853; 0.14→1.522, 0.15→1.505, 0.16→1.468, 0.17→1.446, **0.18→1.414 (every clause met)**, **0.19→1.398 (refused by PF alone)**, 0.20→1.387, 0.22→1.377.
+       - RUNGS = 0.18 / 0.19.
     2. **[[GAP-P12D-49]]'s cost-stress ladder:** re-run on the new market, 25 folds, hours. "~89% direction, not friction" was measured on a market where friction was 3.3× cheaper relative to a daily move.
     3. **The full `falsify_engine.py` run** ([[GAP-P12D-28]]): never completed; run it on the new market.
     4. **The attribution verdicts** of [[GAP-P12D-31]] / [[GAP-P12D-40]], if still relevant after (2).
