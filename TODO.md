@@ -12,7 +12,7 @@
 > - Two clouds are now in play: AWS as the data server, Google as the compute server. The tick set's AWS copy is restored and verified ([[GAP-P12D-50]]). Read the ☁ TWO-CLOUD block below.
 > - R1.1 has started IN-SESSION (the owner's answer): the tick generator now obeys C-BT-12 ([[GAP-P12D-91]], [[GAP-P12D-90]] fixed; [[GAP-P12D-117]] mitigated). **1016 passed**, ledger 260 entries with 0 violations.
 > - **The governance gate is RED on the constitution v0.10 pin** (pre-existing since 2026-09-25; see the Constitution section).
-> - **Uncommitted at the time of writing.** A sweep re-calibrating `oracle.RUNGS` on the new falsification tape was running on the laptop ([[GAP-P12D-124]] item 1).
+> - `oracle.RUNGS` on the falsification tape are still to re-calibrate ([[GAP-P12D-124]] item 1).
 
 **State, verified at handover:**
 - `main` is clean and all work is committed.
@@ -36,7 +36,7 @@
      - [ ] the daily-first lab, C-3 (four modules of ≤ 300 lines; R1-C's `gen_lab.py` is the prototype, numpy, which §16 already names), plus C-5 truth API, C-6 synthetic rates, C-7 cost shim, C-8 stylized-facts gate, C-10 hygiene law;
      - [ ] joint bridges, [[GAP-P12D-92]] (C-4);
      - [ ] the B0 calibration machinery, [[GAP-P12D-105]];
-     - [ ] re-stating every recorded synthetic verdict, [[GAP-P12D-124]] (GAP-P12D-49 included). First `oracle.RUNGS` on the new falsification tape (a laptop sweep started 2026-09-29), then the ladder and the full falsification run: the first Google Cloud job.
+     - [ ] re-stating every recorded synthetic verdict, [[GAP-P12D-124]] (GAP-P12D-49 included). First `oracle.RUNGS` on the new falsification tape (~10 min a grade on the laptop; the first sweep was stopped when the price law changed), then the ladder and the full falsification run: the first cloud compute job.
    - **R1.2 — register v2:** the daily return vector, the search-space hash, origin/cutoff and the cycle-order row ([[GAP-P12D-98]]).
    - **R1.3 — rules, RSIM and costs:**
      - the TREND family with Carver's scalars, [[GAP-P12D-122]];
@@ -487,7 +487,12 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
   - **For R1.5,** the hourly set for 30 instruments is ~10,080 files and ~65 MB: a laptop job, not a server job. This answers PLAN_R1's "the owner measures one file" item; the 22 new symbols' names are still to check against the listing.
 - **The R1 plan already removed the heavy compute.** RSIM runs 30 instruments × 14 years in ~2 s on hourly bars, and the engine confirmation takes ~25 min on hourly bars, not ~70 core-days of ticks. The servers make long runs survivable and keep the data safe. They do not speed up writing R1's code, which is session work.
 - **Both clouds are time-limited free credit.**
-  - **Google:** the trial runs 90 days from sign-up. Dukascopy had already banned Google's addresses by 2026-07-31, so sign-up was on or before that date, and the credits likely end around late October 2026 (to confirm). At the end, resources are stopped, then deleted 30 days later unless the owner upgrades; upgrading keeps the remaining credit.
+  - **Google:** the trial runs 90 days from sign-up. At the end, resources are stopped, then deleted 30 days later unless the owner upgrades; upgrading keeps the remaining credit.
+  - **FOUND 2026-09-29, after the owner signed in (`vincentnzivo967@gmail.com`): there is NO usable Google credit on this login.** Read-only `gcloud` shows:
+    - one billing account, `01CC3D-DCF236-A54E46` "My Billing Account", with **open: false**;
+    - four projects, all created 2025-02-16..18 (`gen-lang-client-0032192124` "Gemini API", `lexical-period-451308-h3`, `peppy-vertex-451308-k7`, `turnkey-tribute-451318-p6`), none with billing enabled.
+    - A trial started then would have ended around May 2025. The July 2026 Dukascopy attempt was most likely made from Cloud Shell, which is free and needs no billing.
+    - Without open billing, Google creates no VM and no bucket.
   - **AWS:** the Free plan ends 2027-03-11.
 
 **Done 2026-09-29:**
@@ -495,8 +500,13 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
 - [x] **Google Cloud CLI** unpacked to `%LOCALAPPDATA%\Google\google-cloud-sdk` from Google's portable zip, with bundled Python and no admin rights (winget's package is machine-scope only). It is NOT on PATH, so call `bin\gcloud.cmd` by its full path.
 
 **Open:**
-- [ ] **OWNER:** sign Google Cloud in (`gcloud auth login`, a browser sign-in). The agent never handles credentials.
-- [ ] **Then:** read the project, the billing account, the trial end date and the CPU quota. Create a Cloud Storage bucket in `europe-west1` for tick copy 3, fed from AWS by signed links.
+- [x] 2026-09-29 **OWNER** signed Google Cloud in (`gcloud auth login`); the agent never handles credentials.
+- [ ] **OPEN ASK — the owner is checking Google first** (answered 2026-09-29: "I'll check Google first"): look at console.cloud.google.com/billing, or at another Google account, for the $300. The options offered:
+  - (a) **AWS for compute** — the lead's recommendation. $197.97 of credit, a 16-vCPU quota, 2-vCPU types only;
+  - (b) **wait for the owner's check;**
+  - (c) **reopen the Google billing account as paid** — real money.
+  Until the owner answers, no compute is set up. The R1.1 code continues in-session.
+- [ ] **Then, if Google has credit:** read the trial end date and the CPU quota, and create a Cloud Storage bucket in `europe-west1` for tick copy 3, fed from AWS by signed links.
 - [ ] **Create the compute VM only when a run is ready,** because it bills while it runs. The first candidate: R1.1's re-statement of every recorded synthetic verdict ([[GAP-P12D-49]] included), which takes hours on the laptop.
 - [ ] **OWNER, before the Google trial ends:** upgrade, or let it lapse; a copy held there dies 30 days after the end.
 - [ ] **OWNER, before 2027-03-11:** the durable tick copy (the [[GAP-P12D-50]] residual).

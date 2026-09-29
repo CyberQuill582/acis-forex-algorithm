@@ -126,32 +126,32 @@ def test_permuting_keeps_every_move_and_changes_order_and_sign() -> None:
     assert 0.49 < flipped < 0.51 and list(planted) != list(permuted)
 
 
-def test_prices_are_arithmetic_so_a_long_bias_earns_nothing_in_price_units() -> None:
-    """GAP-P12D-117: exp-built prices pay an always-long rule σ²/2 a day in price units. The
-    mids are first · (1 + running sum), so over 2,000 paths at 2% daily vol a buy-and-hold's
-    price P&L centres on 0. The SAME draws built geometrically (the old construction) earn the
-    convexity on top, e^S − 1 − S > 0 on every path: σ²T/2 on average, which is what is removed."""
+def test_prices_compound_simple_returns_so_a_long_bias_earns_nothing_in_price_units() -> None:
+    """GAP-P12D-117: exp-built prices pay an always-long rule σ²/2 a day in price units. Each mid
+    is the last times (1 + its zero-mean simple return), so over 2,000 paths at 2% daily vol a
+    buy-and-hold's price P&L centres on 0. The SAME draws built as exp(running sum), the old
+    construction, earn the convexity on top: σ²T/2 on average, which is what is removed."""
     m = _market("null")
-    first, rets, mids = 1.10, m.returns("EUR_USD"), m.mids("EUR_USD")
-    acc = 0.0
+    prev, rets, mids = 1.10, m.returns("EUR_USD"), m.mids("EUR_USD")
     for k, r in enumerate(rets):
-        acc += r
-        assert mids[k] == first * (1.0 + acc)
-    arith, convexity = [], []
+        assert mids[k] == prev * (1.0 + r)
+        prev = mids[k]
+    held, convexity = [], []
     for s in range(2000):
         spec = MarketSpec("permuted" if s % 2 else "null", START, 84, PRICES, tick_seconds=86400,
                           daily_vol=0.02, seed=s)
-        total = math.fsum(SyntheticMarket(spec).returns("EUR_USD"))
-        arith.append(total)
-        convexity.append(math.expm1(total) - total)
-    assert abs(_t(arith)) < 3.0, _t(arith)
+        market = SyntheticMarket(spec)
+        pnl = market.mids("EUR_USD")[-1] / 1.10 - 1.0
+        held.append(pnl)
+        convexity.append(math.expm1(math.fsum(market.returns("EUR_USD"))) - pnl)
+    assert abs(_t(held)) < 3.0, _t(held)
     theory = 0.02 ** 2 * 60 / 2                                       # σ²T/2 over 60 weekdays
     assert statistics.fmean(convexity) == pytest.approx(theory, rel=0.15) and _t(convexity) > 10
 
 
-def test_a_path_that_would_cross_zero_is_refused() -> None:
-    m = SyntheticMarket(MarketSpec("null", START, 700, PRICES, tick_seconds=86400, daily_vol=0.2))
-    with pytest.raises(ValueError, match="crosses zero"):
+def test_a_simple_return_at_or_below_minus_one_is_refused() -> None:
+    m = SyntheticMarket(MarketSpec("null", START, 700, PRICES, tick_seconds=86400, daily_vol=0.6))
+    with pytest.raises(ValueError, match="<= -1"):
         m.mids("EUR_USD")
 
 

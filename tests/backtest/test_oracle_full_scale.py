@@ -47,14 +47,14 @@ def test_the_planted_oracle_clears_every_non_dsr_clause_at_full_fold_scale(cfg) 
 
 # the rungs for THIS tape (coarse, one instrument); the falsification tape has its own (oracle.RUNGS)
 # (re-calibrated 2026-09-29 on the variance-matched market, C-BT-12: the perfect oracle grades
-# PF 1.865; 0.22 grades PF 1.422 with every clause met, 0.24 grades PF 1.390, refused by PF alone)
-COARSE_RUNGS = {"planted-near-pass": 0.22, "planted-near-fail": 0.24}
+# PF 1.827; 0.20 grades PF 1.425 with every clause met, 0.22 grades PF 1.396, refused by PF alone)
+COARSE_RUNGS = {"planted-near-pass": 0.20, "planted-near-fail": 0.22}
 
 
 def test_the_harness_passes_a_rung_just_above_the_cut_offs_and_refuses_one_just_below(cfg) -> None:
-    """Audit E1: the perfect oracle clears §14 with room (PF 1.87 here), so it says little about
+    """Audit E1: the perfect oracle clears §14 with room (PF 1.83 here), so it says little about
     the harness's power near the decision level. Two weaker rungs of the SAME oracle — wrong on
-    22% / 24% of whole episodes — bracket the binding cut-off (profit factor 1.4 for this trade
+    20% / 22% of whole episodes — bracket the binding cut-off (profit factor 1.4 for this trade
     structure; the Sharpe cut is never binding first): the harness must pass the one above and
     refuse the one below, by that §14 row, not by a rule or a floor."""
     hash_ = guardrail_hash(cfg.guardrails)

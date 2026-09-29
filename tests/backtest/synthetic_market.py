@@ -11,11 +11,12 @@ The synthetic-lab law (ACIS-09 C-BT-12) binds this module. Its invariants:
   1. NOTHING IS DEMEANED. A demeaned path is a bridge, which mean-reverts by construction and
      pays a reversal rule (GAP-P12D-91). The nulls are martingales: zero drift in EXPECTATION,
      never pinned to zero in the sample.
-  2. PRICES ARE ARITHMETIC. mid_k = first_mid · (1 + Σ increments), so on the null and the
-     permuted market a long-biased rule earns nothing in PRICE units, the units the harness books
-     (GAP-P12D-117). The log-unit drift is then −σ²/2 a unit time: a declared deviation, of the
-     order 1e-5 a day at FX volatility, in units nothing grades. A path that would cross zero is
-     refused, never floored.
+  2. PRICES COMPOUND SIMPLE RETURNS. The increment r_k is the zero-mean draw and
+     mid_k = mid_(k-1)·(1 + r_k), so E[mid_k − mid_(k-1) | the past] = 0: on the null and the
+     permuted market every non-anticipating rule earns nothing in PRICE units, the units the
+     harness books (GAP-P12D-117). exp-built prices would pay a long σ²/2 a unit time. The
+     log-unit drift is then −σ²/2: a declared deviation, ~1e-5 a day at FX volatility, in units
+     nothing grades. A return ≤ −1 is refused, never floored.
   3. PLANTED DIFFERS FROM NULL IN DRIFT ONLY. It shares the null's noise draw (common random
      numbers), its drift is set from the frictionless oracle's annual Sharpe (`oracle_sharpe`,
      the same at any tick size), and the sum is multiplied by one factor (`match_scale`) that makes
@@ -208,14 +209,14 @@ class SyntheticMarket(TickSource):
         return self._returns[instrument]
 
     def mids(self, instrument: str) -> array:
-        """The arithmetic mid path, one per weekday tick: first_mid · (1 + running sum)."""
+        """The mid path, one per weekday tick: each mid is the last times (1 + its simple return)."""
         if instrument not in self._mid:
-            first, acc, path = self._first[instrument], 0.0, array("d")
+            mid, path = self._first[instrument], array("d")
             for r in self.returns(instrument):
-                acc += r
-                path.append(first * (1.0 + acc))
-            if min(path) <= 0.0:
-                raise ValueError(f"{instrument}'s arithmetic path crosses zero: lower daily_vol or days")
+                if r <= -1.0:
+                    raise ValueError(f"{instrument} draws a simple return <= -1: lower daily_vol")
+                mid *= 1.0 + r
+                path.append(mid)
             self._mid[instrument] = path
         return self._mid[instrument]
 
