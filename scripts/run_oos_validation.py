@@ -1,18 +1,16 @@
 """Run the §14 out-of-sample walk-forward validation for one account (ACIS-09 §7, GAP-P12D-23).
 
-    python scripts/run_oos_validation.py --family trend-v1 --origin human --recon-commit <sha>   # development plan, 2014–2023
-    python scripts/run_oos_validation.py --family trend-v1 --changed "gene ranges narrowed" \\
-        --first-test-year 2014 --last-test-year 2015
-    python scripts/run_oos_validation.py --family trend-v1 --changed "frozen" --final-holdout   # 2024–2025, ONCE
+    python scripts/run_oos_validation.py --family trend-v1 --origin llm --model-id <model> \\
+        --model-cutoff <YYYY-MM-DD> --recon-commit <sha>                      # development plan, 2014–2023
+    (add --changed "..." after a family's first look; --final-holdout grades 2024–2025, ONCE)
 
-Every run is a LOOK (GAP-P12D-64): its line goes into data/validation/looks/ BEFORE anything
-is graded — hypothesis family, tier, commit, config hash, what changed since the family's
-previous look — and the per-family look counts are printed and written into the report.
-Needs the Dukascopy mirror (data/dukascopy), the labelled-bar cache for every training year
-(scripts/build_labelled_bars.py) and data/macro (SPX closes + overnight rates). Writes
-data/validation/oos/<run id>/report.json and prints the verdict with its caveats.
-A development run is never the final grade. Before any paid or long run, the pipeline itself
-must be falsified on synthetic data (GAP-P12D-28).
+LLM agents designed and refined the engine, so its origin is `llm` (master §5.6). A human label on an
+LLM-originated variant is refused, and real-data looks stay CLOSED until R1.4 (GAP-P12D-127).
+
+Every run is a LOOK (GAP-P12D-64), registered BEFORE anything is graded. Needs the Dukascopy
+mirror, the labelled-bar cache (scripts/build_labelled_bars.py) and data/macro; writes
+data/validation/oos/<run id>/report.json. A development run is never the final grade, and the
+pipeline is falsified on synthetic data first (GAP-P12D-28).
 """
 
 from __future__ import annotations
@@ -30,7 +28,7 @@ from core.data.jsonl_logging import JsonlEventLogger  # noqa: E402
 from tests.backtest.data_loader import BacktestDataLoader  # noqa: E402
 from tests.backtest.financing import load_rate_table, make_financing  # noqa: E402
 from tests.backtest.look_claims import ORIGINS, Claim, Origin  # noqa: E402
-from tests.backtest.look_register import LookRefused, LookRegister, config_hash  # noqa: E402
+from tests.backtest.look_register import LookRefused, LookRegister, config_hash, git_state  # noqa: E402
 from tests.backtest.oos_plan import DATA_START, HOLDOUT_END, HOLDOUT_START, HoldoutGuard, plan_folds  # noqa: E402
 from tests.backtest.oos_runner import (RunInputs, load_spx_closes, missing_labels,  # noqa: E402
                                        report_json, run_walk_forward)
@@ -61,7 +59,8 @@ def main() -> int:
     instruments = sorted(cfg.instruments.enabled)
     try:   # the engine's searched space is its config: the QIEA gene ranges and module switches
         claim = Claim(family=a.family, variant="engine", universe_id="enabled:" + ",".join(instruments),
-                      declared_space={"grid": {"config_hash": config_hash(cfg)}, "instruments": instruments,
+                      declared_space={"grid": {"config_hash": config_hash(cfg), "code": git_state()[0]},
+                                      "instruments": instruments,
                                       "formula": "ACIS engine: AGON modules routed by NVMA, QIEA per instrument x regime per fold"},
                       origin=Origin(a.origin, a.model_id, a.model_cutoff, a.reference, a.published),
                       simulator="engine", recon_commit=a.recon_commit)

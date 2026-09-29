@@ -13,7 +13,7 @@
 > - **Every old synthetic verdict was re-stated** on the corrected market (GAP-P12D-124). The engine still loses on its own positive control (GAP-P12D-49/31). The R1.1 audit withdrew the "~98% direction" split (a regression artifact) and showed the short-hold modules are friction-bound on this market (GAP-P12D-125). Measured exactly at 1x: direction −55.19, friction −15.65 (22%), carry 0; TSMOM's loss is 92% direction.
 > - **The R1.1 dual audit** (owner-launched) found 23 issues; all are triaged in GAP-P12D-125. The owner ratified the two spec changes it raised (B0 by equivalence in Sharpe, C-BT-12's horizon wording), applied as ACIS-09 v1.9.
 > - **The tick set's AWS copy is restored and sha256-verified** (GAP-P12D-50).
-> - **Next:** the constitution's two audits of R1.1 (owner's go), then R1.2 (register v2).
+> - **Done since:** R1.1's audits triaged (GAP-P12D-125); R1.2 built and dual-audited (GAP-P12D-127, triage in progress). **Next:** the demo track (TODO Track A), then R1.3.
 
 > **2026-09-25 digest.** All three night-run branches are MERGED: the BUILDER branch (oracle control, plateau law), BUILDER-3 (prop-safety tightening, master v2.20) and BUILDER-2 (the structural leakage suite plus the look register, which every real-data grade must write first). **1002 passed, 6 skipped.** The owner RATIFIED the R-1 training direction:
 > - few pooled rules;

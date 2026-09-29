@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+import tests.backtest.look_claims as lc
 import tests.backtest.look_register as lr
 from config.schemas import load_config
 from tests.backtest.data_loader import BacktestDataLoader, TickSource
@@ -55,13 +56,14 @@ def canonical(tmp_path, monkeypatch):
     root = tmp_path / "data" / "validation" / "looks"
     monkeypatch.setattr(lr, "CANONICAL", root)
     monkeypatch.setattr(lr, "git_state", lambda repo=None: GIT)
+    monkeypatch.setattr(lc, "REAL_LOOKS_OPEN", True)      # opened here; closed in the repo until R1.4
     return LookRegister(root)
 
 
 def _claim(family: str) -> Claim:
     """A real-data look carries its declared family-version (register v2, GAP-P12D-98)."""
     return Claim(family=family, variant="fixed", universe_id="test-universe", origin=Origin("human"),
-                 declared_space={"grid": {}, "formula": "sign(ewmac 16/64)", "instruments": ["EUR_USD"]},
+                 declared_space={"grid": {}, "formula": "sign(ewmac 16/64)", "instruments": ["EUR_USD", "USD_JPY"]},
                  simulator="engine", recon_commit=GIT[0])
 
 
@@ -274,6 +276,7 @@ def test_the_real_data_script_writes_its_line_before_it_grades(monkeypatch, tmp_
     cfg = load_config(ROOT / "config")
     monkeypatch.setattr(lr, "CANONICAL", tmp_path / "data" / "validation" / "looks")
     monkeypatch.setattr(lr, "git_state", lambda repo=None: GIT)
+    monkeypatch.setattr(lc, "REAL_LOOKS_OPEN", True)
     seen: list = []
 
     def grade(inp):

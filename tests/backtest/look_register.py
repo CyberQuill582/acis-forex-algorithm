@@ -47,21 +47,17 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from config.schemas import AcisConfig
-from tests.backtest.look_claims import (Claim, cost_map_hash, cycle_line, refuse_repeated_llm_variant,
-                                        store_vector)
-from tests.backtest.oos_plan import DATA_START, HOLDOUT_END, HOLDOUT_START
+import tests.backtest.look_claims as lc
+from tests.backtest.look_claims import Claim, cost_map_hash, cycle_line, store_vector
+from tests.backtest.look_tiers import FORWARD_START, TIER_NAMES, TierRefused  # noqa: F401 (re-export)
+from tests.backtest.look_tiers import data_tier as _data_tier
 from tests.backtest.walk_forward import Fold
 
 REPO = Path(__file__).resolve().parents[2]
 CANONICAL = REPO / "data" / "validation" / "looks"
-FORWARD_START = datetime(2026, 7, 1, tzinfo=timezone.utc)   # after the June-2026 model cutoff (X9)
-TIER_NAMES = ("synthetic", "exploration", "validation", "holdout", "forward")
 GENESIS = "0" * 64
 TORN = "(torn line)"
-# (from, to, tier): real test windows. 2026-01..06 is pre-cutoff history the models may have
-# seen, so it is exploration, never "forward" (X9, GAP-P12D-66).
-_WINDOWS = ((None, DATA_START, 1), (DATA_START, HOLDOUT_START, 2), (HOLDOUT_START, HOLDOUT_END, 3),
-            (HOLDOUT_END, FORWARD_START, 1), (FORWARD_START, None, 4))
+KINDS = ("look", "cycle")
 
 
 class LookRefused(Exception):
@@ -111,22 +107,10 @@ def git_state(repo: Path = REPO) -> tuple[str, bool]:
 
 
 def data_tier(src: object, folds: Sequence[Fold]) -> int:
-    provenance = getattr(src, "provenance", None)
-    if provenance == "synthetic":
-        return 0
-    if provenance != "real":
-        raise LookRefused(f"source {getattr(src, 'name', src)!r} ({type(src).__qualname__}) declares no "
-                          "provenance: it cannot be graded, and it is never tier 0")
-    tiers = set()
-    for f in folds:
-        tier = next((t for lo, hi, t in _WINDOWS if (lo is None or lo <= f.test_start)
-                     and (hi is None or f.test_end <= hi)), None)
-        if tier is None:
-            raise LookRefused(f"the test window {f.test_start.date()} -> {f.test_end.date()} straddles two data tiers")
-        tiers.add(tier)
-    if len(tiers) != 1:
-        raise LookRefused(f"one look grades one data tier; these folds span {sorted(TIER_NAMES[t] for t in tiers)}")
-    return tiers.pop()
+    try:
+        return _data_tier(src, folds)
+    except TierRefused as exc:
+        raise LookRefused(str(exc)) from None
 
 
 def _sha(data: bytes) -> str:
@@ -176,6 +160,8 @@ class LookRegister:
             except ValueError:
                 line = None
                 torn.append(p.name)
+            if line is not None and line.get("kind", "look") not in KINDS:
+                broken.append(f"{p.name} is a {line.get('kind')!r} line this register cannot read: fail closed")
             if line is not None and line["prev_hash"] != head:
                 broken.append(f"{p.name} does not chain to the line before it: a line was deleted, edited or inserted")
             lines.append(line)
@@ -191,7 +177,7 @@ class LookRegister:
     def family_counts(self) -> dict[str, dict[str, int]]:
         counts: dict[str, Counter] = {}
         for line in self.scan().lines:
-            if line is not None and line.get("kind") == "cycle":
+            if line is not None and line.get("kind", "look") != "look":
                 continue
             family, tier = (line["family"], line["tier_name"]) if line else (TORN, "unknown")
             counts.setdefault(family, Counter())[tier] += 1
@@ -220,6 +206,9 @@ class LookRegister:
         if not family.strip():
             raise LookRefused("a look must name its hypothesis family")
         tier = data_tier(source, folds)
+        if tier > 0 and not lc.REAL_LOOKS_OPEN:
+            raise LookRefused("real-data looks are closed until R1.4 lands with the register's recording "
+                              "fixes (GAP-P12D-127; R-1: no real-data look before R1.1-R1.4 are green)")
         if tier > 0 and self.root.resolve() != CANONICAL.resolve():
             raise LookRefused(f"a {TIER_NAMES[tier]} look must be registered in {CANONICAL}, not {self.root}")
         if tier > 0 and claim is None:
@@ -234,17 +223,19 @@ class LookRegister:
 
         def build(scan: Scan, path: Path) -> Look:
             looks = [x for x in scan.lines if x is not None and x.get("kind", "look") == "look"]
-            if claim is not None:
-                try:
-                    refuse_repeated_llm_variant(claim, looks)
-                except ValueError as e:
-                    raise LookRefused(str(e)) from None
+            now = datetime.now(timezone.utc)
+            try:
+                lc.refuse_backwards_clock(scan.lines, now)
+                if claim is not None:
+                    lc.admit_claim(claim, instruments, scan.lines)
+            except ValueError as e:
+                raise LookRefused(str(e)) from None
             prior = [x for x in looks if x["family"] == family]
             previous = (prior[-1]["look_id"], prior[-1]["git_commit"], prior[-1]["config_hash"]) if prior else None
             if tier > 0 and previous is not None and not changed.strip():
                 raise LookRefused(f"family {family!r} last looked at {previous[0]}: say what changed since")
             span = (min(f.train_start for f in folds).isoformat(), max(f.test_end for f in folds).isoformat())
-            return Look(look_id=path.stem, path=str(path), registered_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            return Look(look_id=path.stem, path=str(path), registered_utc=now.isoformat(timespec="seconds"),
                         git_commit=commit, git_dirty=dirty, config_hash=config_hash(cfg), family=family, tier=tier,
                         tier_name=TIER_NAMES[tier], source=source.name, source_class=type(source).__qualname__,
                         instruments=tuple(sorted(instruments)), start=span[0], end=span[1], account=account,
@@ -253,10 +244,12 @@ class LookRegister:
                         previous=previous, operator=operator or getpass.getuser(), prev_hash=scan.head, claim=claimed)
         return self._append(build)
 
-    def register_cycle(self, *, cycle_id: str, order: Sequence[str], alpha: float, operator: str | None = None) -> dict:
-        """A cycle's testing order (variant hashes, in order), written before any stage-A look of it."""
+    def register_cycle(self, *, cycle_id: str, order: Sequence[str], alpha: float | None = None,
+                       operator: str | None = None, now_fn=lambda: datetime.now(timezone.utc)) -> dict:
+        """A cycle's testing order (variant hashes), before any real look of its members; its alpha
+        is the spending schedule's (a given alpha must equal it)."""
         def build(scan: Scan, path: Path) -> dict:
-            now = datetime.now(timezone.utc)
+            now = now_fn()
             try:
                 line = cycle_line(cycle_id=cycle_id, order=order, alpha=alpha, lines=scan.lines, now=now)
             except ValueError as e:
@@ -273,7 +266,13 @@ class LookRegister:
             raise LookRefused(f"look {look.look_id} was already graded: one line is one grade") from None
 
     def record_outcome(self, look: Look, outcome: dict, daily: tuple[Sequence, Sequence[float]] | None = None) -> None:
-        """The grade's outcome; `daily` = (dates, portfolio net returns), stored by its hash."""
+        """The grade's outcome; `daily` = (dates, portfolio net returns), stored by its hash. Only for
+        a look of THIS register whose line is on disk as written and that was graded (R12I-08)."""
+        line = self.root / f"{look.look_id}.json"
+        if (Path(look.path).parent.resolve() != self.root.resolve() or not line.exists()
+                or json.loads(line.read_bytes()) != json.loads(json.dumps(asdict(look)))
+                or not (self.root / f"{look.look_id}.graded.json").exists()):
+            raise LookRefused(f"look {look.look_id} is not a graded look of this register")
         if daily is not None:
             outcome = {**outcome, "daily_vector": store_vector(self.root, *daily)}
         _write_new(self.root / f"{look.look_id}.outcome.json",
@@ -283,7 +282,7 @@ class LookRegister:
         """What a report carries: per-family and per-tier counts (a renamed family still adds to
         its tier's total), the chain head (an anchor outside the register), torn lines."""
         scan = self.scan()
-        tiers = Counter(x["tier_name"] if x else "unknown" for x in scan.lines if not x or x.get("kind") != "cycle")
+        tiers = Counter(x["tier_name"] if x else "unknown" for x in scan.lines if not x or x.get("kind", "look") == "look")
         return {"family_looks": self.family_counts(), "tier_totals": dict(sorted(tiers.items())),
                 "cycles": [x["cycle_id"] for x in scan.lines if x and x.get("kind") == "cycle"],
                 "chain_head": scan.head, "torn_lines": list(scan.torn)}
