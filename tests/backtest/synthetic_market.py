@@ -1,20 +1,34 @@
 """Synthetic tick markets with a known answer, for engine-level falsification (GAP-P12D-28).
 
 Three kinds, generated deterministically from one `MarketSpec`:
-  * null     — iid zero-mean returns. No edge exists: the pipeline must NOT pass it.
-  * planted  — the same noise plus trending episodes: for 1–4 hours at a time every step
-               carries a drift of ±`drift_sigma`·σ. A trend-follower's edge: the pipeline
-               MUST find it and pass it.
-  * permuted — planted's returns, shuffled. Every move is kept and only their order changes,
-               so the episodes (the edge) are destroyed: the pipeline must NOT pass it.
-Every kind is demeaned, so no market carries net drift a buy-and-hold could harvest. Ticks
-fall only on weekdays (Mon 00:00 – Fri 24:00 UTC; the loader applies its own weekend window).
-`synthetic_spx` gives daily closes independent of every market, so the SPX gate is answerable.
+  * null     — iid zero-mean increments. No edge exists: the pipeline must NOT pass it.
+  * planted  — the same noise plus trending episodes of 1–4 hours, each with a constant drift
+               of random sign. A trend-follower's edge: the pipeline MUST find it and pass it.
+  * permuted — planted's increments, shuffled, then each given a random sign. Every |move| is
+               kept and the episodes (the edge) are destroyed: the pipeline must NOT pass it.
 
-The episode schedule (`episodes`, `SyntheticMarket.episode_sign`) is the ONE source of the
-planted drift: `_returns` applies exactly that schedule, and the oracle positive control
-(oracle.py, GAP-P12D-37) reads it. Every kind draws it in the same RNG order (noise, then the
-schedule, then permuted's shuffle), so null and permuted carry planted's schedule unapplied.
+The synthetic-lab law (ACIS-09 C-BT-12) binds this module. Its invariants:
+  1. NOTHING IS DEMEANED. A demeaned path is a bridge, which mean-reverts by construction and
+     pays a reversal rule (GAP-P12D-91). The nulls are martingales: zero drift in EXPECTATION,
+     never pinned to zero in the sample.
+  2. PRICES ARE ARITHMETIC. mid_k = first_mid · (1 + Σ increments), so on the null and the
+     permuted market a long-biased rule earns nothing in PRICE units, the units the harness books
+     (GAP-P12D-117). The log-unit drift is then −σ²/2 a unit time: a declared deviation, of the
+     order 1e-5 a day at FX volatility, in units nothing grades. A path that would cross zero is
+     refused, never floored.
+  3. PLANTED DIFFERS FROM NULL IN DRIFT ONLY. It shares the null's noise draw (common random
+     numbers), its drift is set from the frictionless oracle's annual Sharpe (`oracle_sharpe`,
+     the same at any tick size), and the sum is multiplied by one factor (`match_scale`) that makes
+     its model variance over the decision horizon (`match_seconds`, default one weekday, as TREND
+     decides) EQUAL the null's exactly (GAP-P12D-90). At the default strength the shorter
+     horizons, down to one tick, sit 2-7% below the null's (measured; the old planted market was
+     12.3x the null's DAILY variance), so volatility level cannot tell planted from null.
+  4. ONE SCHEDULE. The episode schedule (`episodes`, `SyntheticMarket.episode_sign`) is the one
+     source of the planted drift, and the oracle positive control (oracle.py, GAP-P12D-37) reads
+     it. Every kind draws in the same RNG order (noise, then the schedule, then permuted's shuffle,
+     then its signs), so null and permuted carry planted's schedule unapplied.
+Ticks fall only on weekdays (Mon 00:00 – Fri 24:00 UTC; the loader applies its own weekend window).
+`synthetic_spx` gives daily closes independent of every market, so the SPX gate is answerable.
 """
 
 from __future__ import annotations
@@ -25,7 +39,7 @@ import random
 from array import array
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Iterator
+from typing import Iterator, Sequence
 
 from core.data.normaliser import RawTick
 from tests.backtest.data_loader import TickSource
@@ -41,8 +55,9 @@ class MarketSpec:
     days: int
     prices: tuple[tuple[str, float], ...]      # (instrument, first mid)
     tick_seconds: int = 20
-    daily_vol: float = 0.005                   # σ of one weekday's log return
-    drift_sigma: float = 0.15                  # planted drift per step, in step σ
+    daily_vol: float = 0.005                   # σ of one weekday's move, as a fraction of the first mid
+    oracle_sharpe: float = 10.0                # planted: the frictionless oracle's annual Sharpe
+    match_seconds: int = 86400                 # planted: the decision horizon its variance matches at
     episode_hours: tuple[float, float] = (1.0, 4.0)
     spread_frac: float = 0.00004
     seed: int = 7
@@ -55,6 +70,8 @@ class MarketSpec:
             raise ValueError("start must be a Monday 00:00 UTC")
         if self.days <= 0 or self.tick_seconds <= 0 or 86400 % self.tick_seconds:
             raise ValueError("days must be positive and tick_seconds must divide a day")
+        if self.oracle_sharpe < 0 or self.match_seconds <= 0 or self.match_seconds % self.tick_seconds:
+            raise ValueError("oracle_sharpe must be >= 0 and match_seconds a positive multiple of tick_seconds")
 
     @property
     def end(self) -> datetime:
@@ -63,6 +80,12 @@ class MarketSpec:
     @property
     def ticks_per_day(self) -> int:
         return 86400 // self.tick_seconds
+
+    @property
+    def drift_sigma(self) -> float:
+        """The planted drift per step in step σ. The oracle holding the episode's sign earns it on
+        every step, iid given the schedule, so its annual Sharpe is drift_sigma·√(252·ticks/day)."""
+        return self.oracle_sharpe / math.sqrt(252 * self.ticks_per_day)
 
     def weekdays(self) -> int:
         full, rest = divmod(self.days, 7)
@@ -98,20 +121,50 @@ def episodes(spec: MarketSpec, instrument_index: int) -> tuple[Episode, ...]:
     return _draw(spec, instrument_index)[2]
 
 
+def horizon_mean_square(returns: Sequence[float], steps: int) -> float:
+    """The mean square of the sums over consecutive whole blocks of `steps` returns (a partial
+    tail block is dropped). Taken about ZERO, not the sample mean: the nulls are zero-mean by
+    construction, and a planted path's net drift is part of its variance at that horizon."""
+    blocks = len(returns) // steps
+    if blocks == 0:
+        raise ValueError(f"the path is shorter than one {steps}-step horizon")
+    return math.fsum(math.fsum(returns[b * steps:(b + 1) * steps]) ** 2 for b in range(blocks)) / blocks
+
+
+def planted_drift(spec: MarketSpec, schedule: Sequence[Episode]) -> list[float]:
+    """The planted drift of every step: ±drift_sigma·σ, the sign of the episode in force."""
+    step = spec.drift_sigma * spec.daily_vol / math.sqrt(spec.ticks_per_day)
+    out = [0.0] * (spec.weekdays() * spec.ticks_per_day)
+    for ep in schedule:
+        out[ep.start:ep.end] = [ep.sign * step] * (ep.end - ep.start)
+    return out
+
+
+def match_scale(spec: MarketSpec, drift: Sequence[float]) -> float:
+    """The ONE factor planted is multiplied by so its variance over the decision horizon equals the
+    null's EXACTLY in the model: the noise contributes h·σ² per h-step block and the drift, which
+    the schedule fixes, contributes its own block mean square D_h; the cross term has mean zero.
+    So scale² · (h·σ² + D_h) = h·σ². Matching the SAMPLE's mean square instead would feed the
+    sample's own noise into the scale: on a 21-day path it moved the tick-horizon ratio anywhere
+    from 0.71 to 1.18 (measured 2026-09-29), a volatility confound of its own."""
+    steps = spec.match_seconds // spec.tick_seconds
+    noise = steps * spec.daily_vol ** 2 / spec.ticks_per_day
+    return math.sqrt(noise / (noise + horizon_mean_square(drift, steps)))
+
+
 def _returns(spec: MarketSpec, instrument_index: int) -> tuple[array, tuple[Episode, ...]]:
-    # null and planted share the noise; permuted shuffles exactly planted's returns
-    rng, out, schedule = _draw(spec, instrument_index)
-    n = len(out)
-    if spec.kind != "null":
-        sigma = spec.daily_vol / math.sqrt(spec.ticks_per_day)
-        for ep in schedule:
-            drift = ep.sign * spec.drift_sigma * sigma
-            for j in range(ep.start, ep.end):
-                out[j] += drift
-        if spec.kind == "permuted":
-            rng.shuffle(out)
-    mean = math.fsum(out) / n
-    return array("d", (r - mean for r in out)), schedule
+    """Increments as fractions of the first mid. null and planted share the noise (common random
+    numbers); permuted shuffles exactly planted's increments, then flips each one's sign."""
+    rng, noise, schedule = _draw(spec, instrument_index)
+    if spec.kind == "null":
+        return array("d", noise), schedule
+    drift = planted_drift(spec, schedule)
+    scale = match_scale(spec, drift)
+    out = [scale * (e + m) for e, m in zip(noise, drift)]
+    if spec.kind == "permuted":
+        rng.shuffle(out)
+        out = [r if rng.random() < 0.5 else -r for r in out]
+    return array("d", out), schedule
 
 
 class SyntheticMarket(TickSource):
@@ -123,7 +176,7 @@ class SyntheticMarket(TickSource):
         self._index = {inst: i for i, (inst, _) in enumerate(spec.prices)}
         self._first = dict(spec.prices)
         self._returns: dict[str, array] = {}
-        self._log_mid: dict[str, array] = {}
+        self._mid: dict[str, array] = {}
         self._schedule: dict[str, tuple[Episode, ...]] = {}
         self._starts: dict[str, list[int]] = {}
 
@@ -154,17 +207,20 @@ class SyntheticMarket(TickSource):
             self._starts[instrument] = [ep.start for ep in schedule]
         return self._returns[instrument]
 
-    def _path(self, instrument: str) -> array:
-        if instrument not in self._log_mid:
-            acc, path = math.log(self._first[instrument]), array("d")
+    def mids(self, instrument: str) -> array:
+        """The arithmetic mid path, one per weekday tick: first_mid · (1 + running sum)."""
+        if instrument not in self._mid:
+            first, acc, path = self._first[instrument], 0.0, array("d")
             for r in self.returns(instrument):
                 acc += r
-                path.append(acc)
-            self._log_mid[instrument] = path
-        return self._log_mid[instrument]
+                path.append(first * (1.0 + acc))
+            if min(path) <= 0.0:
+                raise ValueError(f"{instrument}'s arithmetic path crosses zero: lower daily_vol or days")
+            self._mid[instrument] = path
+        return self._mid[instrument]
 
     def load(self, instrument: str, start: datetime, end: datetime) -> Iterator[RawTick]:
-        spec, log_mid = self.spec, self._path(instrument)
+        spec, path = self.spec, self.mids(instrument)
         tick = timedelta(seconds=spec.tick_seconds)
         lo, hi = max(start, spec.start), min(end, spec.end)
         day = spec.start + timedelta(days=(lo - spec.start).days)
@@ -176,7 +232,7 @@ class SyntheticMarket(TickSource):
                     t = day + i * tick
                     if t >= hi:
                         return
-                    mid = math.exp(log_mid[base + i])
+                    mid = path[base + i]
                     half = mid * spec.spread_frac / 2
                     yield RawTick(event_time=t, recv_time=t, instrument=instrument, bid=mid - half,
                                   ask=mid + half, volume=1.0, book=None, provider=self.name,

@@ -8,13 +8,19 @@
 
 ## ▶ NEXT SESSION — START HERE (handover written 2026-09-25, evening; the owner wound the session up)
 
+> **2026-09-29 session:**
+> - Two clouds are now in play: AWS as the data server, Google as the compute server. The tick set's AWS copy is restored and verified ([[GAP-P12D-50]]). Read the ☁ TWO-CLOUD block below.
+> - R1.1 has started IN-SESSION (the owner's answer): the tick generator now obeys C-BT-12 ([[GAP-P12D-91]], [[GAP-P12D-90]] fixed; [[GAP-P12D-117]] mitigated). **1016 passed**, ledger 260 entries with 0 violations.
+> - **The governance gate is RED on the constitution v0.10 pin** (pre-existing since 2026-09-25; see the Constitution section).
+> - **Uncommitted at the time of writing.** A sweep re-calibrating `oracle.RUNGS` on the new falsification tape was running on the laptop ([[GAP-P12D-124]] item 1).
+
 **State, verified at handover:**
 - `main` is clean and all work is committed.
 - The full suite: 1008 passed. The governance gate is green, and the ledger shows 259 entries, 0 violations.
 - The spec is at master **v2.22**, with ACIS-02 v1.4, ACIS-03 v2.1, ACIS-04 v1.4, ACIS-08 v1.3, ACIS-09 v1.8 and ACIS-11 v1.2.
 - **Nothing is running.** No agents, no worktrees, no background jobs.
 - The branches `worktree-agent-a128ab904780ce593`, `-a8937e82f9a7a5391` and `-a9e00713d15bb5082` are all merged. They are kept, and safe to delete.
-- **GitHub:** `main` was pushed to origin on 2026-09-25 with the owner's go (`43f881a..e447207`, plus this note). It is in sync, so the laptop is not the only copy of the code. The tick data is still single-copy (GAP-P12D-50).
+- **GitHub:** `main` was pushed to origin on 2026-09-25 with the owner's go (`43f881a..e447207`, plus this note). It is in sync, so the laptop is not the only copy of the code. The tick data was single-copy until 2026-09-29, when the AWS copy was restored and verified (GAP-P12D-50; see the TWO-CLOUD block).
 
 **What happened on 2026-09-25** (details further down in this file and in the ledger):
 1. **Merges 1–3.** The BUILDER, BUILDER-3 and BUILDER-2 branches (the leakage suite and the look register) were merged, each on the owner's go.
@@ -23,13 +29,14 @@
 4. **The two audits** (owner-launched) found 37 issues in v2.21. They were triaged in `R1_AUDIT_TRIAGE_2026-09-25.md`; the owner said "Ratify all"; they are applied as v2.22. The ledger entries are GAP-P12D-103..123.
 
 **NEXT, in order:**
-1. **The R1 build** (PLAN_R1 §2; the spec is now ready). **ASK the owner FIRST, as ONE standalone question:** build in-session, or launch a builder agent? Any launch needs the owner's explicit go. Then:
+1. **The R1 build** (PLAN_R1 §2; the spec is now ready). ~~ASK the owner FIRST: build in-session, or launch a builder agent?~~ **ANSWERED 2026-09-29: "In this session".** R1.1 is built in the main session; no builder agent. Any later launch still needs the owner's explicit go. Then:
    - **R1.1 — the lab:**
-     - the generator fix (demean nothing), [[GAP-P12D-91]];
-     - variance-matched planting at the decision horizon and a price-unit null, [[GAP-P12D-90]], [[GAP-P12D-117]] (ACIS-09 C-BT-12);
-     - joint bridges, [[GAP-P12D-92]];
-     - the B0 calibration machinery, [[GAP-P12D-105]];
-     - re-stating every recorded synthetic verdict, GAP-P12D-49 included.
+     - [x] 2026-09-29 the generator fix (demean nothing), [[GAP-P12D-91]] — FIXED in the tick generator;
+     - [x] 2026-09-29 variance-matched planting at the decision horizon and a price-unit null, [[GAP-P12D-90]] FIXED, [[GAP-P12D-117]] MITIGATED (ACIS-09 C-BT-12). In the TICK generator: oracle Sharpe 10 (was ~157), a model-exact match at one weekday, arithmetic prices. The daily lab (C-3) must do the same;
+     - [ ] the daily-first lab, C-3 (four modules of ≤ 300 lines; R1-C's `gen_lab.py` is the prototype, numpy, which §16 already names), plus C-5 truth API, C-6 synthetic rates, C-7 cost shim, C-8 stylized-facts gate, C-10 hygiene law;
+     - [ ] joint bridges, [[GAP-P12D-92]] (C-4);
+     - [ ] the B0 calibration machinery, [[GAP-P12D-105]];
+     - [ ] re-stating every recorded synthetic verdict, [[GAP-P12D-124]] (GAP-P12D-49 included). First `oracle.RUNGS` on the new falsification tape (a laptop sweep started 2026-09-29), then the ladder and the full falsification run: the first Google Cloud job.
    - **R1.2 — register v2:** the daily return vector, the search-space hash, origin/cutoff and the cycle-order row ([[GAP-P12D-98]]).
    - **R1.3 — rules, RSIM and costs:**
      - the TREND family with Carver's scalars, [[GAP-P12D-122]];
@@ -459,9 +466,44 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
 - **AWS signing workaround, if needed again before [[GAP-P12D-51]] is fixed:** the laptop clock is too far off for SigV4, so patch the one name botocore signs with — read AWS's own time from an STS response `Date` header and set `botocore.auth.get_current_datetime` to return local time plus that offset. It changes no system setting and no AWS resource. The original helper lived in a session scratchpad and is gone by design; it is ~15 lines.
 - Six owner decisions from the 2026-09-16/17 session are still listed further down. **Decisions 4, 5 and 6 (prop-firm choice, prop simulation, cost calibration) no longer block anything** — [[GAP-P12D-49]] took the cost/venue question off the critical path. Decision 3 is live but must be re-aimed at TSMOM.
 
+## ☁ TWO-CLOUD SETUP — started 2026-09-29 (owner: "use those 2 cloud servers to expedite the process of work")
+
+**The division of duties (the lead's recommendation):**
+- **AWS (eu-west-1, beside Dukascopy's archive) is the DATA server.**
+  - It holds tick copy 2, restored below.
+  - It fetches from the archive in-region, and hands data to Google through short-lived signed links, so no long-lived key crosses clouds.
+  - The Free plan limits it to small 2-vCPU types (`deploy/aws/acis-data-user-agent-inline.json`). The eu-west-1 vCPU quota now reads 16 (it was 5).
+- **Google Cloud is the COMPUTE server.**
+  - It takes the long runs that the laptop's power cuts kill ([[GAP-P12D-76]]); the trial allows about 8 vCPUs at once (to confirm on the account).
+  - It holds tick copy 3 in Cloud Storage.
+  - It is a candidate demo host later, in a Europe region (FTMO needs a non-US host).
+
+**Facts that shape it (checked 2026-09-29):**
+- **Access.** Dukascopy's archive `cfg-public-proper-wallaby` is **Requester Pays**. Only an AWS identity can read it, and that account pays: in-region reads are free, and the full 12 GB out to the internet is ~$1. So Google can reach it only through AWS.
+- **It also holds CANDLES,** listed on EURUSD 2025 (the archive has 2,706 top-level symbols):
+  - hourly: `SYMBOL/YYYY/MM/{BID,ASK}_candles_hour_1.bi5`, ~6.5 KB each;
+  - daily: `{BID,ASK}_candles_day_1.bi5` in the same folder;
+  - minute: `SYMBOL/YYYY/MM_candles_min_1.bi5`, and `SYMBOL/YYYY/MM/DD/{BID,ASK}_candles_min_1.bi5`.
+  - **For R1.5,** the hourly set for 30 instruments is ~10,080 files and ~65 MB: a laptop job, not a server job. This answers PLAN_R1's "the owner measures one file" item; the 22 new symbols' names are still to check against the listing.
+- **The R1 plan already removed the heavy compute.** RSIM runs 30 instruments × 14 years in ~2 s on hourly bars, and the engine confirmation takes ~25 min on hourly bars, not ~70 core-days of ticks. The servers make long runs survivable and keep the data safe. They do not speed up writing R1's code, which is session work.
+- **Both clouds are time-limited free credit.**
+  - **Google:** the trial runs 90 days from sign-up. Dukascopy had already banned Google's addresses by 2026-07-31, so sign-up was on or before that date, and the credits likely end around late October 2026 (to confirm). At the end, resources are stopped, then deleted 30 days later unless the owner upgrades; upgrading keeps the remaining credit.
+  - **AWS:** the Free plan ends 2027-03-11.
+
+**Done 2026-09-29:**
+- [x] **AWS:** tick copy 2 restored from `snap-0b6cc0700013b7ab1` and verified 35,008/35,008 by sha256 ([[GAP-P12D-50]]). The server `i-08cd48694bea9e3db` is STOPPED; the volume `vol-0736f7bce03f2d489` is kept (~$5/month from the credits). Start it only for work, through SSM.
+- [x] **Google Cloud CLI** unpacked to `%LOCALAPPDATA%\Google\google-cloud-sdk` from Google's portable zip, with bundled Python and no admin rights (winget's package is machine-scope only). It is NOT on PATH, so call `bin\gcloud.cmd` by its full path.
+
+**Open:**
+- [ ] **OWNER:** sign Google Cloud in (`gcloud auth login`, a browser sign-in). The agent never handles credentials.
+- [ ] **Then:** read the project, the billing account, the trial end date and the CPU quota. Create a Cloud Storage bucket in `europe-west1` for tick copy 3, fed from AWS by signed links.
+- [ ] **Create the compute VM only when a run is ready,** because it bills while it runs. The first candidate: R1.1's re-statement of every recorded synthetic verdict ([[GAP-P12D-49]] included), which takes hours on the laptop.
+- [ ] **OWNER, before the Google trial ends:** upgrade, or let it lapse; a copy held there dies 30 days after the end.
+- [ ] **OWNER, before 2027-03-11:** the durable tick copy (the [[GAP-P12D-50]] residual).
+
 ## ⚠ INFRASTRUCTURE — two host/account findings from 2026-09-23 (not ACIS code)
 
-- [ ] **[[GAP-P12D-50]] The AWS second copy of the tick set is GONE.** The account was held for KYC on 2026-09-15 and its resources were terminated before reinstatement: EC2 instances 0, EBS volumes 0, snapshots 0, Elastic IPs 0 across all 17 regions (verified by API, permission errors surfaced not swallowed). Only `s3://acis-transfer-565257597310` survives — 3 objects, 11.79 MB: a git bundle, a `COMPLETE` marker, and `server/manifest.jsonl` (10.85 MB, the download provenance record — **do not delete this in any cost cleanup**). The laptop copy is intact (12 GB, 35,008 `.bi5` files, verified 2026-09-18) and is now the ONLY copy. **Owner decision owed: what the replacement second copy should be** (S3 Glacier Deep Archive is cents/month for 12 GB; an external disk is a one-off; doing nothing is also a choice, just a recorded one).
+- [x] 2026-09-29 **[[GAP-P12D-50]] RESTORED:** the snapshot was mounted on a new data server and all 35,008 files matched the laptop's sha256 (see the TWO-CLOUD block). Still owed: a DURABLE copy before the AWS Free plan ends 2027-03-11. The 2026-09-23 note follows. ~~The AWS second copy of the tick set is GONE.~~ The account was held for KYC on 2026-09-15 and its resources were terminated before reinstatement: EC2 instances 0, EBS volumes 0, snapshots 0, Elastic IPs 0 across all 17 regions (verified by API, permission errors surfaced not swallowed). Only `s3://acis-transfer-565257597310` survives — 3 objects, 11.79 MB: a git bundle, a `COMPLETE` marker, and `server/manifest.jsonl` (10.85 MB, the download provenance record — **do not delete this in any cost cleanup**). The laptop copy is intact (12 GB, 35,008 `.bi5` files, verified 2026-09-18) and is now the ONLY copy. **Owner decision owed: what the replacement second copy should be** (S3 Glacier Deep Archive is cents/month for 12 GB; an external disk is a one-off; doing nothing is also a choice, just a recorded one).
 - [ ] **[[GAP-P12D-51]] The laptop clock is ~16 minutes slow and `w32time` is not running.** Measured +949 s against AWS's own STS `Date` header. It blocked AWS request signing entirely until a signing-offset workaround was applied, and it means every wall-clock timestamp and run-id this project has written is ~16 min early. **Graded results are unaffected** — the backtest takes its time base from tick/bar timestamps in the data, never the wall clock. **Needs an elevated shell (agent cannot do it):** `net start w32time` then `w32tm /resync`, and set the service to Automatic.
 - **AWS state, checked read-only 2026-09-25 (IAM user `acis-data`, account 565257597310):**
   - **EC2:** 0 instances across all 17 regions. There is NO running cloud server; the data server died in the KYC hold ([[GAP-P12D-50]]).
@@ -672,6 +714,16 @@ Order when Track B resumes — steps 1 and 2 need no owner decision and no money
 - [ ] **GAP-C09-01** — At the live-readiness terminal milestone, the dual-lens pass gains the
       practicality-and-code-efficiency lens and runs on Fable 5 (A3); if Fable is unavailable the
       lens still runs on the next superior tier and the report names what actually ran.
+- [ ] **Constitution v0.10 pin bump (found 2026-09-29).** `governance_gate.py --session` is RED on it,
+      and has been since the constitution moved on 2026-09-25: ACIS pins v0.9, while the constitution is
+      at v0.10 (owner-ratified 2026-09-25). v0.10 adds one article, **A17 efficacy:** a gate is judged by
+      what it stops, enforced by `checks/efficacy.mjs`. To discharge it:
+      - read A17 and its lineage;
+      - record in the ledger how it binds ACIS's gates (the ledger check, the governance gate, the
+        leakage suite, the mutation gate, the oracle ladder), or why it does not;
+      - then move the pin in CLAUDE.md's first line.
+      Nothing else in the gate is new: the comment-shape BLOCK list is GAP-C09-01's baseline, with
+      "no NEW violations".
 
 ## ⛔ RETROACTIVE CONSTITUTION SWEEP — owed, one long session, before further forward work
 **Owner-directed 2026-09-16: implement SPEC_CONSTITUTION v0.9 from phase 1, however far this

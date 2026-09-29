@@ -28,6 +28,7 @@ from tests.backtest.oracle import grade_oracle, non_dsr_failures, oracle_ticks, 
 from tests.backtest.oracle_loop import NOTIONAL_FRACTION, STRATEGY, OracleLoop, OracleTick
 from tests.backtest.synthetic_grade import FIRST_MID, START, plan
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, episodes
+from tests.backtest.report import SHARPE_MIN
 from tests.backtest.test_metrics_and_grader import GH, _block, _report
 from tests.backtest.tick_stream import build_factory, market_states
 from tests.optimizer_fixtures import CapturingLogger
@@ -42,8 +43,9 @@ def cfg():
 
 
 def test_the_episode_schedule_is_exactly_the_planted_drift() -> None:
-    """The oracle's knowledge is the ONE schedule `_returns` applies: planted minus null (same
-    noise) is that schedule's drift, up to the two markets' different demeaning constants."""
+    """The oracle's knowledge is the ONE schedule `_returns` applies: planted is the null's noise
+    plus that schedule's drift, times ONE variance-matching scale (C-BT-12), so planted/scale minus
+    null is exactly the drift."""
     spec = MarketSpec("planted", START, 14, PAIR)
     planted, null = SyntheticMarket(spec), SyntheticMarket(MarketSpec("null", START, 14, PAIR))
     sigma = spec.daily_vol / math.sqrt(spec.ticks_per_day)
@@ -52,11 +54,12 @@ def test_the_episode_schedule_is_exactly_the_planted_drift() -> None:
         assert schedule == episodes(MarketSpec("null", START, 14, PAIR), k)   # every kind has it
         assert schedule[0].start == 0 and all(a.end == b.start for a, b in zip(schedule, schedule[1:]))
         assert {ep.sign for ep in schedule} == {-1.0, 1.0}
-        diff = [p - q for p, q in zip(planted.returns(inst), null.returns(inst))]
-        offset = diff[0] - schedule[0].sign * spec.drift_sigma * sigma
+        p, q = planted.returns(inst), null.returns(inst)
+        scale = p[0] / (q[0] + schedule[0].sign * spec.drift_sigma * sigma)
+        assert 0.9 < scale < 1.0                                  # the drift adds variance; the match removes it
         for ep in schedule:
             for j in (ep.start, ep.end - 1):
-                assert diff[j] - offset == pytest.approx(ep.sign * spec.drift_sigma * sigma, abs=1e-15)
+                assert p[j] / scale - q[j] == pytest.approx(ep.sign * spec.drift_sigma * sigma, abs=1e-15)
 
 
 def test_episode_sign_is_the_state_in_force_never_the_next_one() -> None:
@@ -244,11 +247,13 @@ def test_a_recognised_oracle_hands_over_to_the_unchanged_engine_stage(monkeypatc
 
 
 def test_the_harness_recognises_the_oracle_on_planted_and_refuses_it_on_null(cfg) -> None:
-    """The positive control itself: two folds of the falsification plan's shape on one
+    """The positive control itself: six folds of the falsification plan's shape on one
     instrument, every declared C8 cost charged. On planted the oracle must make money after
     costs with a strongly positive Sharpe, significant by the harness's own PSR; on null the
-    SAME trades (same schedule, same timing) must show no edge."""
-    folds = plan(1, 7, 2)
+    SAME trades (same schedule, same timing) must show no edge. Six folds, not two: the
+    variance-matched market (C-BT-12) plants an oracle Sharpe of 10, not ~157, and 14 test days
+    of a per-trade Sharpe near 0.18 are not reliably significant (PSR 0.82 measured)."""
+    folds = plan(1, 7, 6)
     days = (folds[-1].test_end - START).days
     graded = {}
     for kind in ("planted", "null"):
@@ -259,7 +264,7 @@ def test_the_harness_recognises_the_oracle_on_planted_and_refuses_it_on_null(cfg
     p, n = planted.report.out_of_sample, null.report.out_of_sample
     assert p.n_trades == n.n_trades >= 30                                  # identical oracle logic
     assert set(planted.report.per_strategy) == {STRATEGY}
-    assert planted.net_pnl > 0 and p.annual_sharpe > 5.0, (planted.net_pnl, p)
+    assert planted.net_pnl > 0 and p.annual_sharpe > SHARPE_MIN, (planted.net_pnl, p)   # §14's own row
     assert planted.report.deflated_sharpe >= 0.95                         # PSR vs 0: no trials
     assert planted.report.trial_count == 0 and planted.report.passed is False   # the gate's own refusal
     assert null.report.deflated_sharpe < 0.95, null.report.deflated_sharpe   # no significant edge
