@@ -6,16 +6,19 @@ Mental model:
   * A RULE turns a lab path into one pooled daily P&L series; a DETECTOR turns that series into
     "edge" or "no edge". `calibrate` runs both on the null and on the planted market of the SAME
     seeds (common random numbers), so the two rates differ by the effect alone.
-  * B0 holds only if (a) the planted detection rate is within 2 se of the power its theory Sharpe
-    implies at this length (lab_theory.detection_power), and (b) the null's false-detect rate is
-    at most alpha + 2 se. The se is binomial at the rate theory predicts.
+  * B0 holds only if (a) the planted detection rate, read back as a Sharpe through the same
+    sampling law, lies within ±B0_DELTA (10%) of the closed-form theory Sharpe, on at least the
+    declared B0_N paths (ACIS-09 v1.9, owner-ratified D-R11-1: an equivalence test, because the
+    closed form is itself approximate), and (b) the null's false-detect rate is at most alpha +
+    2 se, the se binomial at alpha.
   * THE RULE MATCHES ITS THEORY. `ewmac_pool` holds sign(EWMAC) of each instrument's y (returns
     in volatility units) with equal weights, exactly the premise of pooled_ewmac_sharpe. A rule
     that estimates volatility realises ~4% less and needs its own theory (audit R11I-04).
-  * DECLARED ERROR RATES (audit R11I-03). A correct lab still fails (a) about 4.6% of the time and
-    (b) about 2.3%. At the declared block of B0_N = 2,000 seeds (1..2,000), the band resolves a
-    miscalibration of about ±5% in pooled Sharpe. The block is fixed here and never re-drawn to
-    clear a failure: a re-seed is a forking path.
+  * DECLARED ERROR RATES (audit R11I-03). At the declared block of B0_N = 2,000 seeds (1..2,000)
+    the implied Sharpe carries ~±5% sampling error, so (a)'s ±10% band holds a correct lab and
+    refuses a gross defect (a bridged lab reads ~50% low); (b) still fails a correct lab ~2.3% of
+    the time. The block is fixed here and never re-drawn to clear a failure: a re-seed is a
+    forking path.
   * Where the rest of B0 lives: (c) a leaky oracle refused by structure is the leakage suite
     (GAP-P12D-65); (e) planted variance-matched to its null is pinned in both generators; (d) the
     research simulator equal to the engine on lab tapes arrives with R1.3 and R1.6. The verdict
@@ -48,6 +51,7 @@ def one_sided_t(alpha: float = 0.05) -> Detector:
 
 B0_N = 2000                    # the declared seed block: 1..B0_N
 B0_SEEDS = range(1, B0_N + 1)
+B0_DELTA = 0.10                # (a)'s equivalence band on the implied Sharpe (ACIS-09 v1.9, D-R11-1)
 
 
 def ewmac_pool(fast: int = 16, slow: int = 64) -> Rule:
@@ -83,8 +87,8 @@ class Calibration:
     @property
     def implied_sharpe_gap(self) -> float:
         """The planted rate read back as a Sharpe through the same sampling law, relative to the
-        theory Sharpe: (Phi^-1(rate) + z_alpha)/sqrt(years)/theory - 1. Reported, not gated: it
-        is the quantity an equivalence-test B0 would bound (audit E-R11-01, an owner decision)."""
+        theory Sharpe: (Phi^-1(rate) + z_alpha)/sqrt(years)/theory - 1. B0 (a) bounds it by
+        B0_DELTA (ACIS-09 v1.9, D-R11-1); NaN when there is no theory Sharpe to compare with."""
         unit = NormalDist()
         rate = min(max(self.planted_hits / self.n, 1e-9), 1 - 1e-9)
         implied = (unit.inv_cdf(rate) + unit.inv_cdf(1 - self.alpha)) / math.sqrt(self.years)
@@ -95,11 +99,12 @@ class Calibration:
         fpr, se0 = self.null_hits / self.n, math.sqrt(self.alpha * (1 - self.alpha) / self.n)
         if fpr > self.alpha + 2 * se0:
             out.append(f"null false-detect rate {fpr:.3f} > alpha {self.alpha} + 2 se ({se0:.3f})")
-        power, p = self.planted_hits / self.n, self.theory_power
-        se1 = math.sqrt(p * (1 - p) / self.n)
-        if abs(power - p) > 2 * se1:
-            out.append(f"planted detection rate {power:.3f} is not within 2 se ({se1:.3f}) of the "
-                       f"theory power {p:.3f}")
+        if self.n < B0_N:
+            out.append(f"{self.n} paths < the declared B0_N {B0_N}: the equivalence band is not resolved")
+        gap = self.implied_sharpe_gap
+        if not abs(gap) <= B0_DELTA:                       # NaN (no theory Sharpe) fails too
+            out.append(f"planted implied Sharpe is {gap:+.1%} off the theory Sharpe {self.theory_sharpe:.3f}; "
+                       f"the equivalence band is ±{B0_DELTA:.0%} (ACIS-09 v1.9)")
         return out
 
     @property

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-BT-009` |
-| **Version** | 1.8 (**LOCKED** 2026-09-25 — the R1 audit triage: `passed` keeps its gates, B0, serial gatekeeping with α-spending, a raw stage C, consistent stage-D units, C-BT-12 corrected; master v2.22) · 1.7 (**LOCKED** 2026-09-25 — R-1: expanding walk-forward, the register-aware verdict C-BT-11 v2, the synthetic-lab law C-BT-12; master v2.21) · 1.6 (**LOCKED** 2026-07-18, phase-11 start; v1.2 2026-09-11 owner-ratified: cross-check source HistData replaces TrueFX — master v2.13; v1.3 2026-09-13 owner-approved: independent validation set — master v2.17; v1.4 2026-09-15: walk-forward honesty C-BT-11 — embargo, Deflated Sharpe gate ≥ 0.95, date-joined SPX; v1.5 2026-09-15: mutation-gate targets; v1.6 2026-09-16: per-regime + per-strategy attribution, GAP-P12D-31) |
+| **Version** | 1.9 (**LOCKED** 2026-09-29 — the R1.1 audit's two owner decisions: B0's planted criterion becomes an equivalence test in Sharpe units (D-R11-1) and C-BT-12's horizon wording is made satisfiable (D-R11-2); GAP-P12D-125) · 1.8 (**LOCKED** 2026-09-25 — the R1 audit triage: `passed` keeps its gates, B0, serial gatekeeping with α-spending, a raw stage C, consistent stage-D units, C-BT-12 corrected; master v2.22) · 1.7 (**LOCKED** 2026-09-25 — R-1: expanding walk-forward, the register-aware verdict C-BT-11 v2, the synthetic-lab law C-BT-12; master v2.21) · 1.6 (**LOCKED** 2026-07-18, phase-11 start; v1.2 2026-09-11 owner-ratified: cross-check source HistData replaces TrueFX — master v2.13; v1.3 2026-09-13 owner-approved: independent validation set — master v2.17; v1.4 2026-09-15: walk-forward honesty C-BT-11 — embargo, Deflated Sharpe gate ≥ 0.95, date-joined SPX; v1.5 2026-09-15: mutation-gate targets; v1.6 2026-09-16: per-regime + per-strategy attribution, GAP-P12D-31) |
 | **Layer / DIR** | Validation · `[DIR:tests/backtest]` (+ `scripts/`) |
 | **Consumes** | the full engine (ACIS-01…07) run in backtest mode over historical data |
 | **Emits** | a per-account validation report vs `../ACIS_SPEC.md` §14 targets (out-of-sample) |
@@ -153,7 +153,7 @@ CREATE TABLE validation_report (
   - Until the verdict module is built (R1.4), the as-built v2.20 `passed` stands. It is the as-built path, not a uniformly stricter one (GAP-P12D-123).
 
   0. **Precondition B0 — machinery proven first (GAP-P12D-105).** No real-data verdict is issued unless, at the same `recon_commit`, the lab (C-BT-12) shows all of:
-     - a planted effect detected within 2 se of its theory power;
+     - a planted effect detected at its theory Sharpe, by EQUIVALENCE (v1.9, owner-ratified 2026-09-29, D-R11-1; GAP-P12D-125): the planted detection rate, read back as a Sharpe through the same sampling law, lies within ±10% of the closed-form theory Sharpe, at a declared n ≥ 2,000 paths and a declared lab configuration. The closed form is the sanity bound. (It was "within 2 se of its theory power", which refuses a correct lab once n is large, because the closed form is itself approximate, and which cannot see a ±9% error at small n.);
      - the null's false-detect rate ≤ 5% + 2 se;
      - a leaky oracle refused by structure;
      - the research simulator ≡ the engine on lab tapes;
@@ -211,7 +211,7 @@ CREATE TABLE validation_report (
   - Synthetic markets grade MACHINERY, never edge.
   - A generator demeans nothing: a demeaned path is a bridge (GAP-P12D-91).
   - The permuted null randomises the sign of each ARITHMETIC price increment, or pairs every path with its antithetic, sign-flipped twin. So a long-biased rule earns nothing in PRICE units, not only in log units, and a price-unit null test pins it.
-  - A planted market is variance-matched to its null at the graded rule's DECISION horizon (daily for TREND; every horizon the lab's rules use). The match is made by construction (common random numbers plus an exact rescale), never by a sampled tolerance (GAP-P12D-90).
+  - A planted market is variance-matched to its null EXACTLY at each graded rule's decision (holding) horizon (daily for TREND). Planted and null differ at longer horizons by construction, because a persistent effect's excess variance there IS the effect (v1.9, owner-ratified 2026-09-29, D-R11-2; it read "every horizon the lab's rules use", which no single scale can meet). The match is made by construction (common random numbers plus an exact rescale), never by a sampled tolerance (GAP-P12D-90).
   - Intraday refinement of correlated daily bars bridges the common factor jointly (GAP-P12D-92).
   - Every synthetic verdict recorded before these fixes is re-stated after them (GAP-P12D-49 included).
   - Synthetic runs never enter a real-data verdict.
@@ -230,6 +230,10 @@ CREATE TABLE validation_report (
 **The live gate:** **phase 12** (live broker) is permitted only when a persisted per-account **rung-2 record** (master §14, v2.22) exists — which contains `ValidationReport.passed == True` per C-BT-11 v2 (the §14 gates and C-BT-2/4/7 included) on ≥2-yr out-of-sample walk-forward with the account's §9.5 rules active, plus rung 2's practice-mode forward evidence (GAP-P12D-69) — **and** a human sign-off record exists; ACIS-08's `acis_set_mode(live)` checks both (plus the dual-hash ack). This spec is the wall between paper and live (master §15). **Pre-phase-12 VPS deployment-readiness gate (v2.10)** runs alongside: CI running the full suite as the merge gate, the Docker scaffold, process supervision + the §8.6 watchdog deployed, and per-adapter server-side-stop verification in the §7.5 conformance suite. **Done-when (phase 11, master §15):** §14 harness green; the honesty guards are enforced in code, not just documented; never-report-in-sample proven by test; per-account grading with rules-active proven; the nine glitch classes covered; the mutation-testing quality gate configured.
 
 ## Changelog
+- **1.9 (LOCKED, 2026-09-29)** — The R1.1 dual audit (GAP-P12D-125); the owner ratified both recommendations in chat on 2026-09-29 ("Equivalence in Sharpe (Recommended)", "Reword (Recommended)").
+  - **C-BT-11 v2 step 0, B0 (a):** "within 2 se of its theory power" becomes an equivalence test: the detection rate read back as a Sharpe lies within ±10% of the closed-form theory Sharpe, at a declared n ≥ 2,000 paths and a declared configuration (D-R11-1). The closed form is approximate: √(2/π) under non-Gaussian returns, the arcsine law, t's dispersion. So a fixed binomial band refused a correct lab once n grew, and could not see a ±9% error at n = 400 (audits R11I-03, E-R11-01).
+  - **C-BT-12:** the variance match is exact at each graded rule's decision (holding) horizon; planted and null differ at longer horizons by construction (D-R11-2; audits R11I-06, E-R11-07).
+  - No guardrail, HALT, veto or `passed` semantic changes.
 - **1.8 (LOCKED, 2026-09-25)** — The R1 dual audit (GAP-P12D-103) triaged; owner-ratified 2026-09-25, the R1 audit triage: "Ratify all". C-BT-11 v2 is corrected:
   - `passed` keeps the §14 gates and C-BT-2/4/7 (GAP-P12D-104), and B0 is a precondition (GAP-P12D-105);
   - stage A is serial gatekeeping with α-spending (D-d), look budgets and a HAC standard error (GAP-P12D-111/121); explored families get a named bootstrap and a declared PBO (GAP-P12D-119/120);

@@ -9,7 +9,7 @@
 > - **The daily-first lab** is new: `tests/backtest/lab_*.py`. It has five plantable effects of known Sharpe, joint intraday bridges (GAP-P12D-92), a harness tick source with one cost, financing and clock model, Cont's stylized facts as its gate, and a structural hygiene law.
 > - **B0 machinery** (GAP-P12D-105): a planted trend is detected at theory power (37.8% against 39.8%) and the null at alpha (5.5%). A bridged lab is refused.
 > - **Every old synthetic verdict was re-stated** on the corrected market (GAP-P12D-124). The engine still loses on its own positive control (GAP-P12D-49/31). The R1.1 audit withdrew the "~98% direction" split (a regression artifact) and showed the short-hold modules are friction-bound on this market (GAP-P12D-125); the exact split is being re-measured.
-> - **The R1.1 dual audit** (owner-launched) found 23 issues; all are triaged in GAP-P12D-125. Two need the owner's ruling: B0's pass criterion (D-R11-1) and C-BT-12's horizon wording (D-R11-2).
+> - **The R1.1 dual audit** (owner-launched) found 23 issues; all are triaged in GAP-P12D-125. The owner ratified the two spec changes it raised (B0 by equivalence in Sharpe, C-BT-12's horizon wording), applied as ACIS-09 v1.9.
 > - **The tick set's AWS copy is restored and sha256-verified** (GAP-P12D-50).
 > - **Next:** the constitution's two audits of R1.1 (owner's go), then R1.2 (register v2).
 

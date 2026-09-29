@@ -12,8 +12,8 @@ import pytest
 
 from tests.backtest.lab_calibration import B0_SEEDS, Calibration, calibrate, ewmac_pool
 from tests.backtest.lab_market import Effect, LabSpec
-from tests.backtest.lab_theory import (ar_phi, drift_variance_for, ewmac_sharpe, oracle_sharpe,
-                                       pooled_ewmac_sharpe, solve_increasing)
+from tests.backtest.lab_theory import (ar_phi, detection_power, drift_variance_for, ewmac_sharpe,
+                                       oracle_sharpe, pooled_ewmac_sharpe, solve_increasing)
 
 SPEC = LabSpec(days=300 + 706)                     # 2.8 graded years after a 300-day burn-in
 HALFLIFE, TARGET = 60.0, 0.25                      # the rule's per-instrument theory Sharpe
@@ -44,10 +44,10 @@ def test_b0_holds_on_the_lab_detection_at_theory_power_and_the_null_at_alpha() -
 
 def test_b0_fails_on_a_bridged_lab_its_power_is_lost() -> None:
     """The same machinery on paths demeaned per instrument: R1-C measured the planted power fall
-    from 40% to 19%, so the check must refuse."""
+    from 40% to 19%, so the implied Sharpe reads far outside the ±10% band and B0 refuses."""
     effect, theory = _planted()
     cal = calibrate(ewmac_pool(), SPEC, effect, theory, range(1, 401), distort=_demeaned)
-    assert any("planted detection rate" in f for f in cal.failures()), cal
+    assert cal.implied_sharpe_gap < -0.3 and any("implied Sharpe" in f for f in cal.failures()), cal
 
 
 def test_b0_fails_a_detector_that_always_finds_an_edge() -> None:
@@ -56,8 +56,16 @@ def test_b0_fails_a_detector_that_always_finds_an_edge() -> None:
     assert any("null false-detect" in f for f in cal.failures()), cal
 
 
-def test_the_verdict_arithmetic_is_binomial() -> None:
-    at_alpha = Calibration(theory_sharpe=0.0, years=2.8, alpha=0.05, n=400, null_hits=20, planted_hits=20)
-    assert at_alpha.holds                                             # theory power at SR 0 is alpha
-    too_many = Calibration(0.0, 2.8, 0.05, 400, null_hits=40, planted_hits=20)
-    assert not too_many.holds and np.isclose(too_many.theory_power, 0.05)
+def test_the_verdict_is_an_equivalence_band_at_the_declared_n() -> None:
+    """ACIS-09 v1.9 (D-R11-1): (a) is |implied Sharpe / theory - 1| <= 10% at n >= 2,000; (b) is
+    the null's rate within alpha + 2 binomial se."""
+    theory, years = 0.8555, 2.8
+    at = lambda power: round(detection_power(theory * power, years) * 2000)    # hits at a given Sharpe
+    ok = Calibration(theory, years, 0.05, 2000, null_hits=100, planted_hits=at(1.0))
+    assert ok.holds and abs(ok.implied_sharpe_gap) < 0.01
+    assert Calibration(theory, years, 0.05, 2000, 100, at(1.08)).holds          # inside the band
+    assert any("implied Sharpe" in f for f in Calibration(theory, years, 0.05, 2000, 100, at(1.15)).failures())
+    assert any("implied Sharpe" in f for f in Calibration(theory, years, 0.05, 2000, 100, at(0.85)).failures())
+    assert any("declared B0_N" in f for f in Calibration(theory, years, 0.05, 400, 20, round(0.4155 * 400)).failures())
+    assert any("null false-detect" in f for f in Calibration(theory, years, 0.05, 2000, 140, at(1.0)).failures())
+    assert not Calibration(0.0, years, 0.05, 2000, 100, 100).holds              # no theory Sharpe: no B0
