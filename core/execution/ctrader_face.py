@@ -17,17 +17,18 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import AsyncIterator, Callable, Mapping
 
+from core.data.ctrader.link import LinkState
 from core.data.ctrader.meter import BudgetRefused
 from core.data.ctrader.schema import (PT, OrderStatus, OrderType, TimeInForce, TradingMode,
-                                      VOLUME_SCALE, enum_value)
+                                      enum_value)
 from core.data.ctrader.wire import VenueError
 from core.data.errors import DataQualityError
 from core.execution import ctrader_sync as sync
+from core.execution.ctrader_close import CloseMixin, _acked, _Order
 from core.execution.ctrader_account import snapshot
 from core.execution.ctrader_events import EventRouter, Tracker
 from core.execution.ctrader_orders import (broker_positions, direction_of, fill_report, label,
@@ -40,18 +41,9 @@ from core.execution.venue import (BrokerAccount, BrokerPosition, CapabilityDescr
 WINDOW = timedelta(hours=24)
 
 
-@dataclass(frozen=True)
-class _Order:
-    fragment_id: str
-    order_id: str
-    instrument: str
-    direction: int                   # the side TRADED
-    units: Decimal
-    requested_price: float
-    session_id: str
 
 
-class CTraderExecutionFace(ExecutionFace):
+class CTraderExecutionFace(CloseMixin, ExecutionFace):
     name = "ctrader"
 
     def __init__(self, session, specs: Mapping[str, VenueSymbolSpec],
@@ -83,7 +75,13 @@ class CTraderExecutionFace(ExecutionFace):
 
     async def _consume(self) -> None:
         while True:
-            self.router.route(await self._s.events.get())
+            frame = await self._s.events.get()
+            try:
+                self.router.route(frame)
+            except (DataQualityError, KeyError, TypeError, ValueError) as exc:   # TAE-08: an enum the
+                # pinned proto lacks, or a malformed event: logged critical, and the consumer lives on
+                self._log.event("VENUE_EVENT_UNROUTABLE", severity="critical",
+                                payload_type=int(frame.payload_type), reason=repr(exc)[:200])
 
     # -- opens ----------------------------------------------------------------------------- #
 
@@ -125,9 +123,11 @@ class CTraderExecutionFace(ExecutionFace):
             self._store.terminal(o.fragment_id, None, None, now)
             self._forget(o.fragment_id)
             return self._refused(exc.code, o, now)
+        except asyncio.TimeoutError:                   # §7.3 step 6: unknown, kept, searched on retry
+            raise ConnectionError("the open's reply timed out; it is searched, never resent") from None
         self.router.route(frame, reply_to=tracker)
         self._opens.append(now)
-        await asyncio.wait_for(asyncio.shield(tracker.done), self._ack)   # TimeoutError: unknown, kept
+        await _acked(tracker, self._ack)
         report = self._finish(tracker.deals.values(), tracker.venue_order_id, tracker.position_id,
                               tracker.outcome == "cancelled", o)
         await self._protect(report, tracker.position_id, spec, rel)
@@ -167,6 +167,8 @@ class CTraderExecutionFace(ExecutionFace):
                                digits=spec.digits, wait_s=self._stop_wait, log=self._log)
 
     def _refuse_open(self, spec, o: _Order, stop_loss, now: datetime) -> str | None:
+        if self._s.state is not LinkState.READY:        # §8.1: no dispatch outside READY (TAI-12)
+            return "VENUE_NOT_READY"
         if spec is None:
             return "VENUE_SYMBOL_UNMAPPED"
         if spec.trading_mode is not TradingMode.ENABLED:
@@ -188,49 +190,6 @@ class CTraderExecutionFace(ExecutionFace):
             self._opens.popleft()
         return "VENUE_ORDER_ALLOWANCE_SPENT" if len(self._opens) >= self._max_opens else None
 
-    # -- closes ---------------------------------------------------------------------------- #
-
-    async def close_position(self, *, fragment_id: str, order_id: str, instrument: str,
-                             direction: int, units: Decimal, requested_price: float,
-                             now: datetime, session_id: str) -> FillReport:
-        if fragment_id in self._reports:
-            return self._reports[fragment_id]
-        o = _Order(fragment_id, order_id, instrument, -direction, units, requested_price, session_id)
-        spec = self._specs.get(instrument)
-        if spec is None:
-            return self._refused("VENUE_SYMBOL_UNMAPPED", o, now)
-        deals = await sync.resume_close(self._s, self._store, self.router, self._trackers,
-                                        fragment_id, now, forget=self._forget)
-        remaining = units - sum((Decimal(int(d["filledVolume"])) for d in deals), Decimal(0)) / VOLUME_SCALE
-        positions, _ = await sync.reconcile(self._s, req_class="protect")
-        self.router.seed(positions)
-        held = sorted((p for p in positions if p["tradeData"].get("label") == self._label
-                       and int(p["tradeData"]["symbolId"]) == spec.symbol_id
-                       and direction_of(p["tradeData"]["tradeSide"]) == direction),
-                      key=lambda p: int(p["tradeData"].get("openTimestamp", 0)))
-        if not held and not deals:
-            return self._refused("VENUE_NOTHING_HELD", o, now)
-        for position in held:
-            if remaining <= 0:
-                break
-            volume = min(remaining, Decimal(int(position["tradeData"]["volume"])) / VOLUME_SCALE)
-            deals.extend(await self._close_part(fragment_id, order_id, int(position["positionId"]),
-                                                volume, now))
-            remaining -= volume
-        return self._finish(deals, None, None, False, o, fill_id=f"ct:{self._key}:close:{fragment_id}")
-
-    async def _close_part(self, fragment_id: str, order_id: str, pid: int, volume: Decimal,
-                          now: datetime) -> list[Mapping]:
-        part = f"{fragment_id}#{len(self._store.parts(fragment_id))}"
-        tracker = self._trackers[part] = self.router.close_tracker(part, pid)
-        self._store.sent(part, order_id, now, position_id=pid)
-        self.router.route(await self._s.request(PT.CLOSE_POSITION_REQ, {
-            "positionId": pid, "volume": protocol_volume(volume)}, req_class="close"), reply_to=tracker)
-        await asyncio.wait_for(asyncio.shield(tracker.done), self._ack)   # TimeoutError: unknown, kept
-        self._store.terminal(part, tracker.venue_order_id, pid, self._now())
-        self._forget(part)
-        return list(tracker.deals.values())
-
     # -- the rest of the face ------------------------------------------------------------- #
 
     async def cancel(self, fragment_id: str) -> bool:
@@ -240,7 +199,10 @@ class CTraderExecutionFace(ExecutionFace):
         return report is None or report.filled_units == 0
 
     async def open_positions(self) -> tuple[BrokerPosition, ...]:
-        positions, _ = await sync.reconcile(self._s, req_class="query")
+        # "protect": ACIS-06's reduce-only pre-check reads it before every close, and the close reserve
+        # is kept for exactly those (§6.5, GAP-P12D-132 TAI-01); the runtime's periodic reconcile skips
+        # the reserve itself
+        positions, _ = await sync.reconcile(self._s, req_class="protect")
         self.router.seed(positions)
         return broker_positions(positions, self.router.instruments, self._label)[0]
 

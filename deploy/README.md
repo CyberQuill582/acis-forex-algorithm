@@ -46,14 +46,22 @@ sudo systemctl status acis-watchdog
 ```
 
 The `acis-engine.service` unit runs the three-loop runtime, `python -m core.runtime
---venue --account pepperstone_demo` (master §10, `core/runtime/`). Enable it only once the
-venue credentials exist in `/etc/acis/engine.env` (root-owned, 0600). It always boots in
-PAPER on the venue's prices; practice needs a human at a terminal:
+--venue --account pepperstone_demo` (master §10, `core/runtime/`). Enable it only once
+`/etc/acis/engine.env` (root-owned, 0600) holds the venue credentials and
+`ACIS_HUMAN_TOKEN_SHA256` (the digest of your human token, never the token). It always boots
+in PAPER on the venue's prices, and a paper process leaves the demo account's positions to
+their venue stops (it logs them critical). Practice, and lifting halts, need a human at a
+terminal. One engine runs per deployment (a second is refused, exit 2), so stop the unit first:
 
 ```bash
-python -m core.runtime --print-hashes --account pepperstone_demo    # read what you attest to
-python -m core.runtime --venue --account pepperstone_demo --practice     --ack-guardrail <hash> --ack-rulebook <hash>                     # asks for the human token
+sudo systemctl stop acis-engine
+python3 -m core.runtime --print-hashes --account pepperstone_demo     # read what you attest to
+sudo systemd-run --pty --uid=acis --gid=acis -p EnvironmentFile=/etc/acis/engine.env   -p WorkingDirectory=/opt/acis -E PYTHONPATH=/opt/acis   /usr/bin/python3 -m core.runtime --venue --account pepperstone_demo --practice   --ack-guardrail <hash> --ack-rulebook <hash>     # asks for the token; add --resume to lift halts
 ```
+
+The engine's exit codes: 0 the feed ended, 1 a loop stalled (flattened and halted), 2 refused
+(the attach, a foreign position, a second engine), 3 a human step refused, 4 the venue stayed
+unreachable. The unit does not restart on 2 or 3, and stops after 10 starts in an hour.
 
 Both units are OS-hardened (`ProtectSystem=strict`); the watchdog may write only
 `/opt/acis/logs`, the engine only `logs/`, `data/` and its token store, so neither
@@ -64,8 +72,13 @@ code tried — guard-integrity enforced by the kernel, not by promises.
 
 ```bash
 docker compose up -d watchdog        # the always-on breaker (runnable today)
-# docker compose --profile engine up -d   # the runtime entrypoint exists; the compose engine service is not yet wired
+docker compose --profile engine up -d  # the engine, in paper on the venue's prices
 ```
+
+Docker restarts the engine container on EVERY exit, including 2 and 3, which need a human
+(it has no equivalent of `RestartPreventExitStatus`). Each start re-attaches and spends the
+request budget, which stays hard, so the loop is bounded but wasteful. The systemd unit is
+the supported path for the demo.
 
 ## Still required before live (not part of THIS gate — see TODO phase 12)
 

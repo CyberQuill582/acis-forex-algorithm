@@ -2,17 +2,20 @@
 transport, authentication and request metering ONLY (GAP-0013, C-VEN-6).
 
 Invariants:
-  * No market, account or position state lives here, and no public member names any (the §14.1
-    attribute scan). Inbound frames are routed by payload type without being interpreted:
-    spots to `spots`, execution and trader events to `events`, the three auth events to `events`
-    AND to this session's own state machine.
+  * No market, account or position state lives here (the §14.1 attribute scan). Frames are routed
+    by payload type, uninterpreted: spots to `spots`, the rest to `events`, auth events also here.
   * Every request is admitted by the persisted budget BEFORE it is sent (C-VEN-4) and paced to the
     local rate limit (half the documented 50/s, F-05). Heartbeats are neither.
   * A request never waits past its timeout, and a dead link fails every waiter at once, so no caller
     blind-resends: what reached the venue is found by search, never assumed (C-VEN-1).
   * The bound account is config, never discovered (C-VEN-5): it must appear in the grant, with the
     `trading` scope, and its `isLive` must equal `environment == live` (A2), else attach is refused.
-  * A refreshed token pair is persisted BEFORE it is used (C-VEN-8); a dead refresh token detaches.
+  * A refreshed token pair is persisted BEFORE it is used (C-VEN-8). Authorisation follows A3/§12
+    (core/data/ctrader/auth.py, GAP-P12D-132 TAE-09): transient states re-raise for the backoff, a
+    stale token refreshes once, any other refusal DETACHES — it needs a human.
+  * An account session the venue ends, or a failed re-authorisation, drops the whole link, so the
+    reconnector runs start → SYNCING → re-subscribe; nothing wedges in REAUTH (TAE-02). Outside
+    READY and SYNCING only authorisation requests leave (§8.1, TAI-12).
 """
 
 from __future__ import annotations
@@ -25,24 +28,29 @@ from typing import Awaitable, Callable
 from core.data.ctrader import schema as s
 from core.data.ctrader.link import AuthRefused, Credentials, Grant, LinkState
 from core.data.ctrader.meter import RequestMeter
-from core.data.ctrader.tokens import TokenPair, TokenStore, pair_from_refresh
+from core.data.ctrader.auth import AuthMixin, RETRYABLE, TOKEN_STALE  # noqa: F401
+from core.data.ctrader.pacing import Pacer
+from core.data.ctrader.tokens import TokenPair, TokenStore
 from core.data.ctrader.transport import Transport, open_websocket
-from core.data.ctrader.wire import HEARTBEAT, Correlator, Frame, LinkClock, VenueError, decode, encode
+from core.data.ctrader.wire import (BEAT_POLL_S, HEARTBEAT, Correlator, Frame, LinkClock, VenueError,
+                                   decode, encode)
 from core.data.errors import DataQualityError
 
 UNSCOPED = frozenset({s.PT.APPLICATION_AUTH_REQ, s.PT.GET_ACCOUNTS_BY_ACCESS_TOKEN_REQ,
                       s.PT.REFRESH_TOKEN_REQ})
 RATE_LIMITED = frozenset({"REQUEST_FREQUENCY_EXCEEDED", "BLOCKED_PAYLOAD_TYPE"})
+LIVE = (LinkState.READY, LinkState.SYNCING)
 
 
-class CTraderSession:
+class CTraderSession(AuthMixin):
     def __init__(self, *, environment: str, binding: int, credentials: Credentials,
                  tokens: TokenStore, meter: RequestMeter, logger,
                  connect: Callable[[str], Awaitable[Transport]] = open_websocket,
                  now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                  mono_fn: Callable[[], float] = time.monotonic,
                  heartbeat_s: float = 10.0, liveness_timeout_s: float = 30.0,
-                 request_timeout_s: float = 10.0, rate_per_s: float = 25.0) -> None:
+                 request_timeout_s: float = 10.0, rate_per_s: float = 25.0,
+                 history_per_s: float = 2.0) -> None:
         if environment not in s.HOSTS:
             raise DataQualityError("environment", environment, f"one of {sorted(s.HOSTS)}")
         self.environment = environment
@@ -57,6 +65,7 @@ class CTraderSession:
         self._hb, self._live_s = heartbeat_s, liveness_timeout_s
         self._timeout = request_timeout_s
         self._gap = 1.0 / rate_per_s
+        self._pacer = Pacer(history_per_s=history_per_s, mono=mono_fn)
         self._last_send = float("-inf")
         self._send_lock = asyncio.Lock()
         self._corr = Correlator("acis")
@@ -69,6 +78,15 @@ class CTraderSession:
         self.spots: asyncio.Queue[Frame] = asyncio.Queue()
         self.events: asyncio.Queue[Frame] = asyncio.Queue()
 
+    @classmethod
+    def from_venue(cls, v, *, credentials: Credentials, tokens: TokenStore, meter: RequestMeter,
+                   logger, connect=open_websocket) -> "CTraderSession":
+        """The declared cadences of config `venue:`, never the defaults (GAP-P12D-132 TAE-03/11)."""
+        return cls(environment=v.environment, binding=v.ctid_trader_account_id, credentials=credentials,
+                   tokens=tokens, meter=meter, logger=logger, connect=connect, heartbeat_s=v.heartbeat_s,
+                   liveness_timeout_s=v.liveness_timeout_s, request_timeout_s=v.order_ack_timeout_s,
+                   rate_per_s=v.rate_limit_per_s.general, history_per_s=v.rate_limit_per_s.historical)
+
     # -- lifecycle ------------------------------------------------------------------------- #
 
     async def start(self) -> Grant:
@@ -79,15 +97,21 @@ class CTraderSession:
         self._tasks = [asyncio.create_task(self._read()), asyncio.create_task(self._beat())]
         self._log.event("VENUE_CONNECT", environment=self.environment)
         self._set(LinkState.APP_AUTH)
-        await self.request(s.PT.APPLICATION_AUTH_REQ, {"clientId": self._creds.client_id,
-                                                       "clientSecret": self._creds.client_secret},
-                           req_class="auth")
+        await self._auth(s.PT.APPLICATION_AUTH_REQ, {"clientId": self._creds.client_id,
+                                                     "clientSecret": self._creds.client_secret})
         self._log.event("VENUE_APP_AUTH")
         self._pair = self._tokens.read()
         if self._pair.needs_refresh(self._now()):
             self._pair = await self._refresh(self._pair)
-        grant = await self._check_grant(self._pair)
-        await self._authorise_binding()
+        try:
+            grant = await self._check_grant(self._pair)
+            await self._authorise_binding()
+        except VenueError as err:                        # A3: a stale token refreshes once (§6.7)
+            if err.code not in TOKEN_STALE:
+                raise
+            self._pair = await self._refresh(self._pair)
+            grant = await self._check_grant(self._pair)
+            await self._authorise_binding()
         self._set(LinkState.SYNCING)
         return grant
 
@@ -111,6 +135,9 @@ class CTraderSession:
                       timeout_s: float | None = None) -> Frame:
         if self.state in (LinkState.DISCONNECTED, LinkState.DETACHED) or self._t is None:
             raise ConnectionError(f"venue link is {self.state.value}")
+        if req_class != "auth" and self.state not in LIVE:
+            raise ConnectionError(f"venue link is {self.state.value}: only authorisation may leave")
+        await self._pacer.before(pt)
         now = self._now()
         self._meter.admit(req_class, now)               # BudgetRefused: nothing is sent
         body = dict(payload)
@@ -128,6 +155,7 @@ class CTraderSession:
             if err.code in RATE_LIMITED:
                 self._log.event("VENUE_RATE_LIMITED", payload_type=int(pt),
                                 retry_after_s=err.retry_after_s)
+                self._pacer.pause(pt, err.retry_after_s)
             raise
 
     def budget(self) -> dict:
@@ -141,49 +169,6 @@ class CTraderSession:
         return self.state is not LinkState.DETACHED
 
     # -- internals ------------------------------------------------------------------------- #
-
-    async def _refresh(self, pair: TokenPair) -> TokenPair:
-        try:
-            res = await self.request(s.PT.REFRESH_TOKEN_REQ, {"refreshToken": pair.refresh_token},
-                                     req_class="auth")
-        except VenueError as err:
-            self._detach(f"refresh refused: {err.code}")
-            raise AuthRefused("VENUE_TOKEN_DEAD", err.code) from err
-        new = pair_from_refresh(dict(res.payload), self._now(), pair)
-        self._tokens.write(new)                          # persisted BEFORE use (C-VEN-8)
-        self._refreshed = self._mono()
-        self._log.event("VENUE_TOKEN_REFRESHED", expires_at=new.expires_at.isoformat())
-        return new
-
-    async def _check_grant(self, pair: TokenPair) -> Grant:
-        res = await self.request(s.PT.GET_ACCOUNTS_BY_ACCESS_TOKEN_REQ,
-                                 {"accessToken": pair.access_token}, req_class="auth")
-        scope = s.enum_value(s.PermissionScope, s.field(res.payload, "permissionScope"))
-        if scope is not s.PermissionScope.SCOPE_TRADE:
-            self._detach("the grant is view-only")
-            raise AuthRefused("ATTACH_SCOPE", "the grant lacks the trading scope")
-        bound = [a for a in res.payload.get("ctidTraderAccount", [])
-                 if int(a["ctidTraderAccountId"]) == self._bound]
-        if not bound:
-            self._detach("the bound id is not in the grant")
-            raise AuthRefused("ATTACH_NOT_GRANTED", "a human must re-grant this binding")
-        grant = Grant(bool(s.field(bound[0], "isLive")), bound[0].get("traderLogin"),
-                      bound[0].get("brokerTitleShort"))
-        if grant.is_live != (self.environment == "live"):
-            self._detach("environment mismatch")
-            raise AuthRefused("ATTACH_ENV_MISMATCH",
-                              f"environment {self.environment}, venue isLive={grant.is_live}")
-        return grant
-
-    async def _authorise_binding(self) -> None:
-        self._set(LinkState.ACCOUNT_AUTH)
-        try:
-            await self.request(s.PT.ACCOUNT_AUTH_REQ, {"accessToken": self._pair.access_token},
-                               req_class="auth")
-        except VenueError as err:
-            if err.code != "ALREADY_LOGGED_IN":          # success on this connection (F-34)
-                raise
-        self._log.event("VENUE_ACCOUNT_AUTH")
 
     async def _send(self, data: str) -> None:
         async with self._send_lock:                      # paced: never above the local rate
@@ -225,12 +210,10 @@ class CTraderSession:
         pt = frame.payload_type
         self._log.event("VENUE_AUTH_EVENT", payload_type=pt,
                         reason_code=str(frame.payload.get("reason", ""))[:64])
-        if pt == s.PT.CLIENT_DISCONNECT_EVENT or self.state not in (LinkState.READY,
-                                                                    LinkState.SYNCING):
-            return                                   # the link closes; reconnect re-authorises
         if pt == s.PT.ACCOUNTS_TOKEN_INVALIDATED_EVENT and self._mono() - self._refreshed < 60:
             return                                   # our own refresh invalidated the old pair
-        self._tasks.append(asyncio.create_task(self._recover(refresh=pt != s.PT.ACCOUNT_DISCONNECT_EVENT)))
+        if self.state not in (LinkState.DISCONNECTED, LinkState.DETACHED):
+            self._drop(f"auth event {int(pt)}")      # a new session: the full reconnect (TAE-02)
 
     async def _recover(self, *, refresh: bool) -> None:
         prior = self.state
@@ -239,14 +222,16 @@ class CTraderSession:
             if refresh:
                 self._pair = await self._refresh(self._pair)
             await self._authorise_binding()
-        except (VenueError, AuthRefused) as err:
-            self._detach(f"re-authorisation failed: {getattr(err, 'code', getattr(err, 'verdict', ''))}")
+        except AuthRefused:
+            return                                   # detached by the refusal
+        except (VenueError, ConnectionError, asyncio.TimeoutError) as err:
+            self._drop(f"re-authorisation failed: {type(err).__name__}")   # never wedged (TAE-02)
             return
         self._set(prior)
 
     async def _beat(self) -> None:
         while True:
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(BEAT_POLL_S)
             now = self._mono()
             if self._link.dead(now):
                 self._log.event("VENUE_DISCONNECT", reason_code="liveness timeout")
@@ -254,6 +239,12 @@ class CTraderSession:
                 return
             if self._link.heartbeat_due(now):
                 await self._send(HEARTBEAT)
+
+    def _drop(self, why: str) -> None:
+        """End this link; the reader's end marks it DISCONNECTED and the reconnector takes over."""
+        self._log.event("VENUE_DISCONNECT", reason_code=why)
+        if self._t is not None:
+            self._tasks.append(asyncio.create_task(self._t.close()))
 
     def _lost(self, why: str) -> None:
         self._corr.fail_all(ConnectionError(f"venue link lost: {why}"))

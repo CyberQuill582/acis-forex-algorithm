@@ -167,7 +167,7 @@ async def test_a_lost_reply_is_found_by_search_never_resent(tmp_path) -> None:
     venue, _, face, _ = await _face(tmp_path)
     face._ack = 0.2
     venue.drop_reply_once = True                               # the venue got it; we never heard
-    with pytest.raises(asyncio.TimeoutError):
+    with pytest.raises(ConnectionError):   # §7.3 step 6: unknown, searched on retry (TAI-08)
         await face.submit_order(fragment_id="f9", order_id="o9", instrument="EUR_USD", direction=1,
                                 units=Decimal("1000"), requested_price=1.10, ioc=True, now=T0,
                                 session_id="s", stop_loss=1.09)
@@ -288,7 +288,7 @@ async def test_an_open_in_flight_at_the_crash_is_reported_once_under_its_own_ord
     venue, session, face, _ = await _face(tmp_path)
     face._ack = 0.2
     venue.drop_reply_once = True
-    with pytest.raises(asyncio.TimeoutError):
+    with pytest.raises(ConnectionError):   # §7.3 step 6: unknown, searched on retry (TAI-08)
         await _open(face, fragment="f7", order_id="o7")
     await session.stop()
     venue, session, face, buf = await _face(tmp_path, venue)
@@ -305,7 +305,7 @@ async def test_a_close_whose_reply_is_lost_is_found_after_a_restart_never_sent_t
     await _open(face, units="2000")
     face._ack = 0.2
     venue.drop_reply_once = venue.drop_fill_once = True        # the venue closed it; we heard nothing
-    with pytest.raises(asyncio.TimeoutError):
+    with pytest.raises(ConnectionError):   # §7.3 step 6: unknown, searched on retry (TAI-08)
         await face.close_position(fragment_id="c5", order_id="oc", instrument="EUR_USD", direction=1,
                                   units=Decimal("1000"), requested_price=1.10, now=T0, session_id="s")
     await session.stop()

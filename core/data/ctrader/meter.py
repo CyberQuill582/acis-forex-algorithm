@@ -4,17 +4,18 @@ account or position state (GAP-0013), just counts and timestamps.
 
 Invariants:
   * The window is a rolling 24 h, so a cap of N holds in every calendar day in every time zone.
-  * A restart is never a relaxation: the count is re-read from the persisted log at start.
+  * A restart is never a relaxation, and two processes on one account never see half each: the
+    count is read from the persisted log at every check (GAP-P12D-132 TAI-11).
   * Heartbeats are events, not requests, and are never metered.
   * Exits are never starved. Below `budget − reserve` everything passes. In the reserve, opens,
     queries and subscriptions are refused and only closes, stop repair and the authorisation
-    they need pass. At or over the budget those still pass (they are paced upstream, ACIS-06
-    v1.3 C-EXE-8), and everything else stays refused.
+    they need pass. At or over the budget closes and stop repair still pass (they are paced
+    upstream, ACIS-06 v1.3 C-EXE-8); everything else, authorisation included, is refused — the
+    budget is hard (C-VEN-4), so no reconnect or restart loop can spend past it (TAI-02, TAE-01).
 """
 
 from __future__ import annotations
 
-from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -53,21 +54,18 @@ class RequestMeter:
         self.reserve = reserve
         self._db = open_store(db_path)
         self._db.executescript(self._DDL)
-        rows = self._db.execute("SELECT ts FROM venue_request_log WHERE account_key = ? AND ts > ?",
-                                (account_key, (now - WINDOW).isoformat())).fetchall()
-        self._stamps: deque[datetime] = deque(sorted(datetime.fromisoformat(t) for (t,) in rows))
 
     def used(self, now: datetime) -> int:
-        while self._stamps and self._stamps[0] <= now - WINDOW:
-            self._stamps.popleft()
-        return len(self._stamps)
+        (n,) = self._db.execute("SELECT COUNT(*) FROM venue_request_log WHERE account_key = ? AND ts > ?",
+                                (self.account_key, (now - WINDOW).isoformat())).fetchone()
+        return int(n)
 
     def admit(self, req_class: str, now: datetime) -> None:
         """Raise BudgetRefused if this request may not be sent now."""
         if req_class not in CLASSES:
             raise DataQualityError("req_class", req_class, f"one of {CLASSES}")
         used = self.used(now)
-        if req_class in EXIT_CLASSES:
+        if req_class in EXIT_CLASSES and (req_class != "auth" or used < self.budget):
             return
         if used >= self.budget:
             raise BudgetRefused(req_class, used, self.budget, "VENUE_BUDGET_EXHAUSTED")
@@ -79,7 +77,6 @@ class RequestMeter:
         self._db.execute("INSERT INTO venue_request_log VALUES (?,?,?,?,?)",
                          (now.isoformat(), self.account_key, payload_type, req_class, client_msg_id))
         self._db.commit()
-        self._stamps.append(now)
 
     def state(self, now: datetime) -> dict:
         return {"used_24h": self.used(now), "cap": self.budget, "close_reserve": self.reserve}

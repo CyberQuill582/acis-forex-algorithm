@@ -14,6 +14,10 @@
 Description=ACIS engine (three-loop runtime) — paper on venue prices until a human enters practice
 After=network-online.target
 Wants=network-online.target
+# A start that keeps failing stops after 10 tries an hour (the engine already retries a venue in
+# process, GAP-P12D-132): the unit then fails and waits for a human, never spinning.
+StartLimitIntervalSec=3600
+StartLimitBurst=10
 
 [Service]
 Type=simple
@@ -21,15 +25,16 @@ User=acis
 Group=acis
 WorkingDirectory=/opt/acis
 Environment=PYTHONPATH=/opt/acis
-# ACIS_CTRADER_CLIENT_ID, ACIS_CTRADER_CLIENT_SECRET, ACIS_CTRADER_TOKEN_STORE=/var/lib/acis/ctrader_tokens.json
-# — root-owned, 0600, NEVER in the repo; placed by the owner (TODO Track A secret-safe steps).
+# ACIS_CTRADER_CLIENT_ID, ACIS_CTRADER_CLIENT_SECRET, ACIS_CTRADER_TOKEN_STORE=/var/lib/acis/ctrader_tokens.json,
+# ACIS_HUMAN_TOKEN_SHA256 (the digest only) — root-owned, 0600, NEVER in the repo; placed by the owner
+# (TODO Track A secret-safe steps).
 EnvironmentFile=/etc/acis/engine.env
 ExecStart=/usr/bin/python3 -m core.runtime --venue --account pepperstone_demo
 
 Restart=always
 RestartSec=5
-# 2 = the attach refused, 3 = practice refused: both need a human, and a restart loop would only
-# spend the venue's request budget (ACIS-13 §6.5).
+# 2 = refused (the attach, a foreign position, a second engine), 3 = a human step refused: both need
+# a human. The request budget is hard, so no loop can spend past it (ACIS-13 §6.5).
 RestartPreventExitStatus=2 3
 
 NoNewPrivileges=true

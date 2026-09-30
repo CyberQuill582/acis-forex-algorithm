@@ -111,6 +111,7 @@ class Watchdog:
         self._last_change_local: float | None = None
         self._last_good_positions = 0
         self._flattened = self._marker.exists()   # idempotent across restart
+        self._mode = "paper"                       # the engine's mode, from its last good beat
 
     def _read_heartbeat(self) -> dict | None:
         try:
@@ -125,6 +126,11 @@ class Watchdog:
         beat = self._read_heartbeat()
         if beat is not None:
             self._last_good_positions = beat["open_positions"]
+            if beat.get("mode") != self._mode:
+                self._mode = str(beat.get("mode"))
+                if self._mode in ("practice", "live") and getattr(self._plugin, "name", "") == "mock":
+                    self._log.event("WATCHDOG_PLUGIN_MISMATCH", severity="critical", mode=self._mode,
+                                    note="the mock plugin cannot flatten a venue account (GAP-P12D-132)")
             sig = (beat["ts_utc"], beat.get("fast_loop_seq"))
             if sig != self._sig:                   # the engine wrote a NEW beat
                 self._sig = sig
@@ -156,6 +162,9 @@ class Watchdog:
             return "alert"                         # silence + flat = alert only
         if self._flattened:
             return "already_flattened"             # idempotent — flatten once
+        if self._mode in ("practice", "live") and getattr(self._plugin, "name", "") == "mock":
+            self._log.event("WATCHDOG_FLATTEN_FAILED", error="the mock plugin cannot reach the venue")
+            return "flatten_failed"                # never a flatten it did not make (TAI-03)
         try:
             result = self._plugin.flatten_all(self._credentials)
         except Exception as exc:                   # noqa: BLE001 — loud, never silent

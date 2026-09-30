@@ -95,6 +95,9 @@ class BrokerPosition:
     # even if ACIS vanishes only when this is set; the conformance suite asserts
     # a live-attachable adapter actually rests it (phase-12 gate).
     stop_loss: float | None = None
+    # the venue's average entry price, where it reports one: an adopted position is marked
+    # from it, never from a placeholder (GAP-P12D-132 TAI-15)
+    entry_price: float | None = None
 
 
 @dataclass(frozen=True)

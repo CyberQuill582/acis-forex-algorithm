@@ -333,9 +333,9 @@ class RiskMonitor:
                 prior = self._positions.get(p.instrument)
                 adopted[p.instrument] = _Pos(
                     signed_units=Decimal(p.direction) * p.size_units,
-                    avg_price=prior.avg_price if prior is not None else 1.0,
+                    avg_price=prior.avg_price if prior is not None else (p.entry_price or 1.0),
                     opened_at=now, param_set_id="unknown:reconciled",
-                    group_id=None, stop_loss=None, take_profit=None)
+                    group_id=None, stop_loss=p.stop_loss, take_profit=None)
             self._positions = adopted
             self._sink.apply_halt("all", "restart_drift")
         else:

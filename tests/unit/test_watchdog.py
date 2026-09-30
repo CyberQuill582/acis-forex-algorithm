@@ -201,3 +201,18 @@ def test_heartbeat_writer_atomic_and_readable(tmp_path) -> None:
     assert beat["open_positions"] == 0
     # no leftover temp file (atomic replace)
     assert not list(tmp_path.glob("hb.json.tmp*"))
+
+
+# -- GAP-P12D-132 TAI-03/TAE-14: the mock plugin never claims a venue flatten ------------------- #
+
+def test_the_mock_plugin_never_claims_to_flatten_a_venue_account(tmp_path) -> None:
+    wd, plugin, hb, log = _make(tmp_path, timeout=30)
+    hb.parent.mkdir(parents=True, exist_ok=True)
+    hb.write_text(json.dumps({"ts_utc": "2026-09-30T08:00:00+00:00", "session_id": "s1",
+                              "mode": "practice", "open_positions": 1, "fast_loop_seq": 7}),
+                  encoding="utf-8")
+    assert wd.poll(1000.0) == "ok"
+    assert wd.poll(1040.0) == "flatten_failed"                   # silence, a position, a mock plugin
+    assert plugin.calls == 0                                     # it never pretended
+    kinds = [e["event_type"] for e in _events(log)]
+    assert "WATCHDOG_PLUGIN_MISMATCH" in kinds and "WATCHDOG_FLATTEN" not in kinds

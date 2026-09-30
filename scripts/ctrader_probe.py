@@ -76,9 +76,9 @@ async def probe(args) -> dict:
     async def connect(environment):
         return Recorder(await open_websocket(environment), frames)
 
-    session = CTraderSession(environment=venue.environment, binding=venue.ctid_trader_account_id,
-                             credentials=Credentials.from_env(), tokens=TokenStore.from_env(),
-                             meter=meter, logger=log, connect=connect)
+    session = CTraderSession.from_venue(venue, credentials=Credentials.from_env(),
+                                        tokens=TokenStore.from_env(), meter=meter, logger=log,
+                                        connect=connect)
     store = VenueStore(args.db, venue.account_key)
     result = await attach(venue, rulebook_key=args.rulebook, rulebook=rulebook,
                           instruments=cfg.instruments.instruments, session=session, store=store,

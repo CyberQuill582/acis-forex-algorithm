@@ -137,6 +137,7 @@ monitoring:                      # ACIS-08 v1.1 (SPEC 12) - required block
 runtime:                         # master section 10 (v2.25) - the position policy's declared values
   max_hold_s: 172800             # 48 h: the backtest book's max hold (engine parity, pinned by test)
   paper_nav_usd: 10000.0         # the paper venue's starting equity
+  fast_loop_stall_s: 600         # no tick processed for 10 min while a market is open = a stalled Loop 3
 venue:                           # ACIS-13 v1.0 §6.1 - the real venue; absent = mock only
   adapter: ctrader               # master v2.23: the cTrader Open API, first venue a Pepperstone demo
   environment: demo              # must equal the account's isLive (A2); practice mode needs demo
@@ -147,10 +148,10 @@ venue:                           # ACIS-13 v1.0 §6.1 - the real venue; absent =
   close_reserve: 100             # only closes, flatten and stop repair may spend these
   max_orders_per_day: 50         # the section 6.5 order allowance (open + close each)
   heartbeat_s: 10                # the documented cadence (F-03); schema max 10
-  liveness_timeout_s: 30
+  liveness_timeout_s: 60         # 2x the server's reported 30 s heartbeat (GAP-P12D-132 TAE-03)
   order_ack_timeout_s: 10        # then search by clientOrderId - never a blind resend
   stop_confirm_timeout_s: 3
-  equity_poll_s: 300             # the unrealized-PnL poll while positions are open
+  equity_poll_s: 300             # the account poll, always (the A9 feasibility check counts it always)
   reconcile_interval_s: 900
   backoff: {base_s: 1, factor: 2, cap_s: 60, max_consecutive: 10}
   rate_limit_per_s: {general: 25, historical: 2}     # half the documented 50 / 5 (F-05)

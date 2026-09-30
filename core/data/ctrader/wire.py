@@ -74,9 +74,12 @@ def error_of(frame: Frame) -> VenueError | None:
         return None
     p = frame.payload
     retry = p.get("retryAfter")
+    end = p.get("maintenanceEndTimestamp")      # ProtoOAErrorRes: SECONDS; ProtoErrorRes: ms (TAE-06)
+    if end is not None and frame.payload_type == PT.OA_ERROR_RES:
+        end = int(end) * 1000
     return VenueError(str(p.get("errorCode", "UNKNOWN_ERROR")), str(p.get("description", "")),
                       retry_after_s=float(retry) if retry is not None else None,
-                      maintenance_end_ms=p.get("maintenanceEndTimestamp"))
+                      maintenance_end_ms=end)
 
 
 class Correlator:
@@ -116,6 +119,9 @@ class Correlator:
         self._pending.clear()
 
 
+BEAT_POLL_S = 1.0              # how often the session's beat task checks the clock
+
+
 class LinkClock:
     """Heartbeat and liveness timing on an injected monotonic clock (seconds)."""
 
@@ -136,7 +142,8 @@ class LinkClock:
         self._received = now
 
     def heartbeat_due(self, now: float) -> bool:
-        return now - self._sent >= self.heartbeat_s
+        # polled every BEAT_POLL_S, so due one poll early: no gap ever exceeds heartbeat_s (TAE-13)
+        return now - self._sent >= self.heartbeat_s - BEAT_POLL_S
 
     def dead(self, now: float) -> bool:
         return now - self._received >= self.liveness_timeout_s

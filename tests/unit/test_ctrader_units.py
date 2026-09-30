@@ -63,7 +63,7 @@ def test_the_heartbeat_is_the_strictest_source_and_liveness_is_bounded() -> None
     with pytest.raises(DataQualityError):
         LinkClock(0.0, heartbeat_s=20, liveness_timeout_s=30)        # the SDK's 20 s is refused
     clock = LinkClock(0.0, heartbeat_s=10, liveness_timeout_s=30)
-    assert not clock.heartbeat_due(9.9) and clock.heartbeat_due(10.0)
+    assert not clock.heartbeat_due(8.9) and clock.heartbeat_due(9.0)   # one poll early (TAE-13)
     clock.received(25.0)
     assert not clock.dead(54.9) and clock.dead(55.0)
 

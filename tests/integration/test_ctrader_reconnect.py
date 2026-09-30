@@ -157,7 +157,8 @@ async def test_a_maintenance_window_is_slept_through_to_its_end(tmp_path) -> Non
         if first[0]:
             first[0] = False
             t.push(PT.OA_ERROR_RES, {"errorCode": "SERVER_IS_UNDER_MAINTENANCE",
-                                     "maintenanceEndTimestamp": venue.ms() + 3_600_000}, mid)
+                                     "maintenanceEndTimestamp": venue.ms() // 1000 + 3_600}, mid)   # SECONDS on
+            # ProtoOAErrorRes, per the pinned proto (GAP-P12D-132 TAE-06; this test once sent ms)
             return
         await original(p, mid, t)
 

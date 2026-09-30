@@ -69,6 +69,10 @@ class FakeVenue:
         self.drop_reply_once = False
         self.drop_fill_once = False                   # the close's fill event is lost too
         self.requests: list[int] = []
+        self.page_rows: int | None = None              # None: one page holds everything
+        self.page_order = "oldest"                     # or "newest": the venue documents neither
+        self.amend_error: str | None = None            # e.g. "TRADING_BAD_STOPS"
+        self.close_error: str | None = None            # e.g. "POSITION_NOT_FOUND"
 
     async def connect(self, environment: str) -> FakeTransport:
         self.transport = FakeTransport(self)
@@ -136,9 +140,17 @@ class FakeVenue:
         t.push(PT.GET_POSITION_UNREALIZED_PNL_RES, {"moneyDigits": 2, "positionUnrealizedPnL": [
             {"positionId": pid, "grossUnrealizedPnL": 0, "netUnrealizedPnL": 0} for pid in self.positions]}, mid)
 
+    def page(self, rows: list, stamp: str) -> tuple[list, bool]:
+        """A chunk of `page_rows` in `page_order` (both undocumented by the venue, TAE-07)."""
+        rows = sorted(rows, key=lambda r: r[stamp], reverse=self.page_order == "newest")
+        if self.page_rows is None or len(rows) <= self.page_rows:
+            return rows, False
+        return rows[:self.page_rows], True
+
     async def _on_order_list_req(self, p, mid, t):
         orders = [o for o in self.orders.values() if p["fromTimestamp"] <= o["utcLastUpdateTimestamp"] <= p["toTimestamp"]]
-        t.push(PT.ORDER_LIST_RES, {"order": orders, "hasMore": False}, mid)
+        chunk, more = self.page(orders, "utcLastUpdateTimestamp")
+        t.push(PT.ORDER_LIST_RES, {"order": chunk, "hasMore": more}, mid)
 
     async def _on_order_details_req(self, p, mid, t):
         oid = p["orderId"]
@@ -147,9 +159,13 @@ class FakeVenue:
 
     async def _on_deal_list_req(self, p, mid, t):
         deals = [d for d in self.deals if p["fromTimestamp"] <= d["executionTimestamp"] <= p["toTimestamp"]]
-        t.push(PT.DEAL_LIST_RES, {"deal": deals, "hasMore": False}, mid)
+        chunk, more = self.page(deals, "executionTimestamp")
+        t.push(PT.DEAL_LIST_RES, {"deal": chunk, "hasMore": more}, mid)
 
     async def _on_amend_position_sltp_req(self, p, mid, t):
+        if self.amend_error is not None:               # the venue refuses the stop (TAE-10)
+            t.push(PT.OA_ERROR_RES, {"errorCode": self.amend_error}, mid)
+            return
         pos = self.positions[p["positionId"]]
         pos["stopLoss"] = p["stopLoss"]
         t.push(PT.EXECUTION_EVENT, {"executionType": 4, "position": pos}, mid)
@@ -191,6 +207,9 @@ class FakeVenue:
 
     async def _on_close_position_req(self, p, mid, t):
         pos = self.positions.get(p["positionId"])
+        if self.close_error is not None:
+            t.push(PT.OA_ERROR_RES, {"errorCode": self.close_error}, mid)
+            return
         if pos is None:
             t.push(PT.OA_ERROR_RES, {"errorCode": "POSITION_NOT_FOUND"}, mid)
             return

@@ -9,7 +9,14 @@ Invariants:
     is handed the attached venue's minimum per instrument, or the paper descriptor's.
   * The ParamLibrary's flat gate counts Risk's positions AND the executor's in-flight work, so
     no promotion slips in between a submit and its fill (C2).
-  * Stores live under `root/data/runtime`, logs under `root/logs`: one tree per deployment.
+  * Stores live under `root/data/runtime`, logs under `root/logs`: one tree per deployment. Each
+    mode keeps its OWN Risk store (halts, drawdown anchors): paper equity never anchors the practice
+    account's daily-loss series (GAP-P12D-132 TAI-14).
+  * The minimum lot is injected in paper and practice only (ACIS-05 v1.6; TAI-18).
+  * Risk's book is ONE venue's book, fixed for the process by its Risk store (`book`): a paper
+    process never adopts the attached account's positions nor ingests its fills, and orders reach
+    the account only from a practice book. Demo positions left by an ended practice session rest
+    on their venue stops, logged critical, until practice resumes them (GAP-P12D-132).
 """
 
 from __future__ import annotations
@@ -78,6 +85,8 @@ class Parts:
     executor: Executor
     boundaries: BoundaryClock
     clusters: dict
+    market_open: Callable[[datetime], bool]
+    book: str = "paper"                          # the mode whose Risk store this process holds
 
     @property
     def max_hold_s(self) -> float: return self.cfg.system.runtime.max_hold_s
@@ -89,6 +98,8 @@ class Parts:
     def decision_budget_ms(self) -> float: return self.cfg.system.signals.fast_loop_decision_budget_ms
     @property
     def eval_cadence_s(self) -> float: return self.cfg.system.risk.eval_cadence_s
+    @property
+    def stall_s(self) -> float: return self.cfg.system.runtime.fast_loop_stall_s
 
     def account_max_age_s(self) -> float:
         """Older than this, the portfolio is stale and the Governor zeroes entries."""
@@ -96,10 +107,14 @@ class Parts:
             return 2.0 * self.cfg.system.venue.equity_poll_s
         return 3.0 * self.eval_cadence_s
 
+    @property
+    def venue_is_book(self) -> bool:
+        return self.venue is not None and self.book == "practice"
+
     def route_to(self) -> ExecutionOrchestrator | None:
         if self.mode.mode == "paper":
             return self.paper_orch
-        if self.mode.mode == "practice" and self.venue is not None and self.venue.practice_eligible:
+        if self.mode.mode == "practice" and self.venue_is_book and self.venue.practice_eligible:
             return self.venue.orchestrator
         return None                              # backtest, live, or no eligible venue
 
@@ -109,15 +124,21 @@ class Parts:
         yield "risk", rt.risk_loop()
         yield "paper_fills", rt.venue_fills(self.paper_orch, self.paper.name)
         if self.venue is not None:
-            yield "venue_fills", rt.venue_fills(self.venue.orchestrator, self.venue.face.name)
+            yield "venue_fills", rt.venue_fills(self.venue.orchestrator, self.venue.face.name,
+                                                ingest=self.venue_is_book)
             yield "account_poll", self.venue.poll()
-            yield "reconcile", self.venue.reconcile(self.risk, self.executor)
+            yield "reconcile", self.venue.reconcile(
+                self.risk, self.executor, active=lambda: self.mode.mode == "practice",
+                flatten=self.edge.flatten)
+            if self.venue.events is not None:
+                yield "venue_events", self.venue.watch_events()
             if self.venue.reconnector is not None:
                 yield "reconnect", self.venue.reconnector.run()
 
 
 def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,
-          venue: VenueLink | None = None, now_fn=lambda: datetime.now(timezone.utc)) -> Runtime:
+          venue: VenueLink | None = None, now_fn=lambda: datetime.now(timezone.utc),
+          intended_mode: str = "paper") -> Runtime:
     sysc, rb_key = cfg.system, cfg.system.active_account
     rulebook = cfg.platform_rules.accounts[rb_key]
     data, logs = root / "data" / "runtime", root / "logs"
@@ -143,6 +164,7 @@ def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,
     writer = AsyncBoundedWriter(MarketStateStore(data / "market_state.sqlite"),
                                 queue_max=d.queue_max, session_id=session_id, logger=log)
     held: list = []                              # the gate reads Risk + the executor, built below
+    modes: list = []                             # the ModeController, built below (min_lot reads it)
 
     class _FlatGate:
         def open_position_count(self) -> int:
@@ -160,7 +182,9 @@ def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,
                 lambda inst, sess, kind: factory.session_median(inst, sess, kind) or 0.0, signal_log)
     paper_descriptor = venue.attached.descriptor if venue is not None else MockExecutionFace().descriptor
 
-    def min_lot(instrument: str) -> Decimal | None:           # ACIS-05 v1.6
+    def min_lot(instrument: str) -> Decimal | None:           # ACIS-05 v1.6: paper, practice only
+        if not modes or modes[0].mode not in ("paper", "practice"):
+            return None
         if venue is not None:
             return venue.min_units(instrument)
         return Decimal(str(paper_descriptor.min_lot)) * UNITS_PER_LOT
@@ -186,7 +210,7 @@ def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,
         session_id=session_id, now_fn=now_fn)
     orchestrators = [paper_orch] + ([venue.orchestrator] if venue is not None else [])
     risk_log = logger("risk_log", "risk")
-    risk_store = RiskStore(data / "risk.db")
+    risk_store = RiskStore(data / ("risk.db" if intended_mode == "paper" else f"risk_{intended_mode}.db"))
     edge = PersistentHaltSink(
         RuntimeHaltSink(governor, orchestrators, lambda scope, why: held[1].submit_flatten(scope, why)),
         risk_store, now_fn, risk_log)
@@ -214,12 +238,15 @@ def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,
     mode = ModeController(initial_mode="paper", guardrail_hash=guardrail_hash(cfg.guardrails),
                           rulebook_hash=rulebook_hash(rulebook), validation_record_ok=lambda: False,
                           logger=log, practice_eligible=lambda: venue is not None and venue.practice_eligible)
+    modes.append(mode)
     parts = Parts(cfg=cfg, log=log, now_fn=now_fn, writer=writer, nvma=nvma, params=params, agon=agon,
                   governor=governor, risk=risk, risk_store=risk_store, edge=edge,
                   control=RuntimeControl(edge, governor, orchestrators), mode=mode, paper=paper,
                   paper_orch=paper_orch, venue=venue, executor=executor,
                   boundaries=BoundaryClock(sysc.session_boundaries), clusters=cfg.instruments.clusters,
-                  pipeline=None)
+                  market_open=lambda now: any(calendars[sp.calendar].session_at(now) != "closed"
+                                              for sp in enabled.values()),
+                  pipeline=None, book=intended_mode)
     runtime = Runtime(parts)
     runtime_ref.append(runtime)
     parts.pipeline = IngestionPipeline(feed, factory, writer, log, subscribers=[runtime.on_state],

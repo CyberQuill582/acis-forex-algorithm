@@ -159,16 +159,16 @@ async def test_practice_sends_the_one_open_to_the_attached_demo_with_its_stop(
                                 VenueStore(tmp_path / "v.db", key), log, account_key=key,
                                 now_fn=lambda: fake.clock, order_ack_timeout_s=2.0,
                                 stop_confirm_timeout_s=0.0)
-    face.start()
+    events = face.start()
     positions, _ = await face.synchronise()
     clock = TickClock()
     orch = ExecutionOrchestrator(sysc.execution, {face.name: face}, VenueQuality(),
                                  FillReportStore(tmp_path / "vf.db"), slippage_alert_bps=8.0,
                                  rng=Random(7), logger=log, session_id="rt", now_fn=clock)
     link = VenueLink(face=face, orchestrator=orch, attached=attached, poll_s=1e6, reconcile_s=1e6,
-                     now_fn=clock, logger=log)
+                     now_fn=clock, logger=log, session=session, events=events)
     rt = build(cfg, root=tmp_path, session_id="rt", feed=ClockedFeed(clock, flat_ticks()),
-               venue=link, now_fn=clock)
+               venue=link, now_fn=clock, intended_mode="practice")
     for regime in (RegimeType.MEAN_REVERTING, RegimeType.RANGING_TIGHT, RegimeType.RANGING_WIDE):
         rt.p.params.stage(make_paramset(regime=regime, param_set_id=f"ps-{regime.value}",
                                         mean_rev_zscore_entry=1.5), now=BOUNDARY - timedelta(hours=1))

@@ -9,8 +9,10 @@ Invariants:
     venue fills), reconciles, and marks READY; only then is the feed re-subscribed with a logged
     FEED_RECONNECT. The gap is logged, never interpolated.
   * `max_consecutive` failures in one outage raise VENUE_UNREACHABLE once: a health event, not a
-    HALT (the resting stops and the watchdog protect the book). Attempts continue at the cap, and
-    the persisted request budget still bounds them.
+    HALT (the resting stops and the watchdog protect the book). Attempts continue at the cap. The
+    persisted budget is hard for authorisation too, so a spent budget refuses the attempt locally,
+    and the reconnector then waits `BUDGET_WAIT_S` for the rolling window instead of ending
+    (GAP-P12D-132 TAI-02); an application or grant the venue refuses detaches (TAE-09).
   * DETACHED is terminal: the task ends, which the runtime treats as a stalled loop, so the book
     is flattened where it can be and halted, and a human re-grants and re-attaches.
 """
@@ -18,13 +20,29 @@ Invariants:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from core.data.ctrader.link import AuthRefused, LinkState
+from core.data.ctrader.meter import BudgetRefused
 from core.data.ctrader.wire import VenueError
 
 DOWN = (LinkState.DISCONNECTED, LinkState.DETACHED)
+BUDGET_WAIT_S = 900.0          # a spent budget frees as the rolling 24 h window moves
+
+
+def backoff_delay(backoff, attempt: int, rng) -> float:
+    """Full jitter (Brooker 2015): uniform(0, min(cap, base × factor**attempt)), exponent capped."""
+    return rng.uniform(0.0, min(backoff.cap_s, backoff.base_s * backoff.factor ** min(attempt, 64)))
+
+
+def hold_until(exc: BaseException, now: datetime) -> tuple[datetime | None, str | None]:
+    """A failure that names its own end: a maintenance window, or a spent budget's window."""
+    if isinstance(exc, BudgetRefused):
+        return now + timedelta(seconds=BUDGET_WAIT_S), "VENUE_BUDGET_WAIT"
+    if isinstance(exc, VenueError) and exc.maintenance_end_ms:
+        return datetime.fromtimestamp(exc.maintenance_end_ms / 1000, tz=timezone.utc), "VENUE_MAINTENANCE"
+    return None, None
 
 
 class Reconnector:
@@ -45,13 +63,12 @@ class Reconnector:
             self._log.event("VENUE_RECONNECTED", gap_s=(self._now() - lost_at).total_seconds())
 
     async def _reconnect(self) -> bool:
-        attempt, until = 0, None
+        attempt, until, why = 0, None, None
         while True:
-            growth = self._b.factor ** min(attempt, 64)     # capped: a long outage never overflows
-            delay = self._rng.uniform(0.0, min(self._b.cap_s, self._b.base_s * growth))
+            delay = backoff_delay(self._b, attempt, self._rng)
             if until is not None:
                 delay += max(0.0, (until - self._now()).total_seconds())
-                self._log.event("VENUE_MAINTENANCE", until=until.isoformat())
+                self._log.event(why, until=until.isoformat())    # VENUE_MAINTENANCE or _BUDGET_WAIT
             self._log.event("VENUE_BACKOFF", attempt=attempt, delay_s=round(delay, 3))
             await self._sleep(delay)
             until = None
@@ -64,12 +81,10 @@ class Reconnector:
             except AuthRefused as refused:              # the session has detached itself
                 self._log.event("VENUE_RECONNECT_REFUSED", verdict=refused.verdict)
                 return False
-            except VenueError as err:
-                if err.maintenance_end_ms:
-                    until = datetime.fromtimestamp(err.maintenance_end_ms / 1000, tz=timezone.utc)
-                self._log.event("VENUE_RECONNECT_FAILED", attempt=attempt, error=err.code)
-            except (ConnectionError, OSError, asyncio.TimeoutError) as exc:
-                self._log.event("VENUE_RECONNECT_FAILED", attempt=attempt, error=type(exc).__name__)
+            except (BudgetRefused, VenueError, ConnectionError, OSError, asyncio.TimeoutError) as exc:
+                until, why = hold_until(exc, self._now())
+                self._log.event("VENUE_RECONNECT_FAILED", attempt=attempt,
+                                error=getattr(exc, "code", None) or type(exc).__name__)
             if self._s.state is LinkState.DETACHED:
                 return False
             attempt += 1

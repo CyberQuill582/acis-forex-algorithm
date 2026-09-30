@@ -287,7 +287,10 @@ class ExecutionOrchestrator:
                 return await face.submit_order(direction=order.direction, ioc=ioc,
                                                stop_loss=order.stop_loss, **common)
             except ConnectionError:
-                positions = await face.open_positions()
+                try:                                   # a dead link cannot reconcile: the attempt
+                    positions = await face.open_positions()   # counts, the fragment stays SENT for
+                except ConnectionError:                # the reconnect's SYNCING (GAP-P12D-132)
+                    positions = ()
                 self._log.event(
                     "EXEC_RECONCILE", venue=venue, fragment_id=fragment_id,
                     attempt=attempt, broker_positions=[

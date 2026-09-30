@@ -20,6 +20,7 @@ from decimal import Decimal
 from typing import Callable, Mapping
 
 from core.data.ctrader.schema import PT, OrderType, enum_value
+from core.data.ctrader.wire import VenueError
 
 SEARCH_SLACK = timedelta(seconds=60)
 MAX_PAGES = 10
@@ -39,21 +40,42 @@ async def reconcile(session, *, req_class: str) -> tuple[list[Mapping], list[Map
     return list(res.payload.get("position", ())), list(res.payload.get("order", ()))
 
 
+async def page_all(session, pt: int, key: str, stamp: str, ident: str, lo: int, hi: int, *,
+                   req_class: str, hit: Callable[[Mapping], bool] | None = None) -> list[Mapping]:
+    """Every record in [lo, hi] WHATEVER order the venue pages in — F-19 documents none (GAP-P12D-132
+    TAE-07, TAI-16): a page with `hasMore` splits its window around the span it covered (both ends
+    included, so a record sharing a page boundary's millisecond is never lost), or in halves when it
+    covered it all; records are de-duplicated by id. With `hit`, the first matching record ends it."""
+    seen, out, windows = set(), [], [(lo, hi)]
+    for _ in range(MAX_PAGES * 10):
+        if not windows:
+            return out
+        a, b = windows.pop()
+        res = await session.request(pt, {"fromTimestamp": a, "toTimestamp": b}, req_class=req_class)
+        rows = list(res.payload.get(key, ()))
+        for row in rows:
+            if int(row[ident]) not in seen:
+                seen.add(int(row[ident]))
+                out.append(row)
+                if hit is not None and hit(row):
+                    return [row]
+        if res.payload.get("hasMore") and rows:
+            first, last = min(int(r[stamp]) for r in rows), max(int(r[stamp]) for r in rows)
+            parts = [w for w in ((a, first), (last, b)) if w[0] < w[1]]
+            if not parts or (a, b) in parts:          # the page names no smaller window: halve it
+                if a == b:
+                    raise SearchIncomplete("more records share one millisecond than a page holds")
+                parts = [(a, (a + b) // 2), ((a + b) // 2 + 1, b)]
+            windows += parts
+    raise SearchIncomplete("the venue's history did not finish paging; the outcome stays unknown")
+
+
 async def find_order(session, match: Callable[[Mapping], bool], *, since: datetime,
                      now: datetime) -> Mapping | None:
-    """The one order in [since − 60 s, now] that `match` accepts, newest pages first."""
-    to_ms = ms(now)
-    for _ in range(MAX_PAGES):
-        res = await session.request(PT.ORDER_LIST_REQ, {"fromTimestamp": ms(since - SEARCH_SLACK),
-                                                        "toTimestamp": to_ms}, req_class="query")
-        orders = list(res.payload.get("order", ()))
-        hits = [o for o in orders if match(o)]
-        if hits:
-            return hits[0]
-        if not res.payload.get("hasMore") or not orders:
-            return None
-        to_ms = min(int(o.get("utcLastUpdateTimestamp", to_ms)) for o in orders) - 1
-    raise SearchIncomplete("the order search did not finish; the outcome stays unknown")
+    """The one order in [since − 60 s, now] that `match` accepts."""
+    found = await page_all(session, PT.ORDER_LIST_REQ, "order", "utcLastUpdateTimestamp", "orderId",
+                           ms(since - SEARCH_SLACK), ms(now), req_class="query", hit=match)
+    return next((o for o in found if match(o)), None)
 
 
 async def order_deals(session, venue_order_id: int, *, req_class: str = "query") -> tuple[Mapping, list[Mapping]]:
@@ -63,17 +85,10 @@ async def order_deals(session, venue_order_id: int, *, req_class: str = "query")
 
 
 async def missed_deals(session, since_ms: int, now: datetime) -> list[Mapping]:
-    """Every deal executed in (since_ms, now], oldest first, paging on `hasMore` (F-19)."""
-    out, cursor = [], since_ms + 1
-    for _ in range(MAX_PAGES * 10):
-        res = await session.request(PT.DEAL_LIST_REQ, {"fromTimestamp": cursor,
-                                                       "toTimestamp": ms(now)}, req_class="protect")
-        deals = sorted(res.payload.get("deal", ()), key=lambda d: int(d["executionTimestamp"]))
-        out.extend(deals)
-        if not res.payload.get("hasMore") or not deals:
-            return out
-        cursor = int(deals[-1]["executionTimestamp"]) + 1
-    raise SearchIncomplete("the deal history did not finish paging")
+    """Every deal executed in (since_ms, now], oldest first (the cursor's own millisecond was ingested)."""
+    deals = await page_all(session, PT.DEAL_LIST_REQ, "deal", "executionTimestamp", "dealId",
+                           since_ms + 1, ms(now), req_class="protect")
+    return sorted(deals, key=lambda d: (int(d["executionTimestamp"]), int(d["dealId"])))
 
 
 def _protective(stop, fill: float, direction: int) -> bool:
@@ -84,29 +99,44 @@ async def ensure_stop(session, stops: Mapping[int, float], position_id: int, *, 
                       distance: Decimal, direction: int, digits: int, wait_s: float,
                       log) -> bool:
     """C-VEN-2 after an open fills: the venue's stop is verified, else amended, else the position is
-    closed. True when a stop rests at the venue; False when the position had to be closed."""
+    closed. True when a stop rests at the venue; False when the position had to be closed, or could
+    not be. TOTAL (GAP-P12D-132 TAI-04/TAE-10): no venue error escapes, so the open's report always
+    reaches Risk; any failure falls through to the close, and a failed close is logged critical for
+    the runtime's periodic stop check to flatten."""
     if _protective(stops.get(position_id), fill, direction):
         return True
-    await asyncio.sleep(wait_s)
-    positions, _ = await reconcile(session, req_class="protect")
-    held = next((p for p in positions if int(p["positionId"]) == position_id), None)
-    if held is None:
-        return True                                   # already closed (a stop fired): nothing to protect
-    if _protective(held.get("stopLoss"), fill, direction):
-        return True
-    target = round(fill - direction * float(distance), digits)
-    await session.request(PT.AMEND_POSITION_SLTP_REQ, {"positionId": position_id, "stopLoss": target},
-                          req_class="protect")
-    log.event("VENUE_STOP_AMENDED", position_id=position_id, stop=target)
-    positions, _ = await reconcile(session, req_class="protect")
-    held = next((p for p in positions if int(p["positionId"]) == position_id), None)
-    if held is None or _protective(held.get("stopLoss"), fill, direction):
-        return True
-    await session.request(PT.CLOSE_POSITION_REQ, {"positionId": position_id,
-                                                  "volume": int(held["tradeData"]["volume"])},
-                          req_class="close")
-    log.event("VENUE_STOP_MISSING", position_id=position_id, severity="critical")
+    held = None
+    try:
+        await asyncio.sleep(wait_s)
+        held = await _position(session, position_id)
+        if held is None or _protective(held.get("stopLoss"), fill, direction):
+            return True                               # closed already (a stop fired), or protected
+        target = round(fill - direction * float(distance), digits)
+        await session.request(PT.AMEND_POSITION_SLTP_REQ, {"positionId": position_id, "stopLoss": target},
+                              req_class="protect")
+        held = await _position(session, position_id)
+        if held is None or _protective(held.get("stopLoss"), fill, direction):
+            log.event("VENUE_STOP_AMENDED", position_id=position_id, stop=target)   # verified, not sent
+            return True
+    except (VenueError, ConnectionError, asyncio.TimeoutError) as exc:
+        log.event("VENUE_STOP_REPAIR_FAILED", position_id=position_id, error=type(exc).__name__,
+                  code=getattr(exc, "code", None))
+    try:
+        volume = int(held["tradeData"]["volume"]) if held is not None else None
+        if volume is None:
+            volume = int((await _position(session, position_id))["tradeData"]["volume"])
+        await session.request(PT.CLOSE_POSITION_REQ, {"positionId": position_id, "volume": volume},
+                              req_class="close")
+        log.event("VENUE_STOP_MISSING", position_id=position_id, severity="critical", closed=True)
+    except (VenueError, ConnectionError, asyncio.TimeoutError, TypeError) as exc:
+        log.event("VENUE_STOP_MISSING", position_id=position_id, severity="critical", closed=False,
+                  error=type(exc).__name__)
     return False
+
+
+async def _position(session, position_id: int):
+    positions, _ = await reconcile(session, req_class="protect")
+    return next((p for p in positions if int(p["positionId"]) == position_id), None)
 
 
 def is_close_of(order: Mapping, position_id: int) -> bool:
@@ -148,9 +178,10 @@ async def synchronise(session, store, router, *, account_key: str, own_label: st
     (ACIS positions for Risk's `reconcile_on_restart`, foreign positions)."""
     from core.execution.ctrader_orders import broker_positions, direction_of, fill_report
 
+    known = store.ours()[0]                                         # never re-claim ACIS's own
     for fragment_id, order_id, sent in store.in_flight():           # 1. our own orders first
         pid = next((p for f, _, p, _, _ in store.parts(fragment_id.split("#")[0]) if f == fragment_id), None)
-        match = ((lambda o: is_close_of(o, pid)) if "#" in fragment_id
+        match = ((lambda o: is_close_of(o, pid) and int(o["orderId"]) not in known) if "#" in fragment_id
                  else (lambda o: o.get("clientOrderId") == fragment_id))
         found = await find_order(session, match, since=sent, now=now)
         if found is None:

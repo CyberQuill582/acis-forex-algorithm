@@ -6,13 +6,16 @@ Invariants:
     Governor → the position policy. Venue work is queued to the executor, never awaited here.
   * Loop 2 classifies each instrument at most once per `regime.cycle_seconds`; the fast loop
     reads the stored context in between (the §10 cadence lock, C-REG-1).
-  * Loop 1 here is promotion only: staged params promote at a crossed session boundary while
-    nothing is held or in flight (C2). QIEA does not evolve in this process: the demo's sets
-    are evolved offline and staged (owner ruling 2026-09-30, GAP-P12D-129).
+  * Loop 1 here is promotion only (C2: at a crossed boundary, while flat and idle); the demo's
+    sets are evolved offline and staged (owner ruling 2026-09-30, GAP-P12D-129).
   * Risk evaluates every `eval_cadence_s`, on every fill (GAP-0099), and on venue fills; the
-    heartbeat is written on that timer, so a quiet weekend is never read as silence.
-  * A core task that ends or raises while the feed still runs is a stalled loop: Risk's
-    flatten-and-halt of everything (§10), then the closes are drained before the process ends.
+    heartbeat is written on that timer, so a quiet weekend is never read as silence. That timer
+    also watches Loop 3: no tick processed for `fast_loop_stall_s` while a market is open is a
+    stall (GAP-P12D-132 TAI-13, TAE-04), which the heartbeat alone could never show.
+  * At a restart a practice book is venue truth, the fills SYNCING recovered already in it (TAI-05);
+    a paper book adopts nothing from the account and logs what it leaves on its venue stops.
+  * A core task that ends or raises while the feed runs is a stalled loop: flatten-and-halt (§10),
+    and the closes drain before the process ends.
   * The fast loop's clock is the tick's own timestamp; everything else reads `now_fn`.
 """
 
@@ -152,13 +155,24 @@ class Runtime:
 
     async def risk_loop(self) -> None:
         p = self.p
+        seen, since = self.seq, p.now_fn()
         while True:
             await self.evaluate()
-            p.risk.write_heartbeat(p.now_fn(), p.mode.mode, self.seq)
+            now = p.now_fn()
+            p.risk.write_heartbeat(now, p.mode.mode, self.seq)
+            if self.seq != seen or not p.market_open(now):
+                seen, since = self.seq, now
+            elif (now - since).total_seconds() >= p.stall_s:
+                p.log.event("FAST_LOOP_SILENT", seconds=(now - since).total_seconds(), seq=self.seq)
+                raise RuntimeError("Loop 3 made no progress while a market was open")   # a stall
             await asyncio.sleep(p.eval_cadence_s)
 
-    async def venue_fills(self, orchestrator, name: str) -> None:
+    async def venue_fills(self, orchestrator, name: str, *, ingest: bool = True) -> None:
         async for fill in orchestrator.venue_fills(name):       # a stop firing, a stop-out
+            if not ingest:                       # the account is not this process's book
+                self.p.log.event("VENUE_FILL_OUTSIDE_THE_BOOK", fill_id=fill.fill_id,
+                                 instrument=fill.instrument, severity="critical")
+                continue
             self.p.risk.ingest(fill)
             await self.evaluate()
 
@@ -170,7 +184,12 @@ class Runtime:
         p, now = self.p, self.p.now_fn()
         restore_on_boot(p.risk_store, p.risk, now)
         if p.venue is not None:
-            p.risk.reconcile_on_restart(tuple(venue_positions), now)
+            if p.venue_is_book:
+                p.risk.reconcile_on_restart(tuple(venue_positions), now)
+            elif venue_positions:                      # an ended practice session's, on their stops
+                p.log.event("VENUE_POSITIONS_OUTSIDE_THE_BOOK", severity="critical", book=p.book,
+                            instruments=sorted(pos.instrument for pos in venue_positions))
+            p.venue.discard_recovered()                # already in venue truth (TAI-05)
             await p.venue.poll_once()
         await self.evaluate()
         p.log.event("BOOT_GROUPS_REBUILT", rebuilt=p.governor.rebuild_groups(self.portfolio()))

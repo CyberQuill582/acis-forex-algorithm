@@ -1,7 +1,10 @@
 """The position policy (GAP-0075): what a sized order does to what is already held.
 
 The backtest book's rules (tests/backtest/book.py `PositionModel`) in production, so the engine
-the demo runs is the engine the harness grades. Invariants:
+the demo runs is the engine the harness grades — with three DECLARED departures the book does not
+grade (GAP-P12D-132 TAI-18, owned by GAP-P12D-118): the pair-group exits below are runtime-only;
+a target is closed at the mark, where the book fills at the target level; and the max hold runs
+from the fill, where the book's runs from `sized_at`. Invariants:
   * One position per instrument. A same-side repeat of a held position is ignored.
   * An opposite order REVERSES: a reduce-only close of the whole holding, then the open, as
     two orders, never one (ACIS-13 §7.3). The executor opens only if the close filled whole.

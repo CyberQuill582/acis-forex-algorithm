@@ -142,6 +142,9 @@ def broker_positions(positions: Iterable[Mapping], symbols: Mapping[int, str],
         units = sum((Decimal(int(p["tradeData"]["volume"])) / VOLUME_SCALE for p in group), Decimal(0))
         stops = [p.get("stopLoss") for p in group]
         stop = None if any(x is None for x in stops) else (min(stops) if direction > 0 else max(stops))
+        priced = [(Decimal(str(p["price"])), Decimal(int(p["tradeData"]["volume"]))) for p in group if "price" in p]
+        entry = (float(sum(px * vol for px, vol in priced) / sum(vol for _, vol in priced))
+                 if priced and sum(vol for _, vol in priced) else None)
         out.append(BrokerPosition(instrument=instrument, direction=direction, size_units=units,
-                                  stop_loss=stop))
+                                  stop_loss=stop, entry_price=entry))
     return tuple(out), tuple(foreign)
