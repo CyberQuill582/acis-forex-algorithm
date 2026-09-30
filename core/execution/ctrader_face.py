@@ -50,13 +50,15 @@ class CTraderExecutionFace(CloseMixin, ExecutionFace):
                  descriptor: CapabilityDescriptor, store: VenueStore, logger, *,
                  account_key: str, now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                  order_ack_timeout_s: float = 10.0, stop_confirm_timeout_s: float = 3.0,
-                 max_orders_per_day: int = 50) -> None:
+                 max_orders_per_day: int = 35,
+                 spread_of: Callable[[str], Decimal | None] | None = None) -> None:
         self.descriptor = descriptor
         self._s, self._store, self._log, self._now = session, store, logger, now_fn
         self._specs = dict(specs)
         self._label = label(account_key)
         self._key = account_key
         self._ack, self._stop_wait, self._max_opens = order_ack_timeout_s, stop_confirm_timeout_s, max_orders_per_day
+        self._spread_of = spread_of              # the feed's live spread (D3); None: offline tests only
         self.router = EventRouter(account_key=account_key, own_label=self._label, logger=logger,
                                   instruments={spec.symbol_id: n for n, spec in self._specs.items()})
         self.router.acis_positions = store.ours()[1]
@@ -101,8 +103,9 @@ class CTraderExecutionFace(CloseMixin, ExecutionFace):
 
     async def _send_open(self, o: _Order, stop_loss, now: datetime) -> FillReport:
         spec = self._specs.get(o.instrument)
-        reason = self._refuse_open(spec, o, stop_loss, now)
-        rel = None if reason else relative_stop(spec, o.requested_price, stop_loss, o.direction)
+        spread = self._spread(o.instrument)
+        reason = self._refuse_open(spec, o, stop_loss, now) or (None if spread is not None else "VENUE_NO_QUOTE")
+        rel = None if reason else relative_stop(spec, o.requested_price, stop_loss, o.direction, spread)
         if reason is None and rel is None:
             reason = "VENUE_STOP_TOO_CLOSE"
         if reason is not None:
@@ -155,9 +158,12 @@ class CTraderExecutionFace(CloseMixin, ExecutionFace):
             position_id = order.get("positionId")
             report = self._finish(deals, venue_order_id, position_id, cancelled, o)
         spec = self._specs[o.instrument]
-        await self._protect(report, position_id, spec,
-                            relative_stop(spec, o.requested_price, stop_loss, o.direction))
+        await self._protect(report, position_id, spec, relative_stop(
+            spec, o.requested_price, stop_loss, o.direction, self._spread(o.instrument) or Decimal(0)))
         return report
+
+    def _spread(self, instrument: str) -> Decimal | None:
+        return Decimal(0) if self._spread_of is None else self._spread_of(instrument)
 
     async def _protect(self, report: FillReport, position_id, spec, rel) -> None:
         if report.filled_units <= 0 or position_id is None or rel is None:

@@ -54,8 +54,8 @@ class VenueConfig(_Strict):
     def _consistent(self) -> "VenueConfig":
         if self.close_reserve >= self.daily_request_budget:
             raise ValueError("close_reserve must sit inside daily_request_budget")
-        if 2 * self.max_orders_per_day > self.daily_request_budget - self.close_reserve:
-            raise ValueError("the order allowance (2 per order) exceeds budget − reserve")
+        if 4 * self.max_orders_per_day > self.daily_request_budget - self.close_reserve:
+            raise ValueError("the order allowance (4 per round trip, ACIS-13 v1.2) exceeds budget − reserve")
         if self.liveness_timeout_s <= self.heartbeat_s:
             raise ValueError("liveness_timeout_s must exceed heartbeat_s")
         return self

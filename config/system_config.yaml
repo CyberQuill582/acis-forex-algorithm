@@ -146,7 +146,7 @@ venue:                           # ACIS-13 v1.0 §6.1 - the real venue; absent =
   transport: json_ws             # OQ-02: JSON over WebSocket via aiohttp (no new dependency)
   daily_request_budget: 1000     # schema max 1000 (half the FTMO/E8 cap, GAP-P12D-57)
   close_reserve: 100             # only closes, flatten and stop repair may spend these
-  max_orders_per_day: 50         # the section 6.5 order allowance (open + close each)
+  max_orders_per_day: 35         # the section 6.5 order allowance: 4 requests a round trip (ACIS-13 v1.2)
   heartbeat_s: 10                # the documented cadence (F-03); schema max 10
   liveness_timeout_s: 60         # 2x the server's reported 30 s heartbeat (GAP-P12D-132 TAE-03)
   order_ack_timeout_s: 10        # then search by clientOrderId - never a blind resend

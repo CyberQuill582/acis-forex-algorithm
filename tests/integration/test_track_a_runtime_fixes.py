@@ -182,6 +182,7 @@ async def test_a_foreign_position_at_a_later_start_refuses_it(tmp_path, acis_con
     log = capture_logger()[0]
     first = await attach_venue(cfg, "pepperstone_demo", tmp_path, log, "s1", connect=venue.connect)
     assert first.exit_code is None
+    assert first.link.face._spread_of == first.feed.spread             # D3: the stop widens by the live spread
     first.link.events.cancel()
     await first.session.stop()
     venue.positions[555] = {"positionId": 555, "positionStatus": 1, "swap": 0, "price": 150.0,
@@ -230,3 +231,27 @@ def test_the_minimum_lot_is_injected_in_paper_and_practice_only(tmp_path, acis_c
     assert rt.p.governor._fixed_units("EUR_USD") == Decimal("1000")
     rt.p.mode.set_mode("backtest")
     assert rt.p.governor._fixed_units("EUR_USD") is None               # ACIS-05 v1.6 step 3b
+
+
+# -- GAP-P12D-132 D2 (owner ruling): the close reserve flattens and halts, once ------------------ #
+
+async def test_reaching_the_close_reserve_in_practice_flattens_and_halts_once(tmp_path, acis_config) -> None:
+    from config.account_doctrine import guardrail_hash, rulebook_hash
+    from tests.integration.test_track_a_adapter_fixes import pad
+    venue, session, face, _ = await _face(tmp_path, budget=60, reserve=20)
+    clock, (log, _buf) = TickClock(), capture_logger()
+    rt = build(acis_config, root=tmp_path, session_id="rt", now_fn=clock, intended_mode="practice",
+               feed=ClockedFeed(clock, flat_ticks()[:5]),
+               venue=link_over(acis_config, face, session, tmp_path, clock, log))
+    rulebook = acis_config.platform_rules.accounts[acis_config.system.active_account]
+    rt.p.mode.set_mode("practice", guardrail_hash=guardrail_hash(acis_config.guardrails),
+                       rulebook_hash=rulebook_hash(rulebook))
+    await rt.boot()
+    assert rt.p.risk_store.open_halts() == []                          # outside the reserve
+    pad(session, venue, 40)                                            # 40 >= 60 - 20
+    await rt.evaluate()
+    await rt.evaluate()
+    assert sorted((h.kind, h.reason) for h in rt.p.risk_store.open_halts()) == [
+        ("flatten", "budget_reserve"), ("halt", "budget_reserve")]
+    assert len(events(tmp_path, "system_log", "VENUE_BUDGET_RESERVE_REACHED")) == 1
+    await session.stop()

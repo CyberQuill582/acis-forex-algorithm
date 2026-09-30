@@ -282,3 +282,33 @@ def test_an_adopted_position_carries_the_venues_entry_price_and_stop(acis_config
     mon.reconcile_on_restart((pos,), datetime(2026, 9, 30, tzinfo=timezone.utc))
     (adopted,) = mon.positions()
     assert (adopted.avg_entry_price, adopted.stop_loss) == (150.2, 151.0)    # never a 1.0 placeholder
+
+
+# -- GAP-P12D-132 D1 (owner ruling): A9 counts the measured 4 requests a round trip ------------ #
+
+def test_the_order_allowance_counts_four_requests_a_round_trip(acis_config) -> None:
+    from core.execution.ctrader_attach import feasible
+    v = acis_config.system.venue
+    assert v.max_orders_per_day == 35 and feasible(v, 900) is None      # 760 + 4 × 35 = 900
+    assert "projected" in feasible(v.model_copy(update={"max_orders_per_day": 36}), 900)
+    with pytest.raises(ValueError):                                     # 4 × 226 > 1000 − 100
+        type(v).model_validate({**v.model_dump(), "max_orders_per_day": 226})
+
+
+# -- GAP-P12D-132 D3 (owner ruling): the sent stop is widened by the live spread ---------------- #
+
+async def test_the_sent_stop_is_widened_by_the_live_spread(tmp_path) -> None:
+    venue, session, face, _ = await _face(tmp_path)
+    face._spread_of = lambda instrument: Decimal("0.00012")
+    await _open(face, stop=1.09)                                        # the Governor's distance 0.01
+    (order,) = [m["payload"] for m in venue.transport.sent if m["payloadType"] == PT.NEW_ORDER_REQ]
+    assert order["relativeStopLoss"] == 1012                            # (0.01 + 0.00012) × 100 000
+    await session.stop()
+
+
+async def test_no_live_quote_means_no_open(tmp_path) -> None:
+    venue, session, face, _ = await _face(tmp_path)
+    face._spread_of = lambda instrument: None
+    report = await _open(face)
+    assert report.filled_units == 0 and PT.NEW_ORDER_REQ not in venue.requests
+    await session.stop()

@@ -61,12 +61,14 @@ def min_stop_distance(spec: VenueSymbolSpec, price: Decimal) -> Decimal:
 
 
 def relative_stop(spec: VenueSymbolSpec, requested_price: float, stop_loss: float,
-                  direction: int) -> int | None:
-    """`relativeStopLoss` for a market open, or None when the stop is too close to place."""
+                  direction: int, spread: Decimal = Decimal(0)) -> int | None:
+    """`relativeStopLoss` for a market open, or None when the stop is too close to place.
+    ACIS-13 v1.2 §6.3 (owner ruling D3): the distance is widened by the live `spread`, so the
+    venue's bid/ask trigger fires where the harness's mid trigger does."""
     price, stop = Decimal(str(requested_price)), Decimal(str(stop_loss))
     if (stop - price) * direction > 0:                 # beyond the entry: a stop on the wrong side
         raise DataQualityError("stop_loss", stop_loss, "not on the protective side of the entry")
-    d = (abs(price - stop) / spec.tick).to_integral_value(rounding=ROUND_FLOOR) * spec.tick
+    d = ((abs(price - stop) + spread) / spec.tick).to_integral_value(rounding=ROUND_FLOOR) * spec.tick
     if d <= 0 or d < min_stop_distance(spec, price):
         return None
     return int(d * PRICE_SCALE)          # a multiple of 10^(5 − digits) by construction (F-14)

@@ -18,6 +18,7 @@ Invariants:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import AsyncIterator, Callable, Mapping
 
 from core.data.ctrader.schema import PRICE_SCALE, PT
@@ -61,6 +62,11 @@ class CTraderFeed(FeedConnector):
             if tick is not None:
                 self._last[tick.instrument] = tick
                 yield tick
+
+    def spread(self, instrument: str) -> Decimal | None:
+        """The last quote's ask − bid, or None before the first (the face's stop widening, D3)."""
+        tick = self._last.get(instrument)
+        return None if tick is None else Decimal(str(tick.ask)) - Decimal(str(tick.bid))
 
     async def snapshot(self, instrument: str) -> RawTick:
         if instrument not in self._last:

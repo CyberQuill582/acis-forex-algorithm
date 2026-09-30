@@ -72,7 +72,7 @@ class VenueLink:
             await asyncio.sleep(self._poll_s)
             await self.poll_once()
 
-    def _in_reserve(self) -> bool:
+    def in_reserve(self) -> bool:
         if self.session is None:
             return False
         b = self.session.budget()
@@ -82,7 +82,7 @@ class VenueLink:
                         flatten: Callable[[str, str], None]) -> None:
         while True:
             await asyncio.sleep(self._reconcile_s)
-            if not active() or executor.busy or not executor.queue.empty() or self._in_reserve():
+            if not active() or executor.busy or not executor.queue.empty() or self.in_reserve():
                 continue                          # paper, a fill in flight, or the close reserve
             try:
                 if self.session is not None:

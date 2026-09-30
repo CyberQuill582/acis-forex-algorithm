@@ -81,10 +81,11 @@ async def attach_venue(cfg, account: str, root: Path, log, session_id: str, *,
     if attached.report.verdict != "ATTACHED":
         await session.stop()
         return VenueAttach(session, exit_code=EXIT_REFUSED)
+    feed = CTraderFeed(session, attached.feed_symbols, log)
     face = CTraderExecutionFace(session, attached.specs, attached.descriptor, store, log,
                                 account_key=v.account_key, order_ack_timeout_s=v.order_ack_timeout_s,
                                 stop_confirm_timeout_s=v.stop_confirm_timeout_s,
-                                max_orders_per_day=v.max_orders_per_day)
+                                max_orders_per_day=v.max_orders_per_day, spread_of=feed.spread)
     events = face.start()
     positions, foreign = await face.synchronise()
     if foreign:                                            # A7: an AttachHalt, at every start
@@ -97,7 +98,6 @@ async def attach_venue(cfg, account: str, root: Path, log, session_id: str, *,
         FillReportStore(root / "data" / "runtime" / "venue_fills.db"),
         slippage_alert_bps=cfg.guardrails.slippage_alert_bps, rng=SystemRandom(), logger=log,
         session_id=session_id)
-    feed = CTraderFeed(session, attached.feed_symbols, log)
     reconnector = Reconnector(session=session, face=face, feed=feed, backoff=v.backoff, rng=rng, logger=log)
     link = VenueLink(face=face, orchestrator=orch, attached=attached, session=session, events=events,
                      poll_s=v.equity_poll_s, reconcile_s=v.reconcile_interval_s,

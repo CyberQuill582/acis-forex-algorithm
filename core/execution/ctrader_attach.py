@@ -69,13 +69,14 @@ class Attached:
 
 
 CONNECT_OVERHEAD = 8     # app auth, grant, account auth, trader, assets, symbols ×2, reconcile (§6.5)
+ROUND_TRIP = 4           # measured: open 1; close = reconcile ×2 + close 1 (v1.2, GAP-P12D-132 D1)
 
 
 def feasible(cfg, execution_cap: int) -> str | None:
     """A9 (§6.5): the day's projected requests fit in budget − reserve, and the orchestrator's own
     cap (ACIS-06 C-EXE-8) sits inside it, so it refuses an open before the adapter must."""
     projected = (CONNECT_OVERHEAD * (1 + cfg.backoff.max_consecutive) + 86400 / cfg.equity_poll_s * 2
-                 + 86400 / cfg.reconcile_interval_s + 2 * cfg.max_orders_per_day)
+                 + 86400 / cfg.reconcile_interval_s + ROUND_TRIP * cfg.max_orders_per_day)
     room = cfg.daily_request_budget - cfg.close_reserve
     if projected > room:
         return f"projected {projected:.0f} requests a day > {room} (budget − reserve)"
