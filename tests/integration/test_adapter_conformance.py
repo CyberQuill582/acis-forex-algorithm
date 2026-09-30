@@ -232,6 +232,17 @@ def _order(units, action="open", direction=1, order_id="o-lim"):
         param_set_id="ps", action=action)
 
 
+async def test_an_orchestrated_open_rests_the_orders_own_stop_and_a_close_carries_none(
+        adapter, tmp_path) -> None:
+    # GAP-P12D-130 / master §279: the stop the Governor sized is the one resting at the venue
+    face = adapter()
+    orch, _ = _orchestrator(face, tmp_path)
+    await orch.submit(_order(1000), valid_for_seconds=300)
+    assert (await face.resting_stops()) == {"EUR_USD": 1.09}
+    await orch.submit(_order(1000, action="close", order_id="o-close"), valid_for_seconds=300)
+    assert await face.open_positions() == () and await face.resting_stops() == {}
+
+
 def _lot_units(lots: float) -> Decimal:
     return Decimal(str(lots)) * Decimal("100000")
 

@@ -1,5 +1,5 @@
 # ACIS — Adaptive Capital Intelligence System
-## Master Specification v2.24 (build authority — spec COMPLETE, build in progress)
+## Master Specification v2.25 (build authority — spec COMPLETE, build in progress)
 
 Status: BUILD AUTHORITY. Consolidates and supersedes `ACIS_Agent_Prompt.md` (Drive, v1.0), `Super_Forex_Agent.html` (Drive, v1.0 architecture brief), and the ACIS sections of the July 2026 Master Spec doc. Where those disagreed (directory layout), this document decides: the detailed `core/` layout below is canonical; the coarse 4-folder layout from the master doc is retired. If any earlier document contradicts this one, this one wins.
 
@@ -54,7 +54,9 @@ acis/
 │   ├── governor/   [DIR:core/governor]   capital_governor.py, marginal_alpha.py, liquidity.py,
 │   │                                     correlation.py §6
 │   ├── execution/  [DIR:core/execution]  orchestrator.py, fragmenter.py, venue.py §7
-│   └── risk/       [DIR:core/risk]       monitor.py, guardrails.py, alpha_decay.py §8  ← SOVEREIGN
+│   ├── risk/       [DIR:core/risk]       monitor.py, guardrails.py, alpha_decay.py §8  ← SOVEREIGN
+│   └── runtime/    [DIR:core/runtime]    the three-loop runtime §10 (v2.25): the composition root —
+│                                         imports every layer and monitoring/, imported by none
 ├── monitoring/     [DIR:monitoring]      MCP server: health/status resources, control tools §12
 ├── config/         [DIR:config]          system_config.yaml, instruments.yaml, guardrail_limits.yaml,
 │                                         platform_rules.yaml, event_sources.yaml, scenario_book.yaml §9
@@ -384,7 +386,9 @@ A prop account is not a funded account with extra steps; it is a different survi
 - **Rulebook attestation (harness awareness, with §12):** the active rulebook carries a content hash exposed on `acis://account/rules`; going live requires acknowledging it (§12 `acis_set_mode`), and the supervising harness re-verifies it at attach, session start, and before any resume proposal. An account whose platform forbids news trading is therefore un-tradeable-through-news at three independent levels: the events layer computes the windows (§3.5), the Governor hard-overrides them (§6), and no harness can arm the system without attesting to the rule's existence.
 - Personally funded accounts are the degenerate case: an empty-of-restrictions rulebook that still declares its measurement semantics. The doctrine costs nothing there and saves the account everywhere else.
 
-## 10. THREE-SPEED LOOP ARCHITECTURE
+## 10. THREE-SPEED LOOP ARCHITECTURE `[DIR:core/runtime]`
+
+**Placement (v2.25, owner-ratified 2026-09-30, GAP-P12D-128).** The runtime is the composition root. It wires the seven layers and `monitoring/` into the loops below and owns their cadences, but it decides nothing a layer owns. It may import every layer; no layer may import it.
 
 Three independent asyncio loops sharing read access to stores, zero synchronous coupling:
 - **Loop 1 SLOW (4–24h):** QIEA evolution at session boundaries with zero open positions; stages, never promotes mid-session. **v2.22:** once QIEA retires, Loop 1 registers and stages rule-set changes under the unchanged staging rule (including the §5 C2 flatten-then-promote), and keeps the forward e-process books.
@@ -495,6 +499,8 @@ Both laws bind the implementing agent **and** every future spec pass. Neither ma
 > The system's job is not to make the most money possible on any given day. Its job is to **still be running, with positive expectancy, two years from now.** Every design decision must answer: *"Does this make the system more likely to survive a regime it has never seen?"* If the answer is no — redesign it.
 
 ## CHANGELOG
+
+**v2.25 (2026-09-30, owner-ratified in chat — the runtime's home, GAP-P12D-128)** — The owner chose "core/runtime/ (Recommended)", answering the session's standalone question. §10 carried no `[DIR]` tag, §1 forbids an unmapped directory, and the import contract rejects any unknown `core/` package, so the three-loop runtime had no lawful home. §1 now maps `core/runtime/ [DIR:core/runtime]` to §10, and §10 states the placement: the runtime is the composition root, which may import every layer and `monitoring/` and is imported by none (the contract test enforces both directions). Placement only; no guardrail, HALT/veto semantic, layer edge or live gate changed.
 
 **v2.24 (2026-09-29, owner-ratified in chat — the R1.2 audit's two owner decisions, GAP-P12D-127)** — E-R12-02: the owner chose "The stricter boundary (Recommended)". §5.6's LLM-contamination law now records the vendor's training-data cutoff, the proposal date and the proposer's tool exposure, and certifies an LLM-originated or LLM-selected hypothesis only on data after the later of the training-data cutoff and (with exposure) the proposal date; a literature rule an LLM selected is LLM-selected. E-R12-07: the owner chose "Push the chain head to GitHub (Recommended)": before real-data looks open (R1.4), every appended register line's chain head is committed to a tracked file and pushed, so the project's GitHub remote holds the external, timestamped record (ACIS-09 v1.10; GAP-P12D-86 raised). Tightening only; no guardrail, HALT/veto semantic or live gate changed.
 

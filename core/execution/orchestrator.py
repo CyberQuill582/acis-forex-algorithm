@@ -26,13 +26,8 @@ from core.execution.boundary import paced_at, quantity_at, reduce_only_at, side
 from core.execution.close_pacing import ClosePacer
 from core.execution.fragmenter import Fragment, FragmentPlan, plan
 from core.execution.reports import ReportBook
-from core.execution.venue import (
-    ExecutionFace,
-    FillReport,
-    FillReportStore,
-    FillStatus,
-    UNITS_PER_LOT,
-)
+from core.execution.venue import (ExecutionFace, FillReport, FillReportStore, FillStatus,
+                                  UNITS_PER_LOT)
 from core.execution.venue_quality import VenueQuality
 from core.execution.venue_limits import (WINDOW, RequestBudget, capable_venues, lot_units,
                                          venue_quantity)
@@ -288,7 +283,9 @@ class ExecutionOrchestrator:
             try:
                 if order.action == "close":        # the venue's own atomic reduce (X3)
                     return await face.close_position(direction=order.direction, **common)
-                return await face.submit_order(direction=order.direction, ioc=ioc, **common)
+                # §279: an open rests the order's own stop at the venue (GAP-P12D-130)
+                return await face.submit_order(direction=order.direction, ioc=ioc,
+                                               stop_loss=order.stop_loss, **common)
             except ConnectionError:
                 positions = await face.open_positions()
                 self._log.event(

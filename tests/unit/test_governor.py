@@ -42,7 +42,7 @@ def mk_portfolio(**overrides) -> PortfolioState:
 
 
 def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0, holidays=(),
-                resume_gate=None,
+                resume_gate=None, fixed_units=None,
                 **cfg_overrides) -> tuple[CapitalGovernor, CapturingLogger]:
     log = CapturingLogger()
     cfg = dict(marginal_alpha_window=50, marginal_alpha_min_trades=20,
@@ -73,6 +73,7 @@ def mk_governor(rulebook=None, blackout=None, base_unit: float = 1000.0, holiday
         blackout=blackout or (lambda instrument, now: False),
         logger=log,
         resume_gate=resume_gate or (lambda token: None),   # no halt ledger in these tests
+        fixed_units=fixed_units or (lambda instrument: None),
     )
     return gov, log
 
@@ -244,6 +245,25 @@ def test_alpha_decay_throttles_quarter() -> None:
     order = gov.allocate(mk_signal(), mk_portfolio(), mk_regime(), T0)
     assert order.size_units == (Decimal("486") * Decimal("0.25")
                                 / Decimal("1.1")).quantize(Decimal("0.01"))
+
+
+# ------------------- v1.6 minimum size in paper and practice (master §5) ------------------- #
+
+def test_paper_and_practice_trade_exactly_one_minimum_lot() -> None:
+    gov, _ = mk_governor(fixed_units={"EUR_USD": Decimal("1000")}.get)
+    order = gov.allocate(mk_signal(), mk_portfolio(), mk_regime(), T0)
+    assert order.reason == "formula" and order.size_units == Decimal("1000")
+    assert order.factors_snapshot["formula_units"] == str(BASELINE_UNITS)   # kept, not traded
+
+
+def test_the_minimum_lot_never_raises_a_zero_and_meets_every_hard_limit() -> None:
+    lot = {"EUR_USD": Decimal("1000")}.get
+    gov, _ = mk_governor(fixed_units=lot)
+    gov.apply_risk_state(taper_factor=0.0)                       # Risk's entry halt
+    assert gov.allocate(mk_signal(), mk_portfolio(), mk_regime(), T0).size_units == 0
+    capped, _ = mk_governor(rulebook=mk_rulebook(max_lots=0.005), fixed_units=lot)
+    order = capped.allocate(mk_signal(), mk_portfolio(), mk_regime(), T0)   # 441.82 fits 500
+    assert order.size_units == 0 and order.reason == "lot_cap"   # the lot itself is judged
 
 
 # ---------------------------- §6.3 taper (C-GOV-9) ---------------------------- #

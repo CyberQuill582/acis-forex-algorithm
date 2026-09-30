@@ -135,6 +135,18 @@ async def test_an_open_fills_with_its_stop_resting_at_the_venue(tmp_path) -> Non
     assert "stopLoss" not in new_order                          # never absolute on a market order
 
 
+async def test_an_open_through_the_orchestrator_carries_its_stop_to_the_venue(tmp_path) -> None:
+    # GAP-P12D-130: the orchestrator dropped SizedOrder.stop_loss, so every engine open reached
+    # this face without a stop and was refused VENUE_UNPROTECTED_OPEN_REFUSED
+    from tests.integration.test_adapter_conformance import _order, _orchestrator
+    venue, _, face, _ = await _face(tmp_path)
+    orch, _ = _orchestrator(face, tmp_path, now=venue.clock)
+    (report,) = await orch.submit(_order(1000), valid_for_seconds=300)
+    assert report.status is FillStatus.FILLED and report.filled_units == Decimal("1000")
+    (pos,) = await face.open_positions()
+    assert pos.stop_loss == pytest.approx(1.09)                 # the order's own stop, at the venue
+
+
 @pytest.mark.parametrize("stop, reason", [(None, "VENUE_UNPROTECTED_OPEN_REFUSED"),
                                           (1.10, "VENUE_STOP_TOO_CLOSE")])
 async def test_an_open_without_a_placeable_stop_never_reaches_the_venue(tmp_path, stop, reason) -> None:

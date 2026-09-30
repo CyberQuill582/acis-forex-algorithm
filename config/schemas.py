@@ -21,7 +21,8 @@ from config.calendars import (ExchangeCalendar, FxCalendar, Session, ZonedTime, 
                               _Strict, check_boundaries)
 from config.monitoring_schema import MonitoringConfig, TunableParam  # noqa: F401
 from config.rulebook import (AccountRulebook, DrawdownRule, NewsRules,  # noqa: F401
-                             PlatformRules)
+                             PlatformRules)   # platform_rules.yaml, the §9.5 account doctrine
+from config.runtime_schema import RuntimeConfig
 from config.venue import VenueConfig
 
 
@@ -261,6 +262,7 @@ class SystemConfig(_Strict):
     execution: ExecutionConfig
     risk: RiskConfig
     monitoring: MonitoringConfig
+    runtime: RuntimeConfig               # master §10 v2.25: the position policy's declared values
     venue: VenueConfig | None = None     # ACIS-13 §6.1: absent = no real venue (mock only)
 
 
@@ -386,10 +388,6 @@ class GuardrailLimits(_Strict):
             raise ValueError("taper_start_fraction must be < entry_halt_fraction")
         return self
 
-
-# --------------------------------------------------------------------------- #
-# platform_rules.yaml — the account doctrine (SPEC §9.5): config/rulebook.py
-# --------------------------------------------------------------------------- #
 
 # --------------------------------------------------------------------------- #
 # event_sources.yaml — trusted channels + Tier-1/Tier-G taxonomy (SPEC §3.5–3.6)

@@ -134,6 +134,9 @@ monitoring:                      # ACIS-08 v1.1 (SPEC 12) - required block
     - {path: signals.conviction_discard, min: 0.45, max: 0.95}
     - {path: governor.marginal_alpha_window, min: 10, max: 500}
     - {path: regime.stability_window, min: 5, max: 200}
+runtime:                         # master section 10 (v2.25) - the position policy's declared values
+  max_hold_s: 172800             # 48 h: the backtest book's max hold (engine parity, pinned by test)
+  paper_nav_usd: 10000.0         # the paper venue's starting equity
 venue:                           # ACIS-13 v1.0 §6.1 - the real venue; absent = mock only
   adapter: ctrader               # master v2.23: the cTrader Open API, first venue a Pepperstone demo
   environment: demo              # must equal the account's isLive (A2); practice mode needs demo

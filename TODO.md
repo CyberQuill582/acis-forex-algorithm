@@ -17,12 +17,18 @@
 
 **First actions next session, in order:**
 1. **Owner progress (2026-09-30):** the Pepperstone cTrader demo is OPEN — account number (trader login) **5350811**, Demo, Hedging, USD 10,000, leverage 1:400 (the owner's screenshot). The Open API app `ACIS` is SUBMITTED to Spotware, awaiting approval. The owner has NOT copied the client ID/secret (they stay on the Spotware apps page until the server setup). The internal `ctidTraderAccountId` is not shown in cTrader: read it from the grant's account list (match `traderLogin` 5350811) once a token exists.
-   **ASK the owner** whether Spotware approved the app. Once it has:
+   **2026-09-30 check:** Gmail (every folder, spam included) holds NO Spotware email; the only cTrader/Pepperstone mail is the 2026-09-29 account creation. Not approved yet. Spotware may not email at all, so the app's status on openapi.ctrader.com/apps is the authority. Once it is approved:
    - give the owner the secret-safe steps to place `ACIS_CTRADER_CLIENT_ID`, `ACIS_CTRADER_CLIENT_SECRET` and the token store (`ACIS_CTRADER_TOKEN_STORE`, a Playground token for the owner's cTID) on the server, typed by the owner, never through chat;
    - the owner commits the account's `ctid_trader_account_id` in `config/system_config.yaml → venue:` (0 = uncommitted, the attach refuses);
    - run `python scripts/ctrader_probe.py --rulebook pepperstone_demo` (read-only); `--trade` (one minimum-lot round trip) only on the owner's go;
    - record its answers to ACIS-13 OQ-07/08/09/12/17 in Appendix B and `OPERATIONS_LEDGER.md`.
 2. **Build Track A step 4, the three-loop runtime** ([[GAP-0091b]], [[GAP-0099]], [[GAP-0075]]). The position policy comes FIRST (no venue before the per-tick firehose is fixed). Also: wire `AttachReport.practice_eligible` into the ModeController, the A8 first-live-tick clock check ([[GAP-P12D-126]]'s residual), periodic venue reconciliation, and feed reconnect with backoff ([[GAP-0020]]).
+   - [x] 2026-09-30 OWNER RULED the runtime's home: `core/runtime/` ("core/runtime/ (Recommended)"), applied as master v2.25 with the import contract ([[GAP-P12D-128]]).
+   - [x] 2026-09-30 the orchestrator now threads `SizedOrder.stop_loss` to the venue; every engine open was refused by cTrader before ([[GAP-P12D-130]]).
+   - [ ] 2026-09-30 OWNER RULED what the demo trades: QIEA champions evolved on the 730 days ending 2023-12-31, at one minimum lot, recorded unvalidated ([[GAP-P12D-129]]). Build: the demo-evolve script (server run), one-minimum-lot sizing in paper/practice, promotion at the first boundary.
+   - [ ] the position policy: the backtest book's semantics in production (one position per instrument, a same-side repeat ignored, an opposite order reverses as close-then-open, engine-driven target and max-hold exits; the stop is the venue's), per TODO phase-12 item 4.
+   - [ ] the production HaltSink (Governor + execution freeze + flatten by reduce-only closes), wrapped by `PersistentHaltSink`.
+   - [ ] the loops: fast (feed → NVMA → AGON → Governor → policy → orchestrator), Risk evaluate on its cadence and on each fill ([[GAP-0099]]), venue fills, reconciliation, the heartbeat; the entry point `python -m core.runtime` and the engine unit's `ExecStart`.
 3. **When the runtime lands, ASK the owner** to launch the constitution's two audits of Track A steps 3–5 (the adapter and the runtime together).
 4. **R1 is paused behind the demo.** R1.3 is next. Before `REAL_LOOKS_OPEN` may become True (R1.4): the R1.3/R1.4 items owned by [[GAP-P12D-127]] and the register's GitHub anchor ([[GAP-P12D-86]]).
 

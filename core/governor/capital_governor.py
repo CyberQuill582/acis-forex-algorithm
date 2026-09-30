@@ -13,6 +13,7 @@ import json
 import math
 import uuid
 from collections import deque
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from types import MappingProxyType
@@ -55,6 +56,7 @@ class CapitalGovernor:
         blackout: Callable[[str, datetime], bool],
         logger,
         resume_gate: Callable[[str], None],   # clears the halt ledger; raises to refuse
+        fixed_units: Callable[[str], Decimal | None] = lambda instrument: None,   # v1.6 min size
     ) -> None:
         self._cfg = cfg
         self._limits = guardrails
@@ -68,6 +70,7 @@ class CapitalGovernor:
         self._scalp_horizon_s = scalp_horizon_s
         self._atr = AtrMemo(atr_period)   # GAP-P12D-15: recomputed only when a window changes
         self._blackout, self._log, self._resume_gate = blackout, logger, resume_gate
+        self._fixed_units = fixed_units
         self.marginal_alpha = MarginalAlphaEstimator(
             cfg.marginal_alpha_window, cfg.marginal_alpha_min_trades, cfg.marginal_alpha_min_bucket)
         self._bars: dict[str, deque[Bar]] = {}
@@ -311,6 +314,9 @@ class CapitalGovernor:
         size_units = (Decimal(str(raw_usd)) / per_unit).quantize(Decimal("0.01"))
         if size_units <= 0:
             return self._zero(signal, "formula_zero", snapshot, now)
+        fixed = self._fixed_units(signal.instrument)      # ACIS-05 v1.6: paper and practice
+        if fixed is not None:                             # trade one minimum lot (master §5)
+            snapshot["formula_units"], size_units = str(size_units), fixed
 
         # hard limits — clamp only downward (§7.4)
         # §9.5 lot cap: zero, never clamp-to-cap (master §6 overrides are zero-overrides)
@@ -408,15 +414,7 @@ class CapitalGovernor:
         )
 
     def _rewrite(self, order: SizedOrder, size: Decimal, reason: str) -> SizedOrder:
-        return SizedOrder(
-            order_id=order.order_id, signal_id=order.signal_id,
-            instrument=order.instrument, direction=order.direction,
-            size_units=size, entry_price=order.entry_price,
-            stop_loss=order.stop_loss, take_profit=order.take_profit,
-            reason=reason, factors_snapshot=order.factors_snapshot,
-            sized_at=order.sized_at, param_set_id=order.param_set_id,
-            group_id=order.group_id,
-        )
+        return replace(order, size_units=size, reason=reason)   # a pair leg: always an open
 
     def _log_order(self, order: SizedOrder) -> None:
         if order.action == "open":

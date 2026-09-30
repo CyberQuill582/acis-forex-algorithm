@@ -58,6 +58,10 @@ ALLOWED: dict[str, set[str]] = {
     # Risk→Governor edge is a RUNTIME channel (the injected HaltSink), never an
     # import: `core/risk` imports nothing from `core/governor`.
     "risk": {"execution", "data"},
+    # §10 + master v2.25 (GAP-P12D-128): the three-loop runtime is the composition root. It
+    # wires every layer (and monitoring/, which this map does not police); no layer lists it,
+    # so a layer that imports it is a violation (`test_no_layer_imports_the_runtime`).
+    "runtime": {"data", "regime", "optimizer", "signals", "governor", "execution", "risk"},
 }
 
 
@@ -116,6 +120,20 @@ def test_relative_upward_import_is_caught(tmp_path: Path) -> None:
     )
     violations = _scan(fake_core)
     assert violations and "core.risk" in violations[0]
+
+
+def test_no_layer_imports_the_runtime(tmp_path: Path) -> None:
+    """GAP-P12D-128: the runtime may import every layer, and a layer that imported the
+    runtime would close a cycle through the composition root. The scan names only that."""
+    fake_core = tmp_path / "core"
+    for layer in ("risk", "runtime"):
+        (fake_core / layer).mkdir(parents=True)
+    (fake_core / "risk" / "evil.py").write_text(
+        "from core.runtime import engine\n", encoding="utf-8")
+    (fake_core / "runtime" / "wiring.py").write_text(
+        "from core.risk import monitor\nfrom core.signals import agon\n", encoding="utf-8")
+    violations = _scan(fake_core)
+    assert len(violations) == 1 and "evil.py imports core.runtime" in violations[0]
 
 
 def test_feed_face_exposes_no_account_surface() -> None:

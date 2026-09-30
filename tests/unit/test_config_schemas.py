@@ -150,6 +150,23 @@ def test_tierg_flatten_needs_two_confirmations(tmp_path: Path) -> None:
         load_config(_mutated_config(tmp_path, "event_sources.yaml", mutate))
 
 
+# ---------------- the runtime block (master §10 v2.25, GAP-0075) ---------------- #
+
+def test_missing_runtime_block_is_fatal(tmp_path: Path) -> None:
+    cfg = _mutated_config(tmp_path, "system_config.yaml", lambda d: d.pop("runtime"))
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+
+def test_the_runtime_max_hold_is_the_harness_one(acis_config) -> None:
+    # engine parity: the demo must exit as the engine the harness graded (tests/backtest/book.py)
+    import inspect
+
+    from tests.backtest.harness import Backtest
+    graded = inspect.signature(Backtest.__init__).parameters["max_hold_s"].default
+    assert acis_config.system.runtime.max_hold_s == graded == 48 * 3600
+
+
 # ---------------- phase 4: optimizer + C8 cost gates (ACIS-03 §5) ---------------- #
 
 def test_missing_optimizer_block_is_fatal(tmp_path: Path) -> None:

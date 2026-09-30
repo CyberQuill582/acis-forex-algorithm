@@ -144,6 +144,44 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-130: the orchestrator dropped every order's stop — an engine open reached the venue without `stop_loss`, so cTrader refused it and the paper venue rested none
+- Severity: high · Likelihood: certain
+- Status: fixed (2026-09-30, found by the lead reading the orchestrator for Track A step 4, the same day)
+- Area: [DIR:core/execution] orchestrator.py `_submit_once`; master §279 (every SizedOrder carries a broker-side stop); ACIS-13 §7.3 step 2
+- Description: `_submit_once` called `face.submit_order(direction, ioc, **common)` and `common` carried no stop. On the cTrader face every engine open was therefore refused `VENUE_UNPROTECTED_OPEN_REFUSED` (the face's own guard held, so nothing unprotected was ever placed), and on the mock face a paper position rested no stop, so it could never stop out. The conformance suite called faces directly, so no test saw the gap.
+- Justification: fixed. An open now passes `stop_loss=order.stop_loss`; a close still carries none (the face contract's reduce). Both tests fail with the fix reverted (checked on the server).
+- Proof: `test_an_orchestrated_open_rests_the_orders_own_stop_and_a_close_carries_none` (every adapter), `test_an_open_through_the_orchestrator_carries_its_stop_to_the_venue` (cTrader, fake venue).
+- Residual: none — the stop is threaded for every face, and the face's refusal of a stop-less open stays as the backstop.
+- Linked: [[GAP-0091b]], [[GAP-P12D-42]]
+
+## GAP-P12D-129: the demo trades nothing until a parameter set is active — NVMA marks every regime untradeable without one, and BASELINE.md forbids a fabricated set
+- Severity: high · Likelihood: certain
+- Status: open [impl — owner-ruled 2026-09-30] (found by the lead scoping Track A step 4)
+- Area: core/optimizer/param_library.py, core/regime/nvma.py `has_params_for`, BASELINE.md, master §5 ("validated": paper and practice at minimum size), tests/backtest/evolve_step.py
+- Description: `NVMA(has_params_for=ParamLibrary.has_active)` makes a regime untradeable while the library holds no active set for it, so a runtime pointed at the demo with an empty library never trades. BASELINE.md rules out a hand-made set, and the demo's scope was an open owner decision ([[GAP-P12D-68]] item 9).
+- **Owner ruling (2026-09-30, "Evolve pre-2024 (Recommended)"):**
+  - run the existing QIEA evolve-driver on the Google server over the 730 days of Dukascopy history ending 2023-12-31, for the venue's mapped instruments (EUR_USD, USD_JPY);
+  - stage the champions in the demo's own ParamLibrary;
+  - trade them at ONE venue minimum lot per instrument (master §5 v2.22, paper and practice at minimum size; [[GAP-P12D-106]]);
+  - it never touches the 2024–25 holdout and writes no graded look, so [[GAP-P12D-127]]'s closed gate is untouched;
+  - recorded as unvalidated, as master §5 already says of the as-built demo. The demo proves plumbing, not edge ([[GAP-P12D-49]]).
+- Build owed:
+  1. a demo-evolve script: the labelled-bar cache and the per-regime evolve over the declared span, staging into the param DB the runtime opens, with the run's record (span, seeds, champions) kept. **BUILT 2026-09-30:** `scripts/evolve_demo_params.py` (one fold of the walk-forward's own `evolve_fold`, `train_end` 2024-01-01 exclusive; the record `params.evolution.json` beside the library says `validated: false`). The server run is owed.
+  2. ~~one-minimum-lot sizing in paper and practice modes~~ **BUILT 2026-09-30** as ACIS-05 v1.6 §7 step 3b: the Governor's injected `fixed_units`; a zero is never raised, and the hard limits judge the lot itself. Proof: `test_paper_and_practice_trade_exactly_one_minimum_lot`, `test_the_minimum_lot_never_raises_a_zero_and_meets_every_hard_limit`. The runtime wires it (item 3's build).
+  3. the runtime promotes the staged sets at its first session boundary while flat (C2).
+- Justification: open until the champions are staged and the sizing is built and tested.
+- Linked: [[GAP-P12D-68]], [[GAP-P12D-106]], [[GAP-P12D-127]], [[GAP-P12D-49]], [[GAP-0091b]]
+
+## GAP-P12D-128: the three-loop runtime had no lawful home — master §10 carried no [DIR] tag, §1 forbids an unmapped directory, and the import contract rejects any new core package
+- Severity: medium · Likelihood: certain
+- Status: fixed (2026-09-30, owner ruling "core/runtime/ (Recommended)", answering the session's standalone question; applied as master v2.25; found by the lead at the start of Track A step 4)
+- Area: master §1 (directory map) and §10; tests/unit/test_import_contract.py; deploy/systemd/acis-engine.service
+- Description: the runtime composes all seven layers plus `monitoring/`, so it fits none of the layer packages without breaking the layer law, and `test_no_upward_or_skip_imports` asserts `unknown core layer directory` on any other `core/` package. The deploy template already named `python -m core.runtime` as the entry point, but no spec did.
+- Justification: fixed. Master v2.25 maps `core/runtime/ [DIR:core/runtime]` to §10 as the composition root: it may import every layer and `monitoring/`, and no layer may import it. The contract test holds both directions.
+- Proof: `test_no_upward_or_skip_imports` (the runtime's entry in ALLOWED), `test_no_layer_imports_the_runtime`.
+- Residual: GAP-0091b — the runtime itself (Track A step 4).
+- Linked: [[GAP-0091b]], [[GAP-0075]], [[GAP-0099]]
+
 ## GAP-P12D-127: the R1.2 dual audit — 26 findings (15 internal, 11 external) on the look register v2; triaged, real-data looks closed until R1.4, both owner decisions ruled
 - Severity: high · Likelihood: certain
 - Status: mitigated (2026-09-29, triaged the same day; the constitution's two audits of R1.2, launched on the owner's go ("Launch both now (Recommended)"), brief `archive/AUDIT_BRIEF_R1_2_2026-09-29.md` on `192c1fa`; reports `archive/AUDIT_R1_2_INTERNAL_2026-09-29.md` and `archive/AUDIT_R1_2_EXTERNAL_2026-09-29.md`. The lead's three claims held: 1,057 passed, the eight proof tests pass, the register is 290 lines)
