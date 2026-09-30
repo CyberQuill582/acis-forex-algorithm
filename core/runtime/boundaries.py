@@ -1,9 +1,10 @@
-"""Session-boundary instants crossed by a historical replay (ACIS-03 §7 C1/C2, ACIS-09 §5).
+"""Session-boundary instants crossed by a stream of ticks (ACIS-03 §7 C1/C2, ACIS-09 §5).
 
-In production the medium loop sweeps `ParamLibrary.on_boundary(now)` at every declared
-session boundary; staged params promote only there, and only when flat. A replay has no
-wall clock, so this clock reports each declared boundary instant that the replay's ticks
-step over.
+Staged params promote only at a declared session boundary, and only when flat. Neither a
+replay nor the live runtime is guaranteed a tick inside the boundary minute, so this clock
+reports each declared boundary instant the ticks step over, and both sweep
+`ParamLibrary.on_boundary` with it: one clock, the harness and the engine (moved here from
+tests/backtest/boundary_clock.py with the runtime, master v2.25).
 
 Invariants: every boundary strictly after the first observed tick and at or before the
 current tick is reported exactly once, in time order — including every boundary inside a

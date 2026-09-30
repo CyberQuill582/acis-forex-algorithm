@@ -11,7 +11,7 @@ gate is met on real data **and** a human signs off (CLAUDE.md; `TODO.md` phase 1
 |------|----------|--------|
 | CI merge gate | `.github/workflows/ci.yml` — full suite on every push/PR to `main`, run twice for determinism | ✅ runnable |
 | Docker scaffold | `Dockerfile`, `docker-compose.yml`, `.dockerignore` | ✅ image builds; watchdog service runs |
-| Process supervision | `deploy/systemd/acis-watchdog.service`, `deploy/systemd/acis-engine.service` | ✅ watchdog live; engine unit is a template pending the phase-12 runtime |
+| Process supervision | `deploy/systemd/acis-watchdog.service`, `deploy/systemd/acis-engine.service` | ✅ watchdog live; engine unit runs `python -m core.runtime` (2026-09-30), not yet enabled |
 | Server-side stop verification | `tests/integration/test_adapter_conformance.py::test_server_side_stop_*` | ✅ asserted per adapter (§279) |
 
 ## Topology
@@ -45,26 +45,34 @@ sudo systemctl enable --now acis-watchdog          # the breaker is now supervis
 sudo systemctl status acis-watchdog
 ```
 
-The `acis-engine.service` unit is a **template** — do not enable it until the
-phase-12 three-loop runtime entrypoint exists (it would restart-loop). Both units
-are OS-hardened (`ProtectSystem=strict` + a single `ReadWritePaths=/opt/acis/logs`)
-so neither process can write `config/guardrail_limits.yaml` or `config/watchdog.yaml`
-even if its code tried — guard-integrity enforced by the kernel, not by promises.
+The `acis-engine.service` unit runs the three-loop runtime, `python -m core.runtime
+--venue --account pepperstone_demo` (master §10, `core/runtime/`). Enable it only once the
+venue credentials exist in `/etc/acis/engine.env` (root-owned, 0600). It always boots in
+PAPER on the venue's prices; practice needs a human at a terminal:
+
+```bash
+python -m core.runtime --print-hashes --account pepperstone_demo    # read what you attest to
+python -m core.runtime --venue --account pepperstone_demo --practice     --ack-guardrail <hash> --ack-rulebook <hash>                     # asks for the human token
+```
+
+Both units are OS-hardened (`ProtectSystem=strict`); the watchdog may write only
+`/opt/acis/logs`, the engine only `logs/`, `data/` and its token store, so neither
+process can write `config/guardrail_limits.yaml` or `config/watchdog.yaml` even if its
+code tried — guard-integrity enforced by the kernel, not by promises.
 
 ## Container path
 
 ```bash
 docker compose up -d watchdog        # the always-on breaker (runnable today)
-# docker compose --profile engine up -d   # once the phase-12 runtime entrypoint lands
+# docker compose --profile engine up -d   # the runtime entrypoint exists; the compose engine service is not yet wired
 ```
 
 ## Still required before live (not part of THIS gate — see TODO phase 12)
 
 - Real ≥2-yr Dukascopy/TrueFX out-of-sample data + honest §14 grading.
-- The three-loop production runtime + in-loop wiring (GAP-0091b VaR/marks,
-  GAP-0099 per-fill breaker, GAP-0075 position accounting) — this is what fills
-  in the `engine` service/unit `ExecStart` and threads each `SizedOrder.stop_loss`
-  to the venue's server-side stop.
+- ~~The three-loop production runtime + in-loop wiring~~ BUILT 2026-09-30 (`core/runtime/`,
+  GAP-0075/0099/0091b); its open remainder for an unattended demo is GAP-P12D-131 and
+  feed reconnect GAP-0020.
 - Real platform adapters (ACIS-13) — each runs `test_adapter_conformance.py`
   unchanged against its demo environment, **including the §279 server-side-stop
   assertions**, before it may be selected.

@@ -144,6 +144,21 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-131: what the three-loop runtime still owes before an unattended demo — found building it, each item bounded today
+- Severity: medium · Likelihood: high
+- Status: open (2026-09-30, found by the lead building Track A step 4; the runtime itself is BUILT, `core/runtime/`, GAP-0075/0099/0091b fixed)
+- Area: core/runtime/ (engine.py, wiring.py, venue_link.py), core/execution/ctrader_face.py `account_snapshot`, ACIS-13 §7.5, master §10
+- Description — each item, and what bounds it today:
+  - **(a) Practice equity lags by up to one `equity_poll_s` (300 s).** ACIS-13 §7.5's event-sourced account view is unbuilt: every `account_snapshot()` spends two requests, so Risk judges the last poll between polls. At one minimum lot (~$0.10 a pip on EUR/USD) no 300 s move carries a $10,000 demo near its $9,000 floor, and the venue's stops rest regardless.
+  - **(b) TSMOM cannot fire on a fresh runtime.** It needs 260 daily closes (`tsmom_min_history_days`), and a runtime starts with none, so on the demo TSMOM stays silent; the 60 s-bar modules warm within hours. The natural seed is the venue's own D1 history (ACIS-13 budgets a historical request class).
+  - **(c) No live event calendar.** NVMA's `macro_imminent` and the Governor's blackout read False in the runtime. The demo rulebook declares `news.restricted: false`; the historical calendar is [[GAP-P12D-03]].
+  - **(d) Pair coupling exits are not wired** (`Governor.check_group_exits` needs AGON's coupling state as data). A pair is bounded by its target, the max hold, the orphan close and the venue stops; and at one minimum lot a USD-balanced pair is usually refused whole at Execution.
+  - **(e) Loop 1 promotes; it does not evolve.** Live QIEA evolution is not run in-process: the demo's sets are evolved offline and staged ([[GAP-P12D-129]], owner ruling).
+  - **(f) Practice needs a human at a terminal after every restart.** No MCP transport carries `acis_set_mode` to a running engine ([[GAP-P12D-08]]), so a supervised restart comes back in paper. Deliberate (a restart is never a relaxation), but it bounds demo continuity.
+  - **(g) A hung feed is not a stall the runtime sees.** A task that raises or ends is; a feed that silently stops is not (see [[GAP-0020]]'s finding). With reconnect built, a DETACHED session should end the process so the supervisor restarts it.
+- Justification: open. None of these weakens a guard: each fails toward fewer entries or a halted, protected book. (a), (f) and (g) matter most for an unattended demo; (g) is built with [[GAP-0020]].
+- Linked: [[GAP-0091b]], [[GAP-0099]], [[GAP-0075]], [[GAP-0020]], [[GAP-P12D-08]], [[GAP-P12D-03]], [[GAP-P12D-129]]
+
 ## GAP-P12D-130: the orchestrator dropped every order's stop — an engine open reached the venue without `stop_loss`, so cTrader refused it and the paper venue rested none
 - Severity: high · Likelihood: certain
 - Status: fixed (2026-09-30, found by the lead reading the orchestrator for Track A step 4, the same day)
@@ -168,7 +183,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Build owed:
   1. a demo-evolve script: the labelled-bar cache and the per-regime evolve over the declared span, staging into the param DB the runtime opens, with the run's record (span, seeds, champions) kept. **BUILT 2026-09-30:** `scripts/evolve_demo_params.py` (one fold of the walk-forward's own `evolve_fold`, `train_end` 2024-01-01 exclusive; the record `params.evolution.json` beside the library says `validated: false`). The server run is owed.
   2. ~~one-minimum-lot sizing in paper and practice modes~~ **BUILT 2026-09-30** as ACIS-05 v1.6 §7 step 3b: the Governor's injected `fixed_units`; a zero is never raised, and the hard limits judge the lot itself. Proof: `test_paper_and_practice_trade_exactly_one_minimum_lot`, `test_the_minimum_lot_never_raises_a_zero_and_meets_every_hard_limit`. The runtime wires it (item 3's build).
-  3. the runtime promotes the staged sets at its first session boundary while flat (C2).
+  3. ~~the runtime promotes the staged sets at its first session boundary while flat (C2)~~ **BUILT 2026-09-30:** the runtime sweeps crossed boundaries with the shared `BoundaryClock` (moved to `core/runtime/boundaries.py`), and the library's flat gate counts in-flight work as well as held positions. Proof: `test_staged_params_promote_at_a_crossed_session_boundary_while_flat`.
 - Justification: open until the champions are staged and the sizing is built and tested.
 - Linked: [[GAP-P12D-68]], [[GAP-P12D-106]], [[GAP-P12D-127]], [[GAP-P12D-49]], [[GAP-0091b]]
 
@@ -232,7 +247,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **(d) §4.1 says `RawTick.volume` is omitted,** but the locked ACIS-01 type requires it. Built: 0.0, with `quote_volume = False` in the venue profile.
   - **(e) The A8 clock check needs a live tick,** so it cannot finish inside the attach; it is the runtime's first-live-tick check ([[GAP-0091b]]), and entries stay blocked until it passes.
 - Justification: fixed. ACIS-13 v1.1 states each correction; the code implemented them first, with the tests named above. Every correction makes the adapter stricter or exact-once; none touches a guardrail, HALT/veto semantics or the equity floor. The `pepperstone_demo` rulebook was ratified in the same answer.
-- Residual: GAP-0091b — (e), the first-live-tick clock check, is the runtime's to perform.
+- Residual: none — (e), the first-live-tick clock check, is BUILT in the runtime (2026-09-30, `Runtime._clock_ok`): an instrument takes no entry until one live tick arrives within `clock_skew_tolerance_ms`, and its exits are never blocked. Proof: `test_no_entry_until_a_live_tick_proves_the_host_clock`.
 - Linked: [[GAP-P12D-70]], [[GAP-P12D-69]], [[GAP-0091b]], [[GAP-0020]]
 
 ## GAP-P12D-125: the R1.1 dual audit — 23 findings (14 internal, 9 external), every one triaged; the two owner decisions ratified
@@ -2192,10 +2207,12 @@ dimensionally correct; the taper is exactly the ratified linear schedule.
 ## GAP-0099 (P9I-07): the equity breaker's per-FILL fast path is not wired in the monitor — it fires on each `evaluate`, not on each `ingest`
 - Severity: medium
 - Likelihood: medium
-- Status: mitigated (2026-07-18 — ACIS-07 §7 says the fast breakers run "every eval_cadence_s AND on each fill"; the monitor's `ingest` updates state but does not itself call `evaluate`. The equity/drawdown breakers therefore fire on the evaluate cadence, not intra-fill. The production three-loop runtime (phase 10) owns the fast-loop cadence and drives `evaluate` on the fast path — the same lean-build split as GAP-0091b/paper_loop. Equity is broker-account truth (fetched by the loop, not carried on a fill), so a per-fill check is inherently a loop-owner responsibility. Carried as a phase-10 wiring requirement)
+- Status: fixed (2026-09-30, Track A step 4: the runtime evaluates Risk on its cadence, on every solicited fill (the executor's `on_fill`) and on every venue fill (a stop firing, a stop-out), so the breakers no longer wait for the cadence. Earlier: 2026-07-18 — ACIS-07 §7 says the fast breakers run "every eval_cadence_s AND on each fill"; the monitor's `ingest` updates state but does not itself call `evaluate`. The equity/drawdown breakers therefore fire on the evaluate cadence, not intra-fill. The production three-loop runtime (phase 10) owns the fast-loop cadence and drives `evaluate` on the fast path — the same lean-build split as GAP-0091b/paper_loop. Equity is broker-account truth (fetched by the loop, not carried on a fill), so a per-fill check is inherently a loop-owner responsibility. Carried as a phase-10 wiring requirement)
 - Area: [DIR:core/risk] monitor.py `ingest`/`evaluate`, ACIS-07 §7
 - Description: between evaluate ticks, a fill that drops equity below the floor is not caught until the next evaluate. Bounded by `eval_cadence_s` (10s) in v1; phase-10 wires the fast-path evaluate on the fill edge.
 - Justification: lean-build — the runtime that owns loop cadence lands at phase 10; recorded so it treats fast-path evaluate-on-fill as a named requirement.
+- Proof: `test_busy_until_reported_and_risk_is_evaluated_only_on_a_fill` (one fill, one evaluate; a reject none).
+- Residual: GAP-P12D-131 — in practice mode a fill's evaluate reads the last account poll, so the equity it judges lags by up to one `equity_poll_s` (item a there).
 - Linked: core/risk/monitor.py, ACIS-07 §7, [[gap-0091b]] pattern
 
 ## GAP-0092: Risk Monitor books realised PnL in the instrument's QUOTE currency and treats it as account currency — exact only for USD-quoted pairs
@@ -2210,10 +2227,12 @@ dimensionally correct; the taper is exactly the ratified linear schedule.
 ## GAP-0091b: VaR and cluster/per-instrument metrics need marks fed each evaluate; nothing in production wires the mark stream yet (phase-10 runtime)
 - Severity: low
 - Likelihood: high
-- Status: open (owned by phase 10 — the production three-loop runtime that owns Risk's evaluate cadence and its mark/account inputs)
+- Status: fixed (2026-09-30, Track A step 4: `core/runtime/engine.py` feeds every Risk evaluate the fast loop's latest marks and the account — the paper ledger, or the venue's budgeted poll — so VaR, the cluster and the per-instrument metrics are live in production. VaR's σ builds over `var_window` evaluations, ~8 minutes at the 10 s cadence. Earlier: open, owned by the production three-loop runtime)
 - Area: [DIR:core/risk] monitor.py `evaluate` (marks arg), `_var_pct`/`_max_cluster_pct`, ACIS-07 §7
 - Description: `RiskMonitor.evaluate(account, now, marks=…)` computes 1% VaR (delta-normal undiversified, σ from a rolling mark history) and cluster/per-instrument exposure from the `marks` the caller passes. The phase-9 build wires and tests these through direct evaluate calls; the PRODUCTION loop that feeds marks + the broker account snapshot on the Risk cadence is the phase-10 three-loop runtime (lean-build: §15 phase 9 is the Risk build + tests, not the runtime). Until then VaR reads 0 with no mark history — correct-but-inert, never wrong. No decision path depends on VaR in-loop today.
 - Justification: consistent with the paper_loop/phase-7 precedent (the composed runtime lands with the phases that need it). Recorded so phase 10 treats "feed Risk its marks + account snapshot each evaluate" as a named wiring requirement, and so a reviewer does not read VaR=0 as a bug.
+- Proof: `test_the_phase7_market_makes_one_position_with_its_stop_not_a_firehose` (Risk's day P&L equals the paper venue's independently booked open P&L at the runtime's marks), `test_practice_sends_the_one_open_to_the_attached_demo_with_its_stop`.
+- Residual: GAP-P12D-131 — what the runtime still owes before an unattended demo (the event-sourced account view, the TSMOM daily seed, the live calendar, pair coupling exits, practice after a restart); feed reconnect is [[GAP-0020]].
 - Linked: core/risk/monitor.py `evaluate`/`observe_mark`/`_var_pct`, tests/unit/test_risk_monitor.py, ACIS-07 §7
 
 ## GAP-0078: `skip_attribution()`'s three per-layer buckets OVERLAP — one physical vetoed tick is counted in BOTH `nvma[reason]` and `agon["vetoed_regime"]`, so the layers are not a partition and any cross-layer sum overcounts
@@ -2228,9 +2247,11 @@ dimensionally correct; the taper is exactly the ratified linear schedule.
 ## GAP-0075: The phase-7 composed loop opens a NEW position on EVERY tradeable tick (no position/dedup/holding management) — one TSMOM long spawns 67–71 identical orders; `take_rate()["orders_placed"]` conflates sizing decisions with positions and no test guards the spam
 - Severity: medium
 - Likelihood: medium
-- Status: mitigated (2026-07-17 pin; 2026-07-18 phase-9 GRADUATION of the mechanism — the missing position layer now EXISTS: `RiskMonitor` reconstructs open positions from FillReports (`positions()`), and `tests/integration/test_risk_pipeline.py::test_position_accounting_gates_reentry` proves a position-aware re-entry gate turns one repeated signal into ONE held position, not one-per-tick. What remains for phase 10 is only WIRING this gate into the production open-decision loop — the phase-7 `paper_loop.on_state` is unchanged, so its `orders_placed == 67` pin still stands as the phase-7 artifact and is deliberately NOT edited here. Downgraded concern: the accounting the gap asked for is built and tested; the production loop consumes it at phase 10)
+- Status: fixed (2026-09-30, Track A step 4: the production position policy is BUILT in `core/runtime/policy.py` and driven by the runtime. One position per instrument; a same-side repeat is ignored; an opposite order reverses as a whole close then the open, never through flat; an instrument with work in flight takes nothing new; target and max-hold exits are the engine's, the stop the venue's. On the phase-7 market that made 67 identical orders, the runtime sends ONE. Earlier: 2026-07-17 pin; 2026-07-18 phase-9 GRADUATION of the mechanism — the missing position layer now EXISTS: `RiskMonitor` reconstructs open positions from FillReports (`positions()`), and `tests/integration/test_risk_pipeline.py::test_position_accounting_gates_reentry` proves a position-aware re-entry gate turns one repeated signal into ONE held position, not one-per-tick. What remains for phase 10 is only WIRING this gate into the production open-decision loop — the phase-7 `paper_loop.on_state` is unchanged, so its `orders_placed == 67` pin still stands as the phase-7 artifact and is deliberately NOT edited here. Downgraded concern: the accounting the gap asked for is built and tested; the production loop consumes it at phase 10)
 - Description: `on_state` calls `agon.generate()` every tick and, for each surviving signal, appends the sized order to `book.orders` unconditionally. TSMOM is unconditional in every tradeable regime and re-fires the SAME long every tick once the daily seed is present, so the composed loop accumulates one identical EUR_USD TSMOM long PER tradeable tick — reproduced: 67 orders (flat e2e fixture), 71 (row-6 fixture), all `ps-MEAN_REVERTING` TSMOM longs. The e2e's `assert len(loop.book.orders) >= 1` and the row tests' count-agnostic assertions mask this entirely; `take_rate()["orders_placed"]` (surfaced as a §10 C15 metric that phase-10 `acis://status` will expose) is thereby not a count of POSITIONS but of per-tick sizing decisions, inflated ~1-per-tick. The real three-loop runtime + Execution Orchestrator (phase 8) supplies the missing position/holding/dedup layer, so this is a harness-scope artifact rather than a decision-path bug — but the phase-7 tests present orders_placed and "orders came out the bottom with the full audit chain" (e2e) without acknowledging that "71 duplicate positions" is what actually came out, and no assertion pins the expected count or flags the duplication.
 - Justification: honesty/coverage gap in the phase advertised as the full paper-trading integration; either the harness should model position-existence (so a re-fire is a no-op/adjustment, matching the real engine) or the tests/ledger should state that orders_placed here counts sizing decisions, not positions, and that dedup is deferred to phase 8.
+- Proof: `test_the_phase7_market_makes_one_position_with_its_stop_not_a_firehose`, `test_a_signal_repeated_every_tick_becomes_one_open_not_a_firehose`, `test_an_opposite_order_reverses_as_a_whole_close_then_the_open`, `test_a_reversal_never_opens_through_a_holding_its_close_left`, `test_target_and_max_hold_exit_the_whole_holding_but_the_stop_is_the_venues`. The phase-7 harness's `orders_placed == 67` pin stays, as the record of what the unpoliced loop did.
+- Residual: GAP-P12D-118 — the ratified replacement, Carver's band around the current position (R1.6), supersedes this as-built policy.
 - Linked: scratchpad probe (row6 orders=71 all TSMOM; e2e orders=67), tests/integration/paper_loop.py:104-128
 
 ## GAP-0067: MarketStateStore commits per row (~10–30 writes/s fsync-bound on the dev box) — at real feed rates the bounded queue overflows and drop-oldest sheds most ticks from the audit/replay store
@@ -2283,7 +2304,7 @@ dimensionally correct; the taper is exactly the ratified linear schedule.
 ## GAP-0020: Feed reconnect/backoff protocol untested until a real feed face exists
 - Severity: low
 - Likelihood: high
-- Status: open (deferred by design — phase 12)
+- Status: open (deferred by design — phase 12. **2026-09-30 finding, building the runtime:** the cTrader session marks a lost link DISCONNECTED and nothing reconnects it — ACIS-13 §6.6's backoff is configured but unbuilt — and `CTraderFeed.stream()` then awaits a spot forever. A disconnect is therefore a silent dead feed, not a stall the runtime can see: resting venue stops still protect any position and Risk keeps beating, but nothing trades until a restart. The next Track A item.)
 - Area: [DIR:core/data], ACIS-01 §7 step 8 / §14, SPEC §7.5
 - Description: ACIS-01 requires backoff-reconnect + FEED_RECONNECT re-baseline via snapshot() and a reconnect-mid-stream integration test. Phase 1 shipped the mock feed only (per ACIS-01 v1.1 scoping); the mock cannot disconnect, so the reconnect path has no implementation or test yet. Risk: phase 12 adapter work must not treat reconnect as done because phase 1 is green.
 - Justification: consistent with the lean-build law (SPEC §18) — reconnect behaviour lives in real feed faces, which arrive with the phase-12 adapters; the §7.5 conformance suite already names reconnect-mid-position as a mandatory case, so it cannot be silently skipped.

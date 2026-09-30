@@ -2,7 +2,7 @@
 
 A production-grade, **deterministic (no-LLM-in-the-fast-loop)** autonomous forex engine with an MCP monitoring/control plane. Separate project from AXIS and Phronesis — nothing here imports them.
 
-> **Status (2026-09-29): SPEC complete (master v2.24; the demo venue is a Pepperstone cTrader demo in the new `practice` mode). Build phases 1–11 are ✅ — built, dual-audited, and triaged — with 1124+ tests passing.** Phase 12 (live readiness) is in progress. The R-1 training direction, all fourteen R1 decisions and the corrections from their two audits are ratified and applied (master v2.22). **R1.1 (the synthetic lab) and R1.2 (the look register v2) are built and dual-audited**; R1.2's findings are being triaged (GAP-P12D-127), and real-data looks stay closed until R1.4. **The demo track is the priority:** the cTrader adapter for a Pepperstone demo is built (ACIS-13 v1.0); see the START HERE block of `TODO.md`. The seven core layers, the MCP monitoring plane, and the backtest/§14-validation harness are implemented. **Phase 12 (LIVE readiness) is underway:** the VPS deployment-readiness gate is ✅ (CI merge gate, Docker, systemd supervision + §8.6 watchdog, §279 server-side-stop conformance — see `deploy/README.md`); next is real out-of-sample §14 validation. Everything runs in **paper mode**; enabling live requires the §14 minimums met **out-of-sample on real data** + explicit human sign-off. See `STATUS.md` for the current-state digest.
+> **Status (2026-09-30): SPEC complete (master v2.25). Build phases 1–11 are ✅ — built, dual-audited and triaged. Phase 12 (live readiness) is in progress; everything is still paper.** **The demo track is the priority:** the cTrader adapter for a Pepperstone demo is built (ACIS-13 v1.1), and the **three-loop runtime is built** (`core/runtime/`, `python -m core.runtime`): one position per instrument, stops resting at the venue, Risk on every fill, practice entered only by a human. The demo's parameter sets are being evolved on the Google server (GAP-P12D-129); the owner's Spotware app approval is awaited, and feed reconnect (GAP-0020) is next. R1.1 and R1.2 are built, dual-audited and triaged; real-data looks stay closed until R1.4. A demo proves the plumbing, not an edge (GAP-P12D-49). See `STATUS.md`.
 
 ## Read in this order
 1. **`STATUS.md`** — one-screen current state: what's built, what's open, the pre-live gate. **Read this first.**
@@ -10,7 +10,7 @@ A production-grade, **deterministic (no-LLM-in-the-fast-loop)** autonomous forex
 3. **`CLAUDE.md`** — operating rules for the implementing agent (guardrails human-only, layer law, audit constitution).
 4. **`ACIS_SPEC.md`** — the master specification / constitution (the build authority; the spec wins over code).
 5. **`specs/ACIS-00-INDEX.md`** — the deep per-layer spec set (one LOCKED document per layer, in build order).
-6. **`KNOWN_GAPS.md`** — the LIVE ledger: open / mitigated / accepted-risk items only (5 open, all low severity).
+6. **`KNOWN_GAPS.md`** — the LIVE ledger: open / mitigated / accepted-risk items only; `python scripts/ledger_check.py --summary` prints the live counts.
 7. **`SPEC_AUDIT.md`** — cross-source contradiction & audit register.
 
 > Archive / grep-only (not part of the read path): `KNOWN_GAPS_CLOSED.md` (closed items — the regression test named in each entry is the permanent record), `CONCORDANCE.md`, and `archive/` (superseded audit scratch). Grep these when tracing "why does the code do it this way"; never read top-to-bottom.
@@ -22,9 +22,10 @@ A production-grade, **deterministic (no-LLM-in-the-fast-loop)** autonomous forex
 ## Layout
 ```
 core/{data,regime,optimizer,signals,governor,execution,risk}/  # 7 layers, downward-only data flow ✅
+core/runtime/      # the three-loop runtime, the composition root (SPEC §10, v2.25)
 monitoring/        # MCP monitoring/control plane (SPEC §12) ✅
 config/            # system_config.yaml, instruments.yaml, guardrail_limits.yaml (human-only)
-tests/{unit,integration,backtest}/                             # 1124 passed
+tests/{unit,integration,backtest}/                             # 1160+ passed (Google server)
 deploy/  Dockerfile  docker-compose.yml  .github/workflows/    # VPS deployment-readiness gate ✅
 scripts/  logs/  specs/
 ```

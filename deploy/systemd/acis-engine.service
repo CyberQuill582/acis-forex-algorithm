@@ -1,16 +1,17 @@
-# ACIS engine — the supervised fast-loop process. TEMPLATE / NOT YET ENABLED.
+# ACIS engine — the supervised three-loop runtime (master §10, core/runtime/). NOT ENABLED YET:
+# enable it only after the venue credentials exist (TODO Track A: the Spotware app, the token).
 #
-# The production three-loop runtime entrypoint lands with the phase-12 runtime
-# item (TODO "Three-loop production runtime + in-loop wiring"). Until it exists,
-# do NOT `systemctl enable` this unit — it would restart-loop. It is committed now
-# so the supervision topology (engine + watchdog + shared logs/heartbeat.json) is
-# reviewable at the deployment-readiness gate.
+# It always boots in PAPER on the venue's own prices (--venue). Practice mode needs a human at a
+# terminal (the token is typed, never stored in this unit), so a supervised restart comes back in
+# paper and a human re-enters practice: a restart is never a relaxation (master §7.5, GAP-P12D-08
+# owns the MCP transport that will let a human do it on a running engine).
 #
-# When the runtime lands: set ExecStart to the real entrypoint (the loop owner
-# that writes logs/heartbeat.json each fast loop), then enable --now.
+# The engine writes the heartbeat + JSONL logs (logs/), its stores and the venue's request-budget
+# ledger (data/), and the refreshed venue token (/var/lib/acis). It must never touch guardrails
+# (human-commit-only) — the kernel enforces it here too: config/ is read-only to this process.
 
 [Unit]
-Description=ACIS engine (fast loop) — PLACEHOLDER until the phase-12 runtime entrypoint
+Description=ACIS engine (three-loop runtime) — paper on venue prices until a human enters practice
 After=network-online.target
 Wants=network-online.target
 
@@ -20,20 +21,19 @@ User=acis
 Group=acis
 WorkingDirectory=/opt/acis
 Environment=PYTHONPATH=/opt/acis
-# TODO(phase-12 runtime): the real entrypoint, e.g.
-#   ExecStart=/usr/bin/python3 -m core.runtime
-ExecStart=/usr/bin/python3 -c "raise SystemExit('engine runtime entrypoint lands with the phase-12 three-loop runtime')"
+# ACIS_CTRADER_CLIENT_ID, ACIS_CTRADER_CLIENT_SECRET, ACIS_CTRADER_TOKEN_STORE=/var/lib/acis/ctrader_tokens.json
+# — root-owned, 0600, NEVER in the repo; placed by the owner (TODO Track A secret-safe steps).
+EnvironmentFile=/etc/acis/engine.env
+ExecStart=/usr/bin/python3 -m core.runtime --venue --account pepperstone_demo
 
 Restart=always
 RestartSec=5
 
-# The engine writes the heartbeat + JSONL logs; it must never touch guardrails
-# (human-commit-only) — the kernel enforces it here too.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/opt/acis/logs
+ReadWritePaths=/opt/acis/logs /opt/acis/data /var/lib/acis
 
 [Install]
 WantedBy=multi-user.target

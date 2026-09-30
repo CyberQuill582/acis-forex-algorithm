@@ -44,7 +44,7 @@ from core.data.fx_clock import holds_through_weekend
 from core.data.normaliser import MarketState
 from core.optimizer.costs import CostModel
 from tests.backtest.book import BookState, PositionModel
-from tests.backtest.boundary_clock import BoundaryClock
+from core.runtime.boundaries import BoundaryClock
 from tests.backtest.carry import FinancingRate
 from tests.backtest.deflated_sharpe import deflated_sharpe
 from core.governor.portfolio_types import PortfolioState

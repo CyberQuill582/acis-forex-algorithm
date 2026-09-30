@@ -13,7 +13,7 @@ import pytest
 from config.schemas import ZonedTime
 from core.optimizer.costs import CostModel
 from tests.backtest.book import BookState, OpenPos, PositionModel
-from tests.backtest.boundary_clock import BoundaryClock
+from core.runtime.boundaries import BoundaryClock
 from tests.backtest.harness import Backtest, FoldData
 from tests.backtest.test_harness_regressions import _FakeLoop, _fold, _ms, _order
 from tests.optimizer_fixtures import TEST_COSTS
