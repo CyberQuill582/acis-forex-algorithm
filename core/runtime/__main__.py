@@ -13,8 +13,9 @@ Invariants:
     back in paper, and a human re-enters practice: a restart is never a relaxation.
   * `--venue` attaches the configured venue first (ACIS-13 A1–A11); anything but ATTACHED ends
     the process before a single tick is read.
-  * Exit codes: 0 the feed ended, 1 a loop stalled (flattened and halted), 2 the attach
-    refused, 3 practice refused.
+  * Exit codes: 0 the feed ended, 1 a loop stalled (flattened and halted; a detached account
+    is one), 2 the attach refused, 3 practice refused. 2 and 3 need a human, so the engine unit
+    does not restart on them (RestartPreventExitStatus): no attach loop burns the request budget.
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ async def attach_venue(cfg, account: str, root: Path, log, session_id: str):
     from core.data.ctrader.transport import open_websocket
     from core.execution.ctrader_attach import attach
     from core.execution.ctrader_face import CTraderExecutionFace
+    from core.execution.ctrader_reconnect import Reconnector
     from core.execution.ctrader_store import VenueStore
     from core.execution.orchestrator import ExecutionOrchestrator
     from core.execution.venue import FillReportStore
@@ -83,10 +85,13 @@ async def attach_venue(cfg, account: str, root: Path, log, session_id: str):
         FillReportStore(root / "data" / "runtime" / "venue_fills.db"),
         slippage_alert_bps=cfg.guardrails.slippage_alert_bps, rng=SystemRandom(), logger=log,
         session_id=session_id)
+    feed = CTraderFeed(session, attached.feed_symbols, log)
+    reconnector = Reconnector(session=session, face=face, feed=feed, backoff=v.backoff,
+                              rng=SystemRandom(), logger=log)
     link = VenueLink(face=face, orchestrator=orch, attached=attached, poll_s=v.equity_poll_s,
                      reconcile_s=v.reconcile_interval_s, now_fn=lambda: datetime.now(timezone.utc),
-                     logger=log)
-    return session, link, CTraderFeed(session, attached.feed_symbols, log), positions
+                     logger=log, reconnector=reconnector)
+    return session, link, feed, positions
 
 
 def enter_practice(runtime, cfg, account: str, args, log, session_id: str) -> bool:

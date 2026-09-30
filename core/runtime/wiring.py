@@ -112,6 +112,8 @@ class Parts:
             yield "venue_fills", rt.venue_fills(self.venue.orchestrator, self.venue.face.name)
             yield "account_poll", self.venue.poll()
             yield "reconcile", self.venue.reconcile(self.risk, self.executor)
+            if self.venue.reconnector is not None:
+                yield "reconnect", self.venue.reconnector.run()
 
 
 def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,

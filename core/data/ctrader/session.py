@@ -99,6 +99,8 @@ class CTraderSession:
     async def stop(self) -> None:
         for task in self._tasks:
             task.cancel()
+        # wait for them: a cancelled reader's `finally` must never mark a LATER link lost (GAP-0020)
+        await asyncio.gather(*self._tasks, return_exceptions=True)
         if self._t is not None:
             await self._t.close()
         self._lost("stopped")

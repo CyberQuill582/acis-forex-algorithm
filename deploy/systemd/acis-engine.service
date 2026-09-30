@@ -28,6 +28,9 @@ ExecStart=/usr/bin/python3 -m core.runtime --venue --account pepperstone_demo
 
 Restart=always
 RestartSec=5
+# 2 = the attach refused, 3 = practice refused: both need a human, and a restart loop would only
+# spend the venue's request budget (ACIS-13 §6.5).
+RestartPreventExitStatus=2 3
 
 NoNewPrivileges=true
 ProtectSystem=strict

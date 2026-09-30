@@ -9,6 +9,8 @@ Invariants:
   * Every `reconcile_interval_s`, with nothing in flight, venue positions are compared with
     Risk's. Venue truth wins: any drift is adopted and halts everything for a human (the
     restart rule, ACIS-07 C-RSK-5), because a drift no fill explains is never benign.
+  * A lost link comes back through the reconnector (ACIS-13 §6.6, GAP-0020); if the account
+    detaches, the reconnector ends, and the runtime treats that as a stalled loop.
   * Nothing here sends an order. Orders reach the venue only through the executor.
 """
 
@@ -25,8 +27,9 @@ from core.execution.venue import BrokerAccount, ExecutionFace
 class VenueLink:
     def __init__(self, *, face: ExecutionFace, orchestrator: ExecutionOrchestrator, attached,
                  poll_s: float, reconcile_s: float, now_fn: Callable[[], datetime],
-                 logger) -> None:
+                 logger, reconnector=None) -> None:
         self.face, self.orchestrator, self.attached = face, orchestrator, attached
+        self.reconnector = reconnector            # ACIS-13 §6.6 (GAP-0020); its end is a stall
         self._poll_s, self._reconcile_s, self._now, self._log = poll_s, reconcile_s, now_fn, logger
         self.account: BrokerAccount | None = None
         self.account_at: datetime | None = None
