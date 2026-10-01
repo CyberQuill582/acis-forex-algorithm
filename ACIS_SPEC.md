@@ -1,5 +1,5 @@
 # ACIS — Adaptive Capital Intelligence System
-## Master Specification v2.25 (build authority — spec COMPLETE, build in progress)
+## Master Specification v2.26 (build authority — spec COMPLETE, build in progress)
 
 Status: BUILD AUTHORITY. Consolidates and supersedes `ACIS_Agent_Prompt.md` (Drive, v1.0), `Super_Forex_Agent.html` (Drive, v1.0 architecture brief), and the ACIS sections of the July 2026 Master Spec doc. Where those disagreed (directory layout), this document decides: the detailed `core/` layout below is canonical; the coarse 4-folder layout from the master doc is retired. If any earlier document contradicts this one, this one wins.
 
@@ -186,7 +186,7 @@ On regime shift: log full context. **Regime no longer gates families (v2.21, R-1
   - each parameter ±10% alone.
 
   A neighbour that fails C9 on the development span refuses the family (GAP-P12D-123).
-- **C9 per member (convention, v2.22).** Each member is simulated standalone as its own capped-forecast → target-position book over the family's instruments, after the §5.6 cost filters. Its expectancy is its mean daily net P&L, and E ≤ 0 refuses the family.
+- **C9 per member (convention, v2.22).** Each member is simulated standalone as its own capped-forecast → target-position book over the family's instruments, after the §5.6 cost filters. Its expectancy is its mean daily net P&L, and E ≤ 0 refuses the family. **The TREND family's C9 members (v2.26, owner-ratified 2026-10-01, "All seven, strict"; GAP-P12D-136):** the three EWMAC speeds D1 combines, breakout 40/80/160 and MOP's 12-month rule, so a member D1 does not trade can still refuse it.
 - **"Validated" (owner-ratified 2026-09-25, the R1 audit triage: "Ratify all", decision D-a; GAP-P12D-106).**
   - **In live mode,** a rule set is validated when its family holds rung 1 of §14 on that account.
   - **In paper and practice modes,** a REGISTERED family whose machinery passed B0 (ACIS-09 C-BT-11 v2) may trade at **minimum size**: at most one venue minimum lot per instrument, on live-eligible instruments only. That is the only way a family, an LLM-originated one above all, earns the forward record that stage D needs.
@@ -236,9 +236,9 @@ AGON does NOT know capital, portfolio state, execution, or how to override the N
 - Rule families emit **forecasts**.
 - Per instrument, AGON combines them with fixed, pre-registered weights (equal within a family, then equal risk across families), multiplies by the forecast diversification multiplier (FDM, capped at 2.5) and caps at ±20.
 - The result sets **one target position per instrument**.
-- **The no-trade buffer is Carver's (corrected v2.22, GAP-P12D-118).**
-  - It is a band of ±10% of the instrument's average position (its position at |forecast| = 10) around the CURRENT position.
-  - A target inside the band places no order; a target outside it trades to the band's nearest edge.
+- **The no-trade buffer is Carver's (corrected v2.22; wording v2.26, owner-ratified 2026-10-01, GAP-P12D-118).**
+  - It is a band of ±10% of the instrument's average position (its position at |forecast| = 10) around the TARGET position, as Carver's code builds it (pysystemtrade `buffer_method: forecast`, `buffer_trade_to_edge: True`).
+  - A current position inside the band places no order (equivalently, |target − current| ≤ 10% of the average position); a current position outside it trades to the band's nearest edge.
   - The Governor owns the band, because AGON holds no portfolio state.
 - Orders execute on the pre-registered per-symbol execution clock (§5.6).
 - A reduction executes through the reduce-only atomic close (ACIS-06 C-EXE-7). Pair groups stay all-or-none (C-EXE-8).
@@ -499,6 +499,8 @@ Both laws bind the implementing agent **and** every future spec pass. Neither ma
 > The system's job is not to make the most money possible on any given day. Its job is to **still be running, with positive expectancy, two years from now.** Every design decision must answer: *"Does this make the system more likely to survive a regime it has never seen?"* If the answer is no — redesign it.
 
 ## CHANGELOG
+
+**v2.26 (2026-10-01, owner-ratified in chat — two R1.3 build findings)** — (1) GAP-P12D-118: the owner chose "Ratify Carver's (Recommended)". §5.5's buffer read "a band … around the CURRENT position … trades to the band's nearest edge", which, taken literally, moves a position only 10% of its average size a day toward its target; Carver's code (pysystemtrade `a62269d2`, `buffer_method: forecast`, `buffer_trade_to_edge`) puts the band around the TARGET. The no-trade condition is unchanged (it is symmetric), so the §2 row and CLAUDE.md rule 5 stand as written. (2) GAP-P12D-136: the owner chose "All seven, strict (Recommended)": C9 binds the TREND family's three EWMAC speeds, breakout 40/80/160 and MOP's rule. No guardrail, HALT, veto or `passed` semantic changes.
 
 **v2.25 (2026-09-30, owner-ratified in chat — the runtime's home, GAP-P12D-128)** — The owner chose "core/runtime/ (Recommended)", answering the session's standalone question. §10 carried no `[DIR]` tag, §1 forbids an unmapped directory, and the import contract rejects any unknown `core/` package, so the three-loop runtime had no lawful home. §1 now maps `core/runtime/ [DIR:core/runtime]` to §10, and §10 states the placement: the runtime is the composition root, which may import every layer and `monitoring/` and is imported by none (the contract test enforces both directions). Placement only; no guardrail, HALT/veto semantic, layer edge or live gate changed.
 

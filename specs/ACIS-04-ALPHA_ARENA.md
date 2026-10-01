@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-ALPHA-004` |
-| **Version** | 1.4 (LOCKED — the R1 audit triage: Carver's no-trade band owned by the Governor, pair families refused while a leg is capped, TSMOM's vote is not the MOP baseline; master v2.22, 2026-09-25) · 1.3 (LOCKED — R-1: the TREND family and forecast netting, master v2.21) |
+| **Version** | 1.5 (LOCKED — master v2.26: the no-trade band is around the TARGET, Carver's code; 2026-10-01) · 1.4 (LOCKED — the R1 audit triage: Carver's no-trade band owned by the Governor, pair families refused while a leg is capped, TSMOM's vote is not the MOP baseline; master v2.22, 2026-09-25) · 1.3 (LOCKED — R-1: the TREND family and forecast netting, master v2.21) |
 | **Layer / DIR** | Layer 4 · `[DIR:core/signals]` |
 | **Consumes** | `RegimeContext` (ACIS-02) + `ActiveParamSet` (ACIS-03) + `MarketState` + provenance gates (ACIS-11) |
 | **Emits** | `Signal` (frozen; linked groups for Pair Divergence) → Capital Governor (ACIS-05) |
@@ -24,7 +24,7 @@
 
 **v1.3 (owner-ratified 2026-09-25, R-1: "i ratify all your recommendations for R1-D1 to D14"; master v2.21 §5.5–5.6, A3 + A7):**
 - Rule families emit **forecasts**. Per instrument they are combined with fixed pre-registered weights × FDM (capped at 2.5), capped at ±20, into **one target position**.
-- The no-trade buffer is Carver's: a band of ±10% of the average position around the CURRENT position, owned by the Governor (v1.4, GAP-P12D-118).
+- The no-trade buffer is Carver's: a band of ±10% of the average position around the TARGET position (a current position outside it trades to the band's nearest edge), owned by the Governor (v1.4; wording v1.5, master v2.26, GAP-P12D-118).
 - A pair family is refused while either leg is capped (GAP-P12D-123).
 - Regimes no longer gate families, and the NVMA `tradeable=False` veto is unchanged.
 - The v1 required canonical family is **TREND** (master §5.6). §6.6's TSMOM is one registered member of it.
@@ -186,6 +186,7 @@ No control tools. Signal rate, discard-reason counts, and the §6 take-rate surf
 **What the Governor (ACIS-05) consumes:** a tuple of frozen `Signal`s with conviction ∈ [0.45,1], validated SL/TP, `param_set_id`, `valid_for_seconds`, and group-complete pair legs. The Governor applies expiry, sizing, atomic group sizing, clusters, and hard overrides. **Owns conflict-table rows:** "two strategies opposite directions → discard both"; producer side of "NVMA no-trade → discard signal." **Done-when (phase 5, master §15, paper signals only):** §14 tests green in a full run; import contract passing; ACIS-11 scaffolding live and gating.
 
 ## Changelog
+- **1.5 (LOCKED, 2026-10-01)** — Master v2.26 (owner-ratified in chat, "Ratify Carver's (Recommended)", GAP-P12D-118): the no-trade band is around the TARGET, as Carver's code builds it; the no-trade condition is unchanged.
 - **1.4 (LOCKED, 2026-09-25)** — The R1 dual audit, triaged, owner-ratified 2026-09-25, the R1 audit triage: "Ratify all":
   - Carver's no-trade band around the current position, owned by the Governor (GAP-P12D-118);
   - the FDM capped at 2.5;

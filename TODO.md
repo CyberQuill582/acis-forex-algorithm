@@ -92,10 +92,10 @@
      - [ ] the indicator move, [[GAP-P12D-99]]: SEQUENCED into R1.7's retirement commit (the import law forbids it earlier);
      - [x] 2026-10-01 RSIM + the lab adapter + the provenance records (`core/signals/families.py`);
      - [ ] RSIM's real-data source (needs R1.5's candles) and the passive-benchmark arms, [[GAP-P12D-136]];
-     - [ ] OWNER: ratify the buffer-wording fix in [[GAP-P12D-118]] (band around the TARGET, Carver's code).
+     - [x] 2026-10-01 OWNER RATIFIED the buffer wording ([[GAP-P12D-118]]): master v2.26 §5.5, ACIS-04 v1.5.
      - [x] 2026-10-01 the lab calibration of every TREND member through RSIM, 1,000 seeds: earns on planted, zero mean on the null ([[GAP-P12D-136]]).
      - [ ] RUNNING 2026-10-01 16:48 UTC on acis-compute-1: stage A on the lab, 500 seeds (`scripts/r1_lab_stage_a.py`; checkout `/opt/acis/job-2026-10-01-r1-lab-stage-a`; results sync to `gs://acis-compute-0929-data/runs/2026-10-01-r1-lab-stage-a/`, `done.log` at the end). Read `summary.json`: the null pass rate must sit at or below alpha 0.03; record it in GAP-P12D-136, then STOP the server if nothing else runs.
-     - [ ] OWNER: the C9 member set for D1 ([[GAP-P12D-136]] item 7).
+     - [x] 2026-10-01 OWNER RULED the C9 member set: all seven, strict ([[GAP-P12D-136]] item 7; master v2.26 §5 C9).
    - **R1.4 — the verdict and e-processes:**
      - `passed` with its gates, [[GAP-P12D-104]];
      - serial gatekeeping and α-spending, [[GAP-P12D-111]];
