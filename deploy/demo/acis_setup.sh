@@ -1,7 +1,7 @@
 #!/bin/bash
 # ACIS first-demo setup: secrets are typed at hidden prompts, written 0600, never echoed.
 set -e
-sudo install -d -m 700 -o "$USER" /etc/acis /var/lib/acis
+[ -w /etc/acis ] && [ -w /var/lib/acis ] || sudo install -d -m 700 -o "$USER" /etc/acis /var/lib/acis   # the AWS host's `acis` has no sudo; its bootstrap made them
 umask 077
 
 ask() {  # $1 label, $2 regex, $3 expected length; result in REPLY_VAL. Re-asks until valid.

@@ -95,6 +95,49 @@ sudo systemctl daemon-reload && sudo systemctl enable --now acis-watchdog   # su
 The engine unit is not installed there: after a reboot the watchdog finds the engine silent and
 flattens any open position, and the owner restarts practice in `tmux` with the token.
 
+## The AWS demo host (acis-demo-aws, t3.small, Debian 12, eu-west-1)
+
+The permanent demo host (owner ruling 2026-10-01, "Hybrid, on AWS"): the same watchdog-only
+boot as acis-demo-1, but the watchdog and the practice engine both run as the `acis` user,
+which has no sudo. The host takes no SSH. The session drives it through SSM (`aws ssm
+send-command` as IAM user `acis-data`), and the owner's shell is Session Manager in the AWS
+console (EC2 → `acis-demo-aws` → Connect → Session Manager), which logs in as `ssm-user`, with sudo.
+
+- **Launch** (as `acis-data`): t3.small with standard CPU credits, Debian 12, 30 GB gp3
+  encrypted, IMDSv2 only, no key pair, the default security group (no inbound from outside),
+  instance profile `acis-data-server-role`, tags `Project=acis` + `Name=acis-demo-aws`, user data
+  `deploy/aws/acis-demo-userdata.sh` (the SSM agent, the `acis` user and its secret
+  directories, and a firewall rule that keeps `acis` processes off the metadata service).
+- **Code:** `deploy/aws/acis-demo-prepare.sh <bundle-url> <params.db-url>` through SSM, with
+  presigned URLs to `s3://acis-transfer-565257597310/demo/`. It clones or fast-forwards
+  `/opt/acis/repo`, builds `/opt/acis/venv` with the demo's pinned dependencies, places
+  `params.db` once, and installs the watchdog unit with `deploy/demo/acis-watchdog.aws.conf`,
+  NOT enabled. Re-run it with a new bundle to update the checkout.
+
+**One engine and one watchdog per demo account, across all hosts.** A watchdog whose own
+engine is silent flattens every position on the account, so a second host's watchdog would
+flatten the first host's trades. The cutover order is fixed: stop the old engine flat and
+stop its host, then enable the new watchdog, then start practice.
+
+The owner's steps, in Session Manager:
+
+```bash
+sudo -u acis -i                                  # the acis user's shell
+cd /opt/acis/repo
+bash deploy/demo/acis_setup.sh                   # credentials + a fresh Playground token pair, hidden prompts
+bash deploy/demo/set_human_token.sh              # the human token; only its sha256 is stored
+exit                                             # back to ssm-user
+sudo sh -c 'grep "^ACIS_CTRADER_" /etc/acis/engine.env > /etc/acis/watchdog.env && chmod 600 /etc/acis/watchdog.env'
+sudo systemctl enable --now acis-watchdog        # only after the old host is stopped
+sudo -u acis tmux new -s acis                    # then, inside tmux:
+cd /opt/acis/repo && set -a && . /etc/acis/engine.env && set +a
+/opt/acis/venv/bin/python -m core.runtime --print-hashes --account pepperstone_demo
+/opt/acis/venv/bin/python -m core.runtime --venue --account pepperstone_demo --practice --ack-guardrail <hash> --ack-rulebook <hash>
+```
+
+Detach with Ctrl+B then D; reattach with `sudo -u acis tmux attach -t acis`. After any
+deliberate stop the next start needs `--practice --resume`.
+
 ## Container path
 
 ```bash
