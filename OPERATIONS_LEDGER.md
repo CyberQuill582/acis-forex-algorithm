@@ -37,4 +37,20 @@ Guardrail-adjacent operational findings (anything touching a HALT/veto/equity-fl
 ---
 
 ## Entries
-_(none yet — activates at the first live fill. Do not backfill build-time gaps here; those live in `KNOWN_GAPS.md`.)_
+_(Activates fully at the first live fill. Demo-probe observations are logged here because ACIS-13 Appendix B names this ledger as their record. Do not backfill build-time gaps here; those live in `KNOWN_GAPS.md`.)_
+
+## OPS-0001: First Pepperstone cTrader demo probe — the venue's answers to ACIS-13 OQ-07/08/09/12/17
+- Severity: low
+- Likelihood: high (venue behaviour, recurs on every order)
+- Status: open — one sample each; fold the answers into ACIS-13 Appendix B at its next owner-ratified revision
+- Area: adapter (`core/data/ctrader/`, `core/execution/ctrader_*`), demo account 48971796 (traderLogin 5350811)
+- Observed (2026-10-01, `scripts/ctrader_probe.py` on acis-compute-1; reports `ctrader_probe_20261001T102859Z.json` read-only and `ctrader_probe_20261001T104403Z.json` with `--trade`, copied to `gs://acis-compute-0929-data/runs/2026-10-01-probe/` for the first):
+  - **OQ-07 (stop atomic with the fill?):** the stop comes from the ONE order request (`relativeStopLoss` 500), and the venue places it itself, but NOT in the fill event. The `ORDER_FILLED` event (executionType 3, 10:44:02.952 UTC) has no `stopLoss`. A separate event 6 ms later (executionType 2, a STOP_LOSS_TAKE_PROFIT order) shows `stopLoss` 1.12417. The relative stop is anchored to the FILL price (1.12917 − 0.00500), not the requested price (requested 1.12416), so slippage moves the level and keeps the distance.
+  - **OQ-08:** the spot `timestamp` is ms UTC (receive − venue time: median 72 ms, min 71 ms over 200 spots). The first event after subscribing is a snapshot carrying both sides. The server sent NO heartbeat in 45.8 s while spots were flowing, so its idle cadence is still unobserved.
+  - **OQ-09:** not settled: EUR_USD and USD_JPY report `slDistance` 0, `distanceSetIn` 1 (points), so there is no minimum distance whose unit could be checked.
+  - **OQ-12:** enums inside `payload` are integers (e.g. `executionType`, `orderType`, `positionStatus`, `permissionScope` 1 = SCOPE_TRADE); every frame was a text frame (0 binary of 299).
+  - **OQ-17:** a MARKET order with `timeInForce` 3 (IMMEDIATE_OR_CANCEL) was accepted and filled whole (1,000 units = 0.01 lot, `minVolume`). No partial fill seen; one minimum-size sample cannot show that demo servers never partial-fill.
+  - Costs seen: slippage 0.089 bps (1 point); commission −3 at money digits 2 ($0.03) on the 0.01-lot open; symbol `commission` 300, `commissionType` 2; swaps EUR_USD long −0.73 / short 0.15, USD_JPY long 0.28 / short −1.55. Open → close took ~0.75 s; the position closed (status 3, volume 0) with 0 open positions left.
+- Modelled: ACIS-13 §7.3 step 6 confirms the stop within `stop_confirm_timeout_s` (3 s) and repairs it otherwise; §6.3 (D3) sends a relative stop widened by the live spread. Demo costs never calibrate C8 (D4, GAP-0001).
+- Delta + impact: no defect seen. The 6 ms gap between the fill and the stop event sits well inside the 3 s confirm window, and the face read the venue stop back (`stop_at_venue` 1.12417), so no repair request was spent. The fill-price anchoring shifts the stop by the slippage (1 point here), which the distance-based design already allows for.
+- Justification: probe facts, recorded the day they were observed; the OQs stay open in Appendix B until a ratified revision folds them in. Linked: TODO item 1, GAP-P12D-131.

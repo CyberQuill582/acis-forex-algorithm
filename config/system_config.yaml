@@ -141,7 +141,7 @@ runtime:                         # master section 10 (v2.25) - the position poli
 venue:                           # ACIS-13 v1.0 §6.1 - the real venue; absent = mock only
   adapter: ctrader               # master v2.23: the cTrader Open API, first venue a Pepperstone demo
   environment: demo              # must equal the account's isLive (A2); practice mode needs demo
-  ctid_trader_account_id: 0      # HUMAN-committed; 0 = not yet committed, so attach refuses
+  ctid_trader_account_id: 48971796  # HUMAN-committed 2026-10-01 (owner): Pepperstone demo, traderLogin 5350811; 0 = unbound, attach refuses
   symbol_names: {EUR_USD: EURUSD, USD_JPY: USDJPY}   # exact venue names, verified at attach
   transport: json_ws             # OQ-02: JSON over WebSocket via aiohttp (no new dependency)
   daily_request_budget: 1000     # schema max 1000 (half the FTMO/E8 cap, GAP-P12D-57)
