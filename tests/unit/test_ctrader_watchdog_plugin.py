@@ -27,6 +27,7 @@ def test_the_plugin_imports_nothing_from_core() -> None:
 def _plugin(venue: FakeVenue):
     plugin = _PLUGINS["ctrader"]({"environment": "demo", "ctid_trader_account_id": ACCOUNT})
     plugin._connect = venue.connect
+    plugin._settle = 1.0                                      # keep the refusal test short
     return plugin
 
 
@@ -64,3 +65,34 @@ def test_a_flatten_that_leaves_a_position_open_is_never_reported_ok(env) -> None
                           "tradeData": {"symbolId": 1, "volume": 100_000, "tradeSide": 1}}
     result = _plugin(venue).flatten_all("unused")
     assert result.ok is False and "still open" in result.error
+
+
+
+def test_a_close_that_fills_after_its_acknowledgement_is_waited_for(env) -> None:
+    """GAP-P12D-133 (case 8 on the demo): cTrader acknowledges a close before it fills, so the first
+    reconcile can still show the position; the plugin polls for flat instead of reporting failure."""
+    venue = FakeVenue()
+
+    async def ack_then_fill(p, mid, t):
+        t.push(2126, {"executionType": 2}, mid)
+        asyncio.get_running_loop().call_later(0.3, venue.positions.pop, p["positionId"], None)
+    venue._on_close_position_req = ack_then_fill
+    venue.positions[1] = {"positionId": 1, "positionStatus": 1, "swap": 0,
+                          "tradeData": {"symbolId": 1, "volume": 100_000, "tradeSide": 1}}
+    result = _plugin(venue).flatten_all("unused")
+    assert result == FlattenResult(ok=True, positions_closed=1)
+    assert venue.positions == {} and venue.requests.count(2124) >= 3   # the book, then polls until flat
+
+def test_the_watchdog_binding_matches_the_engine_binding() -> None:
+    """OQ-06: the account binding lives in two human-committed files and the engine may not read
+    `watchdog.yaml`, so CI checks they agree; a mismatch would flatten the wrong account, or none."""
+    import yaml
+
+    from config.schemas import load_config
+
+    root = Path(__file__).resolve().parents[2]
+    wd = yaml.safe_load((root / "config" / "watchdog.yaml").read_text(encoding="utf-8"))
+    venue = load_config(str(root / "config")).system.venue
+    if wd["flatten_plugin"] == "ctrader":
+        assert wd["environment"] == venue.environment
+        assert int(wd["ctid_trader_account_id"]) == venue.ctid_trader_account_id != 0

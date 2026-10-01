@@ -6,6 +6,8 @@
 heartbeat_path: logs/heartbeat.json
 watchdog_timeout_s: 30      # heartbeat older than this = engine is SILENT
 poll_interval_s: 5
-platform: mock              # flatten plugin selector; real platforms at phase 12 (ACIS-13)
-flatten_plugin: mock
+platform: ctrader           # flatten plugin selector (ACIS-13 §7.9); HUMAN-committed 2026-10-01 (owner)
+flatten_plugin: ctrader
+environment: demo           # must equal system_config venue.environment (a test enforces it)
+ctid_trader_account_id: 48971796   # Pepperstone demo, traderLogin 5350811; must equal the engine's binding (OQ-06)
 credentials_ref: env:ACIS_WATCHDOG_CREDENTIALS   # reference only — never a secret in config

@@ -25,6 +25,7 @@ PORT = 5036
 APP_AUTH, ACCOUNT_AUTH, CANCEL, CLOSE, RECONCILE = 2100, 2102, 2108, 2111, 2124
 ERRORS = {50, 2142}
 TOKEN_REJECTED = {"CH_ACCESS_TOKEN_INVALID", "OA_AUTH_TOKEN_EXPIRED"}
+SETTLE_POLL_S = 0.25   # cTrader acknowledges a close before it fills (GAP-P12D-133)
 
 
 async def _websocket(environment: str):
@@ -56,13 +57,15 @@ class _Refused(Exception):
 class CTraderFlattenPlugin:
     name = "ctrader"
 
-    def __init__(self, cfg: dict, *, result_type, connect=_websocket, timeout_s: float = 10.0) -> None:
+    def __init__(self, cfg: dict, *, result_type, connect=_websocket, timeout_s: float = 10.0,
+                 settle_s: float = 5.0) -> None:
         """`result_type` is the watchdog's FlattenResult, handed in so this file imports nothing."""
         self._result = result_type
         self._env = cfg["environment"]
         self._account = int(cfg["ctid_trader_account_id"])
         self._connect = connect
         self._timeout = timeout_s
+        self._settle = settle_s
         self._ids = itertools.count(1)
 
     def flatten_all(self, credentials: str):
@@ -88,12 +91,23 @@ class CTraderFlattenPlugin:
             for order in book.get("order", ()):
                 await self._ask(link, CANCEL, {"ctidTraderAccountId": self._account,
                                                "orderId": order["orderId"]})
-            after = await self._ask(link, RECONCILE, {"ctidTraderAccountId": self._account})
+            after = await self._settled(link)
             if after.get("position"):
                 raise RuntimeError(f"{len(after['position'])} position(s) still open after the flatten")
             return len(book.get("position", ()))
         finally:
             await link.close()
+
+    async def _settled(self, link) -> dict:
+        """Flat is polled for, never assumed: the close's acknowledgement arrives before its fill
+        (GAP-P12D-133, ACIS-13 §14.2 case 8 on the demo), so one reconcile can still show it."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._settle
+        while True:
+            after = await self._ask(link, RECONCILE, {"ctidTraderAccountId": self._account})
+            if not after.get("position") or loop.time() >= deadline:
+                return after
+            await asyncio.sleep(SETTLE_POLL_S)
 
     async def _authorise(self, link) -> None:
         for attempt in (1, 2):                              # re-read once: the engine may have refreshed
