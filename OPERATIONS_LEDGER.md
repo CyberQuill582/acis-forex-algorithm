@@ -42,7 +42,7 @@ _(Activates fully at the first live fill. Demo-probe observations are logged her
 ## OPS-0001: First Pepperstone cTrader demo probe — the venue's answers to ACIS-13 OQ-07/08/09/12/17
 - Severity: low
 - Likelihood: high (venue behaviour, recurs on every order)
-- Status: open — one sample each; fold the answers into ACIS-13 Appendix B at its next owner-ratified revision
+- Status: open — one sample each; FOLDED into ACIS-13 Appendix B as v1.3 (owner-ratified 2026-10-01); stays open for OQ-08's idle heartbeat cadence, OQ-09 and OQ-17's partial-fill half
 - Area: adapter (`core/data/ctrader/`, `core/execution/ctrader_*`), demo account 48971796 (traderLogin 5350811)
 - Observed (2026-10-01, `scripts/ctrader_probe.py` on acis-compute-1; reports `ctrader_probe_20261001T102859Z.json` read-only and `ctrader_probe_20261001T104403Z.json` with `--trade`, copied to `gs://acis-compute-0929-data/runs/2026-10-01-probe/` for the first):
   - **OQ-07 (stop atomic with the fill?):** the stop comes from the ONE order request (`relativeStopLoss` 500), and the venue places it itself, but NOT in the fill event. The `ORDER_FILLED` event (executionType 3, 10:44:02.952 UTC) has no `stopLoss`. A separate event 6 ms later (executionType 2, a STOP_LOSS_TAKE_PROFIT order) shows `stopLoss` 1.12417. The relative stop is anchored to the FILL price (1.12917 − 0.00500), not the requested price (requested 1.12416), so slippage moves the level and keeps the distance.
