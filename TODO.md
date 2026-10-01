@@ -6,7 +6,28 @@
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
 
-## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-01; the owner closed the session)
+## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-01, second session; the owner closed it)
+
+**Live state (verify first, read-only, as "How to check the demo" below):**
+- **The Pepperstone demo RUNS** on `acis-demo-1` (practice, session `engine-20261001T123445Z`, verified healthy 15:01 UTC: 0 positions, watchdog active). It runs the code from BEFORE the stop rule: a Ctrl+C there still leaves positions to the watchdog. The stop rule reaches it at its next start on a new checkout (the AWS move, below).
+- **Servers:** `acis-compute-1` STOPPED (start it only for tests or heavy runs; `remote.sh` per the `google-compute-workflow` memory); the AWS data server `i-08cd48694bea9e3db` (`acis-data-restore`) STOPPED; it is startable by `acis-data` and takes SSM commands (`AWS-RunShellScript`, the transfer bucket for scripts and bundles; see `scratchpad`-style `r15_run.sh` in GAP-P12D-136's history).
+- **Repo:** `main` = `origin/main`, all pushed. Full suite 1280 passed, 6 skipped on the server; ledger 0 violations; master **v2.26**, ACIS-04 **v1.5**.
+- **The laptop is short of RAM:** Claude Code reaped a background poller; poll in the foreground (a remote loop), never in a local background shell.
+
+**Owner rulings this session (all applied):** #2 "Hybrid, on AWS" (watchdog-only boot; both processes as an `acis` user on the AWS host); the Google credits to "R1 build on the lab" BEFORE the GAP-P12D-131 batch, built in-session; the no-trade band around the TARGET (master v2.26, [[GAP-P12D-118]]); C9 over all seven TREND members (v2.26, [[GAP-P12D-136]]); push; R1.5 downloaded on the AWS server and copied to Google.
+
+**Built this session:** the stop rule ([[GAP-P12D-135]]); R1.3 (Carver-pinned TREND rules [[GAP-P12D-122]], MOP [[GAP-P12D-116]], RSIM, the one lot rule, the FTMO swap table, the cost filters [[GAP-P12D-115]], provenance records, `evaluate()`, RSIM's real-data source); R1.4's first pieces (the HAC detector, calibrated through B0 [[GAP-P12D-121]]; stage A's conditions); R1.5 (the data). Lab results (synthetic, machinery only): the TREND family earns on planted trends and nothing on the null (1,000 seeds); stage A passes the null 2.6% at alpha 0.03 and planted trends 98% / 65% / 18% (500 seeds).
+
+**Next actions, in order:**
+1. Verify the demo.
+2. **The AWS demo-host move, before ~2026-10-18** (the Google trial ends 2026-10-21): the hybrid layout (an `acis` user, no sudo; watchdog unit + drop-in with `User=acis`; secrets `acis`-owned 600, `watchdog.env` root 600); the owner runs `deploy/demo/acis_setup.sh` and `set_human_token.sh` there and starts practice with `sudo -u acis tmux new -s acis` (`--practice`; after any deliberate stop, `--practice --resume`). Stop the Google engine flat first; then stop acis-demo-1 and delete the snapshot `acis-demo-seed-20261001`.
+3. **R1.3's remainder** ([[GAP-P12D-136]] items 2, 4, 5 and the P&L-blind admission run) and the energy rolls ([[GAP-P12D-137]]), or the owner registers the first look on the 21 explored non-energy instruments.
+4. **When R1.3 is complete: ASK the owner** (one standalone question) to launch the constitution's two audits of R1.3 (rules, RSIM, swap table, cost filters, real-data source, evaluate). Never launch unasked.
+5. **R1.4:** `passed` with its gates ([[GAP-P12D-104]]), serial gatekeeping and alpha-spending ([[GAP-P12D-111]]), max-t and PBO for explored families ([[GAP-P12D-119]], [[GAP-P12D-120]]), the per-account re-grade ([[GAP-P12D-112]]), the raw stage C ([[GAP-P12D-114]]), the bettors ([[GAP-P12D-110]]), the portfolio unit ([[GAP-P12D-100]]); then the register's GitHub anchor ([[GAP-P12D-86]]) and `REAL_LOOKS_OPEN`.
+6. **The first real-data look** (after R1.1-R1.4 are green): the owner decides R1-D9 (the swap world, [[GAP-P12D-94]]) and R1-D14 (account size / vol target, [[GAP-P12D-101]]) and registers stage A's order.
+7. The GAP-P12D-131 runtime batch WAITS behind R1 (owner ruling).
+
+## Previous handover (2026-10-01, first session): history; the block above supersedes it
 
 **Live state at the checkpoint (verify first, read-only; see "How to check" below):**
 - **The Pepperstone demo RUNS, unattended,** on **`acis-demo-1`** (Google Cloud e2-medium, europe-west1-b): the engine in PRACTICE in tmux session `acis` (session `engine-20261001T123445Z`, started by the owner 12:34 UTC), demo account 48971796 / trader login 5350811, ONE champion (WEAK_TREND_UP), so it trades rarely. The watchdog is the ENABLED systemd unit `acis-watchdog` (+ drop-in `deploy/demo/acis-watchdog.override.conf`), its cTrader plugin bound to the demo: a silent engine with open positions is flattened within ~30 s, and after a reboot the owner restarts practice in tmux with the human token (`deploy/README.md`, "The demo host").
@@ -86,15 +107,16 @@
    - **R1.3 — rules, RSIM and costs** (in progress 2026-10-01; the lab half BUILT, the real-data half is [[GAP-P12D-136]]):
      - [x] 2026-10-01 the TREND family with Carver's scalars, [[GAP-P12D-122]] FIXED (pinned to pysystemtrade `a62269d2`, reproduced value for value);
      - [x] 2026-10-01 the faithful MOP member, [[GAP-P12D-116]] FIXED;
-     - [ ] the split cost filters, [[GAP-P12D-115]];
-     - [ ] the swap table and its calendar in C8, [[GAP-P12D-93]];
+     - [x] 2026-10-01 the split cost filters, [[GAP-P12D-115]] FIXED (`tests/backtest/cost_filters.py`; the admission run on real candles is [[GAP-P12D-136]]'s);
+     - [ ] the swap table and its calendar in C8, [[GAP-P12D-93]]: FTMO's FX table + Wednesday calendar BUILT (`tests/backtest/swaps.py`); the CFD calendars and the energy swaps remain ([[GAP-P12D-137]]);
      - [x] 2026-10-01 the one lot rule research-side, [[GAP-P12D-123]] I15 (`target_on_lots`; execution adopts it at R1.6);
      - [ ] the indicator move, [[GAP-P12D-99]]: SEQUENCED into R1.7's retirement commit (the import law forbids it earlier);
      - [x] 2026-10-01 RSIM + the lab adapter + the provenance records (`core/signals/families.py`);
-     - [ ] RSIM's real-data source (needs R1.5's candles) and the passive-benchmark arms, [[GAP-P12D-136]];
+     - [x] 2026-10-01 RSIM's real-data source for FX, metals and indices (`tests/backtest/rsim_real.py`) and `evaluate()` ([[GAP-P12D-136]]); energy REFUSED until its rolls are back-adjusted ([[GAP-P12D-137]]);
+     - [ ] the passive-benchmark arms registered with the family, the P&L-blind admission run, the provenance amendment path ([[GAP-P12D-136]] items 2, 4, 5);
      - [x] 2026-10-01 OWNER RATIFIED the buffer wording ([[GAP-P12D-118]]): master v2.26 §5.5, ACIS-04 v1.5.
      - [x] 2026-10-01 the lab calibration of every TREND member through RSIM, 1,000 seeds: earns on planted, zero mean on the null ([[GAP-P12D-136]]).
-     - [ ] RUNNING 2026-10-01 16:48 UTC on acis-compute-1: stage A on the lab, 500 seeds (`scripts/r1_lab_stage_a.py`; checkout `/opt/acis/job-2026-10-01-r1-lab-stage-a`; results sync to `gs://acis-compute-0929-data/runs/2026-10-01-r1-lab-stage-a/`, `done.log` at the end). Read `summary.json` FROM THE BUCKET (the server POWERS ITSELF OFF when the job exits: `/tmp/autostop.sh`, armed 16:58 UTC): the null pass rate must sit at or below alpha 0.03; record it in GAP-P12D-136. Interim at 119 seeds: null 0% pass, trend 1.0/h40 98%, 0.5/h160 64%, weak 0.5/h40 13% (strict C9 refuses 53% of weak runs but costs ~1-3 points of power).
+     - [x] 2026-10-01 stage A on the lab, 500 seeds: null passes 2.6% (alpha 0.03), planted 98% / 65% / 18% ([[GAP-P12D-136]]); the server powered itself off.
      - [x] 2026-10-01 OWNER RULED the C9 member set: all seven, strict ([[GAP-P12D-136]] item 7; master v2.26 §5 C9).
    - **R1.4 — the verdict and e-processes:**
      - `passed` with its gates, [[GAP-P12D-104]];
@@ -105,7 +127,7 @@
      - the raw stage C, [[GAP-P12D-114]];
      - the bettors, [[GAP-P12D-110]];
      - the portfolio unit, [[GAP-P12D-100]].
-   - **R1.5 — data.** The owner runs `python scripts/download_dukascopy_s3.py check`, then the hourly candles are pulled for the 30 instruments.
+   - [x] **R1.5 — data. DONE 2026-10-01** on the AWS data server (owner's plan): `scripts/download_dukascopy_candles.py`, 30 instruments, 4,979 instrument-months verified, 0 problems; copies on AWS (`/data/acis/r15/...`, the transfer bucket) and Google (`/opt/acis/data/dukascopy_candles`, `gs://acis-compute-0929-data/data/`), rates at `/opt/acis/data/macro` ([[GAP-P12D-136]]). Energy needs roll back-adjustment ([[GAP-P12D-137]]).
    - **R1.6 — engine parity and the position policy:**
      - Carver's band in the Governor, [[GAP-P12D-118]];
      - flatten-then-promote, [[GAP-P12D-108]];
