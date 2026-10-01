@@ -67,14 +67,19 @@ def lab_costs(cfg: AcisConfig, names: Sequence[str], template: str = "EUR_USD", 
     return {n: cost_model(lab, n, stress=stress) for n in names}
 
 
-def run_member(path: LabPath, member: str, cfg: AcisConfig, **spec) -> BookResult:
-    """One registered member's standalone book on a lab path (MOP needs the path's dates)."""
+def run_member(path: LabPath, member: str, cfg: AcisConfig, *, stress: float = 1.0,
+               d1_params: dict | None = None, **spec) -> BookResult:
+    """One registered member's standalone book on a lab path (MOP needs the path's dates).
+    `stress` is the C8 run property (2.0 = stage A's 2x cost); `d1_params` builds a plateau
+    neighbour of D1 (its sizing vol stays Carver's default normaliser)."""
     market = lab_market(path)
-    if member == "MOP12":
+    if d1_params is not None:
+        forecast, vol = panel(market, lambda p: rules.d1(p, **d1_params)), carver_pct_vol(market)
+    elif member == "MOP12":
         forecast = np.column_stack([np.asarray(rules.mop_12m(market.price[:, i].tolist(), market.days), float)
                                     for i in range(len(market.names))])
         vol = mop_pct_vol(market)
     else:
         rule, vol_of = MEMBERS[member]
         forecast, vol = panel(market, rule), vol_of(market)
-    return run(market, forecast, vol, BookSpec(costs=lab_costs(cfg, market.names), **spec))
+    return run(market, forecast, vol, BookSpec(costs=lab_costs(cfg, market.names, stress=stress), **spec))

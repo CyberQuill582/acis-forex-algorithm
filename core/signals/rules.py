@@ -48,12 +48,15 @@ def capped(raw: Sequence[float], scalar: float, cap: float = CAP) -> list[float]
     return [x if x != x else max(-cap, min(cap, x * scalar)) for x in raw]
 
 
-def ewmac(price: Sequence[float], fast: int, slow: int) -> list[float]:
-    """Carver's `ewmac` with his normaliser, scaled by his published scalar and capped."""
-    vol = ffill(mixed_vol(diff(price)))
+def ewmac(price: Sequence[float], fast: float, slow: float, *, scalar: float | None = None,
+          vol_days: float = 35) -> list[float]:
+    """Carver's `ewmac` with his normaliser, scaled by his published scalar and capped. The
+    keywords exist for the ±10% plateau neighbours only (master §5): a neighbour keeps its base
+    speed's scalar (declared), and `vol_days` is the normaliser's span."""
+    vol = ffill(mixed_vol(diff(price), days=vol_days))
     f, s = ewm_mean(price, fast, 1), ewm_mean(price, slow, 1)
     raw = [(a - b) / v if v == v else NAN for a, b, v in zip(f, s, vol)]
-    return capped(raw, EWMAC_SCALARS[(fast, slow)])
+    return capped(raw, EWMAC_SCALARS[(fast, slow)] if scalar is None else scalar)
 
 
 def breakout(price: Sequence[float], lookback: int) -> list[float]:
@@ -99,10 +102,14 @@ def mop_vol(price: Sequence[float]) -> list[float]:
     return [math.sqrt(max(b - a * a, 0.0)) if a == a else NAN for a, b in zip(m1, m2)]
 
 
-def d1(price: Sequence[float]) -> list[float]:
+def d1(price: Sequence[float], *, speed_scale: float = 1.0, ratio: float = 4.0,
+       vol_days: float = 35) -> list[float]:
     """The registered TREND combination: equal-weight EWMAC speeds × FDM, capped. A day where
-    any speed is still warming up is NaN (no target), never a partial average."""
-    speeds = [ewmac(price, f, s) for f, s in EWMAC_SCALARS]
+    any speed is still warming up is NaN (no target), never a partial average. Its three
+    parameters (master §5: <= 3) are the speed scale (fast spans 16/32/64), the slow/fast ratio
+    (4) and the normaliser's span (35); the defaults ARE the registered family."""
+    speeds = [ewmac(price, f * speed_scale, f * speed_scale * ratio, scalar=k, vol_days=vol_days)
+              for (f, _), k in EWMAC_SCALARS.items()]
     out = []
     for xs in zip(*speeds):
         out.append(NAN if any(x != x for x in xs)
