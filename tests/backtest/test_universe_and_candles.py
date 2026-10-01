@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.backtest.candles import CandleError, decode_month
+from tests.backtest.candles import CandleError, decode_month, glitches
 from tests.backtest.universe import BY_NAME, EXPLORED, HELD_OUT, UNIVERSE
 
 FIXTURE = Path(__file__).parent / "fixtures" / "EURUSD_2025-12_BID_candles_hour_1.bi5"
@@ -67,3 +67,14 @@ def test_a_wrong_scale_a_missing_hour_or_disordered_ohlc_is_refused() -> None:
     with pytest.raises(CandleError, match="LZMA"):
         decode_month(b"not lzma", "EUR_USD", 2025, 11)
     assert BY_NAME["US500"].scale == 1000 and BY_NAME["XCU_USD"].scale == 10_000
+
+
+def test_a_glitch_low_is_counted_never_fatal_and_real_extremes_fit_their_envelopes() -> None:
+    hours = 30 * 24
+    rows = [(k * 3600, 26000, 26100, 25900, 26200, 1.0) for k in range(hours)]
+    rows[5] = (5 * 3600, 26000, 26100, 0, 26200, 1.0)                     # NATGAS 2019-05: a 0.0 low
+    c = decode_month(_month(rows), "NATGAS", 2019, 11)
+    assert len(c) == hours and glitches(c, "NATGAS") == 1
+    for name, extreme in (("EUR_CHF", 0.85), ("AUD_NZD", 1.313), ("XAG_USD", 84.0), ("USOIL", 130.5)):
+        lo, hi = BY_NAME[name].plausible
+        assert lo <= extreme <= hi and hi < 10 * extreme                 # wide, but a 10x scale error is out

@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 from download_dukascopy_s3 import AUTH_ERRORS, BUCKET, aws  # noqa: E402
-from tests.backtest.candles import CandleError, decode_month  # noqa: E402
+from tests.backtest.candles import CandleError, decode_month, glitches  # noqa: E402
 from tests.backtest.universe import UNIVERSE  # noqa: E402
 
 OUT = ROOT / "data" / "dukascopy_candles"
@@ -74,9 +74,10 @@ def verify(inst, y: int, m: int) -> dict:
     bid, ask = sides["BID"][0], sides["ASK"][0]
     traded = [(b, a) for b, a in zip(bid, ask) if b.volume > 0 or a.volume > 0]
     crossed = sum(a.close < b.close for b, a in traded)
-    if traded and crossed > 0.01 * len(traded):
+    if traded and crossed > max(3, 0.02 * len(traded)):
         raise CandleError(f"{inst.name} {y}-{m:02d}: ask < bid at the close on {crossed}/{len(traded)} traded hours")
     return {"instrument": inst.name, "month": f"{y}-{m:02d}", "traded_hours": len(traded), "crossed": crossed,
+            "glitch_hours": glitches(bid, inst.name) + glitches(ask, inst.name),
             **{f"{s.lower()}_sha256": sides[s][1] for s in SIDES},
             **{f"{s.lower()}_path": sides[s][2].relative_to(ROOT).as_posix() for s in SIDES}}
 

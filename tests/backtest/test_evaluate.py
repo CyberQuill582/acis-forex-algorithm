@@ -1,0 +1,68 @@
+"""`evaluate`, the one producer of an RSIM grade (GAP-P12D-136 item 6): the line first, one line one
+grade, the outcome and daily vector stored, and every mismatch refused before any compute."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import replace
+
+import numpy as np
+import pytest
+
+from core.optimizer.costs import CostModel
+from core.signals import rules
+from tests.backtest.evaluate import evaluate
+from tests.backtest.lab_market import Effect, LabSpec, generate
+from tests.backtest.look_claims import load_vector
+from tests.backtest.look_register import LookRefused, LookRegister
+from tests.backtest.rsim import BookSpec, panel
+from tests.backtest.rsim_lab import carver_pct_vol, lab_market
+
+
+class LabRsim:
+    name, provenance = "lab-rsim", "synthetic"
+
+
+class RealRsim:
+    name, provenance = "dukascopy-candles", "real"
+
+
+def _inputs(stress: float = 1.0):
+    m = lab_market(generate(LabSpec(n_inst=3, days=700, seed=2, effect=Effect(trend_sharpe=1.0))))
+    spec = BookSpec(costs={n: CostModel(0.0, 0.00002, stress=stress) for n in m.names})
+    return m, panel(m, rules.d1), carver_pct_vol(m), spec
+
+
+def test_a_synthetic_grade_writes_its_line_first_then_its_outcome_and_vector(tmp_path, acis_config) -> None:
+    reg = LookRegister(tmp_path / "looks")
+    m, f, v, spec = _inputs()
+    look, result = evaluate(register=reg, cfg=acis_config, source=LabRsim(), family="trend_d1_v1", claim=None,
+                            account="lab", market=m, forecast=f, pct_vol=v, spec=spec, graded_from=m.days[300])
+    assert look.tier == 0 and (tmp_path / "looks" / f"{look.look_id}.graded.json").exists()
+    outcome = json.loads((tmp_path / "looks" / f"{look.look_id}.outcome.json").read_text())
+    dates, returns = load_vector(tmp_path / "looks", outcome["daily_vector"])
+    assert dates[0] == m.days[300] and len(returns) == outcome["graded_days"] == len(m.days) - 300
+    assert returns == pytest.approx(result.daily[300:].tolist())
+    with pytest.raises(LookRefused, match="already graded"):
+        reg.consume(look)                                                     # one line, one grade
+
+
+def test_a_real_data_grade_is_refused_while_real_looks_are_closed(tmp_path, acis_config) -> None:
+    m, f, v, spec = _inputs()
+    with pytest.raises(LookRefused):
+        evaluate(register=LookRegister(tmp_path / "looks"), cfg=acis_config, source=RealRsim(), family="trend_d1_v1",
+                 claim=None, account="ftmo", market=m, forecast=f, pct_vol=v, spec=spec, graded_from=m.days[300])
+    assert not (tmp_path / "looks").exists() or not list((tmp_path / "looks").glob("*.outcome.json"))
+
+
+def test_mismatched_costs_or_window_are_refused_before_any_line(tmp_path, acis_config) -> None:
+    reg = LookRegister(tmp_path / "looks")
+    m, f, v, spec = _inputs()
+    mixed = replace(spec, costs={**spec.costs, m.names[0]: CostModel(0.0, 0.00002, stress=2.0)})
+    with pytest.raises(LookRefused, match="cost stress"):
+        evaluate(register=reg, cfg=acis_config, source=LabRsim(), family="f", claim=None, account="lab",
+                 market=m, forecast=f, pct_vol=v, spec=mixed, graded_from=m.days[300])
+    with pytest.raises(LookRefused, match="graded window"):
+        evaluate(register=reg, cfg=acis_config, source=LabRsim(), family="f", claim=None, account="lab",
+                 market=m, forecast=f, pct_vol=v, spec=spec, graded_from=m.days[0])
+    assert not reg.scan().lines                                               # nothing was registered

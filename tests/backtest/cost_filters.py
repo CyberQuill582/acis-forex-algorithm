@@ -33,6 +33,22 @@ SWAP_LIMIT_SR = EXPECTED_PRE_COST_SR / 3.0
 ROOT_DAYS = math.sqrt(BUSINESS_DAYS_IN_YEAR)          # 16
 
 
+# member -> (turnover on the lab null, median of 1,000 instrument-paths: `r1_lab_turnover.py` at `81ecb8a`,
+#            seeds 1-50; Carver's published forecast turnover on the S&P 500, "Fast but not furious" 2023, or None;
+#            time in market on the null). The FILTER uses the larger turnover: the lab runs 25-35% below Carver.
+MEMBER_INPUTS: dict[str, tuple[float, float | None, float]] = {
+    "D1": (7.95, None, 0.80),
+    "EWMAC16_64": (12.24, 16.32, 0.77), "EWMAC32_128": (7.21, 9.69, 0.80), "EWMAC64_256": (4.90, 7.46, 0.82),
+    "BREAKOUT40": (17.97, None, 0.77), "BREAKOUT80": (8.96, None, 0.77), "BREAKOUT160": (4.43, None, 0.76),
+    "MOP12": (3.07, None, 1.00),
+}
+
+
+def filter_turnover(member: str) -> float:
+    lab, carver, _ = MEMBER_INPUTS[member]
+    return lab if carver is None else max(lab, carver)
+
+
 def forecast_turnover(forecast: Sequence[float], average_abs: float = 10.0) -> float:
     """Carver's `turnover(forecast, 10)`: annual mean |Δ(f/10)| over business days (NaN-skipping)."""
     steps = [abs(b - a) / average_abs for a, b in zip(forecast, forecast[1:]) if a == a and b == b]

@@ -38,3 +38,10 @@ def test_swap_viability_divides_the_markup_by_vol_at_the_time_in_market() -> Non
     free = admit("EUR_USD", "D1", turnover=5.0, cost_per_trade_sr=0.001, annual_vol_pct=7.0)
     assert free.swap_cost_sr == 0.0 and free.admitted                           # the swap-free world
     assert SWAP_LIMIT_SR == pytest.approx(0.10)
+
+
+def test_the_filter_turnover_is_the_larger_of_the_lab_and_carvers_figure() -> None:
+    from tests.backtest.cost_filters import MEMBER_INPUTS, filter_turnover
+    assert filter_turnover("EWMAC16_64") == 16.32 and filter_turnover("BREAKOUT40") == 17.97
+    assert set(MEMBER_INPUTS) == {"D1", "EWMAC16_64", "EWMAC32_128", "EWMAC64_256", "BREAKOUT40",
+                                  "BREAKOUT80", "BREAKOUT160", "MOP12"}

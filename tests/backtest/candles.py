@@ -6,8 +6,10 @@ of 24-byte big-endian records, verified against the archive 2026-10-01:
     uint32 high · float32 volume
 one per hour of the month, weekend hours included (flat, volume 0). Prices are integers ÷ the
 instrument's scale (`universe.py`); a wrong scale is silent, so every price is bounded by the
-instrument's plausible envelope, every hour must be present and in order, and low <= open,
-close <= high. A file that fails any check raises, never yields a partial month.
+instrument's plausible envelope on its OPEN and CLOSE (the prices RSIM reads), every hour must be
+present and in order, and low <= open, close <= high. A file that fails any check raises, never
+yields a partial month. A HIGH or LOW outside the envelope is a recorded glitch print (NATGAS
+2019-05 has a 0.0 low), counted by `glitches`, never fatal and never averaged away.
 """
 
 from __future__ import annotations
@@ -59,7 +61,13 @@ def decode_month(raw: bytes, instrument: str, year: int, month: int) -> list[Can
         o, c, l, h = (x / inst.scale for x in (o, c, l, h))
         if not (l <= min(o, c) and max(o, c) <= h):
             raise CandleError(f"{where} hour {k}: OHLC out of order {o} {h} {l} {c}")
-        if not (lo <= l and h <= hi):
-            raise CandleError(f"{where} hour {k}: {l}..{h} outside {lo}..{hi}: wrong point scale?")
+        if not (lo <= o <= hi and lo <= c <= hi):
+            raise CandleError(f"{where} hour {k}: open {o} / close {c} outside {lo}..{hi}: wrong point scale?")
         out.append(Candle(start + timedelta(seconds=sec), o, h, l, c, v))
     return out
+
+
+def glitches(candles: list[Candle], instrument: str) -> int:
+    """Hours whose high or low falls outside the envelope: glitch prints, recorded, never fatal."""
+    lo, hi = BY_NAME[instrument].plausible
+    return sum(not (lo <= c.low and c.high <= hi) for c in candles)
