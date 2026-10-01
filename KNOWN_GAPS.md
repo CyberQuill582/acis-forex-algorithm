@@ -144,6 +144,14 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-136: R1.3 is built for the lab; the real-data half of RSIM is still owed
+- Severity: medium · Likelihood: certain
+- Status: open (2026-10-01; the owner chose "R1 build on the lab (Recommended)" to use the Google credits)
+- Area: tests/backtest/rsim.py, rsim_lab.py, core/signals/rules.py, ewm.py, families.py, scripts/r1_lab_rsim.py
+- Description: BUILT 2026-10-01 (`b154087` + the provenance commit): the TREND members as pure stdlib functions reproducing Carver's code (GAP-P12D-122 fixed) and MOP's rule (GAP-P12D-116 fixed); RSIM with Carver sizing, his buffer, the one lot rule, the single C8 cost model per fill, three financing worlds; the lab adapter; the provenance records; the multi-seed lab runner. OWED before any real-data look: (1) RSIM's REAL-data source: the excess-return price from spot plus the dated carry (RateTable), the fill price and spread at each symbol's execution clock from hourly bid/ask candles ([[GAP-P12D-95]]), `q` from cross rates ([[GAP-P12D-27]]); it needs R1.5's candles; (2) the venue swap table as markup data with its charge calendar ([[GAP-P12D-93]]); (3) the two cost filters ([[GAP-P12D-115]]); (4) the passive-benchmark arms registered beside each family (R1-D P6; `PASSIVE_LONG` exists as a member); (5) the registered amendment path for a provenance record already written (the TSMOM text, GAP-P12D-116's residual).
+- Justification: open, bounded: no real-data look is open (`REAL_LOOKS_OPEN` False until R1.4), and every lab number is synthetic, machinery-only (ACIS-09 C-BT-12).
+- Linked: [[GAP-P12D-93]], [[GAP-P12D-95]], [[GAP-P12D-115]], [[GAP-P12D-27]], [[GAP-P12D-116]], [[GAP-P12D-122]]
+
 ## GAP-P12D-135: the engine has no stop path — Ctrl+C or SIGTERM ends it without closing its positions
 - Severity: medium · Likelihood: high
 - Status: fixed (2026-10-01; OWNER RULED the same day: a deliberate stop (SIGINT/SIGTERM) closes every position, halts, then exits; built first of the [[GAP-P12D-131]] batch; full suite 1214 passed, 6 skipped on the Google server; the flatten, the halt, the stop branch and the signal handler each reverted fail the tests)
@@ -387,7 +395,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **I9:** rung 2 requires the practice mode ([[GAP-P12D-69]]).
   - **I11:** a pair family is refused while either leg is capped.
   - **I14:** the "stricter meanwhile" wording becomes "the as-built v2.20 path", with its axes listed, and no R1.x phase lands before the rules it assumes.
-  - **I15:** one lot rule: round the target toward zero, then order = target − current, in RSIM and C-EXE-6 alike.
+  - **I15:** one lot rule: round the target toward zero, then order = target − current, in RSIM and C-EXE-6 alike. **BUILT research-side 2026-10-01:** `core/execution/venue_limits.target_on_lots`, used by RSIM (`test_the_one_lot_rule_rounds_the_target_toward_zero`, `test_positions_sit_on_the_venues_lots`); the Governor/execution side adopts it at R1.6.
   - **I16:** no per-fold embargo for fixed families; `train_window` is amended.
   - **I17:** the C9-per-member and plateau conventions are defined.
   - **I18:** the held-out draw's spelling is pinned ("XCU/USD" style, verified by the lead).
@@ -401,11 +409,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-122: the trend family's forecast-scalar source is not chosen — null-fixed scalars run ~24% above Carver's published ones
 - Severity: low-medium · Likelihood: high
-- Status: open [impl — spec corrected v2.22; build R1.3 (provenance record)] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Status: fixed (2026-10-01, R1.3; spec corrected v2.22) (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
 - Area: master v2.21 §5.6 ("fixed before any real-data look"), the TREND family's provenance record
 - Description: PLAN_R1's null-fixed 4.66/3.26/2.28 against Carver's 3.75/2.65/1.87 (pysystemtrade `futuresconfig.yaml`, archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E12). The (scalar, normaliser, EWMA convention) triple is not pinned.
-- Justification: open. Disposition: D-f recommendation: Carver's published values with his normaliser and span convention. APPLIED to the spec: the owner ratified the triage 2026-09-25 ("Ratify all"); the spec is corrected in master v2.22 and the deep specs. The build is owed; the as-built v2.20 behaviour stands until it lands.
-- Linked: [[GAP-P12D-103]], [[GAP-P12D-110]]
+- Justification: fixed. The triple is pinned to pysystemtrade master `a62269d27707806ba61f516791b71a9cd14cf268` (2026-09-29): scalars 3.75/2.65/1.87 from `futures_chapter15/futuresconfig.yaml`; the normaliser is `defaults.yaml`'s `mixed_vol_calc` (35-day adjusted EW std of daily price changes, 30% of its 10-year EWMA, floor 1e-10; NOT the 25-day EWMA PLAN_R1 assumed); the EWMA is pandas' adjusted `ewm(span)`. `core/signals/ewm.py` + `rules.py` reproduce Carver's own code (run under pandas 3.0.6 by `tests/reference/carver/generate.py`) value for value, NaN for NaN. The provenance record `trend_d1_v1` (`core/signals/families.py`) cites the commit and declares every departure.
+- Proof: `test_ewmac_is_carvers_scaled_and_capped`, `test_the_normaliser_is_carvers_mixed_vol`, `test_ewm_mean_and_std_are_pandas_adjusted_ewma`, `test_carvers_members_pin_the_commit_and_the_scalars_they_use`.
+- Residual: none — the scalars, normaliser and span convention are pinned and reproduced; the engine reads these same functions when R1.6 wires the family (PLAN_R1 R1.6).
+- Linked: [[GAP-P12D-103]], [[GAP-P12D-110]], [[GAP-P12D-136]]
 
 ## GAP-P12D-121: stage A's Sharpe bound ignores autocorrelation — size 6.3–7.2% at lag-1 ρ of 0.05–0.10 (Lo 2002)
 - Severity: low-medium · Likelihood: medium
@@ -438,6 +448,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Description: a dead zone around a zero forecast (§2, rule 5) against a band around the current position (§5.5, Carver). Under the first, an open position is KEPT when forecasts cancel (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I10, archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E8).
 - Justification: open. Disposition: C11: Carver's band around the current position, owned by the Governor. APPLIED to the spec: the owner ratified the triage 2026-09-25 ("Ratify all"); the spec is corrected in master v2.22 and the deep specs. The build is owed; the as-built v2.20 behaviour stands until it lands.
 - As-built parity (2026-09-30, [[GAP-P12D-132]] TAI-18): the runtime's position policy (`core/runtime/policy.py`, GAP-0075) departs from the harness book three ways, declared in its docstring: runtime-only pair-group exits, a target closed at the mark (the book fills at the target), and the max hold timed from the fill (the book's from `sized_at`). The band build aligns the book and the runtime; until then these three are this entry's.
+- **Wording to ratify (found building RSIM, 2026-10-01):** master v2.22 §5.5 says the band is "±10% of the instrument's average position around the CURRENT position … a target outside it trades to the band's nearest edge", and calls it Carver's. Carver's code (pysystemtrade `buffer_method: forecast`, `buffer_trade_to_edge: True`, at `a62269d2`) puts the band around the TARGET (optimum ± 0.1·A) and trades the CURRENT position to that band's nearest edge. Both agree on WHEN no order is placed (|target − current| ≤ 0.1·A) but not on WHERE a trade ends: the literal reading moves the position only 0.1·A toward the target per day. RSIM builds Carver's (the spec names Carver as the authority; `test_the_buffer_keeps_inside_the_band_and_trades_to_its_nearest_edge`). OWNER: ratify the wording fix "a band of ±10% of the average position around the TARGET; a current position outside it trades to the band's nearest edge".
 - Linked: [[GAP-P12D-103]], [[GAP-P12D-132]]
 
 ## GAP-P12D-117: the synthetic-lab law has two holes — the variance match names no horizon, and the ±1-sign null has zero edge only in log units
@@ -458,11 +469,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-116: the TREND family's "MOP-2012 12-month sign" baseline points to a 3-horizon SPOT vote, not MOP's 12-month EXCESS-return sign
 - Severity: medium · Likelihood: certain
-- Status: open [impl — spec corrected v2.22; build R1.3 (the faithful MOP member)] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Status: fixed (2026-10-01, R1.3; spec corrected v2.22) (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
 - Area: master v2.21 §5.6, ACIS-04 v1.3 §6.6, core/signals/canonical.py, GAP-0073
 - Description: MOP 2012 signs the 12-month excess return (eq. 5; App. A.3). On the repo's rates, spot and excess 12-month signs disagree on 3.0–12.1% of days across FX pairs, 2013–2025. So GAP-0073's "immaterial" is false (archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E6).
-- Justification: open. Disposition: C9: a faithful excess-return member; the 3-horizon vote stays a separate member; GAP-0073 re-opened. APPLIED to the spec: the owner ratified the triage 2026-09-25 ("Ratify all"); the spec is corrected in master v2.22 and the deep specs. The build is owed; the as-built v2.20 behaviour stands until it lands.
-- Linked: [[GAP-P12D-71]], [[GAP-P12D-103]]
+- Justification: fixed. `rules.mop_12m` signs the 12-month EXCESS return at each month's last weekday (a calendar fact) and holds it a month; `rules.mop_vol` is MOP's ex-ante estimate (centre of mass 60 days); the record `trend_mop12_v1` declares its four departures. GAP-0073's "immaterial" note is withdrawn in TSMOM's declared deviations (`core/signals/canonical.py`); the 3-horizon vote stays a separate member.
+- Proof: `test_mop_signs_the_twelve_month_excess_return_at_each_month_end_and_holds_it`, `test_month_end_is_a_calendar_fact`, `test_every_departure_the_code_makes_is_declared`, `test_a_forecast_never_reads_past_its_decision_day`.
+- Residual: GAP-P12D-136 — the excess-return price for REAL instruments (spot compounded with the dated carry) is built with RSIM's real-data source; and a provenance store registered before this fix (the demo's included) keeps the old TSMOM text, because `register_canonical` adds only missing ids and ACIS-11 writes a record once; how a registered record is amended is owned there too.
+- Linked: [[GAP-P12D-71]], [[GAP-P12D-103]], [[GAP-P12D-136]]
 
 ## GAP-P12D-115: the "cost ≤ ⅓ of pre-cost Sharpe" filter is attributed to Carver but departs from his speed limit twice
 - Severity: medium · Likelihood: high
@@ -638,6 +651,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Area: core/signals/indicators.py, core/optimizer/fitness.py (`atr_series`, `ema_series`, `rsi_series`)
 - Description: the signal layer re-exports three indicator functions defined in the optimizer's fitness module. Retiring `fitness.py` (PLAN_R1 A4 / R1.7) would break the signal layer unless they move first.
 - Justification: open; a pure move, behaviour-identical, proven by the existing indicator tests. It needs no ratification.
+- **Sequencing (2026-10-01, R1.3):** the move lands IN R1.7's retirement commit, not before. The import law lets `signals` import `optimizer` but not the reverse (`tests/unit/test_import_contract.py` ALLOWED), so moving the three functions into `core/signals/indicators.py` while `fitness.py` still imports them would break the law or need a duplicate. Nothing in R1.3 depends on them: the TREND rules use Carver's adjusted EWMA (`core/signals/ewm.py`), which `fitness.ema_series` does not implement.
 - Linked: [[GAP-P12D-89]]
 
 ## GAP-P12D-98: the look register stores per-trade returns, not the daily net-return vector a portfolio-level verdict needs

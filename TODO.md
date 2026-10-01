@@ -83,13 +83,16 @@
      - [x] 2026-09-29 the B0 calibration machinery, [[GAP-P12D-105]] MITIGATED: `tests/backtest/lab_calibration.py`; B0 (a)+(b) hold on the lab (planted 37.8% vs theory 39.8%, null 5.5%), a bridged lab is refused (18.2%). Wiring into `passed` is R1.4;
      - [x] 2026-09-29 re-stating every recorded synthetic verdict, [[GAP-P12D-124]] FIXED, on the Google compute server: RUNGS 0.18 / 0.19; the engine still loses at every rung (~~~98% direction~~, withdrawn by the R1.1 audit: a regression artifact; the short-hold modules are friction-bound on this market, [[GAP-P12D-125]]); the full falsification's stage 1 passes and the engine fails planted ([[GAP-P12D-49]], [[GAP-P12D-31]]).
    - **R1.2 — register v2:** the daily return vector, the search-space hash, origin/cutoff and the cycle-order row ([[GAP-P12D-98]]). **BUILT 2026-09-29** in-session: `tests/backtest/look_claims.py`, the register takes a mandatory claim for real data, cycle rows, content-addressed daily vectors, and `look_gate.py`. Full suite 1057 passed on the server. The residual `evaluate()` entry point arrives with RSIM, R1.3. **Dual-audited and triaged 2026-09-29 ([[GAP-P12D-127]]); real-data looks CLOSED until R1.4.**
-   - **R1.3 — rules, RSIM and costs:**
-     - the TREND family with Carver's scalars, [[GAP-P12D-122]];
-     - the faithful MOP member, [[GAP-P12D-116]];
-     - the split cost filters, [[GAP-P12D-115]];
-     - the swap table and its calendar in C8, [[GAP-P12D-93]];
-     - the one lot rule, [[GAP-P12D-123]];
-     - the indicator move, [[GAP-P12D-99]].
+   - **R1.3 — rules, RSIM and costs** (in progress 2026-10-01; the lab half BUILT, the real-data half is [[GAP-P12D-136]]):
+     - [x] 2026-10-01 the TREND family with Carver's scalars, [[GAP-P12D-122]] FIXED (pinned to pysystemtrade `a62269d2`, reproduced value for value);
+     - [x] 2026-10-01 the faithful MOP member, [[GAP-P12D-116]] FIXED;
+     - [ ] the split cost filters, [[GAP-P12D-115]];
+     - [ ] the swap table and its calendar in C8, [[GAP-P12D-93]];
+     - [x] 2026-10-01 the one lot rule research-side, [[GAP-P12D-123]] I15 (`target_on_lots`; execution adopts it at R1.6);
+     - [ ] the indicator move, [[GAP-P12D-99]]: SEQUENCED into R1.7's retirement commit (the import law forbids it earlier);
+     - [x] 2026-10-01 RSIM + the lab adapter + the provenance records (`core/signals/families.py`);
+     - [ ] RSIM's real-data source (needs R1.5's candles) and the passive-benchmark arms, [[GAP-P12D-136]];
+     - [ ] OWNER: ratify the buffer-wording fix in [[GAP-P12D-118]] (band around the TARGET, Carver's code).
    - **R1.4 — the verdict and e-processes:**
      - `passed` with its gates, [[GAP-P12D-104]];
      - serial gatekeeping and α-spending, [[GAP-P12D-111]];

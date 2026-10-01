@@ -98,8 +98,10 @@ _CANON: list[tuple[StrategyType, str, str, str, str, tuple[str, ...]]] = [
       "published 40%/sigma ex-ante vol scaling",
       "3-horizon sign agreement (63/126/252d) instead of the single published "
       "12-month lookback",
-      "signs RAW price returns, not excess-over-risk-free returns as in MOP "
-      "2012 (immaterial at 3-12m FX horizons) — GAP-0073")),
+      "signs RAW spot returns, not MOP 2012's excess returns, and NOT immaterially: "
+      "on the repo's rates the 12-month spot and excess signs disagree on 3.0-12.1% "
+      "of FX days, 2013-2025 (GAP-0073's note withdrawn by master v2.22, "
+      "GAP-P12D-116; MOP's own rule is the separate member trend_mop12_v1)")),
 ]
 
 
