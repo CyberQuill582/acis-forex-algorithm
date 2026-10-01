@@ -8,7 +8,7 @@ sign of a zero drift is worthless.
 
 Invariants:
   * The path is the engine's (`oos_runner.run_walk_forward`): the production config's C8 cost
-    map (`evolve_step.cost_model`), account rulebook, swap conventions, session boundaries and
+    map (`core.optimizer.costs.cost_model`), account rulebook, swap conventions, session boundaries and
     clusters; ticks through `BacktestDataLoader` (§3 filtering, the FX weekend) merged by event
     time; `Backtest.run` books, marks and grades them. Only the decision layers are replaced.
   * The ticks skip the `MarketStateFactory` (~1 ms/tick: session calendars, velocity rings),
@@ -35,7 +35,7 @@ from typing import Iterator, Mapping, Sequence
 from config.account_doctrine import guardrail_hash
 from config.schemas import AcisConfig
 from tests.backtest.data_loader import BacktestDataLoader
-from tests.backtest.evolve_step import cost_model
+from core.optimizer.costs import cost_model
 from tests.backtest.harness import Backtest, FoldData
 from tests.backtest.metrics import ClosedTrade
 from tests.backtest.oracle_loop import OracleLoop, OracleTick

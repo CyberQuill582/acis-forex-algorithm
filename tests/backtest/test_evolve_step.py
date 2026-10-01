@@ -9,7 +9,8 @@ from types import SimpleNamespace
 
 from core.optimizer.plateau import PlateauVerdict
 from core.optimizer.qiea import EvolutionResult
-from tests.backtest.evolve_step import cost_model, evolve_fold
+from core.optimizer.costs import cost_model
+from tests.backtest.evolve_step import evolve_fold
 
 
 def _costs(cfg, **kw):

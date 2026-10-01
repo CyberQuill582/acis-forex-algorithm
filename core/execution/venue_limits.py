@@ -63,6 +63,18 @@ def venue_quantity(units: Decimal, d: CapabilityDescriptor) -> tuple[Decimal, De
     return sendable, units - sendable
 
 
+def target_on_lots(target_units: Decimal, step_units: Decimal, min_units: Decimal) -> Decimal:
+    """The one lot rule (master §5 C8 v2.22, GAP-P12D-101/123), for research and execution
+    alike: a TARGET position rounded toward zero to whole lot steps; a target whose size is
+    below the venue minimum is flat. The order is then this minus the current position."""
+    if step_units <= 0 or min_units < step_units:
+        raise ValueError(f"need 0 < step ({step_units}) <= minimum ({min_units})")
+    size = (abs(target_units) / step_units).to_integral_value(rounding=ROUND_FLOOR) * step_units
+    if size < min_units:
+        return Decimal("0")
+    return size if target_units > 0 else -size
+
+
 class RequestBudget:
     """One venue's trading-request budget over a rolling 24-hour window."""
 

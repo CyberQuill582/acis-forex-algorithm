@@ -12,7 +12,7 @@ import pytest
 from core.data.errors import DataQualityError
 from core.execution.fragmenter import plan
 from core.execution.mock_face import MockExecutionFace
-from core.execution.venue_limits import RequestBudget, venue_quantity
+from core.execution.venue_limits import RequestBudget, target_on_lots, venue_quantity
 from tests.optimizer_fixtures import CapturingLogger
 from tests.unit.test_execution import exec_cfg
 
@@ -71,3 +71,21 @@ def test_fragments_are_whole_lot_steps_and_still_sum_exactly() -> None:
                   venues=["mock"], now=T0, rng=Random(seed), quantum=step)
         assert sum(f.units for f in fp.fragments) == Decimal("437000")
         assert all(f.units % step == 0 and f.units >= step for f in fp.fragments)
+
+
+@pytest.mark.parametrize("target, step, minimum, expected", [
+    ("1234", "1000", "1000", "1000"),      # toward zero, never up to 2,000
+    ("-1999", "1000", "1000", "-1000"),    # toward zero on a short too: never more short
+    ("999", "1000", "1000", "0"),          # below one step: flat
+    ("9000", "1000", "10000", "0"),        # whole steps, but under the venue minimum: flat
+    ("25000", "1000", "10000", "25000"),
+    ("0", "1000", "1000", "0"),
+])
+def test_the_one_lot_rule_rounds_the_target_toward_zero(target, step, minimum, expected) -> None:
+    # master §5 C8 v2.22 (GAP-P12D-101/123): research and execution share this one function
+    assert target_on_lots(Decimal(target), Decimal(step), Decimal(minimum)) == Decimal(expected)
+
+
+def test_the_lot_rule_refuses_a_step_coarser_than_the_minimum() -> None:
+    with pytest.raises(ValueError):
+        target_on_lots(Decimal("5000"), Decimal("1000"), Decimal("500"))

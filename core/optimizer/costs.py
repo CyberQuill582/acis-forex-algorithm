@@ -20,6 +20,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from config.schemas import AcisConfig
 from core.data.errors import DataQualityError
 
 
@@ -59,3 +60,20 @@ class CostModel:
 
     def round_trip_cost(self, entry_spread: float, exit_spread: float) -> float:
         return self.per_side_cost(entry_spread) + self.per_side_cost(exit_spread)
+
+
+def cost_model(cfg: AcisConfig, instrument: str, *, stress: float = 1.0,
+               spread_floor: float = 0.0) -> CostModel:
+    """The declared C8 model for `instrument`, optionally stressed (GAP-P12D-46). Moved here from
+    tests/backtest/evolve_step.py (R1.3), whose module retires at R1.7, so the research simulator
+    and the harness keep one home for it.
+
+    `stress`/`spread_floor` are RUN properties: the caller builds the map ONCE and hands
+    the same instances to selection and to grading, so a stressed run cannot select in a
+    cheap world and be graded in an expensive one (the GAP-P12D-36 defect class)."""
+    costs = cfg.instruments.instruments[instrument].costs
+    if costs is None:
+        raise ValueError(f"{instrument} declares no C8 costs — onboard it before evolving on it")
+    return CostModel(commission_per_side=costs.commission_per_side,
+                     slippage_per_side=costs.slippage_per_side,
+                     stress=stress, spread_floor=spread_floor)

@@ -39,7 +39,8 @@ from core.signals.canonical import STRATEGY_IDS
 from core.signals.signal_types import StrategyType
 from tests.backtest.carry import FinancingRate
 from tests.backtest.data_loader import BacktestDataLoader
-from tests.backtest.evolve_step import cost_model, evolve_fold
+from core.optimizer.costs import cost_model
+from tests.backtest.evolve_step import evolve_fold
 from tests.backtest.harness import Backtest, FoldData
 from tests.backtest.look_gate import begin_grade
 from tests.backtest.look_register import LookRegister

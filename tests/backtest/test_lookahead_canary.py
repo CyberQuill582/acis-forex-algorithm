@@ -10,7 +10,8 @@ from types import SimpleNamespace
 import pytest
 
 from core.optimizer.param_types import RegimeLabelledHistory
-from tests.backtest.evolve_step import cost_model, evolve_fold
+from core.optimizer.costs import cost_model
+from tests.backtest.evolve_step import evolve_fold
 from tests.backtest.harness import Backtest, FoldData, refuse_lookahead
 from tests.backtest.regime_labels import LabelledBarCache, LabelSpec
 from tests.backtest.test_evolve_step import _cfg, _Stager

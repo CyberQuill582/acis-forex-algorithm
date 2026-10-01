@@ -25,7 +25,8 @@ from core.signals.agon import AGON
 from core.signals.canonical import register_canonical
 from core.signals.provenance import ProvenanceStore
 from tests.backtest.data_loader import BacktestDataLoader
-from tests.backtest.evolve_step import cost_model, evolve_fold
+from core.optimizer.costs import cost_model
+from tests.backtest.evolve_step import evolve_fold
 from tests.backtest.harness import FoldData
 from tests.backtest.leakage import Decision, future_perturbation, truncation
 from tests.backtest.leakage_engine import NullLogger, signal_decisions

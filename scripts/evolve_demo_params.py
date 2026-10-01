@@ -31,7 +31,8 @@ from build_labelled_bars import DATA_START, OUT, SOURCE  # noqa: E402
 from config.schemas import load_config  # noqa: E402
 from core.data.jsonl_logging import JsonlEventLogger  # noqa: E402
 from core.optimizer.param_library import ParamLibrary  # noqa: E402
-from tests.backtest.evolve_step import cost_model, evolve_fold  # noqa: E402
+from core.optimizer.costs import cost_model  # noqa: E402
+from tests.backtest.evolve_step import evolve_fold  # noqa: E402
 from tests.backtest.harness import FoldData  # noqa: E402
 from tests.backtest.regime_labels import LabelledBarCache, LabelSpec  # noqa: E402
 from tests.backtest.replay_logging import ReplayEventLogger  # noqa: E402
