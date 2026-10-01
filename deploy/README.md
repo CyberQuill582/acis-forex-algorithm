@@ -62,7 +62,13 @@ sudo systemctl stop acis-engine
 sudo systemd-run --pty --uid=acis --gid=acis -p EnvironmentFile=/etc/acis/engine.env   -p WorkingDirectory=/opt/acis -E PYTHONPATH=/opt/acis   /opt/acis/venv/bin/python -m core.runtime --venue --account pepperstone_demo --practice   --ack-guardrail <hash> --ack-rulebook <hash>     # asks for the token; add --resume to lift halts
 ```
 
-The engine's exit codes: 0 the feed ended, 1 a loop stalled (flattened and halted), 2 refused
+**Stopping it.** Ctrl+C, `systemctl stop` or a shutdown (SIGINT/SIGTERM) is a deliberate stop:
+the engine closes every position, halts, then exits 0 (GAP-P12D-135; the closes get 30 s, inside
+systemd's default 90 s stop timeout). The halts persist, so the next practice start needs
+`--practice --resume` (one token prompt covers both). A position still open after the closes is
+logged `STOP_LEFT_POSITIONS`, and the watchdog flattens it once the heartbeat goes stale.
+
+The engine's exit codes: 0 the feed ended or a deliberate stop, 1 a loop stalled (flattened and halted), 2 refused
 (the attach, a foreign position, a second engine), 3 a human step refused, 4 the venue stayed
 unreachable. The unit does not restart on 2 or 3, and stops after 10 starts in an hour.
 

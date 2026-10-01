@@ -14,6 +14,9 @@ Invariants:
     a paper book adopts nothing from the account and logs what it leaves on its venue stops.
   * A core task that ends or raises while the feed runs is a stalled loop: flatten-and-halt (§10),
     and the closes drain before the process ends.
+  * A deliberate stop (`request_stop`: SIGINT/SIGTERM) is the same path: every position closed,
+    everything halted, then the process ends (owner ruling, GAP-P12D-135). A position still held
+    after the drain is logged critical; the watchdog flattens it once the heartbeat goes stale.
   * Reaching the venue's close reserve, in practice, flattens and halts everything once (ACIS-13
     v1.2 §6.5, owner ruling D2): the equity breaker would be blind there, so nothing stays open.
   * The fast loop's clock is the tick's own timestamp; everything else reads `now_fn`.
@@ -48,6 +51,15 @@ class Runtime:
         self._clock_verified: set[str] = set()
         self._clock_failed: set[str] = set()
         self._in_reserve = False
+        self._stop = asyncio.Event()
+        self.stop_reason: str | None = None
+
+    def request_stop(self, reason: str) -> None:
+        """A deliberate stop: `run()` flattens, halts and returns "stopped" (GAP-P12D-135)."""
+        if self.stop_reason is None:
+            self.stop_reason = reason
+            self.p.log.event("ENGINE_STOP_REQUESTED", reason=reason)
+        self._stop.set()
 
     # -- Loop 3: the fast loop ---------------------------------------------------------- #
 
@@ -208,14 +220,20 @@ class Runtime:
         self.booted = True
 
     async def run(self) -> str:
-        """Run until the feed ends (a test, a replay) or a core task stalls; return why."""
+        """Run until the feed ends (a test, a replay), a core task stalls, or a stop is requested;
+        return why."""
         p = self.p
         if not self.booted:                       # a raise, alive under -O (GAP-0079)
             raise RuntimeError("boot() must run before the first tick")
         fast = asyncio.create_task(p.pipeline.run(), name="fast_loop")
         others = [asyncio.create_task(c, name=n) for n, c in p.tasks(self)]
-        done, _ = await asyncio.wait([fast, *others], return_when=asyncio.FIRST_COMPLETED)
-        if fast in done and fast.exception() is None:
+        stop = asyncio.create_task(self._stop.wait(), name="stop")
+        done, _ = await asyncio.wait([fast, *others, stop], return_when=asyncio.FIRST_COMPLETED)
+        if stop in done:
+            p.edge.flatten("all", "operator_stop")
+            p.edge.apply_halt("all", "operator_stop")
+            outcome = "stopped"
+        elif fast in done and fast.exception() is None:
             outcome = "feed_ended"
         else:
             dead = next(t for t in done)
@@ -229,10 +247,13 @@ class Runtime:
         except asyncio.TimeoutError:
             p.log.event("DRAIN_TIMEOUT", pending=p.executor.queue.qsize())
         await self.evaluate()
+        if outcome == "stopped" and (left := p.risk.positions()):
+            p.log.event("STOP_LEFT_POSITIONS", severity="critical",
+                        instruments=sorted(pos.instrument for pos in left))
         p.risk.write_heartbeat(p.now_fn(), p.mode.mode, self.seq)
         await p.writer.stop()                     # the market-state record drains, then ends
-        for task in [fast, *others]:
+        for task in [fast, *others, stop]:
             if task.get_name() != "writer":
                 task.cancel()
-        await asyncio.gather(fast, *others, return_exceptions=True)
+        await asyncio.gather(fast, *others, stop, return_exceptions=True)
         return outcome

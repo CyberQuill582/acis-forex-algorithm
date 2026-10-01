@@ -13,9 +13,11 @@ Invariants:
     or env), both hashes attested, through the MCP tool, BEFORE Risk's first evaluation and on
     practice's own Risk store (TAI-14). A supervised restart comes back in paper.
   * `--resume` lifts the persisted halts after boot through ACIS-08's `acis_resume` (TAI-07).
-  * Exit codes: 0 the feed ended; 1 a loop stalled (flattened, halted); 2 refused (the attach, a
-    foreign position, the lock); 3 a human step refused; 4 the venue stayed unreachable. The unit
-    does not restart on 2 or 3.
+  * SIGINT/SIGTERM, once the runtime is built, are a deliberate stop: every position closed,
+    everything halted, then exit 0 (GAP-P12D-135). The next start needs `--resume`.
+  * Exit codes: 0 the feed ended or a deliberate stop; 1 a loop stalled (flattened, halted); 2
+    refused (the attach, a foreign position, the lock); 3 a human step refused; 4 the venue stayed
+    unreachable. The unit does not restart on 2 or 3.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ import argparse
 import asyncio
 import getpass
 import os
+import signal
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,6 +57,17 @@ def exclusive_lock(path: Path):
         import msvcrt
         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
     return handle
+
+
+def install_stop(runtime) -> None:
+    """SIGINT and SIGTERM (Ctrl+C, systemd stop, a VM shutdown) become `runtime.request_stop`."""
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, runtime.request_stop, sig.name)
+        except NotImplementedError:                       # Windows (development only)
+            signal.signal(sig, lambda num, _frame: loop.call_soon_threadsafe(
+                runtime.request_stop, signal.Signals(num).name))
 
 
 def human_call(runtime, cfg, log, session_id: str, tool: str, args: dict, token: str) -> bool:
@@ -105,6 +119,7 @@ async def main(args) -> int:
     try:
         runtime = build(cfg, root=root, session_id=session_id, feed=feed, venue=venue,
                         intended_mode="practice" if args.practice else "paper")
+        install_stop(runtime)
         if args.practice and not human_call(runtime, cfg, log, session_id, "acis_set_mode", {
                 "mode": "practice", "guardrail_hash": args.ack_guardrail,
                 "rulebook_hash": args.ack_rulebook}, token):
@@ -114,7 +129,7 @@ async def main(args) -> int:
             return 3
         outcome = await runtime.run()
         log.event("ENGINE_STOPPED", outcome=outcome)
-        return 0 if outcome == "feed_ended" else 1
+        return 0 if outcome in ("feed_ended", "stopped") else 1
     finally:
         if session is not None:
             await session.stop()

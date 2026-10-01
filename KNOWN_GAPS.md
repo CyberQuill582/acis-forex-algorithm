@@ -146,11 +146,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-135: the engine has no stop path — Ctrl+C or SIGTERM ends it without closing its positions
 - Severity: medium · Likelihood: high
-- Status: open — OWNER RULED 2026-10-01: a deliberate stop (SIGINT/SIGTERM) closes every position, halts, then exits; to build with a test (part of the [[GAP-P12D-131]] batch)
+- Status: fixed (2026-10-01; OWNER RULED the same day: a deliberate stop (SIGINT/SIGTERM) closes every position, halts, then exits; built first of the [[GAP-P12D-131]] batch; full suite 1214 passed, 6 skipped on the Google server; the flatten, the halt, the stop branch and the signal handler each reverted fail the tests)
 - Area: core/runtime/__main__.py (no signal handling), deploy/systemd/acis-engine.service (systemd stops with SIGTERM)
 - Description: found 2026-10-01 while walking the owner through the first practice start. A KeyboardInterrupt unwinds `_run` through its `finally` (session stop, lock release) with no flatten, and SIGTERM (systemd stop, VM shutdown) kills it outright. Open positions keep their venue stops and are adopted at the next start; with the watchdog running, a stop with no restart inside `watchdog_timeout_s` (30 s) is flattened by the watchdog instead, but a quick restart leaves them riding.
-- Justification: open, bounded: every position rests a server-side stop, the demo trades the minimum lot, and the watchdog flattens a silent engine. The owner's ruling sets the target: stop = flat + halted.
-- Residual: GAP-P12D-135 — this entry owns the build and its test (a SIGTERM to a practice runtime with an open position ends flat and halted).
+- Justification: fixed. `install_stop` (core/runtime/__main__.py) turns SIGINT/SIGTERM into `Runtime.request_stop`; `run()` then takes the stalled-loop path with reason `operator_stop`: freeze opens, close every held position, halt everything, drain the closes (30 s, inside systemd's 90 s stop timeout), exit 0. A position still held after the drain is logged `STOP_LEFT_POSITIONS` (critical) and the watchdog flattens it once the heartbeat goes stale. The halts persist, so the next start needs `--practice --resume` (deploy/README.md). A signal before the runtime is built keeps asyncio's default (nothing is held yet).
+- Proof: `test_a_deliberate_stop_in_practice_closes_every_position_and_halts` (fake cTrader venue: an adopted position, flat AT THE VENUE after the stop), `test_a_signal_is_a_deliberate_stop` (a real SIGTERM and SIGINT to the process).
+- Residual: GAP-P12D-76 — the running demo (acis-demo-1, started 12:34 UTC on the pre-fix code) gets the stop rule only at its next start on the new checkout, planned as the AWS move (TODO #4); until then a Ctrl+C there still leaves positions on their venue stops for the watchdog.
 - Linked: [[GAP-P12D-131]], [[GAP-P12D-133]]
 
 ## GAP-P12D-134: the deploy units and runbook assume the system Python with the dependencies installed into it, which Debian 12 refuses
@@ -220,7 +221,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-131: what the three-loop runtime still owes before an unattended demo — found building it, each item bounded today
 - Severity: medium · Likelihood: high
-- Status: open (2026-09-30, found by the lead building Track A step 4; the runtime itself is BUILT, `core/runtime/`, GAP-0075/0099/0091b fixed). **OWNER-RATIFIED PLAN 2026-10-01:** (i) BUILT; then [[GAP-P12D-135]] (the stop rule), (a), (b), the batch (d)(h)(j)(k)(l); (c) DEFERRED until the owner picks a calendar source; (f) DEFERRED to [[GAP-P12D-08]]; the two audits are asked for when the batch is done. The owner also ruled the demo may run unattended before this entry closes.
+- Status: open (2026-09-30, found by the lead building Track A step 4; the runtime itself is BUILT, `core/runtime/`, GAP-0075/0099/0091b fixed). **OWNER-RATIFIED PLAN 2026-10-01:** (i) BUILT; then [[GAP-P12D-135]] (the stop rule), (a), (b), the batch (d)(h)(j)(k)(l); (c) DEFERRED until the owner picks a calendar source; (f) DEFERRED to [[GAP-P12D-08]]; the two audits are asked for when the batch is done. The owner also ruled the demo may run unattended before this entry closes. **2026-10-01 (second session):** the stop rule BUILT ([[GAP-P12D-135]] fixed); the owner then ruled the rest of this batch WAITS behind the R1 build ("R1 build on the lab", to use the Google credits before 2026-10-21; TODO START HERE).
 - Area: core/runtime/ (engine.py, wiring.py, venue_link.py), core/execution/ctrader_face.py `account_snapshot`, ACIS-13 §7.5, master §10
 - Description — each item, and what bounds it today:
   - **(a) Practice equity lags by up to one `equity_poll_s` (300 s).** ACIS-13 §7.5's event-sourced account view is unbuilt: every `account_snapshot()` spends two requests, so Risk judges the last poll between polls. At one minimum lot (~$0.10 a pip on EUR/USD) no 300 s move carries a $10,000 demo near its $9,000 floor, and the venue's stops rest regardless.
