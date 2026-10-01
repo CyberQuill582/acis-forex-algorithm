@@ -220,7 +220,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-131: what the three-loop runtime still owes before an unattended demo — found building it, each item bounded today
 - Severity: medium · Likelihood: high
-- Status: open (2026-09-30, found by the lead building Track A step 4; the runtime itself is BUILT, `core/runtime/`, GAP-0075/0099/0091b fixed)
+- Status: open (2026-09-30, found by the lead building Track A step 4; the runtime itself is BUILT, `core/runtime/`, GAP-0075/0099/0091b fixed). **OWNER-RATIFIED PLAN 2026-10-01:** (i) BUILT; then [[GAP-P12D-135]] (the stop rule), (a), (b), the batch (d)(h)(j)(k)(l); (c) DEFERRED until the owner picks a calendar source; (f) DEFERRED to [[GAP-P12D-08]]; the two audits are asked for when the batch is done. The owner also ruled the demo may run unattended before this entry closes.
 - Area: core/runtime/ (engine.py, wiring.py, venue_link.py), core/execution/ctrader_face.py `account_snapshot`, ACIS-13 §7.5, master §10
 - Description — each item, and what bounds it today:
   - **(a) Practice equity lags by up to one `equity_poll_s` (300 s).** ACIS-13 §7.5's event-sourced account view is unbuilt: every `account_snapshot()` spends two requests, so Risk judges the last poll between polls. At one minimum lot (~$0.10 a pip on EUR/USD) no 300 s move carries a $10,000 demo near its $9,000 floor, and the venue's stops rest regardless.
