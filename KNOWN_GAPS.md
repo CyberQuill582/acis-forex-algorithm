@@ -144,6 +144,25 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-135: the engine has no stop path — Ctrl+C or SIGTERM ends it without closing its positions
+- Severity: medium · Likelihood: high
+- Status: open — OWNER RULED 2026-10-01: a deliberate stop (SIGINT/SIGTERM) closes every position, halts, then exits; to build with a test (part of the [[GAP-P12D-131]] batch)
+- Area: core/runtime/__main__.py (no signal handling), deploy/systemd/acis-engine.service (systemd stops with SIGTERM)
+- Description: found 2026-10-01 while walking the owner through the first practice start. A KeyboardInterrupt unwinds `_run` through its `finally` (session stop, lock release) with no flatten, and SIGTERM (systemd stop, VM shutdown) kills it outright. Open positions keep their venue stops and are adopted at the next start; with the watchdog running, a stop with no restart inside `watchdog_timeout_s` (30 s) is flattened by the watchdog instead, but a quick restart leaves them riding.
+- Justification: open, bounded: every position rests a server-side stop, the demo trades the minimum lot, and the watchdog flattens a silent engine. The owner's ruling sets the target: stop = flat + halted.
+- Residual: GAP-P12D-135 — this entry owns the build and its test (a SIGTERM to a practice runtime with an open position ends flat and halted).
+- Linked: [[GAP-P12D-131]], [[GAP-P12D-133]]
+
+## GAP-P12D-134: the deploy units and runbook assume the system Python with the dependencies installed into it, which Debian 12 refuses
+- Severity: medium · Likelihood: certain
+- Status: fixed (2026-10-01, found deploying the demo on Debian 12 / Python 3.11, fixed the same day in the reboot-proofing step the owner approved)
+- Area: deploy/systemd/acis-engine.service, deploy/systemd/acis-watchdog.service (`ExecStart=/usr/bin/python3 ...`), deploy/README.md
+- Description: both units run `/usr/bin/python3` with `PYTHONPATH=/opt/acis`, so the dependencies (pydantic, aiohttp, PyYAML, ...) must be importable by the system interpreter. Debian 12 marks it externally managed (PEP 668): `pip install` into it is refused, so on a clean host both units fail at import. The demo host runs from a venv (`/opt/acis/venv`) for this reason, outside the documented units.
+- Justification: fixed. Both units run `/opt/acis/venv/bin/python`; the runbook creates the venv and installs pyproject's dependencies exactly as CI does; the watchdog env note names the three `ACIS_CTRADER_*` variables; `deploy/demo/` holds the demo host's drop-in (its checkout, user and env file) and the two owner helpers. The demo watchdog now runs as an ENABLED unit with that drop-in (survives a reboot).
+- Proof: `test_each_unit_runs_the_venv_interpreter`, `test_the_demo_drop_in_resets_then_points_at_the_venv`, `test_each_demo_helper_parses`.
+- Residual: none — the units, runbook and demo drop-in are tested; a real reboot of acis-demo-1 has not been exercised (it would end the practice run), so the first one should be watched.
+- Linked: [[GAP-P12D-131]], [[GAP-P12D-76]]
+
 ## GAP-P12D-133: the watchdog's cTrader plugin reported a successful flatten as a failure — it checked for flat before the close had filled
 - Severity: medium · Likelihood: certain
 - Status: fixed (2026-10-01, found by ACIS-13 §14.2 case 8 on the Pepperstone demo, the run that built [[GAP-P12D-131]] (i))

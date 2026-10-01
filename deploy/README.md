@@ -34,9 +34,12 @@ radius. It can only ever flatten/halt — never size, resume, or write config.
 ```bash
 sudo useradd --system --home /opt/acis acis
 sudo rsync -a --exclude .git ./ /opt/acis/         # deploy the source tree
+sudo python3 -m venv /opt/acis/venv               # Debian 12 refuses pip into the system Python (PEP 668, GAP-P12D-134)
+sudo /opt/acis/venv/bin/pip install structlog "pydantic>=2" pydantic-settings PyYAML "aiohttp>=3.9,<4"   # pyproject's dependencies, as CI installs them
 sudo install -d -o acis -g acis /opt/acis/logs
 
 # broker credential for the watchdog — root-owned, 0600, NEVER in the repo
+# (the cTrader plugin reads ACIS_CTRADER_CLIENT_ID, ACIS_CTRADER_CLIENT_SECRET and ACIS_CTRADER_TOKEN_STORE)
 echo 'ACIS_WATCHDOG_CREDENTIALS=<token>' | sudo install -m600 /dev/stdin /etc/acis/watchdog.env
 
 sudo cp deploy/systemd/acis-watchdog.service /etc/systemd/system/
@@ -55,8 +58,8 @@ terminal. One engine runs per deployment (a second is refused, exit 2), so stop 
 
 ```bash
 sudo systemctl stop acis-engine
-python3 -m core.runtime --print-hashes --account pepperstone_demo     # read what you attest to
-sudo systemd-run --pty --uid=acis --gid=acis -p EnvironmentFile=/etc/acis/engine.env   -p WorkingDirectory=/opt/acis -E PYTHONPATH=/opt/acis   /usr/bin/python3 -m core.runtime --venue --account pepperstone_demo --practice   --ack-guardrail <hash> --ack-rulebook <hash>     # asks for the token; add --resume to lift halts
+/opt/acis/venv/bin/python -m core.runtime --print-hashes --account pepperstone_demo     # read what you attest to
+sudo systemd-run --pty --uid=acis --gid=acis -p EnvironmentFile=/etc/acis/engine.env   -p WorkingDirectory=/opt/acis -E PYTHONPATH=/opt/acis   /opt/acis/venv/bin/python -m core.runtime --venue --account pepperstone_demo --practice   --ack-guardrail <hash> --ack-rulebook <hash>     # asks for the token; add --resume to lift halts
 ```
 
 The engine's exit codes: 0 the feed ended, 1 a loop stalled (flattened and halted), 2 refused
@@ -67,6 +70,24 @@ Both units are OS-hardened (`ProtectSystem=strict`); the watchdog may write only
 `/opt/acis/logs`, the engine only `logs/`, `data/` and its token store, so neither
 process can write `config/guardrail_limits.yaml` or `config/watchdog.yaml` even if its
 code tried — guard-integrity enforced by the kernel, not by promises.
+
+## The demo host (acis-demo-1, Google Cloud e2-medium, Debian 12)
+
+The Pepperstone demo runs from a git checkout at `/opt/acis/repo` with the venv at
+`/opt/acis/venv`, all as the owner's login user, because the owner starts practice by hand in
+`tmux` with the human token. `deploy/demo/` holds that host's pieces:
+
+```bash
+bash deploy/demo/acis_setup.sh           # owner: Open API credentials + Playground tokens at hidden prompts
+bash deploy/demo/set_human_token.sh      # owner: invent the human token; only its sha256 is stored
+sudo sh -c 'grep "^ACIS_CTRADER_" /etc/acis/engine.env > /etc/acis/watchdog.env && chmod 600 /etc/acis/watchdog.env'
+sudo install -m644 deploy/systemd/acis-watchdog.service /etc/systemd/system/
+sudo install -D -m644 deploy/demo/acis-watchdog.override.conf /etc/systemd/system/acis-watchdog.service.d/demo-host.conf
+sudo systemctl daemon-reload && sudo systemctl enable --now acis-watchdog   # survives a reboot
+```
+
+The engine unit is not installed there: after a reboot the watchdog finds the engine silent and
+flattens any open position, and the owner restarts practice in `tmux` with the token.
 
 ## Container path
 

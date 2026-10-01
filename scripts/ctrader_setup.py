@@ -59,9 +59,9 @@ async def _reply(ws, want: int):
             return frame.payload
 
 
-async def list_accounts(environment: str) -> None:
+async def list_accounts(environment: str, connect=open_websocket) -> None:
     creds, pair = Credentials.from_env(), TokenStore.from_env().read()
-    ws = await open_websocket(environment)
+    ws = await connect(environment)
     try:
         await ws.send_str(encode(s.PT.APPLICATION_AUTH_REQ,
                                  {"clientId": creds.client_id, "clientSecret": creds.client_secret}, "a1"))

@@ -21,7 +21,7 @@ Environment=PYTHONPATH=/opt/acis
 # repo (config/watchdog.yaml carries only the env: reference). Create this file
 # root-owned, 0600: ACIS_WATCHDOG_CREDENTIALS=...
 EnvironmentFile=/etc/acis/watchdog.env
-ExecStart=/usr/bin/python3 scripts/acis_watchdog.py
+ExecStart=/opt/acis/venv/bin/python scripts/acis_watchdog.py
 
 # The breaker must come back if it ever dies — always, fast.
 Restart=always
