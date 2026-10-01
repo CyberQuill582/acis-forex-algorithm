@@ -6,8 +6,9 @@ Mental model:
     the instrument list — those keys only) hashed before the first look (GAP-P12D-89), the variant
     inside it, the universe, its ORIGIN (a dated paper, a human, or an LLM with its model and
     training-data cutoff, proposal date and exposure; master v2.24 §5.6) with the certifying
-    boundary it implies, the simulator that grades it, and the `recon_commit` at which B0 held.
-    The claim must describe the run it registers: the same instruments.
+    boundary it implies, the simulator that grades it, the `recon_commit` at which B0 held, and
+    its DECLARATION (fixed or explored, look budget k, passive benchmark; `look_declarations`,
+    sticky per variant). The claim must describe the run it registers: the same instruments.
   * Hashes are sha256 of Python `json.dumps(sort_keys=True, allow_nan=False)` over a NORMALISED
     payload (not RFC 8785): strings NFC and stripped, integral floats as ints, −0.0 as 0, grid
     values and instruments as sorted sets, the formula's whitespace collapsed and case-folded. So
@@ -17,7 +18,8 @@ Mental model:
     only be registered again as LLM, which the repeat rule then refuses (§5.6, R1-D13).
   * The COST MAP hash covers each graded instrument's C8 block, spread limit and swap convention,
     plus the run's stress and floor. (The financing inputs are not in it yet: R12I-07, owned.)
-  * A CYCLE row orders 1..5 registered-shape variant hashes, none of which has had a real look,
+  * A CYCLE row orders 1..5 registered-shape variant hashes (the chain, plus its Holm set: those
+    outside the chain, 5 in all), none of which has had a real look,
     at the α the spending schedule gives (0.03, then half the unspent), at most one a UTC calendar
     quarter; no line may be stamped earlier than the line before it.
   * A grade's DAILY VECTOR (dates, never datetimes) is stored once, content-addressed, and read
@@ -42,6 +44,7 @@ from pathlib import Path
 from typing import Sequence
 
 from config.schemas import AcisConfig
+from tests.backtest.look_declarations import Declaration, admit_declaration
 
 ORIGINS = ("literature", "human", "llm")
 SIMULATORS = ("engine", "rsim")
@@ -138,6 +141,7 @@ class Claim:
     origin: Origin
     simulator: str
     recon_commit: str                    # the commit at which B0 last held (C-BT-11 v2 step 0)
+    declaration: Declaration             # kind, look budget, passive benchmark (E-R12-03; look_declarations)
 
     def __post_init__(self) -> None:
         for name in ("family", "variant", "universe_id", "recon_commit"):
@@ -148,6 +152,8 @@ class Claim:
             raise ValueError(f"simulator must be one of {SIMULATORS}")
         if not self.recon_commit:
             raise ValueError("a claim names the recon_commit at which B0 held")
+        if not isinstance(self.declaration, Declaration):
+            raise ValueError("a claim carries its registration-time declaration (E-R12-03)")
         object.__setattr__(self, "declared_space", canonical_space(self.declared_space))
 
     @property
@@ -165,7 +171,8 @@ class Claim:
                 "declared_space_hash": self.declared_space_hash, "universe_id": self.universe_id,
                 "origin": asdict(self.origin), "simulator": self.simulator,
                 "certifying_boundary": (lambda b: b.isoformat() if b else None)(self.origin.boundary()),
-                "recon_commit": self.recon_commit, "cost_map_hash": cost_map_hash}
+                "recon_commit": self.recon_commit, "cost_map_hash": cost_map_hash,
+                "declaration": self.declaration.line()}
 
 
 def cost_map_hash(cfg: AcisConfig, instruments: Sequence[str], cost_stress: float, spread_floor: float) -> str:
@@ -177,8 +184,9 @@ def cost_map_hash(cfg: AcisConfig, instruments: Sequence[str], cost_stress: floa
                            "cost_stress": float(cost_stress), "spread_floor": float(spread_floor)})
 
 
-def admit_claim(claim: Claim, instruments: Sequence[str], lines: Sequence[dict | None]) -> None:
-    """Refuse a claim that does not describe its run, or that launders an LLM variant (§5.6)."""
+def admit_claim(claim: Claim, instruments: Sequence[str], lines: Sequence[dict | None], tier: int) -> None:
+    """Refuse a claim that does not describe its run, launders an LLM variant (§5.6), changes its
+    declaration or overruns its look budget (look_declarations)."""
     if claim.declared_space["instruments"] != sorted(set(instruments)):
         raise ValueError("the claim's declared instruments are not the instruments this look grades (R12I-03)")
     prior = [(x.get("claim") or {}) for x in lines if x is not None and x.get("kind", "look") == "look"]
@@ -188,6 +196,7 @@ def admit_claim(claim: Claim, instruments: Sequence[str], lines: Sequence[dict |
                          "the hypothesis's, and a new label does not remove the model's memory (§5.6)")
     if claim.origin.llm_touched and origins:
         raise ValueError(f"an LLM plan repeats registered variant {claim.variant_hash[:12]} (§5.6, R1-D13)")
+    admit_declaration(claim.variant_hash, claim.declaration, tier, lines)
 
 
 def refuse_backwards_clock(lines: Sequence[dict | None], now: datetime) -> None:
@@ -202,14 +211,19 @@ def spending_alpha(prior_cycles: int) -> float:
 
 
 def cycle_line(*, cycle_id: str, order: Sequence[str], alpha: float | None, lines: Sequence[dict | None],
-               now: datetime) -> dict:
-    """The cycle row's payload, refused if it breaks serial gatekeeping's registration rules."""
+               now: datetime, holm: Sequence[str] = ()) -> dict:
+    """The cycle row's payload, refused if it breaks serial gatekeeping's registration rules. `holm` is
+    the cycle's family-versions outside the chain (tested only if the whole chain passed, Holm-adjusted
+    among themselves at the cycle's alpha); chain and Holm set together hold at most MAX_CYCLE."""
     if not REAL_LOOKS_OPEN:
         raise ValueError("cycle rows open with real-data looks, at R1.4 (GAP-P12D-127)")
     if not isinstance(order, (list, tuple)) or not all(isinstance(h, str) and HEX64.fullmatch(h) for h in order):
         raise ValueError("a cycle orders variant hashes (64 lower-case hex each)")
     if not cycle_id.strip() or not 1 <= len(order) <= MAX_CYCLE or len(set(order)) != len(order):
         raise ValueError(f"a cycle names itself and orders 1..{MAX_CYCLE} distinct family-versions")
+    holm = list(holm) if isinstance(holm, (list, tuple)) else [holm]
+    if not all(isinstance(h, str) and HEX64.fullmatch(h) for h in holm) or len(set(holm)) != len(holm)             or set(holm) & set(order) or len(order) + len(holm) > MAX_CYCLE:
+        raise ValueError(f"a Holm set names distinct variant hashes outside the chain, at most {MAX_CYCLE} in all")
     refuse_backwards_clock(lines, now)
     cycles = [x for x in lines if x is not None and x.get("kind") == "cycle"]
     if any(x["cycle_id"] == cycle_id for x in cycles):
@@ -224,9 +238,9 @@ def cycle_line(*, cycle_id: str, order: Sequence[str], alpha: float | None, line
         raise ValueError(f"this cycle's alpha is {due} by the spending schedule, not {alpha}")
     looked = {(x.get("claim") or {}).get("variant_hash") for x in lines
               if x is not None and x.get("kind", "look") == "look" and x.get("tier", 0) > 0}
-    if looked & set(order):
+    if looked & (set(order) | set(holm)):
         raise ValueError("a cycle's order is registered before any real look of its members")
-    return {"kind": "cycle", "cycle_id": cycle_id, "order": list(order), "alpha": due}
+    return {"kind": "cycle", "cycle_id": cycle_id, "order": list(order), "holm": holm, "alpha": due}
 
 
 def store_vector(root: Path, dates: Sequence[date], returns: Sequence[float]) -> str:

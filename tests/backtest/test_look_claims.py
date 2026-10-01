@@ -14,6 +14,7 @@ import tests.backtest.look_claims as lc
 import tests.backtest.look_register as lr
 from tests.backtest.look_claims import (Claim, Origin, canonical_hash, canonical_space, cost_map_hash,
                                         load_vector, spending_alpha, store_vector)
+from tests.backtest.look_declarations import Declaration
 from tests.backtest.look_register import LookRefused, LookRegister
 from tests.backtest.oos_plan import plan_folds
 from tests.backtest.sources import DukascopyTickSource
@@ -22,6 +23,7 @@ GIT = ("c0ffee", False)
 FOLDS = plan_folds(2014, 2015)
 SPACE = {"grid": {"fast": [8, 16, 32]}, "formula": "sign(ewmac fast/4fast)", "instruments": ["EUR_USD", "USD_JPY"]}
 LLM = Origin("llm", model_id="claude-opus-5-5", model_cutoff="2026-06-01", proposed="2026-09-29", exposure="web")
+FIXED = Declaration("fixed", 1, "PASSIVE_LONG")
 
 
 class _Real(DukascopyTickSource):
@@ -40,7 +42,7 @@ def canonical(tmp_path, monkeypatch):
 
 def _claim(family="trend-v1", origin=Origin("human"), **kw) -> Claim:
     base = dict(family=family, variant="fixed", declared_space=SPACE, universe_id="R1-23",
-                origin=origin, simulator="rsim", recon_commit="c0ffee")
+                origin=origin, simulator="rsim", recon_commit="c0ffee", declaration=FIXED)
     return Claim(**{**base, **kw})
 
 
@@ -206,3 +208,47 @@ def test_the_daily_vector_is_stored_once_by_its_hash_and_an_edit_is_caught(canon
                              ([datetime(2024, 1, 2, 9), datetime(2024, 1, 2, 17)], [0.0, 0.0], "never datetimes")):
         with pytest.raises(ValueError, match=why):                                    # R12I-09 / E-R12-09
             store_vector(tmp_path, dates, rets)
+
+
+def test_a_claim_declares_its_kind_budget_and_benchmark_and_the_line_records_them(canonical, acis_config) -> None:
+    """E-R12-03: what C-BT-11 v2 needs at registration rides on the claim; an append-only line cannot add it later."""
+    for bad, why in ((dict(kind="tuned"), "one of"), (dict(look_budget=0), "look budget"),
+                     (dict(look_budget=4), "look budget"), (dict(look_budget=True), "look budget"),
+                     (dict(benchmark="BEST_OF_THREE"), "registered RSIM arm"),
+                     (dict(block_length=20), "fixed family has no bootstrap"),
+                     (dict(kind="explored"), "fixes its bootstrap"),
+                     (dict(kind="explored", block_length=0, bootstrap_seed=1), "fixes its bootstrap")):
+        with pytest.raises(ValueError, match=why):
+            Declaration(**{"kind": "fixed", "look_budget": 1, "benchmark": "PASSIVE_LONG", **bad})
+    with pytest.raises(ValueError, match="registration-time declaration"):
+        _claim(declaration=None)
+    explored = Declaration("explored", 2, "PASSIVE_LONG", block_length=20, bootstrap_seed=7)
+    look = _look(canonical, acis_config, claim=_claim(declaration=explored))
+    line = json.loads(Path(look.path).read_text(encoding="utf-8"))["claim"]
+    assert line["declaration"] == {"kind": "explored", "look_budget": 2, "benchmark": "PASSIVE_LONG",
+                                   "block_length": 20, "bootstrap_seed": 7}
+    assert _claim(declaration=explored).variant_hash == _claim().variant_hash      # a declaration is not the plan
+
+
+def test_a_declaration_is_sticky_and_the_look_budget_binds_per_tier(canonical, acis_config) -> None:
+    two = Declaration("fixed", 2, "PASSIVE_LONG")
+    _look(canonical, acis_config, claim=_claim(declaration=two))
+    for other in (Declaration("fixed", 3, "PASSIVE_LONG"), FIXED,
+                  Declaration("explored", 2, "PASSIVE_LONG", block_length=20, bootstrap_seed=1)):
+        with pytest.raises(LookRefused, match="sticky"):
+            _look(canonical, acis_config, claim=_claim(declaration=other), changed="a friendlier declaration")
+    _look(canonical, acis_config, claim=_claim(declaration=two), changed="the second of two looks")
+    with pytest.raises(LookRefused, match="spent its look budget k=2"):
+        _look(canonical, acis_config, claim=_claim(declaration=two), changed="a third look")
+    _look(canonical, acis_config, claim=_claim(variant="fast=16"), changed="another variant has its own budget")
+
+
+def test_a_cycle_registers_its_holm_set_outside_the_chain(canonical, acis_config) -> None:
+    looked = _look(canonical, acis_config, claim=_claim())
+    h = [_claim(variant=f"h{k}").variant_hash for k in range(5)]
+    when = datetime.now(timezone.utc) + timedelta(days=10)
+    for bad in ([h[0]], [h[1], h[1]], h[1:5], ["not a hash"], [_claim().variant_hash]):
+        with pytest.raises(LookRefused, match="Holm set|before any real look"):
+            canonical.register_cycle(cycle_id="c1", order=h[:2], holm=bad, now_fn=lambda: when)
+    row = canonical.register_cycle(cycle_id="c1", order=h[:2], holm=h[2:5], now_fn=lambda: when)
+    assert row["order"] == h[:2] and row["holm"] == h[2:5] and looked.claim["declaration"]["benchmark"] == "PASSIVE_LONG"

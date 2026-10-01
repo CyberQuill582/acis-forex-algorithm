@@ -1,7 +1,8 @@
 """Run the §14 out-of-sample walk-forward validation for one account (ACIS-09 §7, GAP-P12D-23).
 
     python scripts/run_oos_validation.py --family trend-v1 --origin llm --model-id <model> \\
-        --model-cutoff <YYYY-MM-DD> --proposed <YYYY-MM-DD> --exposure repository --recon-commit <sha>
+        --model-cutoff <YYYY-MM-DD> --proposed <YYYY-MM-DD> --exposure repository --recon-commit <sha> \\
+        --kind fixed --look-budget 1 --benchmark PASSIVE_LONG
     (add --changed "..." after a family's first look; --final-holdout grades 2024–2025, ONCE)
 
 LLM agents designed and refined the engine, so its origin is `llm` (master §5.6). A human label on an
@@ -28,6 +29,7 @@ from core.data.jsonl_logging import JsonlEventLogger  # noqa: E402
 from tests.backtest.data_loader import BacktestDataLoader  # noqa: E402
 from tests.backtest.financing import load_rate_table, make_financing  # noqa: E402
 from tests.backtest.look_claims import ORIGINS, Claim, Origin  # noqa: E402
+from tests.backtest.look_declarations import BENCHMARKS, KINDS, Declaration  # noqa: E402
 from tests.backtest.look_register import LookRefused, LookRegister, config_hash, git_state  # noqa: E402
 from tests.backtest.oos_plan import DATA_START, HOLDOUT_END, HOLDOUT_START, HoldoutGuard, plan_folds  # noqa: E402
 from tests.backtest.oos_runner import (RunInputs, load_spx_closes, missing_labels,  # noqa: E402
@@ -57,6 +59,11 @@ def main() -> int:
     ap.add_argument("--reference", default="", help="a literature origin's citation")
     ap.add_argument("--published", default="", help="its publication date, YYYY-MM-DD")
     ap.add_argument("--recon-commit", required=True, help="the commit at which B0 held (ACIS-09 C-BT-11 v2)")
+    ap.add_argument("--kind", required=True, choices=KINDS, help="fixed or explored (C-BT-11 v2 step 3, E-R12-03)")
+    ap.add_argument("--look-budget", required=True, type=int, help="k in 1..3: each look is tested at alpha/k")
+    ap.add_argument("--benchmark", required=True, choices=BENCHMARKS, help="the registered passive benchmark")
+    ap.add_argument("--block-length", type=int, default=None, help="explored: the bootstrap's mean block, days")
+    ap.add_argument("--bootstrap-seed", type=int, default=None, help="explored: the bootstrap's seed")
     a = ap.parse_args()
     instruments = sorted(cfg.instruments.enabled)
     try:   # the engine's searched space is its config: the QIEA gene ranges and module switches
@@ -67,7 +74,8 @@ def main() -> int:
                       origin=Origin(a.origin, model_id=a.model_id, model_cutoff=a.model_cutoff,
                                     proposed=a.proposed, exposure=a.exposure, reference=a.reference,
                                     published=a.published),
-                      simulator="engine", recon_commit=a.recon_commit)
+                      simulator="engine", recon_commit=a.recon_commit,
+                      declaration=Declaration(a.kind, a.look_budget, a.benchmark, a.block_length, a.bootstrap_seed))
     except ValueError as exc:
         print("refused:", exc)
         return 2

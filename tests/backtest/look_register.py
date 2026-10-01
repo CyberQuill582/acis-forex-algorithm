@@ -227,7 +227,7 @@ class LookRegister:
             try:
                 lc.refuse_backwards_clock(scan.lines, now)
                 if claim is not None:
-                    lc.admit_claim(claim, instruments, scan.lines)
+                    lc.admit_claim(claim, instruments, scan.lines, tier)
             except ValueError as e:
                 raise LookRefused(str(e)) from None
             prior = [x for x in looks if x["family"] == family]
@@ -245,13 +245,15 @@ class LookRegister:
         return self._append(build)
 
     def register_cycle(self, *, cycle_id: str, order: Sequence[str], alpha: float | None = None,
-                       operator: str | None = None, now_fn=lambda: datetime.now(timezone.utc)) -> dict:
+                       operator: str | None = None, now_fn=lambda: datetime.now(timezone.utc),
+                       holm: Sequence[str] = ()) -> dict:
         """A cycle's testing order (variant hashes), before any real look of its members; its alpha
         is the spending schedule's (a given alpha must equal it)."""
         def build(scan: Scan, path: Path) -> dict:
             now = now_fn()
             try:
-                line = cycle_line(cycle_id=cycle_id, order=order, alpha=alpha, lines=scan.lines, now=now)
+                line = cycle_line(cycle_id=cycle_id, order=order, alpha=alpha, lines=scan.lines, now=now,
+                                  holm=holm)
             except ValueError as e:
                 raise LookRefused(str(e)) from None
             return {**line, "look_id": path.stem, "registered_utc": now.isoformat(timespec="seconds"),

@@ -215,3 +215,32 @@ def test_gap0048_attempt_registry_append_only_in_store(tmp_path) -> None:
     with pytest.raises(sqlite3.IntegrityError):
         store._db.execute("UPDATE attempts SET family='x'")
     assert store.attempts("trend_following") == 1           # untouched
+
+
+# -------------- a correction is a lineage successor, never a rewrite (ACIS-11 §6; GAP-P12D-116) -------------- #
+
+def test_a_corrected_record_is_a_lineage_successor_and_the_parent_stays_as_written(tmp_path) -> None:
+    from core.signals.canonical import STRATEGY_IDS, register_canonical
+    from core.signals.signal_types import StrategyType
+
+    store, _ = mk_store(tmp_path)
+    store.register(mk_record("tsmom_slow_v1", citation="MOP 2012 (old text)",
+                             declared_deviations=("spot vs excess: immaterial (GAP-0073)",)))
+    register_canonical(store, T0)
+    assert STRATEGY_IDS[StrategyType.TSMOM] == "tsmom_slow_v2"
+    snap = {s["strategy_id"]: s for s in store.snapshot()["strategies"]}
+    assert snap["tsmom_slow_v1"]["citation"] == "MOP 2012 (old text)"          # the parent, untouched
+    assert snap["tsmom_slow_v1"]["declared_deviations"] == ["spot vs excess: immaterial (GAP-0073)"]
+    v2 = snap["tsmom_slow_v2"]
+    assert "lineage:tsmom_slow_v1" in v2["citation"]
+    assert any("NOT immaterially" in d for d in v2["declared_deviations"])
+    registered = store._db.execute("SELECT registered_at FROM provenance WHERE strategy_id = 'tsmom_slow_v2'").fetchone()[0]
+    assert registered.startswith("2026-10-01")                                  # the correction's date, not the boot's
+
+
+def test_a_fresh_store_registers_only_the_corrected_record(tmp_path) -> None:
+    from core.signals.canonical import register_canonical
+
+    store, _ = mk_store(tmp_path)
+    register_canonical(store, T0)
+    assert store.is_registered("tsmom_slow_v2") and not store.is_registered("tsmom_slow_v1")

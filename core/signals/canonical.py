@@ -3,11 +3,17 @@
 Every v1 AGON module's citation, claimed inefficiency, persistence argument,
 and falsifier — the reading list in code. Registration is idempotent-by-boot:
 `register_canonical` registers whichever ids are missing.
+
+A record is written once (ACIS-11 §6). A correction is a NEW id whose citation names
+`lineage:<parent>`; the parent stays in any store that holds it, exactly as written, as the
+record of what was once declared. TSMOM is the one so far: `tsmom_slow_v1` was registered
+with GAP-0073's "immaterial" note, which master v2.22 withdrew (GAP-P12D-116), so its
+corrected declaration is `tsmom_slow_v2`, registered on the correction date.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core.signals.provenance import ProvenanceRecord, ProvenanceStore
 from core.signals.signal_types import StrategyType
@@ -18,8 +24,11 @@ STRATEGY_IDS: dict[StrategyType, str] = {
     StrategyType.MEAN_REVERSION: "mean_reversion_v1",
     StrategyType.MOMENTUM_SCALP: "momentum_scalp_v1",
     StrategyType.PAIR_DIVERGENCE: "pair_divergence_v1",
-    StrategyType.TSMOM: "tsmom_slow_v1",
+    StrategyType.TSMOM: "tsmom_slow_v2",
 }
+
+# a corrected record registers on its correction date, not the canon's boot date
+_REGISTERED = {StrategyType.TSMOM: datetime(2026, 10, 1, tzinfo=timezone.utc)}
 
 # (type, citation, inefficiency, persistence, falsifier, declared_deviations)
 # §5.6 declared-deviations law (v2.11): every departure from the cited source's
@@ -83,7 +92,8 @@ _CANON: list[tuple[StrategyType, str, str, str, str, tuple[str, ...]]] = [
       "per-leg ATR stops added; source exits on convergence/window-end only")),
     (StrategyType.TSMOM,
      "Moskowitz, Ooi & Pedersen, Time Series Momentum (JFE 2012); century evidence "
-     "1880-2016 (Sharpe ~0.4 every decade, crisis-positive) — v2.9 verified benchmark",
+     "1880-2016 (Sharpe ~0.4 every decade, crisis-positive) — v2.9 verified benchmark "
+     "(lineage:tsmom_slow_v1, its declaration corrected by GAP-P12D-116)",
      "12-month-scale continuation of asset-class trends across instruments",
      "slow-moving capital, hedging pressure and behavioural anchoring sustain "
      "multi-month drift; the effect has persisted for a century of data",
@@ -111,6 +121,7 @@ def register_canonical(store: ProvenanceStore, now: datetime) -> None:
         if not store.is_registered(sid):
             store.register(ProvenanceRecord(
                 strategy_id=sid, citation=citation, claimed_inefficiency=inefficiency,
-                why_it_persists=persists, falsifier=falsifier, registered_at=now,
+                why_it_persists=persists, falsifier=falsifier,
+                registered_at=_REGISTERED.get(stype, now),
                 declared_deviations=deviations,
             ))

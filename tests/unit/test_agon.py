@@ -361,7 +361,7 @@ def test_v211_window_capacity_derived_from_config(tmp_path) -> None:
 def test_v211_declared_deviations_exposed_on_snapshot(tmp_path) -> None:
     _, _, store = make_agon(tmp_path)
     snap = {s["strategy_id"]: s for s in store.snapshot()["strategies"]}
-    tsmom = snap["tsmom_slow_v1"]
+    tsmom = snap["tsmom_slow_v2"]
     assert any("disaster-stop" in d or "disaster" in d.lower()
                for d in tsmom["declared_deviations"])
     assert any("take-profit" in d.lower() or "no take" in d.lower()

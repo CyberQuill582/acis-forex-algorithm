@@ -21,6 +21,7 @@ from config.schemas import load_config
 from tests.backtest.data_loader import BacktestDataLoader, TickSource
 from tests.backtest.harness import NOT_REPLAYED
 from tests.backtest.look_claims import Claim, Origin
+from tests.backtest.look_declarations import Declaration
 from tests.backtest.look_gate import begin_grade
 from tests.backtest.look_register import LookRefused, LookRegister, config_hash, data_tier
 from tests.backtest.oos_plan import plan_folds
@@ -64,7 +65,8 @@ def _claim(family: str) -> Claim:
     """A real-data look carries its declared family-version (register v2, GAP-P12D-98)."""
     return Claim(family=family, variant="fixed", universe_id="test-universe", origin=Origin("human"),
                  declared_space={"grid": {}, "formula": "sign(ewmac 16/64)", "instruments": ["EUR_USD", "USD_JPY"]},
-                 simulator="engine", recon_commit=GIT[0])
+                 simulator="engine", recon_commit=GIT[0],
+                 declaration=Declaration("fixed", 3, "PASSIVE_LONG"))
 
 
 def _real(reg, cfg, family="trend-v1", **kw):
@@ -296,7 +298,8 @@ def test_the_real_data_script_writes_its_line_before_it_grades(monkeypatch, tmp_
         mod.main()
     assert seen == [] and not (tmp_path / "data" / "validation" / "looks").exists()
     monkeypatch.setattr(sys, "argv", sys.argv + ["--family", "trend-v1", "--operator", "owner",
-                                               "--origin", "human", "--recon-commit", "c0ffee"])
+                                               "--origin", "human", "--recon-commit", "c0ffee",
+                                               "--kind", "fixed", "--look-budget", "2", "--benchmark", "PASSIVE_LONG"])
     assert mod.main() == 0
     assert seen[0]["family"] == "trend-v1" and seen[0]["tier_name"] == "validation" and seen[0]["operator"] == "owner"
     assert seen[0]["source_class"] == "DukascopyTickSource" and seen[0]["git_commit"] == "c0ffee"
