@@ -8,10 +8,13 @@ Mental model:
   * A `RateTable` holds daily overnight rates (% p.a.) per currency, forward-filled across
     non-publication days, but a gap longer than `max_stale_days` RAISES (never a stale rate).
     `load_rate_table` reads the normalised CSVs scripts/download_macro.py writes; the per-
-    currency proxies are declared in tests/backtest/financing.py's docstring.
+    currency proxies are declared in tests/backtest/financing.py's docstring. A MISSING file leaves
+    its currency without a series, so only the pairs that read it are stale (R16I-08).
   * `swap_multiplier`: rollovers happen on business days only; tom_next (spot FX, T+2) charges
     the Wednesday rollover three days, financing_daily (CFD-style) charges Friday three days.
-    An undeclared convention is an error.
+    An undeclared convention is an error. Declared simplifications (R16E-05): USD/CAD's T+1
+    Thursday triple is treated as Wednesday, holiday value dates add no days, and every rate is
+    divided by 365 although USD, EUR and CHF money markets count ACT/360.
 """
 
 from __future__ import annotations
@@ -71,6 +74,8 @@ def load_rate_table(macro_dir: Path, max_stale_days: int = 10) -> RateTable:
     series: dict[str, list[tuple[date, float]]] = {}
     for ccy, (sid, area) in CCY_SERIES.items():
         path = Path(macro_dir) / f"{sid}.csv"
+        if not path.exists():
+            continue                     # that currency is stale (R6-1 per instrument, R16I-08)
         with path.open(newline="", encoding="utf-8") as f:
             rows = csv.DictReader(f)
             series[ccy] = [(date.fromisoformat(r["date"]), float(r["value"])) for r in rows

@@ -92,3 +92,20 @@ async def test_history_is_a_metered_query_refused_inside_the_close_reserve(tmp_p
     with pytest.raises(BudgetRefused):
         await hourly_bars(session, 1, 5, END - 48 * HOUR, END, logger=log)
     assert len(venue.requests) == sent                                     # nothing left: the exits keep the reserve
+
+
+async def test_a_silently_truncated_response_is_walked_past_and_an_empty_window_ends_the_walk(tmp_path) -> None:
+    """R16E-03: coverage is judged from the bars, never from `hasMore` alone."""
+    venue = FakeVenue()
+    venue.trendbars[1] = _hours(500)
+    venue.trendbar_cap, venue.trendbar_silent = 120, True                  # cut back, no hasMore
+    session, _, log, _ = await _session(tmp_path, venue)
+    bars = await hourly_bars(session, 1, 5, END - timedelta(days=200), END, logger=log)
+    assert len(bars) == 500 and len({b.ts_open for b in bars}) == 500
+    sent = venue.requests.count(PT.GET_TRENDBARS_REQ)
+    assert sent <= 500 // 120 + 2                                          # one empty window ends it
+
+
+def test_the_default_window_is_inside_spotwares_documented_h1_range() -> None:
+    from core.data.ctrader.history import WINDOW
+    assert WINDOW <= timedelta(weeks=35)                                   # proto release 88 (R16E-03)

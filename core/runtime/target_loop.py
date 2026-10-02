@@ -1,26 +1,27 @@
 """The target-position path's slow loop (ACIS-04 v1.6 §4b, ACIS-05 v1.7 §6.4, ACIS-03 v2.2; R1.6).
 
 Mental model:
-  * DECIDE once per New York weekday, `settle_s` after 17:00: append each instrument's new H1 bars
-    from the venue (one metered query each; a failed fetch leaves that day without a close, so no
-    target), skip a day nothing traded (a holiday), else decide every instrument
-    (target_decision.py). A target that differs from the held position waits for its SLOT; a new
-    decision supersedes an older one.
+  * DECIDE once per New York weekday, `settle_s` after 17:00, once some instrument's clock is
+    proven (ACIS-13 A8; until then it retries): append each instrument's new H1 bars (one metered
+    query each), skip a day nothing traded (a holiday), else decide every instrument
+    (target_decision.py), yielding to the event loop between them. A failed fetch or a history
+    with a hole gives that instrument no target. A target that differs from the held position waits
+    for its SLOT; a new decision supersedes an older one.
   * EXECUTE at the slot, at most `slot_grace_s` late, through the target gate. Nothing is sent (the
     reason is logged) on a missed slot or a closed market (never caught up), a busy instrument, no
     mark, or a position changed since the decision: a disaster stop or a flatten (R6-2, no same-day
-    re-entry; the next decision acts).
+    re-entry; the next decision acts). An entry whose instrument's clock is unproven is dropped.
   * BOOT re-derives the latest decision from the cache: deterministic, so a restart yields the same
-    target; a slot already passed is dropped. Only this loop opens positions on the universe (R6-3).
-  * FLATTEN-THEN-PROMOTE (ACIS-03 v2.2), checked at each decision (the 17:00 boundary): while the
-    cached active family-version differs from the configured one, no target is made and the universe
-    is flattened through the reduce-only close; the version is promoted only once all is flat and
-    idle, else it waits for the next boundary. The family must be registered in provenance.
+    target; a slot already passed is dropped, and the day's held position is persisted, so a restart
+    after a stop-out does not re-enter (R16I-03). Only this loop opens positions on the universe.
+  * FLATTEN-THEN-PROMOTE (ACIS-03 v2.2) is checked at each decision (target_promotion.py). The
+    family must be registered in provenance.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -32,12 +33,14 @@ from core.data.errors import DataQualityError
 from core.data.fx_clock import rollover_utc
 from core.runtime.executor import WorkItem
 from core.runtime.history_store import HistoryStore
+from core.runtime.target_promotion import promotion_settled
 from core.runtime.target_decision import BookSizing, Decision, Lots, decide
 from core.signals.daily import decision_days, series, slot_after
 from core.signals.signal_types import StrategyType
 
 FETCH_ERRORS = (ConnectionError, OSError, asyncio.TimeoutError, VenueError, BudgetRefused, DataQualityError)
 MAX_SLEEP_S = 300.0
+HOLE = timedelta(days=5)          # a gap no FX weekend or holiday explains: a hole in the history
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,7 @@ class EngineView:
     regime_of: Callable[[str], object]
     submit: Callable[[WorkItem], None]
     flatten: Callable[[str, str], None]
+    clock_ok: Callable[[str], bool]          # ACIS-13 A8: a live tick proved the host clock
 
 
 class TargetLoop:
@@ -94,7 +98,8 @@ class TargetLoop:
         day = self._latest_day(now)
         if day is not None and day != self.decided:
             self.decided = day
-            await self.decide(day, now, boot=boot)
+            if not await self.decide(day, now, boot=boot):
+                self.decided = None                       # retried at the next wake
         for instrument in sorted(i for i, p in self.pending.items() if p.slot <= now):
             self.execute(instrument, now)
 
@@ -115,38 +120,57 @@ class TargetLoop:
 
     # -- the decision -------------------------------------------------------------------- #
 
-    async def decide(self, day: date, now: datetime, *, boot: bool = False) -> None:
+    async def decide(self, day: date, now: datetime, *, boot: bool = False) -> bool:
+        """Decide `day`; False when it must wait for a proven clock (ACIS-13 A8, R16I-02)."""
+        if not any(self.engine.clock_ok(i) for i in self.members):
+            self._log.event("TARGETS_CLOCK_UNVERIFIED", day=day.isoformat())
+            return False
         at = rollover_utc(day)
-        for instrument in self.members:
-            await self._refresh(instrument, at)
-        if not self._promotion_settled(now):
-            return
+        failed = {i for i in self.members if not await self._refresh(i, at)}
+        if not promotion_settled(self.store, self.family, self.members, self.engine, self.pending, self._log):
+            return True
         if not self._registered(self.family):
             self._log.event("TARGETS_FAMILY_UNREGISTERED", family=self.family, severity="critical")
-            return
+            return True
         try:
             rates = self._rates()
-        except (OSError, ValueError, KeyError) as exc:          # a missing or malformed rate file
+        except (OSError, ValueError, KeyError) as exc:          # a malformed rate file
             self._log.event("TARGETS_NO_RATES", error=repr(exc))
-            return
-        hours = {i: [b for b in self.store.bars(i) if b.ts_open < at] for i in self.members}
+            return True
+        hours = {}
+        for i in self.members:                             # R16I-06: never starve the event loop
+            hours[i] = [b for b in self.store.bars(i) if b.ts_open < at]
+            await asyncio.sleep(0)
+        holes = {i for i, h in hours.items() if any(b.ts_open - a.ts_open > HOLE for a, b in zip(h, h[1:]))}
+        if holes:
+            self._log.event("HISTORY_HOLE", instruments=sorted(holes), severity="critical")
         firsts = [h[0].ts_open.date() for h in hours.values() if h]
         days = decision_days(hours, min(firsts), day) if firsts else []
         if day not in days:
             self._log.event("TARGETS_NO_DECISION_DAY", day=day.isoformat())
-            return
+            return True
         all_series = {i: series(i, h, days) for i, h in hours.items()}
         for instrument, m in self.members.items():
-            self._decide_one(instrument, m, day, at, now, all_series, rates, boot)
+            why = "fetch_failed" if instrument in failed else "history_hole" if instrument in holes else None
+            self._decide_one(instrument, m, day, at, now, all_series, rates, boot, why)
+            await asyncio.sleep(0)
+        return True
 
-    def _decide_one(self, instrument, m: Member, day, at, now, all_series, rates, boot) -> None:
+    def _decide_one(self, instrument, m: Member, day, at, now, all_series, rates, boot, why) -> None:
         lots = self._lots_of(instrument)
         self.pending.pop(instrument, None)                 # a new decision supersedes the old
-        if lots is None:
-            self._log.event("TARGET_NO_LOTS", instrument=instrument)
+        held, key = signed(self.engine.held_of(instrument)), f"decision:{instrument}"
+        prior = json.loads(self.store.get(key) or "{}")
+        if prior.get("day") == day.isoformat() and Decimal(prior["held"]) != held:
+            why = why or "position_changed_since_decision"     # a restart after a stop-out (R16I-03)
+        if lots is None or why is not None:
+            self._log.event("TARGET_DECIDED", instrument=instrument, day=day.isoformat(), boot=boot,
+                            reason=f"no_target:{why or 'no_lots'}", held=str(held), target=None)
             return
-        d = decide(instrument, m.asset_class, m.quote, all_series[instrument], day, signed(self.engine.held_of(instrument)),
+        d = decide(instrument, m.asset_class, m.quote, all_series[instrument], day, held,
                    rates=rates, series=all_series, sizing=self.sizing, lots=lots, atr_period=self._atr_period)
+        if prior.get("day") != day.isoformat():
+            self.store.put(key, json.dumps({"day": day.isoformat(), "held": str(held)}))
         f = d.forecast
         slot = slot_after(at, m.slot)
         self._log.event("TARGET_DECIDED", instrument=instrument, day=day.isoformat(), reason=d.reason,
@@ -160,14 +184,17 @@ class TargetLoop:
                 return
             self.pending[instrument] = Pending(d, slot)
 
-    async def _refresh(self, instrument: str, at: datetime) -> None:
+    async def _refresh(self, instrument: str, at: datetime) -> bool:
+        """Append the new bars; False on a failed fetch (that instrument gets no target, R16I-04)."""
         start = self.store.last_end(instrument) or at - self._history
         if start >= at:
-            return
+            return True
         try:
             self.store.add(instrument, await self._fetch(instrument, start, at))
-        except FETCH_ERRORS as exc:                          # that day gets no close: no target
+            return True
+        except FETCH_ERRORS as exc:
             self._log.event("TRENDBARS_FAILED", instrument=instrument, error=repr(exc))
+            return False
 
     # -- the slot ------------------------------------------------------------------------ #
 
@@ -182,36 +209,19 @@ class TargetLoop:
             self._log.event("TARGET_SLOT_SKIPPED", instrument=instrument, reason=why, slot=p.slot.isoformat())
             return
         lots, f = self._lots_of(instrument), d.forecast
-        result = self._gate(instrument=instrument, held=held, target=d.target, mark=e.marks()[instrument],
+        target = d.target if lots.cap is None or abs(d.target) <= lots.cap else lots.cap.copy_sign(d.target)
+        result = self._gate(instrument=instrument, held=held, target=target, mark=e.marks()[instrument],
                             atr=d.atr, step=lots.step, minimum=lots.minimum, portfolio=e.portfolio(),
                             regime=e.regime_of(instrument), marks=e.marks(), now=now, family=self.family,
                             snapshot={"forecast": f.value, "pct_vol": f.pct_vol, "inputs_hash": f.inputs_hash,
-                                      "decision_day": d.day.isoformat(), "target": str(d.target)})
-        self._log.event("TARGET_EXECUTED", instrument=instrument, reason=result.reason,
-                        orders=[(o.action, o.direction, str(o.size_units)) for o in result.orders])
-        if result.orders:
-            e.submit(WorkItem(result.orders, valid_for_seconds=0, strategy=StrategyType.TREND))
-
-    # -- flatten-then-promote ------------------------------------------------------------ #
-
-    def _promotion_settled(self, now: datetime) -> bool:
-        active = self.store.get("active_family")
-        held = [i for i in self.members if self.engine.held_of(i) is not None]
-        if active == self.family:
-            return True
-        if active is None and not held:
-            self.store.put("active_family", self.family)
-            self._log.event("FAMILY_ACTIVATED", family=self.family)
-            return True
-        self.pending.clear()
-        if held or self.engine.busy() & set(self.members):
-            self._log.event("FAMILY_PROMOTION_FLATTENING", staged=self.family, active=active, held=held)
-            for instrument in held:
-                self.engine.flatten(instrument, "family_promotion")
-            return False
-        self.store.put("active_family", self.family)
-        self._log.event("FAMILY_PROMOTED", family=self.family, previous=active)
-        return True
+                                      "decision_day": d.day.isoformat(), "target": str(target)})
+        orders, reason = result.orders, result.reason
+        if any(o.action == "open" for o in orders) and not e.clock_ok(instrument):
+            orders, reason = tuple(o for o in orders if o.action == "close"), "clock_unverified"   # A8
+        self._log.event("TARGET_EXECUTED", instrument=instrument, reason=reason,
+                        orders=[(o.action, o.direction, str(o.size_units)) for o in orders])
+        if orders:
+            e.submit(WorkItem(orders, valid_for_seconds=0, strategy=StrategyType.TREND))
 
 
 def signed(held) -> Decimal:

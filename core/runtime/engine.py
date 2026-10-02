@@ -79,9 +79,10 @@ class Runtime:
         if bar is not None:
             p.governor.observe_bar(st.instrument, bar)          # GAP-0059: one aggregator
         active = p.params.get_active(ctx.regime)
+        clock_ok = self._clock_ok(st)            # A8 on every tick: the target path reads it too
         signals = () if st.instrument in p.target_universe else p.agon.generate(   # R6-3: one path
             st, ctx, active.params if active is not None else None, now)
-        if signals and not self._clock_ok(st):
+        if signals and not clock_ok:
             signals = ()                         # ACIS-13 A8: no entry before the clock is proven
         if not signals and not held:
             return self._budget(t0, st)
@@ -101,6 +102,9 @@ class Runtime:
                 p.executor.submit(WorkItem(work, legs[0].valid_for_seconds, group=True,
                                            strategy=legs[0].strategy_type))
         self._budget(t0, st)
+
+    def clock_verified(self, instrument: str) -> bool:
+        return instrument in self._clock_verified
 
     def _clock_ok(self, st: MarketState) -> bool:
         """ACIS-13 A8, finished here: the first LIVE tick per instrument (market open, not a
@@ -147,7 +151,7 @@ class Runtime:
             positions=p.risk.positions(), strategy_of=p.executor.strategy_of, marks=self.marks,
             nav=nav, daily_drawdown_pct=self.snapshot.daily_drawdown_pct if self.snapshot else 0.0,
             clusters=p.clusters, as_of=p.now_fn(), account_age_s=age,
-            max_age_s=p.account_max_age_s(), logger=p.log)
+            max_age_s=p.account_max_age_s(), logger=p.log, inflight=tuple(p.executor.inflight.values()))
 
     # -- Risk: evaluate, heartbeat ------------------------------------------------------- #
 

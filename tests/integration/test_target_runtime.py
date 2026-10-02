@@ -109,3 +109,72 @@ async def test_a_runtime_from_the_shipped_config_wires_the_target_loop_and_silen
     assert rt.p.agon.take_rate()["signals_emitted"] == 0                    # R6-3: one path per instrument
     assert [m for m in fake.transport.sent if m["payloadType"] == 2106] == []
     await session.stop()
+
+
+async def test_opens_in_flight_count_in_every_exposure_so_one_slot_cannot_cross_a_cap() -> None:
+    """R16I-05: a slot's later entries are judged against its earlier, unfilled ones."""
+    import asyncio
+    from decimal import Decimal
+    from types import MappingProxyType
+    from core.governor.portfolio_types import SizedOrder
+    from core.governor.target_gate import target_orders
+    from core.runtime.executor import Executor, WorkItem
+    from core.runtime.portfolio import build_portfolio
+    from tests.optimizer_fixtures import CapturingLogger
+    from tests.signals_fixtures import T0, mk_regime
+    from tests.unit.test_governor import mk_governor, mk_rulebook
+
+    class _NoRisk:
+        def positions(self):
+            return ()
+
+    async def _nothing():
+        return None
+
+    log = CapturingLogger()
+    ex = Executor(route_to=lambda: None, risk=_NoRisk(), on_fill=_nothing, halt=lambda s, r: None,
+                  mark_of=lambda i: None, now_fn=lambda: T0, logger=log)
+    first = SizedOrder(order_id="o1", signal_id="s", instrument="EUR_USD", direction=1, size_units=Decimal("1000"),
+                       entry_price=1.10, stop_loss=1.0, take_profit=None, reason="target_open",
+                       factors_snapshot=MappingProxyType({}), sized_at=T0, param_set_id="trend_d1_v1")
+    ex.submit(WorkItem((first,), valid_for_seconds=0))
+    clusters = {"usd_short": ["EUR_USD", "GBP_USD"]}
+    marks = {"EUR_USD": 1.10, "GBP_USD": 1.30}
+    pf = build_portfolio(positions=(), strategy_of={}, marks=marks, nav=Decimal("10000"), daily_drawdown_pct=0.0,
+                         clusters=clusters, as_of=T0, account_age_s=0.0, max_age_s=60.0, logger=log,
+                         inflight=tuple(ex.inflight.values()))
+    assert pf.per_cluster_exposure["usd_short"] == Decimal("1100.000") and pf.open_positions == ()
+    gov, _ = mk_governor()
+    second = target_orders(gov, limits=gov.guards._limits, rules=mk_rulebook(), clusters=clusters,
+                           instrument="GBP_USD", held=None, target=Decimal("1000"), mark=1.30, atr=0.007,
+                           stop_mult=10.0, step=Decimal("1000"), minimum=Decimal("1000"), portfolio=pf,
+                           regime=mk_regime(instrument="GBP_USD"), marks=marks, now=T0, family="trend_d1_v1",
+                           snapshot={}, logger=log)
+    assert second.reason == "cluster_cap"                                    # 1,100 + 1,300 > 90% × 20% × 10k
+    task = asyncio.create_task(ex.run())
+    await ex.queue.join()
+    task.cancel()
+    assert ex.inflight == {}                                                 # gone once its item ends
+
+
+async def test_the_legacy_max_hold_never_closes_a_target_universe_position(tmp_path, acis_config) -> None:
+    """R6-3's exit half (R16I-09): a universe position held past max_hold_s gets no legacy close;
+    the same position outside the universe does (the control proves the test can see it)."""
+    from decimal import Decimal
+    from core.risk.risk_types import RiskPosition
+    from tests.integration.test_paper_trading_pipeline import T0 as TICK0
+    from tests.integration.test_runtime import runtime
+
+    closes = {}
+    for universe in (frozenset({"EUR_USD"}), frozenset()):
+        rt = runtime(tmp_path / ("in" if universe else "out"), acis_config)
+        await rt.boot()
+        old = RiskPosition("EUR_USD", 1, Decimal("1000"), 1.10, opened_at=TICK0 - timedelta(days=5),
+                           param_set_id="trend_d1_v1", stop_loss=1.0)
+        rt.p.risk.positions = lambda old=old: (old,)
+        rt.p.target_universe = universe
+        sent = []
+        rt.p.executor.submit = sent.append
+        await rt.run()
+        closes[bool(universe)] = [o for item in sent for o in item.orders if o.reason == "max_hold"]
+    assert closes[True] == [] and closes[False]

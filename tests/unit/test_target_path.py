@@ -18,7 +18,9 @@ from core.data.bars import Bar
 from core.data.fx_clock import rollover_utc
 from core.data.rates import RateTable, swap_multiplier
 from core.governor.target_gate import target_orders
-from core.runtime.target_decision import BookSizing, Lots, class_equal_weights, decide
+from core.data.rates import CCY_SERIES, StaleRateError, load_rate_table
+from core.governor.target import banded_target
+from core.runtime.target_decision import BookSizing, Lots, class_equal_weights, decide, usd_per_quote
 from core.signals.daily import DailySeries
 from config.schemas import load_config
 from core.signals import rules
@@ -175,3 +177,38 @@ def test_b0d_the_engines_decisions_equal_rsims_practice_book_on_a_lab_tape() -> 
         assert float(d.target) == book.units[t, 0], t
         held, compared = d.target, compared + 1
     assert compared > 300 and len({float(u) for u in book.units[260:, 0]}) > 1       # it traded
+
+
+def test_the_quote_rate_converts_each_quote_to_usd_through_its_usd_leg_and_sizes_with_it() -> None:
+    """R16I-07: ten of the thirteen pairs size through this conversion; pin it by hand."""
+    day = date(2026, 9, 30)
+    one = lambda name, close: DailySeries(name, (day,), (close,), (True,), ())          # noqa: E731
+    legs = {"USD_JPY": one("USD_JPY", 150.0), "GBP_USD": one("GBP_USD", 1.25), "USD_CHF": one("USD_CHF", 0.8)}
+    assert usd_per_quote("JPY", day, legs) == pytest.approx(1 / 150.0)
+    assert usd_per_quote("GBP", day, legs) == pytest.approx(1.25)
+    assert usd_per_quote("CHF", day, legs) == pytest.approx(1 / 0.8)
+    assert usd_per_quote("USD", day, {}) == 1.0 and usd_per_quote("CAD", day, legs) is None
+    days = _weekdays(400)
+    closes = [150.0 * (1 + 0.0004 * k) for k in range(400)]
+    s = DailySeries("USD_JPY", tuple(days), tuple(closes), (True,) * 400, _series(closes, days).bars)
+    rates = RateTable({"USD": [(d, 0.0) for d in days], "JPY": [(d, 0.0) for d in days]})
+    uncapped = Lots(LOT, LOT, None)
+    sizing = BookSizing(capital_ref=10_000, vol_target=0.10, idm=1.0, buffer=0.10, weights={"USD_JPY": 1.0})
+    d = decide("USD_JPY", "fx", "JPY", s, days[-1], Decimal(0), rates=rates, series={"USD_JPY": s},
+               sizing=sizing, lots=uncapped, atr_period=14)
+    f = d.forecast
+    want = banded_target(0.0, f.value, f.pct_vol, f.price_basis, 1 / closes[-1], cash_vol=sizing.cash_vol,
+                         weight=1.0, idm=1.0, buffer=0.10, step=LOT, minimum=LOT)
+    assert d.target == want and d.target >= 2 * LOT                          # q = 1/USDJPY: ~6,000 units, not ~0
+
+
+def test_a_missing_rate_file_stales_only_its_currency(tmp_path) -> None:
+    """R16I-08: R6-1 is per instrument; one missing series never blocks the others."""
+    for ccy, (sid, area) in CCY_SERIES.items():
+        if ccy != "CHF":
+            body = "date,area,value\n2026-09-30,AU,3.6\n" if area else "date,value\n2026-09-30,1.5\n"
+            (tmp_path / f"{sid}.csv").write_text(body, encoding="utf-8")
+    table = load_rate_table(tmp_path)
+    assert table.rate("USD", date(2026, 10, 1)) == Decimal("1.5")
+    with pytest.raises(StaleRateError):
+        table.rate("CHF", date(2026, 10, 1))

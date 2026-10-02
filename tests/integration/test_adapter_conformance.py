@@ -166,9 +166,9 @@ async def test_stop_on_a_venue_that_cannot_hold_it_is_refused(adapter) -> None:
     assert await face.open_positions() == ()      # nothing opened unprotected
 
 
-def test_symbol_map_covers_enabled_universe(adapter, acis_config) -> None:
-    face = adapter()
-    enabled = {s for s, sp in acis_config.instruments.instruments.items()
+def test_symbol_map_covers_enabled_universe(adapter, shipped_config) -> None:
+    face = adapter()                              # the SHIPPED universe, never the narrowed test view (R16I-13)
+    enabled = {s for s, sp in shipped_config.instruments.instruments.items()
                if sp.enabled}
     missing = enabled - set(face.descriptor.symbol_map)
     assert not missing, f"descriptor must map the enabled universe: {missing}"

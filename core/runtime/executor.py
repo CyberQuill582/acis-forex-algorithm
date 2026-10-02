@@ -2,7 +2,8 @@
 
 Invariants:
   * An item's instruments are BUSY from `submit` until its last report is ingested, so the
-    position policy routes nothing new to them meanwhile (GAP-0075: no firehose).
+    position policy routes nothing new to them meanwhile (GAP-0075: no firehose). Its opens are
+    IN FLIGHT over the same span, and the Governor's portfolio counts them (R16I-05).
   * Items run serially, in the order the fast loop decided them.
   * Orders go only to the current mode's orchestrator (`route_to`): paper → the paper venue,
     practice → the attached venue. Any other answer sends nothing; this module opens no gate.
@@ -52,10 +53,12 @@ class Executor:
         self._mark_of, self._now, self._log = mark_of, now_fn, logger
         self.queue: asyncio.Queue[WorkItem] = asyncio.Queue()
         self.busy: set[str] = set()
+        self.inflight: dict[str, SizedOrder] = {}      # opens submitted, not yet reported
         self.strategy_of: dict[str, StrategyType] = {}
 
     def submit(self, item: WorkItem) -> None:
         self.busy |= item.instruments
+        self.inflight.update((o.order_id, o) for o in item.orders if o.action == "open")
         self.queue.put_nowait(item)
 
     def submit_flatten(self, scope: str, reason: str) -> None:
@@ -74,6 +77,8 @@ class Executor:
                 self._halt("all", "executor_error")
             finally:
                 self.busy -= item.instruments
+                for o in item.orders:
+                    self.inflight.pop(o.order_id, None)
                 self.queue.task_done()
 
     async def _run(self, item: WorkItem) -> None:

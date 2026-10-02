@@ -24,8 +24,8 @@ that fails its plausibility checks (range, ordering, coverage) is rejected, not 
 
 Usage:  python scripts/download_macro.py            # all series (skips ones already valid)
         python scripts/download_macro.py --force    # re-fetch everything
-        python scripts/download_macro.py --live data/macro_live   # the runtime's rates (R1.6): the last
-            1,200 days through today, no SPX, each series fresh within 10 days (R6-1); run daily
+        python scripts/download_macro.py --live data/macro_live   # the runtime's rates (R1.6): from 2011
+            through today (never rolling), no SPX, fresh within 10 days (R6-1); run daily
 """
 
 from __future__ import annotations
@@ -53,6 +53,7 @@ START, END = date(2011, 1, 1), date(2025, 12, 31)
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 CURL = r"C:\Windows\System32\curl.exe" if os.name == "nt" else "curl"   # Linux: the system curl
 BIS_AREAS = ("US", "XM", "JP", "GB", "AU", "CH", "CA")
+LIVE_BIS_AREAS = ("AU",)       # the runtime reads BIS for AUD only (core/data/rates.py); R16E-02
 
 
 # ------------------------------------------------------------------- fetching
@@ -195,17 +196,17 @@ SERIES = series(START, END)
 
 
 # Well-documented S&P 500 closes the downloaded series must reproduce (±0.02).
-SPX_KNOWN_CLOSES = {
-    date(2012, 1, 3): 1277.06,
-    date(2019, 12, 31): 3230.78,
-    date(2020, 3, 23): 2237.40,      # COVID low
-    date(2021, 12, 31): 4766.18,
-    date(2022, 12, 30): 3839.50,
-}
+SPX_KNOWN_CLOSES = {date(2012, 1, 3): 1277.06, date(2019, 12, 31): 3230.78, date(2020, 3, 23): 2237.40,  # COVID low
+                    date(2021, 12, 31): 4766.18, date(2022, 12, 30): 3839.50}
+
+
+def live_series(today: date) -> dict:
+    """The runtime's rates (--live): every series but SPX, from START, never a rolling window (R16I-01)."""
+    return {k: v for k, v in series(START, today).items() if k != "spx_yahoo"}
 
 
 def validate(sid: str, rows, lo: float, hi: float, first_by: date | None,
-             ends_by: date = date(2025, 12, 1)) -> str | None:
+             ends_by: date = date(2025, 12, 1), areas=BIS_AREAS) -> str | None:
     """Return a rejection reason, or None if the series is usable."""
     if not rows:
         return "no rows"
@@ -229,8 +230,8 @@ def validate(sid: str, rows, lo: float, hi: float, first_by: date | None,
             return f"{k or sid}: starts {ds[0]}, expected by {first_by}"
         if ds[-1] < ends_by:
             return f"{k or sid}: ends {ds[-1]}, expected by {ends_by}"
-    if sid == "bis_policy" and sorted(per_key) != sorted(BIS_AREAS):
-        return f"areas {sorted(per_key)} != {sorted(BIS_AREAS)}"
+    if sid == "bis_policy" and sorted(per_key) != sorted(areas):
+        return f"areas {sorted(per_key)} != {sorted(areas)}"
     return None
 
 
@@ -246,9 +247,10 @@ def main() -> int:
     ap.add_argument("--live", type=Path, help="the runtime's rate directory (R1.6): always re-fetched")
     a = ap.parse_args()
     out, today, todo, ends_by = OUT, datetime.now(timezone.utc).date(), SERIES, date(2025, 12, 1)
-    if a.live:
-        out, ends_by = a.live, today - timedelta(days=10)
-        todo = {k: v[:4] + (None,) for k, v in series(today - timedelta(days=1200), today).items() if k != "spx_yahoo"}
+    areas = BIS_AREAS
+    if a.live:   # from START, never a rolling window: the history cache is never trimmed (R16I-01)
+        out, ends_by, areas = a.live, today - timedelta(days=10), LIVE_BIS_AREAS
+        todo = live_series(today)
     raw_dir, manifest_path = out / "raw", out / "manifest.json"
     raw_dir.mkdir(parents=True, exist_ok=True)
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
@@ -261,12 +263,12 @@ def main() -> int:
         print(f"fetch {sid} ...", flush=True)
         try:
             raw = fetch(url, via_os_tls=os_tls)
-            rows = parser(raw)
+            rows = [r for r in parser(raw) if sid != "bis_policy" or r[1] in areas]
         except Exception as e:                              # report, keep going
             failed.append(sid)
             print(f"FAIL  {sid}: {e!r}"[:300])
             continue
-        why = validate(sid, rows, lo, hi, first_by, ends_by)
+        why = validate(sid, rows, lo, hi, first_by, ends_by, areas)
         if why:
             failed.append(sid)
             print(f"REJECT {sid}: {why}")

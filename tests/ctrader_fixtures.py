@@ -85,6 +85,7 @@ class FakeVenue:
         self.close_error: str | None = None            # e.g. "POSITION_NOT_FOUND"
         self.trendbars: dict[int, list[dict]] = {}     # symbolId -> raw H1 bars, oldest first
         self.trendbar_cap: int | None = None           # a response keeps the latest N, with hasMore
+        self.trendbar_silent = False                   # ... or without it (Spotware's forum, R16E-03)
         self.trendbar_max_range_ms: int | None = None  # a longer range is refused (undocumented limit)
 
     async def connect(self, environment: str) -> FakeTransport:
@@ -161,7 +162,7 @@ class FakeVenue:
         more = self.trendbar_cap is not None and len(rows) > self.trendbar_cap
         t.push(PT.GET_TRENDBARS_RES, {"ctidTraderAccountId": ACCOUNT, "period": 9, "symbolId": p["symbolId"],
                                       "trendbar": rows[-self.trendbar_cap:] if more else rows,
-                                      **({"hasMore": True} if more else {})}, mid)
+                                      **({"hasMore": True} if more and not self.trendbar_silent else {})}, mid)
 
     def page(self, rows: list, stamp: str) -> tuple[list, bool]:
         """A chunk of `page_rows` in `page_order` (both undocumented by the venue, TAE-07)."""

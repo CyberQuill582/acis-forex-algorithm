@@ -25,3 +25,15 @@ def test_a_series_older_than_its_freshness_date_is_rejected() -> None:
     rows = [(date(2026, 9, 1), 3.9), (date(2026, 9, 18), 3.88)]
     assert dm.validate("usd_effr", rows, -1, 10, None, ends_by=date(2026, 9, 22)) is not None
     assert dm.validate("usd_effr", rows, -1, 10, None, ends_by=date(2026, 9, 15)) is None
+
+
+def test_the_live_window_starts_at_the_research_start_so_it_covers_any_cache() -> None:
+    live = dm.live_series(date(2027, 6, 30))                               # R16I-01: never a rolling window
+    assert "spx_yahoo" not in live and all(v[4] is not None for v in live.values())
+    assert "startDate=2011-01-01" in live["usd_effr"][0] and "endDate=2027-06-30" in live["usd_effr"][0]
+
+
+def test_live_mode_validates_only_the_bis_areas_the_engine_reads() -> None:
+    rows = [(date(2026, 9, 1), "AU", 3.6), (date(2026, 9, 24), "AU", 3.6)]
+    assert dm.validate("bis_policy", rows, -1.5, 10, None, ends_by=date(2026, 9, 20), areas=dm.LIVE_BIS_AREAS) is None
+    assert dm.validate("bis_policy", rows, -1.5, 10, None, ends_by=date(2026, 9, 20)) is not None   # all 7 wanted

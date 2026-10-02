@@ -64,31 +64,35 @@ class Rig:
         tmp_path.mkdir(parents=True, exist_ok=True)
         self.store = HistoryStore(tmp_path / "history.db")
         self.data = {"EUR_USD": _bars(drift, 1)}
+        self.fail: set[str] = set()                    # instruments whose fetch raises
         self.held: dict[str, Held] = {}
         self.busy: set[str] = set()
         self.sent, self.flattened, self.fetches = [], [], []
         self.fetch_error, self.registered, self.open_ = fetch_error, registered, open_
+        self.clock_ok, self.cap = True, LOT
         gov, _ = mk_governor()
         days = [date(2024, 9, 1) + timedelta(days=k) for k in range(800)]
-        self.rates = RateTable({"USD": [(d, 4.0) for d in days], "EUR": [(d, 3.0) for d in days]})
+        self.rates = RateTable({"USD": [(d, 4.0) for d in days], "EUR": [(d, 3.0) for d in days],
+                                "GBP": [(d, 3.5) for d in days]})
         self.gate = partial(target_orders, gov, limits=gov.guards._limits, rules=mk_rulebook(),
                             clusters={"usd_short": ["EUR_USD"]}, stop_mult=10.0, logger=self.log)
 
     async def fetch(self, instrument, start, end):
         self.fetches.append((instrument, start, end))
-        if self.fetch_error:
-            raise self.fetch_error
+        if self.fetch_error or instrument in self.fail:
+            raise self.fetch_error or ConnectionError(f"{instrument}: venue down")
         return [b for b in self.data[instrument] if start <= b.ts_open and b.ts_open + timedelta(hours=1) <= end]
 
     def loop(self, family="trend_d1_v1") -> TargetLoop:
         view = EngineView(held_of=self.held.get, busy=lambda: frozenset(self.busy), marks=lambda: {"EUR_USD": 1.2},
                           portfolio=lambda: mk_portfolio(nav=Decimal("100000")),
                           regime_of=lambda i: mk_regime(instrument=i), submit=self.sent.append,
-                          flatten=lambda scope, why: self.flattened.append((scope, why)))
+                          flatten=lambda scope, why: self.flattened.append((scope, why)),
+                          clock_ok=lambda i: self.clock_ok)
         return TargetLoop(
-            members={"EUR_USD": Member("EUR_USD", "fx", "USD", SLOTS["fx"], lambda now: self.open_)},
+            members={i: Member(i, "fx", "USD", SLOTS["fx"], lambda now: self.open_) for i in self.data},
             store=self.store, fetch=self.fetch, rates=lambda: self.rates,
-            sizing=BookSizing(10_000, 0.10, 1.0, 0.10, {"EUR_USD": 1.0}), lots_of=lambda i: Lots(LOT, LOT, LOT),
+            sizing=BookSizing(10_000, 0.10, 1.0, 0.10, {i: 1.0 for i in self.data}), lots_of=lambda i: Lots(LOT, LOT, self.cap),
             gate=self.gate, engine=view, family=family, registered=lambda f: self.registered, history_days=730,
             settle_s=120, slot_grace_s=300, atr_period=14, now_fn=lambda: self.now, logger=self.log)
 
@@ -215,3 +219,70 @@ async def test_no_bar_after_the_decision_moves_its_target_or_inputs_hash(tmp_pat
     await rig.loop().decide(DAY, AFTER + timedelta(days=3))
     a, b = [e for e in rig.events("TARGET_DECIDED") if e["day"] == DAY.isoformat()]
     assert (a["target"], a["inputs_hash"], a["forecast"]) == (b["target"], b["inputs_hash"], b["forecast"])
+
+
+async def test_a_restart_after_a_stop_out_does_not_re_enter_before_the_next_decision(tmp_path) -> None:
+    """R16I-03: the day's held position is persisted, so a restart re-derives nothing for a book a
+    disaster stop changed."""
+    rig = Rig(tmp_path)
+    rig.store.put("active_family", "trend_d1_v1")
+    rig.held["EUR_USD"] = Held("EUR_USD", 1, LOT)                             # target == held: nothing pending
+    await rig.loop().tick(AFTER, boot=True)
+    assert [e["target"] for e in rig.events("TARGET_DECIDED")][-1] == "1000"
+    del rig.held["EUR_USD"]                                                   # its stop fired overnight
+    restarted = rig.loop()
+    await restarted.tick(SLOT - timedelta(hours=4), boot=True)                 # 04:00 New York
+    await restarted.tick(SLOT + timedelta(seconds=5))
+    assert restarted.pending == {} and rig.sent == []
+    assert rig.events("TARGET_DECIDED")[-1]["reason"] == "no_target:position_changed_since_decision"
+
+
+async def test_a_failed_fetch_gives_no_target_even_with_a_populated_cache(tmp_path) -> None:
+    """R16I-04: the instrument whose fetch failed does not decide on yesterday's close."""
+    rig = Rig(tmp_path)
+    rig.data["GBP_USD"] = _bars(0.0002, 2)                                    # a second pair that fetches fine
+    await rig.loop().tick(AFTER - timedelta(days=1), boot=True)               # day D-1 cached for both
+    rig.fail = {"EUR_USD"}
+    loop = rig.loop()
+    await loop.tick(AFTER, boot=True)
+    today = {e["instrument"]: e["reason"] for e in rig.events("TARGET_DECIDED") if e["day"] == DAY.isoformat()}
+    assert today["EUR_USD"] == "no_target:fetch_failed" and "EUR_USD" not in loop.pending
+    assert today["GBP_USD"] == "target"                                       # the day itself was decided
+
+
+async def test_the_decision_waits_for_a_proven_clock_and_an_entry_needs_its_own(tmp_path) -> None:
+    """R16I-02 (ACIS-13 A8): no decision before any instrument's clock is proven (it retries), and no
+    entry for an instrument whose clock is unproven at its slot."""
+    rig = Rig(tmp_path)
+    rig.clock_ok = False
+    loop = rig.loop()
+    await loop.tick(AFTER, boot=True)
+    assert loop.decided is None and rig.events("TARGETS_CLOCK_UNVERIFIED") and rig.fetches == []
+    rig.clock_ok = True
+    await loop.tick(AFTER + timedelta(minutes=5))
+    assert loop.decided == DAY and "EUR_USD" in loop.pending
+    rig.clock_ok = False
+    await loop.tick(SLOT + timedelta(seconds=5))
+    assert rig.sent == [] and rig.events("TARGET_EXECUTED")[-1]["reason"] == "clock_unverified"
+
+
+async def test_a_history_with_a_hole_gives_no_target(tmp_path) -> None:
+    rig = Rig(tmp_path)
+    hole = (datetime(2026, 3, 2, tzinfo=UTC), datetime(2026, 3, 14, tzinfo=UTC))
+    rig.data["EUR_USD"] = [b for b in rig.data["EUR_USD"] if not hole[0] <= b.ts_open < hole[1]]
+    await rig.loop().tick(AFTER, boot=True)
+    assert rig.events("HISTORY_HOLE")[-1]["instruments"] == ["EUR_USD"]
+    assert rig.events("TARGET_DECIDED")[-1]["reason"] == "no_target:history_hole"
+
+
+async def test_the_mode_cap_is_reapplied_at_the_slot(tmp_path) -> None:
+    """R16I-10: a decision taken uncapped never sends more than the cap in force at its slot."""
+    rig = Rig(tmp_path)
+    rig.cap = None
+    loop = rig.loop()
+    await loop.tick(AFTER, boot=True)
+    assert loop.pending["EUR_USD"].decision.target > LOT                      # uncapped at the decision
+    rig.cap = LOT                                                             # practice by the slot
+    await loop.tick(SLOT + timedelta(seconds=5))
+    (item,) = rig.sent
+    assert [o.size_units for o in item.orders] == [LOT]

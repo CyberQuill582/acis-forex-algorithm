@@ -1,18 +1,18 @@
 """The venue's hourly trendbars (ACIS-04 v1.6 §4b seeding; ACIS-13 §3.1 `ProtoOAGetTrendbarsReq`).
 
-The target-position path's daily history comes from the venue's own bars, so the engine decides on
-the prices it trades. One H1 request per window; nothing here is held between calls.
-
+The target path decides on the venue's own bars. One H1 request per window; nothing is held between calls.
 Mental model:
   * A bar is the venue's H1 trendbar as the engine's `Bar` (duration 3,600 s, spread 0: a trendbar
     carries none): `low` and the deltas are in 1/100,000 of a price unit (F-13), `open/high/close =
     low + delta`, rounded to the symbol's digits. Its hour is `utcTimestampInMinutes` floored to the
-    hour (the proto calls it "the timestamp of the open tick"); it covers [hour, hour + 1 h). cTrader bars are built from BID prices: a declared deviation from RSIM's
-    Dukascopy MID closes (`OQ_TRENDBARS_BID`, verified at the first seeding).
-  * A fetch walks BACKWARD from `end` in windows of at most `window`: the venue caps a response
-    (14,000 bars, Spotware on its forum) and limits each period's range (undocumented). A response
-    with `hasMore` is truncated back from `toTimestamp`, so the walk continues below its earliest
-    bar. A venue error other than rate limiting halves the window, down to `MIN_WINDOW`, then raises.
+    hour (the proto calls it "the timestamp of the open tick"); it covers [hour, hour + 1 h). cTrader
+    bars are BID bars: a declared deviation from RSIM's Dukascopy MID closes (`OQ_TRENDBARS_BID`).
+  * A fetch walks BACKWARD from `end` in windows of at most `window` (240 days: Spotware documented
+    35 weeks for H1 until proto release 88, R16E-03) and caps a response at 14,000 bars. Coverage is
+    judged from the bars, never from `hasMore` alone: a response whose earliest bar starts more than
+    `TRUNCATED` after the window's start was cut back from `toTimestamp`, so the walk continues below
+    it; an EMPTY window means no older history, and the walk stops. A venue error other than rate
+    limiting halves the window, down to `MIN_WINDOW`, then raises.
   * Only COMPLETE bars inside [start, end) are kept (a bar ending after `end` is still forming), one
     per hour, sorted. Every request is a metered `query`: refused inside the close reserve, so
     history can never spend the exits' budget (C-VEN-4), and paced as history (pacing.py).
@@ -28,8 +28,9 @@ from core.data.ctrader.wire import VenueError
 from core.data.errors import DataQualityError
 
 HOUR = timedelta(hours=1)
-WINDOW = timedelta(days=365)        # ~6,240 FX hours, well under the 14,000-bar cap
+WINDOW = timedelta(days=240)        # inside Spotware's documented H1 range of 35 weeks (R16E-03)
 MIN_WINDOW = timedelta(days=7)
+TRUNCATED = timedelta(days=4)       # longer than any FX weekend plus holiday: a cut, not a closure
 RATE_LIMITED = frozenset({"REQUEST_FREQUENCY_EXCEEDED", "BLOCKED_PAYLOAD_TYPE"})
 OQ_TRENDBARS_BID = "cTrader trendbars are bid bars (chart convention); confirm against live bids"
 
@@ -77,11 +78,14 @@ async def hourly_bars(session, symbol_id: int, digits: int, start: datetime, end
                          window_days=span.total_seconds() / 86400)
             continue
         bars = [decode_bar(b, digits) for b in res.payload.get("trendbar", ())]
+        if not bars:
+            break                                         # nothing older exists at the venue
         for bar in bars:
             if start <= bar.ts_open and end_of(bar) <= end:
                 out[bar.ts_open] = bar
-        earliest = min((b.ts_open for b in bars), default=lo)
-        hi = earliest if field(res.payload, "hasMore") and lo < earliest < hi else lo   # always progresses
+        earliest = min(b.ts_open for b in bars)
+        cut = field(res.payload, "hasMore") or earliest - lo > TRUNCATED
+        hi = earliest if cut and lo < earliest < hi else lo                     # always progresses
     logger.event("TRENDBARS_FETCHED", symbol_id=symbol_id, bars=len(out),
                  start=start.isoformat(), end=end.isoformat())
     return [out[k] for k in sorted(out)]

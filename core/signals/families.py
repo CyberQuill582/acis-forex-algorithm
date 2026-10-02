@@ -29,6 +29,18 @@ _SHARED = (
     "contract",
     "admission per instrument by master §5.6's two cost filters (turnover cost <= 0.10 SR, the "
     "stricter of Carver's two figures; swap markup <= 0.10 SR), against fixed expectations",
+    # completed 2026-10-02, before any registration, from the R1.6 dual audit (R16I-12, R16E-04/05)
+    "every open carries a broker-side disaster stop at 10 x the daily true-range ATR (Wilder) from the "
+    "fill, and a position it closed is not re-entered before the next decision (ACIS-05 §6.4, R6-2); "
+    "Carver uses no stop",
+    "no forecast until 260 decisions of the instrument's own data exist (Carver forecasts once the "
+    "estimators' min_periods allow)",
+    "the engine reads the venue's BID hourly closes (cTrader trendbars) where research reads mid closes",
+    "in paper and practice the position is capped at one venue minimum lot, sign kept (master §5 D-a): "
+    "a capped sign book, not Carver's continuous position",
+    "the carry calendar is simplified: every FX pair's triple roll is Wednesday (USD/CAD settles T+1, "
+    "so its triple is Thursday), holiday value dates add no days, and every rate is divided by 365 "
+    "(USD, EUR and CHF money markets count ACT/360)",
 )
 
 _TREND_INEFFICIENCY = ("time-series momentum: past excess returns predict future ones across asset "

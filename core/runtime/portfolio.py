@@ -12,6 +12,8 @@ caps to this snapshot, so it must be the real one. Invariants:
     restart, which halts entries) still counts in every exposure. It is left out of
     `open_positions`, whose `Position` needs a strategy, and logged: never a guessed strategy.
   * `stale` when the account is older than `max_age_s`: the Governor then zeroes entries.
+  * Opens IN FLIGHT (submitted, not yet reported) count in every exposure as if filled, so the
+    entries of one slot, or of one tick, are judged against each other (R16I-05).
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from decimal import Decimal
 from types import MappingProxyType
 from typing import Iterable, Mapping, Sequence
 
-from core.governor.portfolio_types import PortfolioState, Position
+from core.governor.portfolio_types import PortfolioState, Position, SizedOrder
 from core.governor.units import usd_per_base_unit
 from core.risk.risk_types import RiskPosition
 from core.signals.signal_types import StrategyType
@@ -33,15 +35,24 @@ class _Close:
     close: float
 
 
+class _Open:
+    """An open in flight, read as the position it will be."""
+
+    def __init__(self, order: SizedOrder) -> None:
+        self.instrument, self.direction, self.size_units = order.instrument, order.direction, order.size_units
+        self.avg_entry_price = order.entry_price
+
+
 def build_portfolio(*, positions: Iterable[RiskPosition], strategy_of: Mapping[str, StrategyType],
                     marks: Mapping[str, float], nav: Decimal, daily_drawdown_pct: float,
                     clusters: Mapping[str, Sequence[str]], as_of: datetime,
-                    account_age_s: float, max_age_s: float, logger) -> PortfolioState:
+                    account_age_s: float, max_age_s: float, logger,
+                    inflight: Iterable[SizedOrder] = ()) -> PortfolioState:
     prices = {sym: (_Close(p),) for sym, p in marks.items()}
     out: list[Position] = []
     cluster_exposure: dict[str, Decimal] = {}
     currency_delta: dict[str, Decimal] = {}
-    for pos in positions:
+    for pos in [*positions, *(_Open(o) for o in inflight)]:
         per_unit = usd_per_base_unit(pos.instrument, pos.avg_entry_price, prices)
         if per_unit is None:                # a cross with no USD leg marked: exposure unknown
             logger.event("PORTFOLIO_NO_USD_RATE", instrument=pos.instrument)
@@ -54,6 +65,8 @@ def build_portfolio(*, positions: Iterable[RiskPosition], strategy_of: Mapping[s
         signed = Decimal(pos.direction) * notional
         currency_delta[base] = currency_delta.get(base, Decimal("0")) + signed
         currency_delta[quote] = currency_delta.get(quote, Decimal("0")) - signed
+        if isinstance(pos, _Open):
+            continue                        # exposure only: not yet a position
         strategy = strategy_of.get(pos.instrument)
         if strategy is None:
             logger.event("PORTFOLIO_STRATEGY_UNKNOWN", instrument=pos.instrument,

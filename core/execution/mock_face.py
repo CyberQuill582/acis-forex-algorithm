@@ -25,6 +25,11 @@ from core.execution.venue import (BrokerAccount, BrokerPosition, CapabilityDescr
                                   ExecutionFace, FillReport, FillStatus, slippage_bps)
 
 
+# the shipped FX universe (config/instruments.yaml, R1.6): the paper descriptor maps every enabled pair
+MOCK_SYMBOLS = ("EUR_USD", "USD_JPY", "GBP_USD", "AUD_USD", "USD_CAD", "USD_CHF", "EUR_GBP", "EUR_JPY",
+                "GBP_JPY", "AUD_JPY", "EUR_CHF", "EUR_AUD", "CHF_JPY")
+
+
 class MockExecutionFace(ExecutionFace):
     """`script` is a per-submission behaviour queue consumed in call order:
     "fill" (default when exhausted) · "partial:<fraction>" · "reject" ·
@@ -43,7 +48,7 @@ class MockExecutionFace(ExecutionFace):
             min_lot=0.01,
             lot_step=0.01,
             max_order_lots=100.0,
-            symbol_map={"EUR_USD": "EUR_USD", "USD_JPY": "USD_JPY"},
+            symbol_map={s: s for s in MOCK_SYMBOLS},
             quote_depth=True,
             asset_classes=frozenset({"fx"}),
             server_side_stops=True,

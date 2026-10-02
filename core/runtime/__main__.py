@@ -15,7 +15,7 @@ Invariants:
   * SIGINT/SIGTERM, once the runtime is built, are a deliberate stop: every position closed,
     everything halted, then exit 0 (GAP-P12D-135). The next start needs `--resume`.
   * Exit codes: 0 the feed ended or a deliberate stop; 1 a loop stalled (flattened, halted); 2
-    refused (the attach, a foreign position, the lock); 3 a human step refused; 4 the venue stayed
+    refused (the attach, a foreign position, the lock, the config); 3 a human step refused; 4 the venue stayed
     unreachable. The unit does not restart on 2 or 3.
 """
 
@@ -116,8 +116,12 @@ async def main(args) -> int:
     else:
         feed = MockPaperFeed({s: 1.0 for s in cfg.instruments.enabled}, n_ticks=args.mock_ticks)
     try:
-        runtime = build(cfg, root=root, session_id=session_id, feed=feed, venue=venue,
-                        intended_mode="practice" if args.practice else "paper")
+        try:
+            runtime = build(cfg, root=root, session_id=session_id, feed=feed, venue=venue,
+                            intended_mode="practice" if args.practice else "paper")
+        except ValueError as exc:                     # e.g. the target path's config (R16I-13)
+            log.event("ENGINE_CONFIG_REFUSED", reason=str(exc))
+            return 2
         install_stop(runtime)
         if args.practice and not human_call(runtime, cfg, log, session_id, "acis_set_mode", {
                 "mode": "practice", "guardrail_hash": args.ack_guardrail,
