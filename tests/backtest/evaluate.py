@@ -14,22 +14,37 @@ Mental model:
     instruments, and every cost model the registered cost stress and floor.
   * A fixed family has no training step, so its one fold is warm-up [first day, graded_from) and
     test [graded_from, last day]: the test window decides the data tier (look_tiers).
+  * A STAGE-A grade (`arms` given) runs, inside the same consumed look, every series stage A reads:
+    the declared passive benchmark on the family's own book, the family at 2x modelled cost (the
+    C8 stress and the swap markup both doubled), and each kill-only arm (C9 members, plateau
+    neighbours). Each graded span is stored by its hash, so the verdict is a pure function of the
+    register (`stage_a.from_register`), and no arm can be graded outside its family's look.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, timezone
+from typing import Mapping
 
 import numpy as np
 
 from config.schemas import AcisConfig
 from tests.backtest.hac import hac_t
-from tests.backtest.look_claims import Claim
+from tests.backtest.look_claims import Claim, store_vector
+from tests.backtest.look_declarations import BENCHMARKS
 from tests.backtest.look_gate import begin_grade
 from tests.backtest.look_register import Look, LookRefused, LookRegister
 from tests.backtest.rsim import BookResult, BookSpec, Market, annual_sharpe, run
 from tests.backtest.walk_forward import Fold
+
+
+@dataclass(frozen=True)
+class StageArms:
+    """The series stage A reads besides the family's own (C-BT-11 v2 step 3)."""
+    benchmark: str                                   # the declared passive arm (look_declarations.BENCHMARKS)
+    benchmark_forecast: np.ndarray
+    kill_only: Mapping[str, np.ndarray] = field(default_factory=dict)   # name -> forecasts
 
 
 @dataclass(frozen=True)
@@ -47,8 +62,10 @@ def _utc(d: date) -> datetime:
 
 def evaluate(*, register: LookRegister, cfg: AcisConfig, source: object, family: str, claim: Claim | None,
              account: str, market: Market, forecast: np.ndarray, pct_vol: np.ndarray, spec: BookSpec,
-             graded_from: date, changed: str = "") -> tuple[Look, BookResult]:
+             graded_from: date, changed: str = "", arms: StageArms | None = None) -> tuple[Look, BookResult]:
     instruments = tuple(sorted(market.names))
+    if arms is not None:
+        _admit_arms(arms, claim, forecast.shape)
     stresses = {(cm.stress, cm.spread_floor) for cm in spec.costs.values()}
     if len(stresses) != 1:
         raise LookRefused("one grade, one cost stress: the book's cost models disagree")
@@ -67,7 +84,34 @@ def evaluate(*, register: LookRegister, cfg: AcisConfig, source: object, family:
     result = run(market, forecast, pct_vol, spec)
     keep = [t for t, d in enumerate(days) if d >= graded_from]
     daily = result.daily[keep]
-    register.record_outcome(look, {"annual_sharpe": annual_sharpe(daily), "hac_t": hac_t(daily),
-                                   "graded_days": len(keep), "fills": result.fills, "world": result.world},
-                            daily=([days[t] for t in keep], daily.tolist()))
+    outcome = {"annual_sharpe": annual_sharpe(daily), "hac_t": hac_t(daily),
+               "graded_days": len(keep), "fills": result.fills, "world": result.world}
+    if arms is not None:
+        outcome["stage_a"] = _stage_a_vectors(register, market, forecast, pct_vol, spec, arms, keep)
+    register.record_outcome(look, outcome, daily=([days[t] for t in keep], daily.tolist()))
     return look, result
+
+
+def _admit_arms(arms: StageArms, claim: Claim | None, shape: tuple[int, ...]) -> None:
+    """Refused before any line: an undeclared benchmark, or an arm on another market's shape."""
+    if arms.benchmark not in BENCHMARKS:
+        raise LookRefused(f"the benchmark is a registered passive arm, one of {BENCHMARKS}")
+    if claim is not None and claim.declaration.benchmark != arms.benchmark:
+        raise LookRefused(f"the claim declared {claim.declaration.benchmark!r}, not {arms.benchmark!r}")
+    if any(f.shape != shape for f in (arms.benchmark_forecast, *arms.kill_only.values())):
+        raise LookRefused("every stage-A arm forecasts the family's own market")
+
+
+def _doubled(spec: BookSpec) -> BookSpec:
+    """2x modelled cost including swap: the whole C8 per-side cost and the venue's markup."""
+    return replace(spec, costs={n: replace(cm, stress=cm.stress * 2.0) for n, cm in spec.costs.items()},
+                   markup={n: (lo * 2.0, sh * 2.0) for n, (lo, sh) in spec.markup.items()})
+
+
+def _stage_a_vectors(register: LookRegister, market: Market, forecast: np.ndarray, pct_vol: np.ndarray,
+                     spec: BookSpec, arms: StageArms, keep: list[int]) -> dict:
+    dates = [market.days[t] for t in keep]
+    stored = lambda f, s=spec: store_vector(register.root, dates, run(market, f, pct_vol, s).daily[keep].tolist())  # noqa: E731
+    return {"benchmark": arms.benchmark, "benchmark_vector": stored(arms.benchmark_forecast),
+            "cost2x_vector": stored(forecast, _doubled(spec)),
+            "kill_only_vectors": {name: stored(f) for name, f in sorted(arms.kill_only.items())}}

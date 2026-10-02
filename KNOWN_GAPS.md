@@ -144,6 +144,22 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-140: the first cycle's testing design and B0(d)'s place: two owner rulings the first look needs
+- Severity: medium · Likelihood: certain
+- Status: open (2026-10-01, from the PACE research pass, `archive/RESEARCH_PACE_AND_CREDITS_2026-10-01.md`; owner decisions)
+- Area: ACIS-09 C-BT-11 v2 step 3 (serial gatekeeping, D-d) and step 0 (B0), TODO's R1 order
+- Description: (1) cycle 1 spends α = 0.03 of the lifetime 0.05 on a fixed sequence led by D1, whose stage-A pass probability over 10.85 graded years is 0.20 / 0.48 / 0.76 at a swap-free net Sharpe of 0.32 / 0.555 / 0.79 (the lead re-derived it: Φ(SR·√Y − 1.881)) and about 0.05 at FTMO's swaps; PACE's simulation (unverified) says an online-fallback or weighted-Holm allocation keeps lifetime FWER <= 0.05 and gives 1.6–2.8× the expected true discoveries when the first family is uncertain. (2) B0 item (d), "RSIM ≡ the engine on lab tapes", needs R1.6, while TODO puts the first look right after R1.4: either (d) binds from stage B on (stage A may be graded before R1.6), or the first look waits for R1.6.
+- Justification: open, owner-owned: both shape the first real-data look, and nothing can be graded before R1.4 anyway.
+- Linked: [[GAP-P12D-102]], [[GAP-P12D-111]], [[GAP-P12D-105]], [[GAP-P12D-94]]
+
+## GAP-P12D-139: an instrument halt clears only by human resume in code, while ACIS-07 says it also clears when its condition clears
+- Severity: medium · Likelihood: high
+- Status: open (2026-10-01, from the SIZING research pass; HALT semantics: an owner ruling, human-only)
+- Area: specs/ACIS-07-RISK_MONITOR.md §8 ("instrument halt clears when its condition clears *or* by human resume per policy"), the Governor's `_halts` and `PersistentHaltSink` (no clearing verb)
+- Description: the code takes the stricter reading: a per-instrument 1% open-loss halt stays until `resume(human_token)`. On an unattended demo that is a starvation path (master §10's anti-paralysis rule), and with multi-week holds at >= 0.25% of NAV a day per instrument about a third of holds would touch it (reflection principle, SIZING §1.2).
+- Justification: open: the stricter code is the safe side, so nothing is at risk today (the demo trades one minimum lot). The owner rules which reading is meant before a multi-week book trades; the spec and the code are then made to agree.
+- Linked: [[GAP-P12D-61]], [[GAP-P12D-131]]
+
 ## GAP-P12D-138: the practice engine's logs and market-state store grow without bound, about 0.3–0.5 GB a day, and nothing rotates them
 - Severity: medium · Likelihood: certain
 - Status: open (2026-10-01, measured on acis-demo-1 while sizing the AWS demo host)
@@ -718,9 +734,10 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-94: at FTMO's published swaps a pooled slow-trend book is marginal-to-negative — the account's swap regime is an owner decision
 - Severity: high · Likelihood: high
-- Status: open [owner decision R1-D9 — RULED 2026-09-25: decide at the first real-data look] (from PLAN_R1 §9 #6, R1-B; the swap table re-fetched and the markup decomposition checked by the lead)
+- Status: open [owner decision R1-D9 — RULED 2026-09-25: decide at the first real-data look; **RE-RULED 2026-10-02: SWAP-FREE** ("Swap-free account (Recommended)") — TREND is built and graded for a swap-free prop account; the venue pick (automation policy checked) is the lead's next step] (from PLAN_R1 §9 #6, R1-B; the swap table re-fetched and the markup decomposition checked by the lead)
 - Area: venue choice, the C8 cost model, the R1 slate's ranking
 - Description: net portfolio SR ≈ (s − c)·√N_eff gives −0.15..+0.32 at FTMO's median markup against +0.32..+0.79 swap-free (s = 0.15–0.34 per instrument). Swap is ~10× the trading cost of a medium-speed rule. E8's own help page lists "Swap free option: Yes" for E8 One (Forex) and E8 Pro Forex (Forex, Metals, Energies, Indices, Crypto), grade (a), read 2026-09-25; its +10% price is a search rendering (c). FTMO's own FAQ has no swap-free entry; third parties contradict each other.
+- **2026-10-01 research (EDGE agent, `archive/RESEARCH_EDGE_SHARPEN_2026-10-01.md`; the lead RE-DERIVED it from `swaps.py` and FTMO's dated table):** master §5.6's swap filter (markup × time in market 0.8 ÷ annual vol <= 0.10 SR) refuses TREND on 19 of the 21 explored non-energy instruments at FTMO's swaps, at typical vols: it admits EUR/JPY and CHF/JPY, and EUR/AUD sits on the line. Indices (markup 3.6–4.4%/yr), gold (3.95%) and the FX majors (1.3–2.6%) fail at 0.13–0.26. So R1-D9 decides the flagship family's breadth: about 2 instruments at FTMO's swaps against about 21 swap-free. Swap-free routes found: FundedNext's add-on at +10% of the fee with a 5% daily limit (help.fundednext.com, primary); FTMO 'on request', pricing unpublished (an aggregator, unverified); E8 (the R1 lead review), whose Pro 2.5% daily limit cannot carry multi-day trend risk (SIZING §3.4). Only FTMO and E8 passed the 2026-09-24 automation filter, so FundedNext's EA policy must be checked before it counts. Vols are typical values, not measured: the admission run on the real candles makes this exact.
 - Justification: open by ruling. **OWNER RULING 2026-09-25:** no emails wait on it; the cost model carries both worlds (FTMO's published table, and swap-free) as data ([[GAP-P12D-93]]); the owner picks the venue for slow trend just before the first real-data look, together with the account size ([[GAP-P12D-101]]). Never misrepresent eligibility for a swap-free account.
 - Linked: [[GAP-P12D-93]], [[GAP-P12D-101]], [[GAP-P12D-102]], [[GAP-P12D-54]]
 
@@ -1297,6 +1314,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - The §9.5 taper keeps full size until 60% of a limit is consumed, whereas the optimum shrinks in proportion to the cushion from the start. That refinement stays inside the law: it only tightens.
     - Realised risk is not a reported metric, which is why this went unseen.
   - **Link:** [[GAP-P12D-57]] (orders below the minimum lot) is the same fact seen from the execution side.
+- **2026-10-01 research (SIZING agent, `archive/RESEARCH_SIZING_AGGRESSION_2026-10-01.md`; the lead re-derived the cap arithmetic):** once sizing is NAV-relative, the BINDING constraint is the guardrail notional caps (cluster 20% of NAV, single-currency delta 30%): the best legal EUR/USD + USD/JPY book runs about 0.15–0.16% of NAV a day at any account size, while RSIM grades the R1 book at a 10–20% annual vol target (0.6–1.25%/day). The book R1 grades is therefore 4–8× the book the Governor may trade (a graded-vs-traded mismatch of the GAP-P12D-36 class), and an FTMO 2-Step cannot pass inside two years behind these caps at any true Sharpe up to 1.0. Its recommendations (a daily P&L-vol budget per account and stage: challenge 1.0–1.25%/day, funded min(1%, 0.10 × cushion), personal 0.25%; per-account guardrail profiles that keep 20%/30% for personal accounts and use risk caps plus a gross-notional ceiling for prop accounts; a daily-room guard in the firm's midnight-balance semantics) are OWNER decisions on guardrails, sequenced after rung 1, never ahead of an edge. The 2026-09-24 economics simulator measured the daily limit from start-of-day equity; the firms use the midnight balance, which makes multi-day holds costlier than it showed (SIZING §3.4, to be re-run on acis-compute-1).
 - Justification: open, owner-owned (ACIS-05 sizing contract).
   - **[spec]:** replace the fixed notional unit with a daily loss budget, as a fraction of the account's declared initial balance. Make it proportional to the cushion to the binding platform floor, composed by min() with the §9.5 taper and C16. Add a withdrawal policy: the funded stage is a de Finetti-style barrier problem.
   - **[impl], needs no ratification:** report daily P&L volatility as a % of initial NAV in every grading run.

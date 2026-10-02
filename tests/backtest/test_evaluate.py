@@ -11,12 +11,13 @@ import pytest
 
 from core.optimizer.costs import CostModel
 from core.signals import rules
-from tests.backtest.evaluate import evaluate
+from tests.backtest.evaluate import StageArms, evaluate
 from tests.backtest.lab_market import Effect, LabSpec, generate
 from tests.backtest.look_claims import load_vector
 from tests.backtest.look_register import LookRefused, LookRegister
-from tests.backtest.rsim import BookSpec, panel
+from tests.backtest.rsim import BookSpec, panel, run
 from tests.backtest.rsim_lab import carver_pct_vol, lab_market
+from tests.backtest.stage_a import from_register, stage_a
 
 
 class LabRsim:
@@ -66,3 +67,43 @@ def test_mismatched_costs_or_window_are_refused_before_any_line(tmp_path, acis_c
         evaluate(register=reg, cfg=acis_config, source=LabRsim(), family="f", claim=None, account="lab",
                  market=m, forecast=f, pct_vol=v, spec=spec, graded_from=m.days[0])
     assert not reg.scan().lines                                               # nothing was registered
+
+
+def _arms(m) -> StageArms:
+    return StageArms(benchmark="PASSIVE_LONG", benchmark_forecast=np.full((len(m.days), len(m.names)), 10.0),
+                     kill_only={"EWMAC16_64": panel(m, lambda p: rules.ewmac(p, 16, 64)),
+                                "BREAKOUT80": panel(m, lambda p: rules.breakout(p, 80))})
+
+
+def test_a_stage_a_grade_stores_every_series_its_verdict_reads(tmp_path, acis_config) -> None:
+    reg = LookRegister(tmp_path / "looks")
+    m, f, v, spec = _inputs()
+    look, result = evaluate(register=reg, cfg=acis_config, source=LabRsim(), family="trend_d1_v1", claim=None,
+                            account="lab", market=m, forecast=f, pct_vol=v, spec=spec, graded_from=m.days[300],
+                            arms=_arms(m))
+    stored = json.loads((tmp_path / "looks" / f"{look.look_id}.outcome.json").read_text())["stage_a"]
+    assert stored["benchmark"] == "PASSIVE_LONG" and sorted(stored["kill_only_vectors"]) == ["BREAKOUT80", "EWMAC16_64"]
+    doubled = BookSpec(costs={n: CostModel(0.0, 0.00002, stress=2.0) for n in m.names})
+    _, x2 = load_vector(tmp_path / "looks", stored["cost2x_vector"])
+    assert x2 == pytest.approx(run(m, f, v, doubled).daily[300:].tolist())          # the WHOLE cost doubled
+    assert np.mean(x2) < np.mean(result.daily[300:])
+    direct = stage_a(result.daily[300:], run(m, _arms(m).benchmark_forecast, v, spec).daily[300:],
+                     run(m, f, v, doubled).daily[300:],
+                     {k: float(run(m, fk, v, spec).daily[300:].mean()) for k, fk in _arms(m).kill_only.items()}, 0.03)
+    assert from_register(tmp_path / "looks", look.look_id, 0.03) == direct          # a pure function of the register
+
+
+def test_a_stage_a_arm_that_is_undeclared_or_off_the_market_is_refused_before_any_line(tmp_path, acis_config) -> None:
+    reg = LookRegister(tmp_path / "looks")
+    m, f, v, spec = _inputs()
+    bad_name = StageArms(benchmark="BEST_OF_THREE", benchmark_forecast=_arms(m).benchmark_forecast)
+    bad_shape = StageArms(benchmark="PASSIVE_LONG", benchmark_forecast=np.full((5, len(m.names)), 10.0))
+    for arms, why in ((bad_name, "registered passive arm"), (bad_shape, "own market")):
+        with pytest.raises(LookRefused, match=why):
+            evaluate(register=reg, cfg=acis_config, source=LabRsim(), family="f", claim=None, account="lab",
+                     market=m, forecast=f, pct_vol=v, spec=spec, graded_from=m.days[300], arms=arms)
+    assert not reg.scan().lines
+    plain, _ = evaluate(register=reg, cfg=acis_config, source=LabRsim(), family="f", claim=None, account="lab",
+                        market=m, forecast=f, pct_vol=v, spec=spec, graded_from=m.days[300])
+    with pytest.raises(ValueError, match="not a stage-A grade"):
+        from_register(tmp_path / "looks", plain.look_id, 0.03)
