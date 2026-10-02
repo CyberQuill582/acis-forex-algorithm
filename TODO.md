@@ -6,7 +6,34 @@
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
 
-## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-01, second session; the owner closed it)
+## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-02; the owner closed it)
+
+**Live state (verify first, read-only; "How to check the demo" below):**
+- **The demo RUNS on `acis-demo-1`** (practice, the one QIEA champion, pre-stop-rule code; healthy at the 2026-10-01 19:39 UTC check). It stays there until the AWS cutover window **2026-10-15..17**. The AWS demo host `i-07b1b3952ac03f45e` (`acis-demo-aws`) is BUILT and STOPPED (runbook: deploy/README.md "The AWS demo host"; at the window re-run `deploy/aws/acis-demo-prepare.sh` with a fresh bundle; the session's SSM helper was a scratchpad `ssm.sh`, `PYTHONIOENCODING=utf-8`).
+- **J1 RUNS on `acis-compute-1`** (started 2026-10-02 06:04 UTC, ~4 h; six account-size cells × 1,000 lab seeds, swap-free; checkout `/opt/acis/j1`). Results sync to `gs://acis-compute-0929-data/runs/2026-10-02-j1/` (`progress.log`, `<cell>/summary.json`, `admission/`); `done.log` marks the end and the server POWERS ITSELF OFF. If it is still running, let it finish.
+- **Nothing else runs:** the three research agents finished; the AWS data server is STOPPED.
+- **Repo:** `main` pushed (see `git log`); full suite on the server, ledger 0 violations; master **v2.27** (ACIS-03 v2.2, ACIS-04 v1.6, ACIS-05 v1.7, ACIS-07 v1.3). The governance gate is RED only on the constitution pin v0.9→v0.10 ([[GAP-C10-01]]); the comment-shape ratchet is clean.
+- **Workflow note:** `remote.sh` ships modified and UNTRACKED files only, so staged-new files reach the server only after a commit.
+
+**Owner rulings this session (all applied):** "sharpen the claws" (win across many instruments, not pace; not too conservative, never reckless; verify agent claims; use the credits); the three research agents (launched on request, triaged); **swap-free venue** (R1-D9 re-ruled; the lead's pick E8 One on cTrader + swap-free, [[GAP-P12D-94]]); **R1.6 now, interleaved by the lead**; the **R1.6 amendment ratified** (R6-1..R6-5) and applied as master v2.27; the **guardrail profiles ratified as the post-edge plan** (G-1..G-4 apply only after rung 1; `archive/GUARDRAIL_PROFILES_DRAFT_2026-10-02.md`); **G-5 headroom built**; the verification jobs approved; the demo stays on acis-demo-1 until 10-15..17; push.
+
+**Built this session:** the AWS demo host; R1.3 items 4+5 (the claim's registration-time declarations incl. the passive benchmark, E-R12-03; TSMOM's lineage successor `tsmom_slow_v2`); the stage-A grade storing every series (`evaluate(arms=...)`, `stage_a.from_register`); the real-candle admission run (D1 admitted 21/21 swap-free, 1/21 at FTMO's swaps); SIZING's simulator verified; G-5 (entry headroom, VaR in the taper); **R1.6 steps 1–2:** one sizing function for RSIM and the Governor (`core/governor/target.py`, the one lot rule's new home, the practice cap), the rates and carry rule in core (`core/data/rates.py`), the `Forecast` and `d1_forecast` with RSIM's warm-up (`core/signals/forecast.py`), each parity-tested against RSIM.
+
+**Next actions, in order:**
+1. **Read J1** (`summary.json` per cell: stage-A pass rate and the share of days D1 holds a position, by account size and vol target) → record in [[GAP-P12D-101]]; it informs R1-D14.
+2. **Finish R1.6** against ACIS-04 §4b / ACIS-05 §6.4 / ACIS-03 v2.2 ([[GAP-P12D-118]], [[GAP-P12D-106]], [[GAP-P12D-108]], [[GAP-P12D-61]]):
+   a. onboard the demo universe in `config/instruments.yaml` (R6-4: the 21 explored non-energy instruments Pepperstone offers; only 6 FX are onboarded today): contract metadata, calendars, clusters, C8 costs, swap conventions, verified read-only against the venue's symbol data. Starting with the onboarded FX subset is a temporary narrowing, not a change to R6-4;
+   b. D1 history seeding from the venue's trendbars (cTrader `ProtoOAGetTrendbarsReq`; offline fake-venue tests) and the runtime's rate table (macro CSVs refreshed daily; R6-1 freshness);
+   c. the runtime's daily 17:00 New York decision → `d1_forecast` → `banded_target` (practice cap one lot) → orders at each symbol's slot; the 10 × daily-ATR disaster stop and no same-day re-entry (R6-2); reductions through the reduce-only close;
+   d. legacy modules OFF in practice (R6-3); flatten-then-promote (ACIS-03 v2.2);
+   e. tests: B0(d) parity (RSIM's practice book ≡ the engine's targets on lab tapes), DST at 17:00 and at each slot, restart idempotence (`inputs_hash`), a reconnect between decision and slot;
+   f. **when R1.6 is built: ASK the owner** (one standalone question) to launch the constitution's two audits. Never launch unasked.
+3. **R1.4, fixed-family path first** (PACE): `passed` ([[GAP-P12D-104]]), the α design and B0(d) ([[GAP-P12D-140]], owner rulings), the portfolio unit ([[GAP-P12D-100]]), the GitHub anchor ([[GAP-P12D-86]]); then `REAL_LOOKS_OPEN`.
+4. **The AWS cutover 2026-10-15..17**, and **decide the post-trial compute home before 10-21** (the credit does not survive an upgrade; Spot c2d-standard-16 ~$0.12/h after).
+5. **Owner decisions pending:** [[GAP-P12D-139]] (instrument-halt clearing), [[GAP-P12D-140]], R1-D14 (J1 informs), energy ([[GAP-P12D-137]]); the demo's log growth ([[GAP-P12D-138]], before ~11-15).
+6. The [[GAP-P12D-131]] runtime batch still waits behind R1 (owner ruling 2026-10-01).
+
+## Previous handover (2026-10-01, second session): history; the block above supersedes it
 
 **Live state (verify first, read-only, as "How to check the demo" below):**
 - **The Pepperstone demo RUNS** on `acis-demo-1` (practice, session `engine-20261001T123445Z`, verified healthy 15:01 UTC: 0 positions, watchdog active). It runs the code from BEFORE the stop rule: a Ctrl+C there still leaves positions to the watchdog. The stop rule reaches it at its next start on a new checkout (the AWS move, below).

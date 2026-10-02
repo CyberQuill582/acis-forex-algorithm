@@ -23,25 +23,14 @@ from datetime import date
 from decimal import Decimal
 from typing import Callable, Sequence
 
-_TRIPLE_DAY = {"tom_next": 2, "financing_daily": 4}     # Mon=0 … Fri=4
+from core.data.rates import swap_multiplier  # noqa: F401  (moved, R1.6)
+
 _DAYS_PER_YEAR = Decimal("365")                          # OANDA: value × rate × 1/365
 
 # (instrument, business-day rollover date, direction) -> annualised % for THAT side:
 # the rate differential net of the broker fee, so a long and a short never share a sign
 # (GAP-P12D-06). Built by tests/backtest/financing.py from dated overnight rates.
 FinancingRate = Callable[[str, date, int], Decimal]
-
-
-def swap_multiplier(night: date, swap_convention: str = "tom_next") -> int:
-    """Days of financing charged for the rollover on business day `night`."""
-    try:
-        triple = _TRIPLE_DAY[swap_convention]
-    except KeyError:
-        raise ValueError(f"unknown swap_convention {swap_convention!r}; "
-                         f"declared: {sorted(_TRIPLE_DAY)}") from None
-    if night.weekday() >= 5:
-        raise ValueError(f"{night} is a weekend day — no rollover happens then")
-    return 3 if night.weekday() == triple else 1
 
 
 def financing_charge(*, instrument: str, direction: int, value: Decimal,

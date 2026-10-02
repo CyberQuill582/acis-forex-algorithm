@@ -32,9 +32,9 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
+from core.data.rates import RateTable, accrual, swap_multiplier
+from core.signals.forecast import WARMUP
 from tests.backtest.candle_store import Hourly, load
-from tests.backtest.carry import swap_multiplier
-from tests.backtest.financing import DEFAULT_GOLD_LEASE_PCT, RateTable
 from tests.backtest.rsim import Market
 from tests.backtest.universe import BY_NAME, EXPLORED, HELD_OUT
 
@@ -91,16 +91,6 @@ def _slot_index(h: Hourly, zone: str, hour: int) -> np.ndarray:
     return np.asarray(keep, np.int64)
 
 
-def _rate(name: str, rates: RateTable, day: date) -> float:
-    inst = BY_NAME[name]
-    quote = float(rates.rate(inst.quote, day))
-    if inst.asset_class == "fx":
-        return float(rates.rate(name.split("_")[0], day)) - quote
-    if inst.asset_class == "metal":
-        return float(DEFAULT_GOLD_LEASE_PCT) - quote
-    return -quote                                           # index: funding only (dividends declared absent)
-
-
 def build(root: Path, names: Sequence[str], rates: RateTable, start: date, end: date, *, tier: str) -> RealMarket:
     allowed, last = TIERS[tier]
     if bad := [n for n in names if n not in allowed]:
@@ -154,12 +144,13 @@ def _fill_columns(cols, fill_at, i, n, days, rates, closes, convention) -> None:
         fa[t] = max(fa[t], fa[t - 1])
     roll_days = [d for d, _ in days]
     roll_at = np.asarray([at for _, at in days], np.int64)
-    accrual = np.asarray([_rate(n, rates, d) / 100.0 * swap_multiplier(d, convention) / 365.0 for d in roll_days])
+    inst = BY_NAME[n]
+    accruals = np.asarray([accrual(inst.asset_class, n, inst.quote, rates, d) for d in roll_days])
     mult = np.asarray([swap_multiplier(d, convention) for d in roll_days], float)
     for t in range(len(fa)):
         hi = fa[t + 1] if t + 1 < len(fa) else fa[t]
         sel = (roll_at > fa[t]) & (roll_at <= hi)
-        cols["carry"][t, i], cols["nights"][t, i] = accrual[sel].sum(), mult[sel].sum()
+        cols["carry"][t, i], cols["nights"][t, i] = accruals[sel].sum(), mult[sel].sum()
     quote = BY_NAME[n].quote
     for t in range(len(fa)):
         if quote == "USD":
@@ -170,11 +161,11 @@ def _fill_columns(cols, fill_at, i, n, days, rates, closes, convention) -> None:
             cols["q"][t, i] = c[0] if sign > 0 else 1.0 / c[0]
     close = cols["close"][:, i]
     growth = np.ones(len(close))
-    growth[1:] = close[1:] / close[:-1] * (1.0 + accrual[1:])   # the rollover at each decision instant
+    growth[1:] = close[1:] / close[:-1] * (1.0 + accruals[1:])   # the rollover at each decision instant
     cols["price"][:, i] = np.cumprod(growth)
 
 
-def masked(forecast: np.ndarray, real: RealMarket, warmup: int = 260) -> np.ndarray:
+def masked(forecast: np.ndarray, real: RealMarket, warmup: int = WARMUP) -> np.ndarray:
     """NaN (flat) before each instrument's own data plus `warmup` decision days."""
     out = forecast.copy()
     for i, n in enumerate(real.market.names):
