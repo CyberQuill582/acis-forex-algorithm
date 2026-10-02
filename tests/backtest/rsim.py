@@ -17,8 +17,10 @@ Mental model:
     A = capital·(vol_target/16)/(σ%·close·q) · weight · IDM, and the optimum is forecast/10 · A.
     The 10% buffer is a band of ±0.1·A around the OPTIMUM; a position outside it trades to the
     band's nearest edge (pysystemtrade `buffer_method: forecast`, `buffer_trade_to_edge`; the
-    spec's wording is GAP-P12D-118's). The result is put on the venue's lots by THE one lot rule
-    (`target_on_lots`). A NaN forecast or vol (warm-up) targets flat.
+    spec's wording is GAP-P12D-118's). The result is put on the venue's lots by THE one lot rule,
+    then (paper/practice, `lot_cap`) capped at one minimum lot: all in `core/governor/target.py`'s
+    `banded_target`, the function the Governor trades with (R1.6, parity by identity). A NaN
+    forecast or vol (warm-up) targets flat.
   * Every fill pays THE C8 model, called once per fill: per_side_cost(spread)·|order|·q. There is
     no vectorised cost twin, so the GAP-P12D-36 class is excluded by identity.
   * Financing by declared world: "fair" books u·fill·q·carry; "swap_free" books nothing; "markup"
@@ -39,12 +41,10 @@ from typing import Callable, Mapping, Sequence
 
 import numpy as np
 
-from core.execution.venue_limits import target_on_lots
+from core.governor.target import IDM_CAP, VOL_DAYS, banded_target
 from core.optimizer.costs import CostModel
 
 WORLDS = ("fair", "swap_free", "markup")
-VOL_DAYS = 16.0                      # Carver: annual vol target / 16 = daily (256 business days)
-IDM_CAP = 2.5                        # master §5.5 / OOS_VALIDATION (Carver)
 
 
 @dataclass(frozen=True)
@@ -88,6 +88,7 @@ class BookSpec:
     lots: Mapping[str, Lots] = field(default_factory=dict)        # default Lots() per instrument
     world: str = "fair"
     markup: Mapping[str, tuple[float, float]] = field(default_factory=dict)   # name -> (long %, short %)
+    lot_cap: Mapping[str, float] = field(default_factory=dict)    # paper/practice: |target| <= cap units (D-a)
 
     def __post_init__(self) -> None:
         if self.world not in WORLDS:
@@ -123,12 +124,6 @@ def annual_sharpe(daily: np.ndarray, periods: float = 252.0) -> float:
     return float(daily.mean() / sd * math.sqrt(periods)) if sd > 0 else 0.0
 
 
-def buffered(current: float, optimum: float, band: float) -> float:
-    """Carver's buffer: inside optimum ± band, keep; outside, trade to the nearest edge."""
-    lo, hi = optimum - band, optimum + band
-    return lo if current < lo else hi if current > hi else current
-
-
 def run(market: Market, forecast: np.ndarray, pct_vol: np.ndarray, spec: BookSpec) -> BookResult:
     """Simulate one book. `forecast[t, i]` and `pct_vol[t, i]` (daily, fraction of price) must
     read nothing after day t's close; a NaN in either targets flat."""
@@ -144,6 +139,7 @@ def run(market: Market, forecast: np.ndarray, pct_vol: np.ndarray, spec: BookSpe
         cm, lots = spec.costs[name], spec.lots.get(name, Lots())
         step, minimum = Decimal(str(lots.step)), Decimal(str(lots.minimum))
         long_mu, short_mu = spec.markup.get(name, (0.0, 0.0))
+        cap = Decimal(str(spec.lot_cap[name])) if name in spec.lot_cap else None
         held = 0.0
         for t in range(T):
             if t:                                               # the window from fill t-1 to fill t
@@ -151,13 +147,9 @@ def run(market: Market, forecast: np.ndarray, pct_vol: np.ndarray, spec: BookSpe
                 gross[t, i] = held * (market.fill[t, i] - f0) * q0
                 fin[t, i] = _financing(spec.world, held, f0 * q0, market.carry[t - 1, i],
                                        market.nights[t - 1, i], long_mu, short_mu)
-            f, v = forecast[t, i], pct_vol[t, i]
-            if f != f or v != v or v <= 0:
-                optimum, band = 0.0, 0.0
-            else:
-                average = cash_vol / (v * market.close[t, i] * market.q[t, i]) * weights[name] * spec.idm
-                optimum, band = f / 10.0 * average, spec.buffer * average
-            target = float(target_on_lots(Decimal(str(float(buffered(held, optimum, band)))), step, minimum))
+            target = float(banded_target(held, forecast[t, i], pct_vol[t, i], market.close[t, i], market.q[t, i],
+                                         cash_vol=cash_vol, weight=weights[name], idm=spec.idm, buffer=spec.buffer,
+                                         step=step, minimum=minimum, cap=cap))
             if target != held:
                 cost[t, i] = cm.per_side_cost(float(market.spread[t, i])) * abs(target - held) * market.q[t, i]
                 fills += 1

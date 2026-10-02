@@ -11,7 +11,8 @@ import pytest
 from core.optimizer.costs import CostModel
 from core.signals import rules
 from tests.backtest.lab_market import Effect, LabSpec, generate
-from tests.backtest.rsim import BookSpec, Lots, Market, annual_sharpe, buffered, panel, run
+from core.governor.target import buffered
+from tests.backtest.rsim import BookSpec, Lots, Market, annual_sharpe, panel, run
 from tests.backtest.rsim_lab import carver_pct_vol, lab_market, run_member
 
 FREE = {"X_USD": CostModel(commission_per_side=0.0, slippage_per_side=0.0)}
