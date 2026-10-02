@@ -1,4 +1,9 @@
-"""Shared fixtures: real config load + factory construction (postcondition style)."""
+"""Shared fixtures: real config load + factory construction (postcondition style).
+
+`acis_config` is the SHIPPED config narrowed to the two pairs the behaviour tests were written for
+(tests/legacy_universe.py: EUR_USD, USD_JPY enabled; the target path off), so a universe change in
+config/ does not silently re-scope them. `shipped_config` is the config exactly as committed: the R1.6
+universe is tested against it (tests/integration/test_target_runtime.py)."""
 
 from __future__ import annotations
 
@@ -9,14 +14,20 @@ import pytest
 from config.schemas import AcisConfig, load_config
 from core.data.asset_classes import build_calendars
 from core.data.normaliser import FactoryConfig, MarketStateFactory
+from tests.legacy_universe import legacy_view
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = REPO_ROOT / "config"
 
 
 @pytest.fixture(scope="session")
-def acis_config() -> AcisConfig:
+def shipped_config() -> AcisConfig:
     return load_config(CONFIG_DIR)
+
+
+@pytest.fixture(scope="session")
+def acis_config(shipped_config: AcisConfig) -> AcisConfig:
+    return legacy_view(shipped_config)
 
 
 @pytest.fixture()

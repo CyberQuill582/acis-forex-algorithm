@@ -72,8 +72,60 @@ instruments:
       commission_per_side: 0.0
       slippage_per_side: 0.002
     vol_target_atr_frac: 0.0008
-  USD_CHF:                # extension — declared for the §8.5 scenario book (C7:
-    enabled: false        # inert until enabled; unknown symbol = config error)
+  # ── R1.6 onboarding (2026-10-02; R6-4, owner-ratified): the explored FX of the R1 universe, the
+  # target path's first universe (metals and indices wait for GAP-P12D-27's non-FX units). Contract
+  # metadata is the venue's standard FX contract (Pepperstone cTrader: 100,000 units a lot, 0.01-lot
+  # step and minimum, 5 digits, 3 on JPY quotes); the attach cross-checks every value against the
+  # venue's symbol data and refuses on a stricter venue (ACIS-13 §6.4). Costs are PROVISIONAL: the
+  # existing pairs' slippage in basis points, uncalibrated; demo fills never calibrate C8 (ACIS-13
+  # v1.2 D4). USD_CHF was declared for the §8.5 scenario book; the basket was owner-ratified 2026-07-22.
+  GBP_USD:
+    enabled: true
+    asset_class: fx
+    base_ccy: GBP
+    quote_ccy: USD
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0008
+    calendar: fx_default
+    costs: {commission_per_side: 0.0, slippage_per_side: 0.00002}
+    vol_target_atr_frac: 0.0008
+  AUD_USD:
+    enabled: true
+    asset_class: fx
+    base_ccy: AUD
+    quote_ccy: USD
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0008
+    calendar: fx_default
+    costs: {commission_per_side: 0.0, slippage_per_side: 0.00002}
+    vol_target_atr_frac: 0.0008
+  USD_CAD:
+    enabled: true
+    asset_class: fx
+    base_ccy: USD
+    quote_ccy: CAD
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0008
+    calendar: fx_default
+    costs: {commission_per_side: 0.0, slippage_per_side: 0.00002}
+    vol_target_atr_frac: 0.0008
+  USD_CHF:
+    enabled: true
     asset_class: fx
     base_ccy: USD
     quote_ccy: CHF
@@ -85,6 +137,113 @@ instruments:
     swap_convention: tom_next
     max_plausible_spread: 0.0008
     calendar: fx_default
+    costs: {commission_per_side: 0.0, slippage_per_side: 0.00002}
+    vol_target_atr_frac: 0.0008
+  EUR_GBP:
+    enabled: true
+    asset_class: fx
+    base_ccy: EUR
+    quote_ccy: GBP
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0008
+    calendar: fx_default
+    costs: {commission_per_side: 0.0, slippage_per_side: 0.00002}
+    vol_target_atr_frac: 0.0008
+  EUR_JPY:
+    enabled: true
+    asset_class: fx
+    base_ccy: EUR
+    quote_ccy: JPY
+    tick_size: 0.001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.06
+    calendar: fx_default
+    costs: {commission_per_side: 0.0, slippage_per_side: 0.003}
+    vol_target_atr_frac: 0.0008
+  GBP_JPY:
+    enabled: true
+    asset_class: fx
+    base_ccy: GBP
+    quote_ccy: JPY
+    tick_size: 0.001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.10
+    calendar: fx_default
+    costs: {commission_per_side: 0.0, slippage_per_side: 0.003}
+    vol_target_atr_frac: 0.0008
+  AUD_JPY:
+    enabled: true
+    asset_class: fx
+    base_ccy: AUD
+    quote_ccy: JPY
+    tick_size: 0.001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.06
+    calendar: fx_default
+    costs: {commission_per_side: 0.0, slippage_per_side: 0.002}
+    vol_target_atr_frac: 0.0008
+  EUR_CHF:
+    enabled: true
+    asset_class: fx
+    base_ccy: EUR
+    quote_ccy: CHF
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0008
+    calendar: fx_default
+    costs: {commission_per_side: 0.0, slippage_per_side: 0.00002}
+    vol_target_atr_frac: 0.0008
+  EUR_AUD:
+    enabled: true
+    asset_class: fx
+    base_ccy: EUR
+    quote_ccy: AUD
+    tick_size: 0.00001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.0012
+    calendar: fx_default
+    costs: {commission_per_side: 0.0, slippage_per_side: 0.00003}
+    vol_target_atr_frac: 0.0008
+  CHF_JPY:
+    enabled: true
+    asset_class: fx
+    base_ccy: CHF
+    quote_ccy: JPY
+    tick_size: 0.001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_fx
+    swap_convention: tom_next
+    max_plausible_spread: 0.08
+    calendar: fx_default
+    costs: {commission_per_side: 0.0, slippage_per_side: 0.003}
+    vol_target_atr_frac: 0.0008
   XAU_USD:                # extension — declared, disabled until mature (SPEC §9)
     enabled: false
     asset_class: metal
@@ -97,65 +256,6 @@ instruments:
     swap_convention: financing_daily
     max_plausible_spread: 1.2
     calendar: spot_metals        # OTC spot, not the CME day session (GAP-P12D-11)
-
-  # ── Diversification basket (owner-ratified 2026-07-22) — DECLARED, disabled ──
-  # until cost-calibration at data-download time: an ENABLED instrument requires a
-  # costs block + vol_target_atr_frac (schema-enforced), and those are calibrated
-  # from the real Dukascopy ticks (§13/v2.9). Enabling = flip `enabled: true` + add
-  # calibrated costs/vol_target + a scenario-replay re-verification (guardrail-adjacent).
-  # That is the data-time step; declaring them now readies the universe (§3.7).
-  GBP_USD:
-    enabled: false
-    asset_class: fx
-    base_ccy: GBP
-    quote_ccy: USD
-    tick_size: 0.00001
-    tick_value: 1.0
-    lot_step: 0.01
-    min_lot: 0.01
-    margin_model: retail_fx
-    swap_convention: tom_next
-    max_plausible_spread: 0.0008
-    calendar: fx_default
-  AUD_USD:
-    enabled: false
-    asset_class: fx
-    base_ccy: AUD
-    quote_ccy: USD
-    tick_size: 0.00001
-    tick_value: 1.0
-    lot_step: 0.01
-    min_lot: 0.01
-    margin_model: retail_fx
-    swap_convention: tom_next
-    max_plausible_spread: 0.0006
-    calendar: fx_default
-  USD_CAD:
-    enabled: false
-    asset_class: fx
-    base_ccy: USD
-    quote_ccy: CAD
-    tick_size: 0.00001
-    tick_value: 1.0
-    lot_step: 0.01
-    min_lot: 0.01
-    margin_model: retail_fx
-    swap_convention: tom_next
-    max_plausible_spread: 0.0008
-    calendar: fx_default
-  EUR_GBP:
-    enabled: false
-    asset_class: fx
-    base_ccy: EUR
-    quote_ccy: GBP
-    tick_size: 0.00001
-    tick_value: 1.0
-    lot_step: 0.01
-    min_lot: 0.01
-    margin_model: retail_fx
-    swap_convention: tom_next
-    max_plausible_spread: 0.0006
-    calendar: fx_default
 
 # §5.5: every relationship declares its window AND method — schema-fatal otherwise.
 pair_relationships:
@@ -175,7 +275,7 @@ clusters:
   usd_long: [USD_JPY, USD_CHF, USD_CAD]
   usd_short: [EUR_USD, GBP_USD, AUD_USD]
   commodity: [XAU_USD, AUD_USD]     # C7: extension references inert while disabled
-  european: [EUR_USD, GBP_USD, EUR_GBP]   # EUR/GBP bloc — gives the cross a cluster
-  yen_carry: [USD_JPY]
+  european: [EUR_USD, GBP_USD, EUR_GBP, EUR_CHF, EUR_AUD]   # EUR/GBP bloc — gives each cross a cluster
+  yen_carry: [USD_JPY, EUR_JPY, GBP_JPY, AUD_JPY, CHF_JPY]  # long = short JPY (R1.6: every cross has one)
   risk_on: [EUR_USD]
   risk_off: [XAU_USD, USD_JPY]

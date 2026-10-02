@@ -17,6 +17,7 @@ import pytest
 from config.schemas import ScenarioBook, load_config
 from core.optimizer.param_types import GENE_SPECS
 from core.risk.scenario_replay import ScenarioReplay
+from tests.legacy_universe import legacy_view
 from tests.optimizer_fixtures import CapturingLogger
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent.parent / "config"
@@ -127,7 +128,7 @@ def test_cluster_less_instrument_uses_delta_cap_not_cluster_cap(cfg, instruments
     assert not v.passed                       # exceeds the 7.5% ceiling when unclustered
 
 
-def test_outage_gap_allowance_prefers_enabled_instrument(cfg, instruments) -> None:
+def test_outage_gap_allowance_prefers_enabled_instrument(cfg) -> None:
     """GAP-0108 refinement: the broker-outage gap allowance sources from the worst
     ENABLED-instrument gap, not a disabled extension. A test-local book where
     EUR_USD (enabled) gaps 5% and USD_CHF (disabled) gaps 35% ⇒ the allowance is
@@ -138,15 +139,16 @@ def test_outage_gap_allowance_prefers_enabled_instrument(cfg, instruments) -> No
         {"name": "chf_gap", "kind": "gap_through_stop", "description": "d",
          "params": {"instrument": "USD_CHF", "gap_pct": -35.0}, "max_loss_pct_nav": 7.5},
     ])
-    r = _replay(book, cfg.guardrails, instruments, clusters=cfg.instruments.clusters)
+    legacy = dict(legacy_view(cfg).instruments.instruments)    # USD_CHF disabled, as the premise needs
+    r = _replay(book, cfg.guardrails, legacy, clusters=cfg.instruments.clusters)
     assert r._worst_book_gap_pct() == 5.0            # enabled EUR_USD, not disabled CHF
 
 
-def test_outage_gap_allowance_falls_back_to_worst_when_none_enabled(cfg, instruments) -> None:
-    """Conservative fallback: with NO enabled gap scenario (the shipped config —
-    CHF + XAU both disabled), the outage retains the overall worst gap so it never
-    under-provisions. The shipped gate is unchanged by the refinement."""
-    r = _replay(cfg.scenario_book, cfg.guardrails, instruments,
+def test_outage_gap_allowance_falls_back_to_worst_when_none_enabled(cfg) -> None:
+    """Conservative fallback: with NO enabled gap scenario (the legacy view — CHF + XAU
+    both disabled; the R1.6 shipped config enables USD_CHF, whose 35% gap then binds
+    directly), the outage retains the overall worst gap so it never under-provisions."""
+    r = _replay(cfg.scenario_book, cfg.guardrails, dict(legacy_view(cfg).instruments.instruments),
                 clusters=cfg.instruments.clusters)
     # shipped book: chf −35 (disabled), weekend_war +5 (disabled) ⇒ fallback 35
     assert r._worst_book_gap_pct() == 35.0

@@ -191,6 +191,9 @@ def test_daily_rule_schema_is_explicit() -> None:
 
 def test_the_shipped_rulebooks_keep_their_meaning() -> None:
     cfg = load_cfg()
-    for rb in cfg.platform_rules.accounts.values():
-        assert rb.initial_capital is None
+    for key, rb in cfg.platform_rules.accounts.items():
+        if key == "pepperstone_demo":                 # R6-5: the target path's capital_ref, sizing no rule
+            assert (rb.initial_capital, rb.vol_target_annual, rb.drawdown_rules) == (10_000, 0.10, [])
+        else:
+            assert rb.initial_capital is None
         assert all(r.type != "daily" and r.limit_of == "anchor" for r in rb.drawdown_rules)

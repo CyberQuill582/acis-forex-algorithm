@@ -64,7 +64,8 @@ async def attach_venue(cfg, account: str, root: Path, log, session_id: str, *,
             attached = await attach(v, rulebook_key=account, rulebook=cfg.platform_rules.accounts[account],
                                     instruments=cfg.instruments.instruments, session=session, store=store,
                                     logger=log, now=datetime.now(timezone.utc),
-                                    execution_cap=cfg.system.execution.max_venue_requests_per_day)
+                                    execution_cap=cfg.system.execution.max_venue_requests_per_day,
+                                    targeted=len(cfg.system.targets.universe) if cfg.system.targets else 0)
             break
         except (BudgetRefused, VenueError, ConnectionError, OSError, asyncio.TimeoutError) as exc:
             await session.stop()

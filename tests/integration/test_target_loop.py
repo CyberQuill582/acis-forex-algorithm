@@ -198,3 +198,20 @@ async def test_a_new_family_version_flattens_first_and_promotes_only_when_flat(t
     await loop.tick(nxt)
     assert rig.store.get("active_family") == "trend_d1_v1" and rig.events("FAMILY_PROMOTED")
     assert "EUR_USD" in loop.pending
+
+
+async def test_no_bar_after_the_decision_moves_its_target_or_inputs_hash(tmp_path) -> None:
+    """The structural future-scramble for the target path (GAP-P12D-65's law): bars after 17:00 New
+    York, which the cache holds after a later boot, change neither the target nor its inputs hash."""
+    rig = Rig(tmp_path)
+    await rig.loop().tick(AFTER, boot=True)
+    rng, at = random.Random(5), rollover_utc(DAY)
+    future = [Bar(ts_open=b.ts_open, open=b.open * f, high=b.high * f * 1.01, low=b.low * f * 0.99, close=b.close * f,
+                  spread=0.0, duration_s=3600)
+              for b in _bars(0.0002, 1, until=AFTER + timedelta(days=3)) if b.ts_open >= at
+              for f in (1 + rng.uniform(-0.05, 0.05),)]
+    assert len(future) > 40
+    rig.store.add("EUR_USD", future)
+    await rig.loop().decide(DAY, AFTER + timedelta(days=3))
+    a, b = [e for e in rig.events("TARGET_DECIDED") if e["day"] == DAY.isoformat()]
+    assert (a["target"], a["inputs_hash"], a["forecast"]) == (b["target"], b["inputs_hash"], b["forecast"])

@@ -142,7 +142,9 @@ venue:                           # ACIS-13 v1.0 §6.1 - the real venue; absent =
   adapter: ctrader               # master v2.23: the cTrader Open API, first venue a Pepperstone demo
   environment: demo              # must equal the account's isLive (A2); practice mode needs demo
   ctid_trader_account_id: 48971796  # HUMAN-committed 2026-10-01 (owner): Pepperstone demo, traderLogin 5350811; 0 = unbound, attach refuses
-  symbol_names: {EUR_USD: EURUSD, USD_JPY: USDJPY}   # exact venue names, verified at attach
+  symbol_names: {EUR_USD: EURUSD, USD_JPY: USDJPY, GBP_USD: GBPUSD, AUD_USD: AUDUSD, USD_CAD: USDCAD,
+                 USD_CHF: USDCHF, EUR_GBP: EURGBP, EUR_JPY: EURJPY, GBP_JPY: GBPJPY, AUD_JPY: AUDJPY,
+                 EUR_CHF: EURCHF, EUR_AUD: EURAUD, CHF_JPY: CHFJPY}   # exact venue names (Pepperstone's list, 2026-10-01 probe), verified at attach
   transport: json_ws             # OQ-02: JSON over WebSocket via aiohttp (no new dependency)
   daily_request_budget: 1000     # schema max 1000 (half the FTMO/E8 cap, GAP-P12D-57)
   close_reserve: 100             # only closes, flatten and stop repair may spend these
@@ -155,3 +157,14 @@ venue:                           # ACIS-13 v1.0 §6.1 - the real venue; absent =
   reconcile_interval_s: 900
   backoff: {base_s: 1, factor: 2, cap_s: 60, max_consecutive: 10}
   rate_limit_per_s: {general: 25, historical: 2}     # half the documented 50 / 5 (F-05)
+targets:                         # ACIS-05 v1.7 §6.4 (R1.6): the target-position path; absent = off
+  family: trend_d1_v1            # the registered TREND D1 (core/signals/families.py)
+  universe: [EUR_USD, USD_JPY, GBP_USD, AUD_USD, USD_CAD, USD_CHF, EUR_GBP, EUR_JPY, GBP_JPY, AUD_JPY,
+             EUR_CHF, EUR_AUD, CHF_JPY]   # R6-4's explored FX first; metals and indices after GAP-P12D-27
+  idm: 1.5                       # sqrt(N_eff), N_eff = 13 / (1 + 12 x 0.4): a declared prior subsystem correlation 0.4, not data
+  buffer: 0.10                   # Carver's band (master §5.5)
+  history_days: 1100             # ACIS-04 §4b: at least 3 years of the venue's own H1 bars at first boot
+  settle_s: 120                  # decide 2 min after 17:00 New York, once the 16:00 bar is complete
+  slot_grace_s: 300              # a slot runs at most 5 min late; later it is skipped, never caught up
+  macro_dir: data/macro_live     # `scripts/download_macro.py --live data/macro_live`, refreshed daily on the host
+  rate_max_stale_days: 10        # R6-1

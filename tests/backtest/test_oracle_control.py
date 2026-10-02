@@ -23,6 +23,7 @@ import pytest
 from config.account_doctrine import guardrail_hash
 from config.schemas import load_config
 from tests.backtest.data_loader import BacktestDataLoader
+from tests.legacy_universe import legacy_view
 from tests.backtest.money import quote_to_account
 from tests.backtest.oracle import grade_oracle, non_dsr_failures, oracle_ticks, void_reasons
 from tests.backtest.oracle_loop import NOTIONAL_FRACTION, STRATEGY, OracleLoop, OracleTick
@@ -39,7 +40,7 @@ PAIR = (("EUR_USD", 1.10), ("USD_JPY", 110.0))
 
 @pytest.fixture(scope="module")
 def cfg():
-    return load_config(ROOT / "config")
+    return legacy_view(load_config(ROOT / "config"))     # the legacy engine's synthetic pairs
 
 
 def test_the_episode_schedule_is_exactly_the_planted_drift() -> None:

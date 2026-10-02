@@ -13,6 +13,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from config.schemas import load_config
+from tests.legacy_universe import legacy_view
 from tests.backtest.leakage import Decision
 from tests.backtest.leakage_markets import decision_cuts
 
@@ -26,7 +27,7 @@ def _script(monkeypatch, tmp_path, *, controls=None, variant=None, argv=ARGS):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     monkeypatch.setattr(mod, "ROOT", tmp_path)                        # never write under data/
-    monkeypatch.setattr(mod, "leak_config", lambda root, small_optimizer: load_config(ROOT / "config"))
+    monkeypatch.setattr(mod, "leak_config", lambda root, small_optimizer: legacy_view(load_config(ROOT / "config")))
     monkeypatch.setattr(mod, "fresh_process_pool", lambda workers: ThreadPoolExecutor(max_workers=workers))
     if controls is not None:
         monkeypatch.setattr(mod, "controls", controls)

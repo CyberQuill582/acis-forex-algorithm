@@ -1,5 +1,5 @@
 #!/bin/bash
-# ACIS demo host (AWS): install or update the checkout, the venv and the watchdog unit.
+# ACIS demo host (AWS): install or update the checkout, the venv, the watchdog unit and the daily-rates timer.
 # Run as root through SSM after deploy/aws/acis-demo-userdata.sh has finished.
 # Usage: acis-demo-prepare.sh <git-bundle-url> [<params.db-url>]
 # Everything under /opt/acis belongs to `acis`. The watchdog unit is installed but NOT enabled:
@@ -35,7 +35,13 @@ fi
 install -m644 /opt/acis/repo/deploy/systemd/acis-watchdog.service /etc/systemd/system/
 install -D -m644 /opt/acis/repo/deploy/demo/acis-watchdog.aws.conf \
   /etc/systemd/system/acis-watchdog.service.d/demo-host.conf
+# the target path's daily rates (R1.6, R6-1): public data, no secret, so the timer is enabled here
+# and run once, so the first 17:00 decision finds fresh rates
+install -m644 /opt/acis/repo/deploy/systemd/acis-macro.service /opt/acis/repo/deploy/systemd/acis-macro.timer \
+  /etc/systemd/system/
 systemctl daemon-reload
+systemctl enable --now acis-macro.timer
+systemctl start acis-macro.service || echo "acis-macro: first run failed; the timer retries daily (R6-1)"
 
 cd /opt/acis/repo
 as_acis git log -1 --oneline

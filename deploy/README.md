@@ -113,6 +113,11 @@ console (EC2 → `acis-demo-aws` → Connect → Session Manager), which logs in
   `/opt/acis/repo`, builds `/opt/acis/venv` with the demo's pinned dependencies, places
   `params.db` once, and installs the watchdog unit with `deploy/demo/acis-watchdog.aws.conf`,
   NOT enabled. Re-run it with a new bundle to update the checkout.
+- **Daily rates (R1.6):** the prepare step also installs and ENABLES `acis-macro.timer` (12:00 UTC
+  daily, public data, no secret) and runs it once: `scripts/download_macro.py --live data/macro_live`,
+  the dated overnight rates the target path's excess-return price reads. If they age past 10 days the
+  engine makes no new targets (R6-1, `no_target:stale_rates` in `logs/target_log.jsonl`). Checked from
+  Google's Linux server on 2026-10-02: all seven series fetched, the freshest 1–7 days old.
 
 **One engine and one watchdog per demo account, across all hosts.** A watchdog whose own
 engine is silent flattens every position on the account, so a second host's watchdog would

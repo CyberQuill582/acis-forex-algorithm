@@ -121,5 +121,6 @@ accounts:
     min_hold_seconds: 0
     weekend_holding_allowed: true # the broker allows it; the R-1 rules hold positions for days
     drawdown_rules: []            # no platform limit to model; ACIS's own guardrails bind (stricter-of).
-                                  # Open the demo at $10,000 (the equity floor is $9,000); no rule here
-                                  # sizes on initial capital, so none is declared.
+                                  # Open the demo at $10,000 (the equity floor is $9,000).
+    initial_capital: 10000        # R6-5 (owner-ratified 2026-10-02): the target path's capital_ref; no rule
+    vol_target_annual: 0.10       # here sizes on it, so it moves no limit (config/rulebook.py)

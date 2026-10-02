@@ -23,6 +23,7 @@ from config.monitoring_schema import MonitoringConfig, TunableParam  # noqa: F40
 from config.rulebook import (AccountRulebook, DrawdownRule, NewsRules,  # noqa: F401
                              PlatformRules)   # platform_rules.yaml, the §9.5 account doctrine
 from config.runtime_schema import RuntimeConfig
+from config.targets_schema import TargetsConfig
 from config.venue import VenueConfig
 
 
@@ -264,14 +265,13 @@ class SystemConfig(_Strict):
     monitoring: MonitoringConfig
     runtime: RuntimeConfig               # master §10 v2.25: the position policy's declared values
     venue: VenueConfig | None = None     # ACIS-13 §6.1: absent = no real venue (mock only)
+    targets: TargetsConfig | None = None # ACIS-05 v1.7 §6.4: absent = the target path is off
 
 
 # --------------------------------------------------------------------------- #
 # instruments.yaml — asset-class law (SPEC §3.7): contract metadata is declared
-# data; an enabled instrument with incomplete metadata is fatal.
+# data; an enabled instrument with incomplete metadata is fatal. (Calendars: config/calendars.py.)
 # --------------------------------------------------------------------------- #
-
-# FxCalendar / ExchangeCalendar live in config/calendars.py (local time, GAP-P12D-10).
 
 
 class InstrumentCosts(_Strict):
@@ -466,9 +466,7 @@ class ScenarioBook(_Strict):
     scenarios: list[Scenario] = Field(min_length=1)
 
 
-# --------------------------------------------------------------------------- #
-# Loader
-# --------------------------------------------------------------------------- #
+# -- Loader ------------------------------------------------------------------ #
 
 class AcisConfig(_Strict):
     system: SystemConfig

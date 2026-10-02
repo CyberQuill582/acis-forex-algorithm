@@ -70,13 +70,17 @@ class Attached:
 
 CONNECT_OVERHEAD = 8     # app auth, grant, account auth, trader, assets, symbols ×2, reconcile (§6.5)
 ROUND_TRIP = 4           # measured: open 1; close = reconcile ×2 + close 1 (v1.2, GAP-P12D-132 D1)
+HISTORY_PER_INSTRUMENT = 2   # the target path's H1 append at each decision + a restart's gap fill (ACIS-04 v1.6 §4b)
 
 
-def feasible(cfg, execution_cap: int) -> str | None:
+def feasible(cfg, execution_cap: int, targeted: int = 0) -> str | None:
     """A9 (§6.5): the day's projected requests fit in budget − reserve, and the orchestrator's own
-    cap (ACIS-06 C-EXE-8) sits inside it, so it refuses an open before the adapter must."""
+    cap (ACIS-06 C-EXE-8) sits inside it, so it refuses an open before the adapter must. `targeted`
+    instruments each fetch their daily history (the first boot's deeper seed is a one-time query,
+    refused inside the reserve, so it can delay a forecast, never an exit)."""
     projected = (CONNECT_OVERHEAD * (1 + cfg.backoff.max_consecutive) + 86400 / cfg.equity_poll_s * 2
-                 + 86400 / cfg.reconcile_interval_s + ROUND_TRIP * cfg.max_orders_per_day)
+                 + 86400 / cfg.reconcile_interval_s + ROUND_TRIP * cfg.max_orders_per_day
+                 + HISTORY_PER_INSTRUMENT * targeted)
     room = cfg.daily_request_budget - cfg.close_reserve
     if projected > room:
         return f"projected {projected:.0f} requests a day > {room} (budget − reserve)"
@@ -86,7 +90,7 @@ def feasible(cfg, execution_cap: int) -> str | None:
 
 
 async def attach(cfg, *, rulebook_key: str, rulebook, instruments: Mapping, session, store,
-                 logger, now: datetime, execution_cap: int) -> Attached:
+                 logger, now: datetime, execution_cap: int, targeted: int = 0) -> Attached:
     """A1–A6 and A11 (A7's restart sync belongs to the face, A8 to the feed's first live tick)."""
     base = dict(venue="ctrader", environment=cfg.environment, host=HOSTS[cfg.environment],
                 ctid_trader_account_id=cfg.ctid_trader_account_id, attached_at=now.isoformat(),
@@ -107,7 +111,7 @@ async def attach(cfg, *, rulebook_key: str, rulebook, instruments: Mapping, sess
         return refuse("ATTACH_PLATFORM_MISMATCH", f"rulebook platform is {rulebook.platform!r}")
     if cfg.ctid_trader_account_id == 0:
         return refuse("ATTACH_UNBOUND", "a human commits venue.ctid_trader_account_id")
-    infeasible = feasible(cfg, execution_cap)
+    infeasible = feasible(cfg, execution_cap, targeted)
     if infeasible:                                       # A9, checked before the venue is contacted
         return refuse("ATTACH_BUDGET_INFEASIBLE", infeasible)
     step(1, "rulebook loaded")

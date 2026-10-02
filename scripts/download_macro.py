@@ -24,6 +24,8 @@ that fails its plausibility checks (range, ordering, coverage) is rejected, not 
 
 Usage:  python scripts/download_macro.py            # all series (skips ones already valid)
         python scripts/download_macro.py --force    # re-fetch everything
+        python scripts/download_macro.py --live data/macro_live   # the runtime's rates (R1.6): the last
+            1,200 days through today, no SPX, each series fresh within 10 days (R6-1); run daily
 """
 
 from __future__ import annotations
@@ -40,7 +42,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -49,7 +51,7 @@ RAW = OUT / "raw"
 MANIFEST = OUT / "manifest.json"
 START, END = date(2011, 1, 1), date(2025, 12, 31)
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-CURL = r"C:\Windows\System32\curl.exe"
+CURL = r"C:\Windows\System32\curl.exe" if os.name == "nt" else "curl"   # Linux: the system curl
 BIS_AREAS = ("US", "XM", "JP", "GB", "AU", "CH", "CA")
 
 
@@ -158,7 +160,8 @@ def _unix(d: date) -> int:
     return int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp())
 
 
-SERIES = {
+def series(START: date, END: date) -> dict:
+  return {
     #  id:         (url, parser, via_os_tls, (lo, hi) plausible range, expected first-date by)
     "spx_yahoo":  (f"https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?period1={_unix(START)}"
                    f"&period2={_unix(END) + 86400}&interval=1d", parse_yahoo, False, (800, 9000), date(2011, 1, 10)),
@@ -185,7 +188,10 @@ SERIES = {
     "bis_policy": ("https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D."
                    + "+".join(BIS_AREAS) + f"?startPeriod={START.isoformat()}&endPeriod={END.isoformat()}"
                    "&format=csv", parse_bis, False, (-1.5, 10), date(2011, 1, 10)),
-}
+  }
+
+
+SERIES = series(START, END)
 
 
 # Well-documented S&P 500 closes the downloaded series must reproduce (±0.02).
@@ -198,7 +204,8 @@ SPX_KNOWN_CLOSES = {
 }
 
 
-def validate(sid: str, rows, lo: float, hi: float, first_by: date | None) -> str | None:
+def validate(sid: str, rows, lo: float, hi: float, first_by: date | None,
+             ends_by: date = date(2025, 12, 1)) -> str | None:
     """Return a rejection reason, or None if the series is usable."""
     if not rows:
         return "no rows"
@@ -220,8 +227,8 @@ def validate(sid: str, rows, lo: float, hi: float, first_by: date | None) -> str
             return f"{k or sid}: {len(bad)} values outside [{lo}, {hi}] e.g. {bad[:3]}"
         if first_by and ds[0] > first_by:
             return f"{k or sid}: starts {ds[0]}, expected by {first_by}"
-        if ds[-1] < date(2025, 12, 1):
-            return f"{k or sid}: ends {ds[-1]}, expected through Dec-2025"
+        if ds[-1] < ends_by:
+            return f"{k or sid}: ends {ds[-1]}, expected by {ends_by}"
     if sid == "bis_policy" and sorted(per_key) != sorted(BIS_AREAS):
         return f"areas {sorted(per_key)} != {sorted(BIS_AREAS)}"
     return None
@@ -236,13 +243,19 @@ def write_atomic(path: Path, data: bytes) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--live", type=Path, help="the runtime's rate directory (R1.6): always re-fetched")
     a = ap.parse_args()
-    RAW.mkdir(parents=True, exist_ok=True)
-    manifest = json.loads(MANIFEST.read_text()) if MANIFEST.exists() else {}
+    out, today, todo, ends_by = OUT, datetime.now(timezone.utc).date(), SERIES, date(2025, 12, 1)
+    if a.live:
+        out, ends_by = a.live, today - timedelta(days=10)
+        todo = {k: v[:4] + (None,) for k, v in series(today - timedelta(days=1200), today).items() if k != "spx_yahoo"}
+    raw_dir, manifest_path = out / "raw", out / "manifest.json"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     failed = []
-    for sid, (url, parser, os_tls, (lo, hi), first_by) in SERIES.items():
-        norm = OUT / f"{sid}.csv"
-        if not a.force and sid in manifest and norm.exists():
+    for sid, (url, parser, os_tls, (lo, hi), first_by) in todo.items():
+        norm = out / f"{sid}.csv"
+        if not (a.force or a.live) and sid in manifest and norm.exists():
             print(f"skip  {sid} (already valid: {manifest[sid]['rows']} rows)")
             continue
         print(f"fetch {sid} ...", flush=True)
@@ -253,13 +266,13 @@ def main() -> int:
             failed.append(sid)
             print(f"FAIL  {sid}: {e!r}"[:300])
             continue
-        why = validate(sid, rows, lo, hi, first_by)
+        why = validate(sid, rows, lo, hi, first_by, ends_by)
         if why:
             failed.append(sid)
             print(f"REJECT {sid}: {why}")
             continue
         ext = "json" if raw[:1] in (b"{", b"[") else "csv"
-        write_atomic(RAW / f"{sid}.{ext}", raw)
+        write_atomic(raw_dir / f"{sid}.{ext}", raw)
         buf = io.StringIO()
         w = csv.writer(buf, lineterminator="\n")
         if sid == "bis_policy":
@@ -274,9 +287,9 @@ def main() -> int:
             "raw_file": f"raw/{sid}.{ext}", "sha256_raw": hashlib.sha256(raw).hexdigest(),
             "rows": len(rows), "first": rows[0][0].isoformat(), "last": rows[-1][0].isoformat(),
         }
-        write_atomic(MANIFEST, json.dumps(manifest, indent=1).encode())
+        write_atomic(manifest_path, json.dumps(manifest, indent=1).encode())
         print(f"OK    {sid}: {len(rows)} rows {rows[0][0]} .. {rows[-1][0]}")
-    print(f"done: {len(SERIES) - len(failed)}/{len(SERIES)} valid" + (f"; FAILED {failed}" if failed else ""))
+    print(f"done: {len(todo) - len(failed)}/{len(todo)} valid" + (f"; FAILED {failed}" if failed else ""))
     return 1 if failed else 0
 
 

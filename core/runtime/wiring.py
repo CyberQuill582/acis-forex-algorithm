@@ -5,14 +5,14 @@ Invariants:
     except the paper venue, which is the paper mode's venue by law (master §7.5).
   * One edge: Risk holds `PersistentHaltSink(RuntimeHaltSink)`, and the MCP control target
     routes through the same edge, so every halt is recorded and survives a restart.
-  * Paper and practice trade one venue minimum lot (ACIS-05 v1.6, GAP-P12D-129): the Governor
-    is handed the attached venue's minimum per instrument, or the paper descriptor's.
+  * Paper and practice trade one venue minimum lot (ACIS-05 v1.6, GAP-P12D-129; TAI-18): the
+    Governor is handed the attached venue's minimum per instrument, or the paper descriptor's.
   * The ParamLibrary's flat gate counts Risk's positions AND the executor's in-flight work, so
     no promotion slips in between a submit and its fill (C2).
-  * Stores live under `root/data/runtime`, logs under `root/logs`: one tree per deployment. Each
-    mode keeps its OWN Risk store (halts, drawdown anchors): paper equity never anchors the practice
-    account's daily-loss series (GAP-P12D-132 TAI-14).
-  * The minimum lot is injected in paper and practice only (ACIS-05 v1.6; TAI-18).
+  * With `targets:` and a venue, the target path's slow loop is a task (target_wiring.py) and
+    NVMA's no-parameters veto reads the family's registration (D-a); the universe is its alone.
+  * Stores live under `root/data/runtime`, logs under `root/logs`. Each mode keeps its OWN Risk store:
+    paper equity never anchors the practice account's daily-loss series (GAP-P12D-132 TAI-14).
   * Risk's book is ONE venue's book, fixed for the process by its Risk store (`book`): a paper
     process never adopts the attached account's positions nor ingests its fills, and orders reach
     the account only from a practice book. Demo positions left by an ended practice session rest
@@ -55,6 +55,7 @@ from core.runtime.engine import Runtime
 from core.runtime.executor import Executor
 from core.runtime.halt_edge import RuntimeControl, RuntimeHaltSink
 from core.runtime.paper import PaperVenue
+from core.runtime.target_wiring import build_targets
 from core.runtime.venue_link import VenueLink
 from core.signals.agon import AGON
 from core.signals.canonical import register_canonical
@@ -87,6 +88,8 @@ class Parts:
     clusters: dict
     market_open: Callable[[datetime], bool]
     book: str = "paper"                          # the mode whose Risk store this process holds
+    targets: object | None = None                # core/runtime/target_loop.py, when configured
+    target_universe: frozenset = frozenset()     # instruments only the target path trades (R6-3)
 
     @property
     def max_hold_s(self) -> float: return self.cfg.system.runtime.max_hold_s
@@ -134,6 +137,8 @@ class Parts:
                 yield "venue_events", self.venue.watch_events()
             if self.venue.reconnector is not None:
                 yield "reconnect", self.venue.reconnector.run()
+        if self.targets is not None:
+            yield "targets", self.targets.run()
 
 
 def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,
@@ -172,12 +177,14 @@ def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,
 
     params = ParamLibrary(data / "params.db", sysc.session_boundaries,
                           sysc.param_stall_alert_boundaries, _FlatGate(), logger("param_log", "optimizer"))
-    nvma = NVMAEngine(NVMA(cfg=sysc.regime, session_median=factory.session_median,
-                           tierg_shock=lambda instrument, ts: False, has_params_for=params.has_active),
-                      sysc.regime, logger("regime_log", "regime"))
     signal_log = logger("signal_log", "signals")
     prov = ProvenanceStore(data / "provenance.db", sysc.provenance.revalidation_cadence_days, signal_log)
     register_canonical(prov, datetime(2026, 7, 1, tzinfo=timezone.utc))
+    targeted = sysc.targets is not None and venue is not None
+    has_params = (lambda regime: prov.is_registered(sysc.targets.family)) if targeted else params.has_active
+    nvma = NVMAEngine(NVMA(cfg=sysc.regime, session_median=factory.session_median,
+                           tierg_shock=lambda instrument, ts: False, has_params_for=has_params),
+                      sysc.regime, logger("regime_log", "regime"))
     agon = AGON(sysc.signals, cfg.instruments.pair_relationships, prov,
                 lambda inst, sess, kind: factory.session_median(inst, sess, kind) or 0.0, signal_log)
     paper_descriptor = venue.attached.descriptor if venue is not None else MockExecutionFace().descriptor
@@ -190,6 +197,7 @@ def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,
         return Decimal(str(paper_descriptor.min_lot)) * UNITS_PER_LOT
 
     fx = cfg.instruments.calendars["fx_default"]
+    governor_log = logger("governor_log", "governor")
     governor = CapitalGovernor(
         cfg=sysc.governor, guardrails=cfg.guardrails, rulebook=rulebook, base_unit_usd=sysc.base_unit_usd,
         clusters=cfg.instruments.clusters,
@@ -198,7 +206,7 @@ def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,
         week_close=fx.week_close, week_open=fx.week_open, holidays=fx.holidays,
         scalp_horizon_s=sysc.signals.momentum_scalp_horizon_bars[1] * sysc.signals.momentum_scalp_bar_seconds,
         atr_period=sysc.signals.atr_period, blackout=lambda instrument, now: False,
-        logger=logger("governor_log", "governor"),
+        logger=governor_log,
         resume_gate=lambda token: held[0].on_human_resume(token, now_fn()), fixed_units=min_lot)
     costs = {s: CostModel(commission_per_side=sp.costs.commission_per_side,
                           slippage_per_side=sp.costs.slippage_per_side) for s, sp in enabled.items()}
@@ -249,6 +257,10 @@ def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,
                   pipeline=None, book=intended_mode)
     runtime = Runtime(parts)
     runtime_ref.append(runtime)
+    parts.targets = build_targets(cfg, root=root, venue=venue, calendars=calendars, prov=prov, governor=governor,
+                                  risk=risk, executor=executor, nvma=nvma, runtime=runtime, mode=mode,
+                                  now_fn=now_fn, logger=logger("target_log", "runtime"), governor_log=governor_log)
+    parts.target_universe = frozenset(sysc.targets.universe) if parts.targets is not None else frozenset()
     parts.pipeline = IngestionPipeline(feed, factory, writer, log, subscribers=[runtime.on_state],
                                        data_logger=logger("data_log", "data"),
                                        log_sample_rate=d.log_sample_rate)

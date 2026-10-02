@@ -31,6 +31,7 @@ from unittest import mock
 
 import tests.backtest.oos_runner as oos_runner
 from config.schemas import AcisConfig, load_config
+from tests.legacy_universe import legacy_view
 from tests.backtest.data_loader import BacktestDataLoader
 from tests.backtest.leakage import Decision
 from tests.backtest.leakage_markets import PerturbedMarket, TickClock, order_decisions, trade_decisions
@@ -55,7 +56,7 @@ class NullLogger:
 
 
 def leak_config(root: Path, *, small_optimizer: bool) -> AcisConfig:
-    cfg = load_config(root / "config")
+    cfg = legacy_view(load_config(root / "config"))       # the legacy engine's synthetic pairs
     if not small_optimizer:
         return cfg
     small = cfg.system.optimizer.model_copy(update={

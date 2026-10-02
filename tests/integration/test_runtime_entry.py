@@ -26,11 +26,12 @@ def test_print_hashes_shows_exactly_what_practice_attests_to(tmp_path, acis_conf
     assert rulebook_hash(acis_config.platform_rules.accounts["pepperstone_demo"]) in out
 
 
-def test_a_paper_smoke_run_boots_in_paper_runs_and_beats(tmp_path) -> None:
+def test_a_paper_smoke_run_boots_in_paper_runs_and_beats(tmp_path, shipped_config) -> None:
     root = deployment(tmp_path)
     assert cli(["--root", str(root), "--mock-ticks", "50"]) == 0
     beat = json.loads((root / "logs" / "heartbeat.json").read_text(encoding="utf-8"))
-    assert beat["mode"] == "paper" and beat["fast_loop_seq"] == 50 * 2      # two instruments
+    assert beat["mode"] == "paper" and beat["fast_loop_seq"] == 50 * len(shipped_config.instruments.enabled)
+    assert '"TARGETS_NO_VENUE"' in (root / "logs" / "target_log.jsonl").read_text(encoding="utf-8")
     stopped = [json.loads(line) for line in (root / "logs" / "system_log.jsonl").read_text(
         encoding="utf-8").splitlines() if '"ENGINE_STOPPED"' in line]
     assert stopped[-1]["data"]["outcome"] == "feed_ended"

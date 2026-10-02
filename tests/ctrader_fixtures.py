@@ -19,6 +19,11 @@ ACCOUNT = 4242
 EURUSD = {"symbolId": 1, "symbolName": "EURUSD", "enabled": True, "baseAssetId": 1, "quoteAssetId": 2}
 USDJPY = {"symbolId": 2, "symbolName": "USDJPY", "enabled": True, "baseAssetId": 2, "quoteAssetId": 3}
 WEEK = [{"startSecond": 0, "endSecond": 7 * 86400}]
+ASSETS = {"EUR": 1, "USD": 2, "JPY": 3, "GBP": 4, "AUD": 5, "CAD": 6, "CHF": 7}
+# the rest of the R1.6 FX universe (config/instruments.yaml): name -> (symbolId, digits, price)
+MORE_FX = {"GBPUSD": (3, 5, 1.30), "AUDUSD": (4, 5, 0.65), "USDCAD": (5, 5, 1.37), "USDCHF": (6, 5, 0.80),
+           "EURGBP": (7, 5, 0.86), "EURJPY": (8, 3, 172.0), "GBPJPY": (9, 3, 199.0), "AUDJPY": (10, 3, 99.0),
+           "EURCHF": (11, 5, 0.93), "EURAUD": (12, 5, 1.78), "CHFJPY": (13, 3, 186.0)}
 
 
 def full_symbol(light: dict, digits: int) -> dict:
@@ -59,6 +64,11 @@ class FakeVenue:
         self.symbols = {1: full_symbol(EURUSD, 5), 2: full_symbol(USDJPY, 3)}
         self.light = [EURUSD, USDJPY]
         self.prices = {1: 1.10000, 2: 150.000}
+        for name, (sid, digits, price) in MORE_FX.items():
+            light = {"symbolId": sid, "symbolName": name, "enabled": True, "baseAssetId": ASSETS[name[:3]],
+                     "quoteAssetId": ASSETS[name[3:]]}
+            self.light.append(light)
+            self.symbols[sid], self.prices[sid] = full_symbol(light, digits), price
         self.positions: dict[int, dict] = {}
         self.orders: dict[int, dict] = {}
         self.deals: list[dict] = []
@@ -122,8 +132,7 @@ class FakeVenue:
                 "moneyDigits": 2, "traderLogin": 77, "brokerName": "Pepperstone"}
 
     async def _on_asset_list_req(self, p, mid, t):
-        t.push(PT.ASSET_LIST_RES, {"asset": [{"assetId": 1, "name": "EUR"}, {"assetId": 2, "name": "USD"},
-                                             {"assetId": 3, "name": "JPY"}]}, mid)
+        t.push(PT.ASSET_LIST_RES, {"asset": [{"assetId": i, "name": n} for n, i in ASSETS.items()]}, mid)
 
     async def _on_symbols_list_req(self, p, mid, t):
         t.push(PT.SYMBOLS_LIST_RES, {"symbol": self.light}, mid)

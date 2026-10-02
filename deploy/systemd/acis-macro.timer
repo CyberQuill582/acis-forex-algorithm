@@ -1,0 +1,12 @@
+# Daily at 12:00 UTC (the central banks publish the previous day's rate in their morning) and at boot
+# if a run was missed; well before the 17:00 New York decision.
+[Unit]
+Description=ACIS daily overnight rates (R6-1)
+
+[Timer]
+OnCalendar=*-*-* 12:00:00 UTC
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

@@ -15,7 +15,8 @@ Invariants:
     drain the closes, end. A position still held after the drain is logged critical (the watchdog).
   * Reaching the venue's close reserve, in practice, flattens and halts everything once (ACIS-13
     v1.2 §6.5, owner ruling D2): the equity breaker would be blind there, so nothing stays open.
-  * The fast loop's clock is the tick's own timestamp; everything else reads `now_fn`.
+  * The fast loop's clock is the tick's own timestamp; everything else reads `now_fn`. The target
+    universe (R6-3) gets no legacy signal or exit here: only target_loop.py trades it.
 """
 
 from __future__ import annotations
@@ -69,7 +70,8 @@ class Runtime:
             p.params.on_boundary(boundary)       # C2: promotes only while flat
         held = {pos.instrument: pos for pos in p.risk.positions()}
         busy = p.executor.busy
-        for close in exits_due(held, self.marks, busy, now, p.max_hold_s):
+        legacy = {i: pos for i, pos in held.items() if i not in p.target_universe}    # R6-3
+        for close in exits_due(legacy, self.marks, busy, now, p.max_hold_s):
             p.executor.submit(WorkItem((close,), valid_for_seconds=0))
         p.nvma.observe(st)
         ctx = self._regime(st)
@@ -77,7 +79,8 @@ class Runtime:
         if bar is not None:
             p.governor.observe_bar(st.instrument, bar)          # GAP-0059: one aggregator
         active = p.params.get_active(ctx.regime)
-        signals = p.agon.generate(st, ctx, active.params if active is not None else None, now)
+        signals = () if st.instrument in p.target_universe else p.agon.generate(   # R6-3: one path
+            st, ctx, active.params if active is not None else None, now)
         if signals and not self._clock_ok(st):
             signals = ()                         # ACIS-13 A8: no entry before the clock is proven
         if not signals and not held:
