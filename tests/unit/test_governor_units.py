@@ -49,13 +49,13 @@ def test_a_cross_converts_through_its_quote_leg_or_sizes_zero() -> None:
 
 
 def test_usd_base_notional_meets_the_currency_cap_in_dollars() -> None:
-    """A long USD/JPY adds +486 USD of USD delta: with 2,600 already on, it crosses the
-    3,000 cap (30% of 10,000 NAV)."""
+    """A long USD/JPY adds +486 USD of USD delta: with 2,600 already on, it crosses the 2,700
+    admission line (G-5: 90% of the 3,000 cap, 30% of 10,000 NAV); with 2,200 on it fits."""
     gov, log = mk_governor()
     jpy = mk_signal(instrument="USD_JPY", entry_price=155.0, stop_loss=154.5, take_profit=156.0)
     heavy_usd = mk_portfolio(per_currency_delta=MappingProxyType({"USD": Decimal("2600")}))
     assert gov.allocate(jpy, heavy_usd, mk_regime(), T0).reason == "currency_delta_cap"
-    light_usd = mk_portfolio(per_currency_delta=MappingProxyType({"USD": Decimal("2400")}))
+    light_usd = mk_portfolio(per_currency_delta=MappingProxyType({"USD": Decimal("2200")}))
     assert gov.allocate(jpy, light_usd, mk_regime(), T0).reason == "formula"
 
 
