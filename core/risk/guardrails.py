@@ -229,7 +229,10 @@ class Guardrails:
                                 measured=dd, limit=limit)
                 self._issue_halt(inst, "per_instrument_drawdown")
 
-        # 4. VaR / cluster caps.
+        # 4. VaR / cluster caps. VaR is also a taper candidate (G-5, owner-ratified 2026-10-02):
+        #    entries shrink from 60% of the cap and stop at 80%, so drift alone rarely reaches
+        #    the human-only HALT at 100%, which is unchanged.
+        taper_candidates.append(taper_factor(self._var_ratio(ctx), self._start, self._halt))
         if ctx.var_pct > self._limits.var_cap_pct:
             self._log.event("VAR_BREACH", var_pct=ctx.var_pct,
                             cap=self._limits.var_cap_pct)
@@ -255,7 +258,7 @@ class Guardrails:
         #    change — every change names the binding limit).
         taper = min(taper_candidates) if taper_candidates else 1.0
         if self._last_taper is None or abs(taper - self._last_taper) > 1e-12:
-            binding = self._binding_rule(states, ctx.per_instrument_drawdown_pct, taper)
+            binding = self._binding_rule(states, ctx.per_instrument_drawdown_pct, taper, self._var_ratio(ctx))
             self._log.event("TAPER_UPDATED", rule_key=binding, factor=taper)
             self._sink.apply_risk_state(taper_factor=taper)
             self._last_taper = taper
@@ -267,7 +270,10 @@ class Guardrails:
             equity_floor_breached=equity_breached,
             slippage_slope_alert=slip_alert)
 
-    def _binding_rule(self, states, per_instrument, taper) -> str:
+    def _var_ratio(self, ctx: GuardrailContext) -> float:
+        return ctx.var_pct / self._limits.var_cap_pct
+
+    def _binding_rule(self, states, per_instrument, taper, var_ratio: float) -> str:
         for s in states:
             if abs(s.taper_factor - taper) <= 1e-12:
                 return s.rule_key
@@ -276,6 +282,8 @@ class Guardrails:
             if abs(taper_factor(dd / limit if limit > 0 else 0.0,
                                 self._start, self._halt) - taper) <= 1e-12:
                 return f"instrument:{inst}"
+        if abs(taper_factor(var_ratio, self._start, self._halt) - taper) <= 1e-12 and taper < 1.0:
+            return "var_cap"
         return "none"
 
     @property

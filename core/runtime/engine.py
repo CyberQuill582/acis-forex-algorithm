@@ -4,19 +4,15 @@ Invariants:
   * The fast loop (`on_state`, once per MarketState) is synchronous and only DECIDES: marks,
     the paper venue's stops, the exits owed, boundary promotions, then NVMA → params → AGON →
     Governor → the position policy. Venue work is queued to the executor, never awaited here.
-  * Loop 2 classifies each instrument at most once per `regime.cycle_seconds`; the fast loop
-    reads the stored context in between (the §10 cadence lock, C-REG-1).
-  * Loop 1 here is promotion only (C2: at a crossed boundary, while flat and idle); the demo's
-    sets are evolved offline and staged (owner ruling 2026-09-30, GAP-P12D-129).
+  * Loop 2 classifies each instrument at most once per `regime.cycle_seconds` (C-REG-1); loop 1 is
+    promotion only (C2: a crossed boundary, flat and idle; sets evolved offline, GAP-P12D-129).
   * Risk evaluates every `eval_cadence_s`, on every fill (GAP-0099) and venue fill, and writes the
     heartbeat; that timer also calls no tick for `fast_loop_stall_s` in an open market a stall (TAI-13).
   * At a restart a practice book is venue truth, the fills SYNCING recovered already in it (TAI-05);
     a paper book adopts nothing from the account and logs what it leaves on its venue stops.
-  * A core task that ends or raises while the feed runs is a stalled loop: flatten-and-halt (§10),
-    and the closes drain before the process ends.
-  * A deliberate stop (`request_stop`: SIGINT/SIGTERM) is the same path: every position closed,
-    everything halted, then the process ends (owner ruling, GAP-P12D-135). A position still held
-    after the drain is logged critical; the watchdog flattens it once the heartbeat goes stale.
+  * A core task that ends or raises while the feed runs is a stalled loop (§10), and a deliberate
+    stop (`request_stop`: SIGINT/SIGTERM, GAP-P12D-135) takes the same path: flatten everything, halt,
+    drain the closes, end. A position still held after the drain is logged critical (the watchdog).
   * Reaching the venue's close reserve, in practice, flattens and halts everything once (ACIS-13
     v1.2 §6.5, owner ruling D2): the equity breaker would be blind there, so nothing stays open.
   * The fast loop's clock is the tick's own timestamp; everything else reads `now_fn`.

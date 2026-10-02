@@ -1,13 +1,10 @@
 """Carver's estimators in stdlib (master §5.6 v2.22, §16 stdlib decision path; GAP-P12D-122).
 
-The TREND family's scalars are literature-fixed (Carver's published 3.75 / 2.65 / 1.87), so its
-normaliser and EWMA convention must be HIS, or the scalars scale a different number. The
-reference is pysystemtrade at master `a62269d27707806ba61f516791b71a9cd14cf268` (2026-09-29):
-`sysquant/estimators/vol.py` and `sysdata/config/defaults.yaml` `volatility_calculation`, which
-call pandas' `ewm(span=..., adjust=True)` and `rolling(...)`. This module reproduces those pandas
-recurrences exactly, NaN handling included (ignore_na=False), and
-`tests/unit/test_carver_reference.py` pins every function to values produced by Carver's own
-code on a shared fixture.
+The TREND family's scalars are Carver's published 3.75 / 2.65 / 1.87, so its normaliser and EWMA
+convention must be HIS: pysystemtrade master `a62269d27707806ba61f516791b71a9cd14cf268` (2026-09-29),
+`sysquant/estimators/vol.py` and `defaults.yaml` `volatility_calculation` (pandas `ewm(span=...,
+adjust=True)` and `rolling(...)`). Reproduced exactly, NaN handling included (ignore_na=False);
+`tests/unit/test_carver_reference.py` pins every function to Carver's own code's values.
 
 Mental model:
   * A series is a list of floats; NaN means "no observation". Outputs have the input's length.

@@ -1,8 +1,7 @@
 """The TREND family's members as pure forecast functions (master §5.6 v2.22, §5.5; R1.3).
 
-One function per member, shared by the research simulator (tests/backtest/rsim.py) and, from
-R1.6, the engine. Each maps the daily closes up to and including the decision day (17:00 New
-York) to a forecast series of the same length: NaN while warming up, else capped at ±20.
+One function per member, shared by RSIM and (from R1.6) the engine: daily closes up to the 17:00
+New York decision day -> a same-length forecast series, NaN while warming up, else capped at ±20.
 
 Mental model:
   * PRICE. A member reads the instrument's EXCESS-return price: spot compounded with the carry
@@ -10,17 +9,14 @@ Mental model:
   * EWMAC(f, s) is Carver's `ewmac` (pysystemtrade `CARVER_COMMIT`): (EWMA_f − EWMA_s) of the
     price over his normaliser, the daily price-unit volatility (`mixed_vol` of the daily
     changes), times his published scalar, capped at ±20 (GAP-P12D-122, D-f).
-  * BREAKOUT(n) is Carver's `breakout`: 40·(p − mid)/(max − min) over n days, EWMA-smoothed
-    with span n/4, times the scalar his `rob_system` config carries, capped.
-  * MOP_12M is Moskowitz–Ooi–Pedersen (2012) eq. 5: at each month's last weekday (a calendar
-    fact), the sign of the 12-month excess return, held for one month; ±10 (one average
-    position), NaN until the month end a year earlier is on record. Its sizing volatility is
-    MOP's own ex-ante estimate (`mop_vol`).
-  * D1, the registered combination, is the three EWMAC speeds at equal weight × FDM 1.09,
-    capped at ±20. Breakout and MOP are registered members graded standalone (C9), not
-    weighted into D1 (PLAN_R1 §3.1; they correlate 0.95 and 0.77 with an EWMAC speed).
-  * Nothing here sees the future: output t reads inputs [0, t] only, pinned by
-    `test_a_forecast_never_reads_past_its_decision_day`.
+  * BREAKOUT(n) is Carver's `breakout`: 40·(p − mid)/(max − min) over n days, EWMA span n/4, times
+    his `rob_system` scalar, capped.
+  * MOP_12M is Moskowitz–Ooi–Pedersen (2012) eq. 5: at each month's last weekday, the sign of the
+    12-month excess return held a month, ±10, NaN until a year of month ends exists; sized by
+    MOP's own ex-ante volatility (`mop_vol`).
+  * D1, the registered combination: the three EWMAC speeds at equal weight × FDM 1.09, capped at
+    ±20. Breakout and MOP are members graded standalone (C9), not in D1 (PLAN_R1 §3.1: corr 0.95/0.77).
+  * No look-ahead: output t reads inputs [0, t] only (`test_a_forecast_never_reads_past_its_decision_day`).
 """
 
 from __future__ import annotations

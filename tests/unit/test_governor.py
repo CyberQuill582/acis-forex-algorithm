@@ -231,6 +231,24 @@ def test_currency_delta_cap_zeroes() -> None:
     assert len(log.events("CURRENCY_DELTA_ZERO")) == 1
 
 
+def test_g5_an_entry_is_admitted_only_to_ninety_percent_of_a_hard_cap() -> None:
+    """G-5 (owner-ratified 2026-10-02): an order that keeps the currency delta under the cap but
+    above 90% of it is zeroed, so mark drift alone cannot carry the book into the Risk Monitor's
+    human-only global HALT; one that stays under 90% is admitted."""
+    from core.governor.exposure import ENTRY_HEADROOM
+    assert ENTRY_HEADROOM <= Decimal("0.90")
+    gov, log = mk_governor(base_unit=500.0)          # an order small enough to land between 90% and 100%
+    sig = mk_signal()
+    x = gov.allocate(sig, mk_portfolio(), mk_regime(), T0).size_units * Decimal(str(sig.entry_price))
+    assert 0 < x < Decimal("300")                     # fits between 90% (2,700) and 100% (3,000) of the cap
+    near = mk_portfolio(per_currency_delta=MappingProxyType({"EUR": Decimal("2700") - x / 2}))
+    order = gov.allocate(sig, near, mk_regime(), T0)
+    assert order.size_units == 0 and order.reason == "currency_delta_cap"
+    assert Decimal("2700") - x / 2 + x < Decimal("3000")         # the old 100% cap would have admitted it
+    clear = mk_portfolio(per_currency_delta=MappingProxyType({"EUR": Decimal("2700") - 2 * x}))
+    assert gov.allocate(sig, clear, mk_regime(), T0).size_units > 0
+
+
 def test_lot_cap_zeroes_never_clamps() -> None:
     capped = mk_rulebook(max_lots=0.001)   # 100 units — far below the formula size
     gov, log = mk_governor(rulebook=capped)

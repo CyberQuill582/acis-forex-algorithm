@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-ALPHA-004` |
-| **Version** | 1.5 (LOCKED — master v2.26: the no-trade band is around the TARGET, Carver's code; 2026-10-01) · 1.4 (LOCKED — the R1 audit triage: Carver's no-trade band owned by the Governor, pair families refused while a leg is capped, TSMOM's vote is not the MOP baseline; master v2.22, 2026-09-25) · 1.3 (LOCKED — R-1: the TREND family and forecast netting, master v2.21) |
+| **Version** | 1.6 (LOCKED — 2026-10-02, owner-ratified: §4b the `Forecast` interface and the daily decision, R1.6; master v2.27) · 1.5 (LOCKED — master v2.26: the no-trade band is around the TARGET, Carver's code; 2026-10-01) · 1.4 (LOCKED — the R1 audit triage: Carver's no-trade band owned by the Governor, pair families refused while a leg is capped, TSMOM's vote is not the MOP baseline; master v2.22, 2026-09-25) · 1.3 (LOCKED — R-1: the TREND family and forecast netting, master v2.21) |
 | **Layer / DIR** | Layer 4 · `[DIR:core/signals]` |
 | **Consumes** | `RegimeContext` (ACIS-02) + `ActiveParamSet` (ACIS-03) + `MarketState` + provenance gates (ACIS-11) |
 | **Emits** | `Signal` (frozen; linked groups for Pair Divergence) → Capital Governor (ACIS-05) |
@@ -72,6 +72,30 @@ class Signal:
 ```
 
 **Contract rules:** frozen; `direction ∈ {+1,-1}` (never 0); `conviction ∈ [0.45, 1]` for any *emitted* signal; `stop_loss`/`take_profit` on the correct side of `entry_price` for the direction (validated on construction, else `DataQualityError`); prices finite; `generated_at` tz-aware; `param_set_id` present (audit link). `group_id` is set iff `strategy_type == PAIR_DIVERGENCE` — the Governor sizes a group atomically (both legs or neither, §5.5). *(v1.1: `group_id` added — required by the §5.5 linked-group law; the master's Signal field list is extended by exactly this field, recorded here.)*
+
+### 4b. Output contract — `Forecast` and the daily decision (v1.6, R1.6; owner-ratified 2026-10-02, master v2.27)
+
+The target-position path's interface, specified here before R1.6 builds it. `Signal` (§4) stays for the legacy modules until R1.7.
+
+```python
+@dataclass(frozen=True)
+class Forecast:                  # AGON -> Governor; AGON knows no capital and no positions
+    instrument: str
+    value: float                 # combined (fixed weights) x FDM (<= 2.5), capped: finite, |value| <= 20
+    family_ids: tuple[str, ...]  # the registered family-versions netted into it (provenance ids)
+    decision_day: date           # the New York date of the 17:00 decision
+    decided_at: datetime         # tz-aware
+    price_basis: float           # the decision close, which sizing reads
+    pct_vol: float               # the family's sizing vol (Carver's normaliser / close), > 0
+    inputs_hash: str             # sha256 of the closes, rates and parameters read (replay parity, B0(d))
+```
+
+Validated on construction (`DataQualityError`): finite fields, |value| <= 20, pct_vol > 0, tz-aware time, a non-empty family tuple whose ids are registered in the provenance store at emission. No forecast is emitted as NaN: an instrument without one emits nothing, which is "no new target".
+
+- **The decision.** One per New York weekday at **17:00 America/New_York** (the FX rollover), as RSIM decides (`tests/backtest/rsim_real.py`), owned by the runtime's slow loop; the fast loop is untouched. Inputs per instrument: the daily mid closes (the last traded hour ending at or before 17:00 New York, within 4 days) and the **excess-return price** the registered family reads (closes compounded with the dated overnight carry differential), so the runtime holds the rate table.
+- **Seeding.** At boot each instrument's D1 history comes from the venue's own trendbars (cTrader `ProtoOAGetTrendbarsReq`), at least 3 years, cached and appended at every decision. A history shorter than the family's warm-up gives no forecast.
+- **Freshness (R6-1).** A rate table more than 10 days stale, or a last close older than 4 days, gives that instrument no forecast: no new target; existing positions are kept (the band and the halts still act).
+- **One path per instrument (R6-3).** An instrument in a family's live universe is traded only by this path; the legacy modules emit nothing on it. In practice mode on the demo the legacy modules are off entirely (the QIEA champion retires from the demo; the code stays frozen per BASELINE.md until R1.7).
 
 ## 5. Data schemas
 
@@ -186,6 +210,7 @@ No control tools. Signal rate, discard-reason counts, and the §6 take-rate surf
 **What the Governor (ACIS-05) consumes:** a tuple of frozen `Signal`s with conviction ∈ [0.45,1], validated SL/TP, `param_set_id`, `valid_for_seconds`, and group-complete pair legs. The Governor applies expiry, sizing, atomic group sizing, clusters, and hard overrides. **Owns conflict-table rows:** "two strategies opposite directions → discard both"; producer side of "NVMA no-trade → discard signal." **Done-when (phase 5, master §15, paper signals only):** §14 tests green in a full run; import contract passing; ACIS-11 scaffolding live and gating.
 
 ## Changelog
+- **1.6 (LOCKED, 2026-10-02)** — §4b: the `Forecast` interface, the daily 17:00 New York decision, venue-seeded D1 history, the freshness rule (R6-1) and one path per instrument (R6-3), owner-ratified with the R1.6 amendment ("Ratify all five (Recommended)", master v2.27).
 - **1.5 (LOCKED, 2026-10-01)** — Master v2.26 (owner-ratified in chat, "Ratify Carver's (Recommended)", GAP-P12D-118): the no-trade band is around the TARGET, as Carver's code builds it; the no-trade condition is unchanged.
 - **1.4 (LOCKED, 2026-09-25)** — The R1 dual audit, triaged, owner-ratified 2026-09-25, the R1 audit triage: "Ratify all":
   - Carver's no-trade band around the current position, owned by the Governor (GAP-P12D-118);

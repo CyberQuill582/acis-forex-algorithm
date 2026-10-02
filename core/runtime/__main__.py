@@ -7,8 +7,7 @@
     python -m core.runtime ... --resume                                  # a human lifts the halts at start
 
 Invariants:
-  * One engine per deployment root: a second start is refused (exit 2) while the first holds the
-    lock (GAP-P12D-132 TAI-11).
+  * One engine per deployment root: a second start is refused (exit 2) (GAP-P12D-132 TAI-11).
   * It boots in PAPER unless a human at the terminal enters practice: the token typed (never argv
     or env), both hashes attested, through the MCP tool, BEFORE Risk's first evaluation and on
     practice's own Risk store (TAI-14). A supervised restart comes back in paper.

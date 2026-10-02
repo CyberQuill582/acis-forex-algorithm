@@ -152,6 +152,25 @@ def test_var_and_cluster_caps_halt() -> None:
     assert ("all", "cluster_cap") in s2.halts
 
 
+def test_g5_var_tapers_entries_from_sixty_to_eighty_percent_of_its_cap_and_halts_only_at_it() -> None:
+    """G-5 (owner-ratified 2026-10-02): VaR joins the §9.5 taper, so entries shrink from 60% of
+    the 3% cap and stop at 80%, while the human-only HALT stays at 100%."""
+    from tests.optimizer_fixtures import CapturingLogger
+    cfg = load_cfg()
+    for var, taper in ((1.5, 1.0), (2.1, 0.5), (2.4, 0.0), (2.99, 0.0)):
+        sink, log = RecordingSink(), CapturingLogger()
+        _, g, _, _ = build_monitor(cfg, sink, logger=log)
+        out = g.check(_ctx(var=var))
+        assert out.taper_factor == pytest.approx(taper)
+        assert ("all", "var_cap") not in sink.halts
+        if taper < 1.0:
+            assert log.events("TAPER_UPDATED")[-1]["data"]["rule_key"] == "var_cap"
+    sink = RecordingSink()
+    _, g, _, _ = build_monitor(cfg, sink)
+    g.check(_ctx(var=3.01))
+    assert ("all", "var_cap") in sink.halts
+
+
 # -- slippage alert is alert-only (no throttle knob exists, GAP-0004) -------- #
 
 def test_slippage_alert_sets_flag_only() -> None:

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Document ID** | `ACIS-SPEC-QIEA-003` |
-| **Version** | 2.1 (LOCKED — the R1 audit triage: the staging mechanism is kept and re-homed, the retirement list is explicit, and the fixed-family plateau and C9 conventions are stated, 2026-09-25) · 2.0 (LOCKED — rule parameters replace per-regime QIEA evolution, master v2.21 §5, R-1 A4, 2026-09-25; the QIEA text below is LEGACY until R1.7 retires the code) |
+| **Version** | 2.2 (LOCKED — 2026-10-02, owner-ratified: flatten-then-promote for target positions, D-c, GAP-P12D-108; master v2.27) · 2.1 (LOCKED — the R1 audit triage: the staging mechanism is kept and re-homed, the retirement list is explicit, and the fixed-family plateau and C9 conventions are stated, 2026-09-25) · 2.0 (LOCKED — rule parameters replace per-regime QIEA evolution, master v2.21 §5, R-1 A4, 2026-09-25; the QIEA text below is LEGACY until R1.7 retires the code) |
 | **Layer / DIR** | Layer 3 · `[DIR:core/optimizer]` |
 | **Consumes** | `RegimeContext` (ACIS-02) + regime-labelled **historical** data only |
 | **Emits** | `ActiveParamSet` (frozen) → AGON (ACIS-04, né Alpha Arena) via `param_library` |
@@ -162,6 +162,8 @@ After the champion clears C9 on train (GAP-0038) and the §6.3 holdout gate, QIE
 
 **Read-only position guard (`PositionGate`):** the flat check reaches positions only through a narrow protocol exposing exactly one method — `open_position_count() -> int`. No sizes, no PnL, no instruments — QIEA still may not *read live portfolio state* for optimisation (isolation); it may only test the flat gate. Enforced by the import contract + a test that the library touches nothing but `open_position_count` on the gate object.
 
+**Flatten-then-promote (v2.2, owner-ratified 2026-10-02; D-c, GAP-P12D-108).** A pooled target-position book is essentially never flat, so a new family-version or parameter change on it is staged, never applied mid-position: at the next valid session boundary the AFFECTED instruments are flattened through the reduce-only close (ACIS-06 C-EXE-7), and the new version is promoted only once they are flat. A promotion whose flatten fails (a halt, a closed market) waits for the next boundary; it is never forced, and `PromotionForbiddenError` keeps its teeth. The staging mechanism (`PositionGate`, stage / promote / on_boundary) is the rule registry's (master §5).
+
 ## 8. State machine & staging rule
 
 **Loop 1 SLOW, `qiea_cycle_seconds` ∈ [4h,24h].** Per-regime param lifecycle: `NONE → PENDING(staged) → (skipped×n, stalled) → ACTIVE`. Transitions logged. The only path to `ACTIVE` is `promote()` through the guard. Heartbeat to `acis://status` every ≤60 s (slow-loop SLA still emits liveness; the resource itself is wired at phase 10 — the library exposes the snapshot). QIEA can run genuinely concurrently with trading because it writes only to pending — this is why the three-speed isolation is safe (S2 conflict #02/#03).
@@ -239,6 +241,7 @@ Read: `acis://params/active` and `acis://params/pending` (incl. `boundaries_skip
 **What AGON (ACIS-04) consumes:** `ActiveParamSet` via `param_library.get_active(regime)` — a frozen, validated param set keyed by the current regime, carrying `param_set_id` for signal traceability. **Owns conflict-table row:** "QIEA new params ready + open positions → stage, deploy at next session boundary only." **Done-when (phase 4, master §15, paper mode):** all §14 tests green in a full run; import contract passing; no live trading (paper only until phase 12).
 
 ## Changelog
+- **2.2 (LOCKED, 2026-10-02)** — Flatten-then-promote for target positions (D-c, GAP-P12D-108), owner-ratified with the R1.6 amendment (master v2.27).
 - **2.1 (LOCKED, 2026-09-25)** — The R1 dual audit (GAP-P12D-103), triaged, owner-ratified 2026-09-25, the R1 audit triage: "Ratify all". The staging mechanism is NOT retired: it is re-homed as the rule registry's staging and stays law (GAP-P12D-107). The retirement list is explicit (GAP-P12D-113), and promotion under netting is flatten-then-promote (D-c, GAP-P12D-108). The fixed-family plateau and C9 conventions are stated (GAP-P12D-123).
 - **2.0 (LOCKED, 2026-09-25)** — Master v2.21 §5 (R-1 A4, owner-ratified 2026-09-25, R-1: "i ratify all your recommendations for R1-D1 to D14"). Rule parameters replace per-regime × per-instrument QIEA evolution: ≤ 3 pooled, literature- or null-fixed parameters per family, fixed combinations, explored grids hashed before the first look. The staging rule binds every parameter change, unchanged. The §6.4 plateau law binds every family as kill-only. QIEA is legacy until R1.7 retires it, a re-baseline under BASELINE.md. No guardrail, HALT or veto semantic changes; the staging rule is unchanged.
 - **1.5 (LOCKED, 2026-09-25)** — The master §5.6 parameter-plateau law is implemented as §6.4 (GAP-P12D-34), merged from the BUILDER branch after the constitution's two audits (GAP-P12D-72/73, all findings fixed).
