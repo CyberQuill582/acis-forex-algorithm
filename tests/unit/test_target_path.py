@@ -212,3 +212,20 @@ def test_a_missing_rate_file_stales_only_its_currency(tmp_path) -> None:
     assert table.rate("USD", date(2026, 10, 1)) == Decimal("1.5")
     with pytest.raises(StaleRateError):
         table.rate("CHF", date(2026, 10, 1))
+
+
+def test_a_weekly_source_stays_fresh_for_21_days_and_a_daily_one_for_10(tmp_path) -> None:
+    """GAP-P12D-146 (R6-1 amended): the limit follows the source's cadence. AUD (BIS, weekly)
+    18 days old is fresh; USD (EFFR, daily) 11 days old is stale; past 21 days AUD is stale too."""
+    for ccy, (sid, area) in CCY_SERIES.items():
+        body = "date,area,value\n2026-09-13,AU,3.6\n" if area else "date,value\n2026-09-20,1.5\n"
+        (tmp_path / f"{sid}.csv").write_text(body, encoding="utf-8")
+    table = load_rate_table(tmp_path, 10, 21)
+    assert table.rate("AUD", date(2026, 10, 1)) == Decimal("3.6")            # 18 days, weekly: fresh
+    assert table.rate("CHF", date(2026, 10, 1)) == Decimal("1.5")            # 11 days, weekly: fresh
+    with pytest.raises(StaleRateError):
+        table.rate("USD", date(2026, 10, 1))                                # 11 days, daily: stale
+    with pytest.raises(StaleRateError):
+        table.rate("AUD", date(2026, 10, 5))                                # 22 days: stale
+    with pytest.raises(StaleRateError):
+        load_rate_table(tmp_path).rate("AUD", date(2026, 10, 1))           # no weekly limit: 10 days

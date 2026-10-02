@@ -65,7 +65,8 @@ def build_targets(cfg, *, root: Path, venue, calendars, prov, governor, risk, ex
                    stop_mult=cfg.system.signals.tsmom_disaster_stop_atr, logger=governor_log)
     return TargetLoop(
         members=members, store=HistoryStore(root / "data" / "runtime" / "targets.db"), fetch=fetch,
-        rates=lambda: load_rate_table(root / t.macro_dir, t.rate_max_stale_days), sizing=sizing,
+        rates=lambda: load_rate_table(root / t.macro_dir, t.rate_max_stale_days,
+                                       t.rate_max_stale_days_weekly), sizing=sizing,
         lots_of=lots_of, gate=gate, engine=view, family=t.family, registered=prov.is_registered,
         history_days=t.history_days, settle_s=t.settle_s, slot_grace_s=t.slot_grace_s,
         atr_period=cfg.system.signals.atr_period, now_fn=now_fn, logger=logger)

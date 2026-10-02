@@ -94,7 +94,7 @@ Validated on construction (`DataQualityError`): finite fields, |value| <= 20, pc
 
 - **The decision.** One per New York weekday at **17:00 America/New_York** (the FX rollover), as RSIM decides (`tests/backtest/rsim_real.py`), owned by the runtime's slow loop; the fast loop is untouched. Inputs per instrument: the daily mid closes (the last traded hour ending at or before 17:00 New York, within 4 days) and the **excess-return price** the registered family reads (closes compounded with the dated overnight carry differential), so the runtime holds the rate table.
 - **Seeding.** At boot each instrument's D1 history comes from the venue's own trendbars (cTrader `ProtoOAGetTrendbarsReq`), at least 3 years, cached and appended at every decision. A history shorter than the family's warm-up gives no forecast.
-- **Freshness (R6-1).** A rate table more than 10 days stale, or a last close older than 4 days, gives that instrument no forecast: no new target; existing positions are kept (the band and the halts still act).
+- **Freshness (R6-1; v1.7, GAP-P12D-146).** A currency's rate more stale than its source's cadence allows (10 days for the daily overnight rates, 21 for the weekly sources: BIS for AUD, the SNB cube for CHF; config `targets.rate_max_stale_days` and `rate_max_stale_days_weekly`), or a last close older than 4 days, gives that instrument no forecast: no new target; existing positions are kept (the band and the halts still act).
 - **One path per instrument (R6-3).** An instrument in a family's live universe is traded only by this path; the legacy modules emit nothing on it. In practice mode on the demo the legacy modules are off entirely (the QIEA champion retires from the demo; the code stays frozen per BASELINE.md until R1.7).
 
 ## 5. Data schemas
@@ -211,6 +211,7 @@ No control tools. Signal rate, discard-reason counts, and the §6 take-rate surf
 
 ## Changelog
 - **1.6 (LOCKED, 2026-10-02)** — §4b: the `Forecast` interface, the daily 17:00 New York decision, venue-seeded D1 history, the freshness rule (R6-1) and one path per instrument (R6-3), owner-ratified with the R1.6 amendment ("Ratify all five (Recommended)", master v2.27).
+- **1.7 (LOCKED, 2026-10-02)** — §4b R6-1: the rate freshness limit follows each source's publication cadence, 21 days for the weekly sources and 10 for the daily (GAP-P12D-146, owner ruling "21 days for weekly sources (Recommended)", master v2.29).
 - **1.5 (LOCKED, 2026-10-01)** — Master v2.26 (owner-ratified in chat, "Ratify Carver's (Recommended)", GAP-P12D-118): the no-trade band is around the TARGET, as Carver's code builds it; the no-trade condition is unchanged.
 - **1.4 (LOCKED, 2026-09-25)** — The R1 dual audit, triaged, owner-ratified 2026-09-25, the R1 audit triage: "Ratify all":
   - Carver's no-trade band around the current position, owned by the Governor (GAP-P12D-118);

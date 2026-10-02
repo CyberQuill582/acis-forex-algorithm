@@ -1,5 +1,5 @@
 # ACIS — Adaptive Capital Intelligence System
-## Master Specification v2.28 (build authority — spec COMPLETE, build in progress)
+## Master Specification v2.29 (build authority — spec COMPLETE, build in progress)
 
 Status: BUILD AUTHORITY. Consolidates and supersedes `ACIS_Agent_Prompt.md` (Drive, v1.0), `Super_Forex_Agent.html` (Drive, v1.0 architecture brief), and the ACIS sections of the July 2026 Master Spec doc. Where those disagreed (directory layout), this document decides: the detailed `core/` layout below is canonical; the coarse 4-folder layout from the master doc is retired. If any earlier document contradicts this one, this one wins.
 
@@ -499,6 +499,8 @@ Both laws bind the implementing agent **and** every future spec pass. Neither ma
 > The system's job is not to make the most money possible on any given day. Its job is to **still be running, with positive expectancy, two years from now.** Every design decision must answer: *"Does this make the system more likely to survive a regime it has never seen?"* If the answer is no — redesign it.
 
 ## CHANGELOG
+
+**v2.29 (2026-10-02, owner-ratified in chat — GAP-P12D-146)** — "21 days for weekly sources (Recommended)": R6-1's rate freshness limit follows each source's publication cadence, 21 days for the weekly ones (BIS for AUD, the SNB cube for CHF) and 10 for the daily overnight rates (ACIS-04 v1.7 §4b). The other two closing rulings (GAP-P12D-145, GAP-P12D-147) are still to build. No guardrail VALUE, HALT/veto/resume semantic, equity floor or live gate changed.
 
 **v2.28 (2026-10-02, owner-ratified in chat — three R1.6 build findings)** — (1) GAP-P12D-143, "Reconcile every 30 min (Recommended)": ACIS-13 v1.4 §6.5 counts the target path's daily venue history in the request budget's projection, and the default reconcile interval is 1,800 s. (2) GAP-P12D-142, "$100k demo, $10k sizing (Recommended)": the demo account holds $100,000 so the hard caps admit the one-lot target book, while sizing keeps R6-5's $10k capital_ref (ACIS-05 v1.8). (3) GAP-P12D-101 / J1, "20% (Recommended)": the demo's vol target is 20%, not 10% (R6-5 re-ruled; ACIS-05 v1.8). Every position is still at most one minimum lot. No guardrail VALUE, HALT/veto/resume semantic, equity floor or live gate changed.
 

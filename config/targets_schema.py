@@ -10,7 +10,7 @@ Declared, never defaulted (SPEC §9): each value changes what the engine trades.
   * `history_days` — the venue history seeded at first boot (ACIS-04: at least 3 years).
   * `settle_s`, `slot_grace_s` — the decision runs this long after 17:00 New York; a slot may run at
     most this late, never caught up.
-  * `macro_dir`, `rate_max_stale_days` — the dated overnight rates the excess-return price reads
+  * `macro_dir`, `rate_max_stale_days` (+ `_weekly`) — the dated overnight rates the excess-return price reads
     (R6-1: a table staler than this gives no target).
 The active account's rulebook must declare `initial_capital` and `vol_target_annual` (ACIS-05 §6.4).
 """
@@ -32,6 +32,7 @@ class TargetsConfig(_Strict):
     slot_grace_s: float = Field(gt=0, le=3600)
     macro_dir: str = Field(min_length=1)
     rate_max_stale_days: int = Field(gt=0, le=10)
+    rate_max_stale_days_weekly: int = Field(gt=0, le=21)   # GAP-P12D-146: BIS, SNB
 
 
 def check_targets(cfg) -> None:

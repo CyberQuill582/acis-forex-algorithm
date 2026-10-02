@@ -173,13 +173,15 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-146: AUD's overnight rate comes from BIS's weekly release, which lags more than R6-1's 10-day freshness rule allows most weekdays
 - Severity: medium · Likelihood: certain (on BIS's published cadence)
-- Status: open (RULED 2026-10-02: "21 days for weekly sources (Recommended)"; the build and the R6-1 amendment are owed, TODO START HERE item 1)
+- Status: fixed (2026-10-02, owner ruling "21 days for weekly sources (Recommended)"; master v2.29, ACIS-04 v1.7 §4b R6-1)
 - Area: core/data/rates.py `CCY_SERIES` (AUD = BIS WS_CBPOL area AU), config `targets.rate_max_stale_days: 10`, scripts/download_macro.py `--live`
 - Description: BIS releases its policy-rate data weekly, around mid-week; its 2026-10-01 release carried AU through 2026-09-24. Under the 10-day rule AUD_USD, AUD_JPY and EUR_AUD get `no_target:stale_rates` on about 3 of 5 decision days (reproduced from 2026-10-05 with the real file). RSIM, with complete rates, decides all 5: an undeclared B0(d) divergence in 3 of 13 instruments. CHF (SNB, weekly on Mondays) keeps one day of margin. The live download now validates only the BIS area the engine reads, so a lagging foreign area can no longer block AU (fixed 2026-10-02, `test_live_mode_validates_only_the_bis_areas_the_engine_reads`).
 - Options: (a) a policy-target rule: a central bank's policy rate is exact between its scheduled meetings, so it stays fresh until the next scheduled RBA decision (the 10 days stay for traded overnight rates); (b) a per-source limit sized to its cadence (21 days for weekly sources); (c) a daily AUD source (the RBA's F1.1 CSV refused scripted downloads from the laptop and the server on 2026-10-02). Lead's recommendation: (b), the simplest honest rule.
 - **Owner ruling 2026-10-02:** "21 days for weekly sources (Recommended)". Each rate source's stale limit matches its publication cadence: 21 days for the weekly ones (BIS for AUD, SNB's cube for CHF), 10 for the daily overnight rates. To build: a per-currency limit in `core/data/rates.py` (`RateTable(max_stale_days=…)` per currency), config `targets.rate_max_stale_days` per source, the R6-1 amendment in ACIS-04 §4b (master v2.29); a test that AUD 18 days old is fresh and USD 11 days old is stale.
-- Justification: open, owner-owned (R6-1 is ratified). Until ruled, the AUD pairs decide on 1–2 days a week; nothing unsafe follows (no target keeps the position on its stop).
-- Linked: [[GAP-P12D-141]], [[GAP-P12D-144]]
+- **Fix 2026-10-02:** `core/data/rates.py` `WEEKLY_SOURCES` (bis_policy, chf_saron) and `RateTable(per_ccy=…)`; `load_rate_table(…, weekly_stale_days)`; config `targets.rate_max_stale_days_weekly: 21` (schema le 21), wired in `core/runtime/target_wiring.py`. RSIM's and the harness's callers keep the single 10-day limit (complete historical rates).
+- Residual: none — the per-source limit is built and tested; the full server suite runs before the push (TODO START HERE item 1).
+- Justification: fixed. Before the ruling, the AUD pairs decide on 1–2 days a week; nothing unsafe follows (no target keeps the position on its stop).
+- Linked: test_a_weekly_source_stays_fresh_for_21_days_and_a_daily_one_for_10, [[GAP-P12D-141]], [[GAP-P12D-144]]
 
 ## GAP-P12D-145: the alpha-decay throttle can lock a one-lot book out of the market permanently, and a human resume does not clear it
 - Severity: high · Likelihood: medium (it needs the detector armed: enough closed trades with decayed performance)

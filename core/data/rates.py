@@ -6,7 +6,9 @@ engine needs the same rates and the same rollover calendar RSIM graded with (ACI
 
 Mental model:
   * A `RateTable` holds daily overnight rates (% p.a.) per currency, forward-filled across
-    non-publication days, but a gap longer than `max_stale_days` RAISES (never a stale rate).
+    non-publication days, but a gap longer than its currency's limit RAISES (never a stale rate).
+    The limit follows the source's publication cadence (R6-1 as amended by GAP-P12D-146): the
+    daily overnight rates allow `max_stale_days`, the weekly sources (`WEEKLY_SOURCES`) their own.
     `load_rate_table` reads the normalised CSVs scripts/download_macro.py writes; the per-
     currency proxies are declared in tests/backtest/financing.py's docstring. A MISSING file leaves
     its currency without a series, so only the pairs that read it are stale (R16I-08).
@@ -35,6 +37,7 @@ CCY_SERIES: dict[str, tuple[str, str | None]] = {
     "CAD": ("cad_corra", None),
     "AUD": ("bis_policy", "AU"),
 }
+WEEKLY_SOURCES = frozenset({"bis_policy", "chf_saron"})   # BIS and the SNB cube publish weekly
 OANDA_MAJOR_FEE_PCT = Decimal("1.00")
 DEFAULT_GOLD_LEASE_PCT = Decimal("0.25")
 
@@ -47,7 +50,7 @@ class RateTable:
     """Daily overnight rates (% p.a.) per currency, forward-filled up to a limit."""
 
     def __init__(self, series: Mapping[str, Sequence[tuple[date, float]]],
-                 max_stale_days: int = 10) -> None:
+                 max_stale_days: int = 10, per_ccy: Mapping[str, int] | None = None) -> None:
         self._days: dict[str, list[date]] = {}
         self._vals: dict[str, list[Decimal]] = {}
         for ccy, pts in series.items():
@@ -55,6 +58,7 @@ class RateTable:
             self._days[ccy] = [d for d, _ in pts]
             self._vals[ccy] = [Decimal(str(v)) for _, v in pts]
         self._max_stale = max_stale_days
+        self._per_ccy = dict(per_ccy or {})
 
     def rate(self, ccy: str, day: date) -> Decimal:
         days = self._days.get(ccy)
@@ -63,14 +67,17 @@ class RateTable:
         i = bisect.bisect_right(days, day) - 1
         if i < 0:
             raise StaleRateError(f"{ccy}: {day} is before the series starts ({days[0]})")
-        if (day - days[i]).days > self._max_stale:
+        limit = self._per_ccy.get(ccy, self._max_stale)
+        if (day - days[i]).days > limit:
             raise StaleRateError(f"{ccy}: last rate {days[i]} is {(day - days[i]).days} days "
-                                 f"before {day} (> {self._max_stale})")
+                                 f"before {day} (> {limit})")
         return self._vals[ccy][i]
 
 
-def load_rate_table(macro_dir: Path, max_stale_days: int = 10) -> RateTable:
-    """Read the normalised CSVs written by scripts/download_macro.py."""
+def load_rate_table(macro_dir: Path, max_stale_days: int = 10,
+                    weekly_stale_days: int | None = None) -> RateTable:
+    """Read the normalised CSVs written by scripts/download_macro.py. With `weekly_stale_days`,
+    the currencies read from a weekly source get that limit instead (GAP-P12D-146)."""
     series: dict[str, list[tuple[date, float]]] = {}
     for ccy, (sid, area) in CCY_SERIES.items():
         path = Path(macro_dir) / f"{sid}.csv"
@@ -80,7 +87,9 @@ def load_rate_table(macro_dir: Path, max_stale_days: int = 10) -> RateTable:
             rows = csv.DictReader(f)
             series[ccy] = [(date.fromisoformat(r["date"]), float(r["value"])) for r in rows
                            if area is None or r.get("area") == area]
-    return RateTable(series, max_stale_days)
+    weekly = {} if weekly_stale_days is None else {
+        ccy: weekly_stale_days for ccy, (sid, _) in CCY_SERIES.items() if sid in WEEKLY_SOURCES}
+    return RateTable(series, max_stale_days, weekly)
 
 
 _TRIPLE_DAY = {"tom_next": 2, "financing_daily": 4}     # Mon=0 … Fri=4
