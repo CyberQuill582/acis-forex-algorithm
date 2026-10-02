@@ -154,7 +154,7 @@ venue:                           # ACIS-13 v1.0 §6.1 - the real venue; absent =
   order_ack_timeout_s: 10        # then search by clientOrderId - never a blind resend
   stop_confirm_timeout_s: 3
   equity_poll_s: 300             # the account poll, always (the A9 feasibility check counts it always)
-  reconcile_interval_s: 900
+  reconcile_interval_s: 1800           # ACIS-13 v1.4 (owner-ratified 2026-10-02, GAP-P12D-143): room for the target path's history
   backoff: {base_s: 1, factor: 2, cap_s: 60, max_consecutive: 10}
   rate_limit_per_s: {general: 25, historical: 2}     # half the documented 50 / 5 (F-05)
 targets:                         # ACIS-05 v1.7 §6.4 (R1.6): the target-position path; absent = off

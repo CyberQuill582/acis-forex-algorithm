@@ -289,8 +289,9 @@ def test_an_adopted_position_carries_the_venues_entry_price_and_stop(acis_config
 def test_the_order_allowance_counts_four_requests_a_round_trip(acis_config) -> None:
     from core.execution.ctrader_attach import feasible
     v = acis_config.system.venue
-    assert v.max_orders_per_day == 35 and feasible(v, 900) is None      # 760 + 4 × 35 = 900
-    assert "projected" in feasible(v.model_copy(update={"max_orders_per_day": 36}), 900)
+    assert v.max_orders_per_day == 35 and feasible(v, 900) is None      # 712 + 4 × 35 = 852 (ACIS-13 v1.4)
+    assert feasible(v, 900, targeted=21) is None                        # + 2 × 21 history = 894 <= 900
+    assert "projected" in feasible(v.model_copy(update={"max_orders_per_day": 37}), 900, targeted=21)  # 902
     with pytest.raises(ValueError):                                     # 4 × 226 > 1000 − 100
         type(v).model_validate({**v.model_dump(), "max_orders_per_day": 226})
 

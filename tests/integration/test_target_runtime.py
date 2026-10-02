@@ -45,7 +45,7 @@ def test_the_shipped_universe_is_the_enabled_fx_each_mapped_clustered_and_with_i
         quote = cfg.instruments.instruments[s].quote_ccy
         assert quote == "USD" or TO_USD[quote][0] in enabled                 # its sizing rate is traded too
     book = cfg.platform_rules.accounts["pepperstone_demo"]
-    assert (book.initial_capital, book.vol_target_annual) == (10_000, 0.10)   # R6-5
+    assert (book.initial_capital, book.vol_target_annual) == (10_000, 0.20)   # R6-5, re-ruled 2026-10-02 (ACIS-05 v1.8)
 
 
 def test_a9_budgets_two_history_requests_per_targeted_instrument(shipped_config) -> None:
@@ -95,7 +95,7 @@ async def test_a_runtime_from_the_shipped_config_wires_the_target_loop_and_silen
     rt = build(cfg, root=tmp_path, session_id="rt", feed=ClockedFeed(clock, flat_ticks()), venue=link,
                now_fn=clock, intended_mode="practice")
     assert isinstance(rt.p.targets, TargetLoop) and rt.p.target_universe == frozenset(sysc.targets.universe)
-    assert rt.p.targets.sizing.weights["EUR_USD"] == 1 / 13 and rt.p.targets.sizing.cash_vol == 10_000 * 0.10 / 16
+    assert rt.p.targets.sizing.weights["EUR_USD"] == 1 / 13 and rt.p.targets.sizing.cash_vol == 10_000 * 0.20 / 16
     for regime in (RegimeType.MEAN_REVERTING, RegimeType.RANGING_TIGHT, RegimeType.RANGING_WIDE):
         rt.p.params.stage(make_paramset(regime=regime, param_set_id=f"ps-{regime.value}",
                                         mean_rev_zscore_entry=1.5), now=BOUNDARY - timedelta(hours=1))

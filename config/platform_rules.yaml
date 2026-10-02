@@ -121,6 +121,7 @@ accounts:
     min_hold_seconds: 0
     weekend_holding_allowed: true # the broker allows it; the R-1 rules hold positions for days
     drawdown_rules: []            # no platform limit to model; ACIS's own guardrails bind (stricter-of).
-                                  # Open the demo at $10,000 (the equity floor is $9,000).
-    initial_capital: 10000        # R6-5 (owner-ratified 2026-10-02): the target path's capital_ref; no rule
-    vol_target_annual: 0.10       # here sizes on it, so it moves no limit (config/rulebook.py)
+                                  # The demo account holds $100,000 (owner ruling 2026-10-02, GAP-P12D-142) so the
+                                  # hard caps admit the one-lot target book; sizing keeps capital_ref below.
+    initial_capital: 10000        # R6-5: the target path's capital_ref; no rule here sizes on it, so it moves no limit
+    vol_target_annual: 0.20       # R6-5 re-ruled 2026-10-02 on J1's evidence (GAP-P12D-101; ACIS-05 v1.8)

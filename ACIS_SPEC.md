@@ -1,5 +1,5 @@
 # ACIS — Adaptive Capital Intelligence System
-## Master Specification v2.27 (build authority — spec COMPLETE, build in progress)
+## Master Specification v2.28 (build authority — spec COMPLETE, build in progress)
 
 Status: BUILD AUTHORITY. Consolidates and supersedes `ACIS_Agent_Prompt.md` (Drive, v1.0), `Super_Forex_Agent.html` (Drive, v1.0 architecture brief), and the ACIS sections of the July 2026 Master Spec doc. Where those disagreed (directory layout), this document decides: the detailed `core/` layout below is canonical; the coarse 4-folder layout from the master doc is retired. If any earlier document contradicts this one, this one wins.
 
@@ -499,6 +499,8 @@ Both laws bind the implementing agent **and** every future spec pass. Neither ma
 > The system's job is not to make the most money possible on any given day. Its job is to **still be running, with positive expectancy, two years from now.** Every design decision must answer: *"Does this make the system more likely to survive a regime it has never seen?"* If the answer is no — redesign it.
 
 ## CHANGELOG
+
+**v2.28 (2026-10-02, owner-ratified in chat — three R1.6 build findings)** — (1) GAP-P12D-143, "Reconcile every 30 min (Recommended)": ACIS-13 v1.4 §6.5 counts the target path's daily venue history in the request budget's projection, and the default reconcile interval is 1,800 s. (2) GAP-P12D-142, "$100k demo, $10k sizing (Recommended)": the demo account holds $100,000 so the hard caps admit the one-lot target book, while sizing keeps R6-5's $10k capital_ref (ACIS-05 v1.8). (3) GAP-P12D-101 / J1, "20% (Recommended)": the demo's vol target is 20%, not 10% (R6-5 re-ruled; ACIS-05 v1.8). Every position is still at most one minimum lot. No guardrail VALUE, HALT/veto/resume semantic, equity floor or live gate changed.
 
 **v2.27 (2026-10-02, owner-ratified in chat — R1.6's interface and G-5)** — (1) The owner chose "Ratify all five (Recommended)" for the R1.6 target-position amendment (`archive/R1_6_AMENDMENT_DRAFT_2026-10-02.md`): ACIS-04 v1.6 specifies the `Forecast` interface and the daily 17:00 New York decision, ACIS-05 v1.7 the Governor's target sizing, band and paper/practice one-lot cap, ACIS-03 v2.2 flatten-then-promote, with rulings R6-1..R6-5 (stale inputs give no target; a 10 × daily-ATR disaster stop; one path per instrument, the legacy modules off on the demo; the 21 explored non-energy instruments; the demo sized at $10k / 10%). (2) The owner ratified the per-account guardrail profiles (`archive/GUARDRAIL_PROFILES_DRAFT_2026-10-02.md`) as the plan applied only after a family holds rung 1, and chose "Build it now (Recommended)" for G-5: §6's entry headroom (90% of the cluster and currency caps) and VaR as a taper input (entries stop at 80% of the VaR cap). Both only shrink sizes. No guardrail VALUE, HALT/veto/resume semantic, equity floor or live gate changed.
 
