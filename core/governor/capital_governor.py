@@ -21,17 +21,17 @@ from typing import Callable, Mapping, Sequence
 
 from config.schemas import AccountRulebook, GovernorConfig, GuardrailLimits, ZonedTime
 from core.data.errors import DataQualityError
-from core.governor.calendar_gates import (next_boundary, weekend_flatten_orders,
-                                          within_closure_buffer)
+from core.governor.calendar_gates import weekend_flatten_orders, within_closure_buffer
 from core.governor.exposure import delta_contributions, exposure_breach
 from core.governor.factors import correlation_factor, liquidity_factor, vol_norm
+from core.governor.guards import EntryGuards
 from core.governor.units import usd_per_base_unit
 from core.governor.marginal_alpha import MarginalAlphaEstimator
 from core.governor.portfolio_types import PortfolioState, SizedOrder
 from core.data.bars import Bar
 from core.signals.indicators import AtrMemo
-from core.regime.regime_types import LiqState, RegimeContext
-from core.signals.signal_types import Signal, StrategyType
+from core.regime.regime_types import RegimeContext
+from core.signals.signal_types import Signal
 
 class ResumeForbiddenError(Exception):
     """resume() without a human token — no agent self-resume (master §12)."""
@@ -64,18 +64,16 @@ class CapitalGovernor:
         self._base_unit = base_unit_usd
         self._clusters = clusters
         self._vol_targets = vol_targets
-        self._confidence_veto = confidence_veto
-        self._boundaries = session_boundaries
         self._closure = (week_close, week_open, tuple(holidays))   # every >= 2 h closure
-        self._scalp_horizon_s = scalp_horizon_s
         self._atr = AtrMemo(atr_period)   # GAP-P12D-15: recomputed only when a window changes
-        self._blackout, self._log, self._resume_gate = blackout, logger, resume_gate
+        self._log, self._resume_gate = logger, resume_gate
+        self.guards = EntryGuards(limits=guardrails, rules=rulebook, cfg=cfg, confidence_veto=confidence_veto,
+                                  boundaries=session_boundaries, closure=self._closure,
+                                  scalp_horizon_s=scalp_horizon_s, blackout=blackout, logger=logger)
         self._fixed_units = fixed_units
         self.marginal_alpha = MarginalAlphaEstimator(
             cfg.marginal_alpha_window, cfg.marginal_alpha_min_trades, cfg.marginal_alpha_min_bucket)
         self._bars: dict[str, deque[Bar]] = {}
-        self._halts: dict[str, str] = {}          # scope ("all" | instrument) -> reason
-        self._session_halt_until: datetime | None = None
         self._taper_factor = 1.0                   # neutral until Risk exists (phase 9)
         self._alpha_decay = False
         self._open_groups: dict[str, tuple[SizedOrder, SizedOrder]] = {}
@@ -119,8 +117,13 @@ class CapitalGovernor:
                 self._log.event("ALPHA_DECAY_CLEARED")   # explicit relaxation, audited
             self._alpha_decay = alpha_decay
 
+    @property
+    def throttle(self) -> tuple[float, bool]:
+        """(taper factor, alpha-decay flag): the Risk edge's state, read by the target path."""
+        return self._taper_factor, self._alpha_decay
+
     def apply_halt(self, scope: str, reason: str) -> None:
-        self._halts[scope] = reason
+        self.guards.halts[scope] = reason
         self._log.event("HALT_APPLIED", scope=scope, reason=reason)
 
     def apply_session_halt(self, now: datetime, reason: str) -> None:
@@ -128,9 +131,7 @@ class CapitalGovernor:
         until the next session boundary, then auto-clears — the master §8
         daily-drawdown semantics. Risk-restrictive only: it can only ever set
         or extend the halt, never shorten one already in force."""
-        until = next_boundary(now, self._boundaries)
-        if self._session_halt_until is None or until > self._session_halt_until:
-            self._session_halt_until = until
+        until = self.guards.halt_session(now)
         self._log.event("HALT_APPLIED", scope="session", reason=reason,
                         until=until.isoformat())
 
@@ -138,8 +139,7 @@ class CapitalGovernor:
         if not isinstance(human_token, str) or not human_token.strip():
             raise ResumeForbiddenError("resume requires a human token (master §12)")
         self._resume_gate(human_token)       # the ledger clears first, or nothing lifts (F8)
-        self._halts.clear()
-        self._session_halt_until = None
+        self.guards.clear()
         self._log.event("HALT_RESUMED", by="human_token")
 
     # -- allocation -------------------------------------------------------------- #
@@ -348,42 +348,9 @@ class CapitalGovernor:
 
     def _guards(self, signal: Signal, portfolio: PortfolioState,
                 regime: RegimeContext, now: datetime, snapshot: dict) -> str | None:
-        """§7.1 in order. Returns the zero-reason or None."""
-        if now >= signal.generated_at + timedelta(seconds=signal.valid_for_seconds):
-            return "expired"
-        if not regime.tradeable:
-            return "veto"
-        if "all" in self._halts or signal.instrument in self._halts:
-            return "halt"
-        if self._session_halt_until is not None:
-            if now < self._session_halt_until:
-                return "drawdown_halt"
-            self._session_halt_until = None   # auto-clears at the boundary (master §8)
-        if portfolio.daily_drawdown_pct >= self._limits.daily_drawdown_pct:
-            self._session_halt_until = next_boundary(now, self._boundaries)
-            self._log.event("HALT_APPLIED", scope="session",
-                            reason="daily_drawdown_limit")
-            return "drawdown_halt"
-        if regime.confidence < self._confidence_veto:
-            return "low_confidence"
-        if regime.liquidity_state is LiqState.ILLIQUID:
-            return "illiquid"
-        if portfolio.stale:
-            self._log.event("PORTFOLIO_STALE", as_of=portfolio.as_of.isoformat())
-            return "portfolio_stale"
-        if self._rules.news.restricted and self._blackout(signal.instrument, now):
-            self._log.event("BLACKOUT_OVERRIDE_ENFORCED",     # v2.7 carry-forward
-                            instrument=signal.instrument,
-                            account=self._rules.platform)
-            return "blackout"
-        if within_closure_buffer(now, *self._closure,             # EVERY account and every
-                                 self._cfg.weekend_entry_buffer_s):  # closure (P12D-58, X5)
-            return "weekend_ban"
-        if (self._cfg.scalp_min_hold_conflict
-                and signal.strategy_type is StrategyType.MOMENTUM_SCALP
-                and self._rules.min_hold_seconds > self._scalp_horizon_s):
-            return "min_hold_conflict"
-        return None
+        """§7.1 in order (core/governor/guards.py). Returns the zero-reason or None."""
+        return self.guards.check(signal.instrument, portfolio, regime, now, strategy=signal.strategy_type,
+                                 expires_at=signal.generated_at + timedelta(seconds=signal.valid_for_seconds))
 
     def _vol_factor(self, instrument: str, snapshot: dict) -> float:
         bars = self._bars.get(instrument)

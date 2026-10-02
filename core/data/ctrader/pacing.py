@@ -1,7 +1,7 @@
 """Local pacing of venue requests beyond the general rate (ACIS-13 §6.2, §12; GAP-P12D-132 TAE-11).
 
 Invariants:
-  * History requests (deal list, order list, order details) are spaced at `history_per_s`, below
+  * History requests (deal list, order list, order details, trendbars) are spaced at `history_per_s`, below
     the venue's documented "maximum of 5 requests per second per connection for any historical
     data requests" — the general bucket in the session's `_send` still applies on top.
   * A payload type the venue answered with `retryAfter` (REQUEST_FREQUENCY_EXCEEDED,
@@ -16,7 +16,8 @@ from typing import Callable
 
 from core.data.ctrader import schema as s
 
-HISTORY = frozenset({s.PT.DEAL_LIST_REQ, s.PT.ORDER_LIST_REQ, s.PT.ORDER_DETAILS_REQ})
+HISTORY = frozenset({s.PT.DEAL_LIST_REQ, s.PT.ORDER_LIST_REQ, s.PT.ORDER_DETAILS_REQ,
+                     s.PT.GET_TRENDBARS_REQ})
 
 
 class Pacer:

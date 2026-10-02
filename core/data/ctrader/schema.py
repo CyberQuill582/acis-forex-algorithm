@@ -57,6 +57,8 @@ class PT(IntEnum):
     ORDER_ERROR_EVENT = 2132
     DEAL_LIST_REQ = 2133
     DEAL_LIST_RES = 2134
+    GET_TRENDBARS_REQ = 2137
+    GET_TRENDBARS_RES = 2138
     MARGIN_CHANGED_EVENT = 2141
     OA_ERROR_RES = 2142
     ACCOUNTS_TOKEN_INVALIDATED_EVENT = 2147
@@ -72,6 +74,24 @@ class PT(IntEnum):
     ORDER_DETAILS_RES = 2182
     GET_POSITION_UNREALIZED_PNL_REQ = 2187
     GET_POSITION_UNREALIZED_PNL_RES = 2188
+
+
+class TrendbarPeriod(IntEnum):
+    """`ProtoOATrendbarPeriod` (OpenApiModelMessages.proto at PROTO_COMMIT)."""
+    M1 = 1
+    M2 = 2
+    M3 = 3
+    M4 = 4
+    M5 = 5
+    M10 = 6
+    M15 = 7
+    M30 = 8
+    H1 = 9
+    H4 = 10
+    H12 = 11
+    D1 = 12
+    W1 = 13
+    MN1 = 14
 
 
 class ExecutionType(IntEnum):

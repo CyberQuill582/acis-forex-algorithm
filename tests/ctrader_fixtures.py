@@ -73,6 +73,9 @@ class FakeVenue:
         self.page_order = "oldest"                     # or "newest": the venue documents neither
         self.amend_error: str | None = None            # e.g. "TRADING_BAD_STOPS"
         self.close_error: str | None = None            # e.g. "POSITION_NOT_FOUND"
+        self.trendbars: dict[int, list[dict]] = {}     # symbolId -> raw H1 bars, oldest first
+        self.trendbar_cap: int | None = None           # a response keeps the latest N, with hasMore
+        self.trendbar_max_range_ms: int | None = None  # a longer range is refused (undocumented limit)
 
     async def connect(self, environment: str) -> FakeTransport:
         self.transport = FakeTransport(self)
@@ -139,6 +142,17 @@ class FakeVenue:
     async def _on_get_position_unrealized_pnl_req(self, p, mid, t):
         t.push(PT.GET_POSITION_UNREALIZED_PNL_RES, {"moneyDigits": 2, "positionUnrealizedPnL": [
             {"positionId": pid, "grossUnrealizedPnL": 0, "netUnrealizedPnL": 0} for pid in self.positions]}, mid)
+
+    async def _on_get_trendbars_req(self, p, mid, t):
+        lo, hi = p["fromTimestamp"], p["toTimestamp"]
+        if self.trendbar_max_range_ms is not None and hi - lo > self.trendbar_max_range_ms:
+            t.push(PT.OA_ERROR_RES, {"errorCode": "INVALID_REQUEST"}, mid)
+            return
+        rows = [b for b in self.trendbars.get(p["symbolId"], ()) if lo <= b["utcTimestampInMinutes"] * 60_000 < hi]
+        more = self.trendbar_cap is not None and len(rows) > self.trendbar_cap
+        t.push(PT.GET_TRENDBARS_RES, {"ctidTraderAccountId": ACCOUNT, "period": 9, "symbolId": p["symbolId"],
+                                      "trendbar": rows[-self.trendbar_cap:] if more else rows,
+                                      **({"hasMore": True} if more else {})}, mid)
 
     def page(self, rows: list, stamp: str) -> tuple[list, bool]:
         """A chunk of `page_rows` in `page_order` (both undocumented by the venue, TAE-07)."""
@@ -271,6 +285,16 @@ class FakeVenue:
 
     def advance(self, seconds: float) -> None:
         self.clock += timedelta(seconds=seconds)
+
+
+def h1_bar(start: datetime, close: float, *, high: float | None = None, low: float | None = None,
+           digits: int = 5) -> dict:
+    """A raw H1 trendbar as the venue sends it (integer 1/100,000 prices, minutes since the epoch)."""
+    lo = round((low if low is not None else close) * 100_000)
+    hi = round((high if high is not None else close) * 100_000)
+    return {"volume": 10, "period": 9, "low": lo, "deltaOpen": round(close * 100_000) - lo,
+            "deltaClose": round(close * 100_000) - lo, "deltaHigh": hi - lo,
+            "utcTimestampInMinutes": int(start.timestamp() // 60)}
 
 
 def capture_logger():

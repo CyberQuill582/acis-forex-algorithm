@@ -24,7 +24,7 @@ PRODUCTION = ["core", "monitoring", "config", "scripts", "tests/backtest"]
 GRANDFATHERED = {
     "config/schemas.py": 533,                   # 702 → 622: calendars → config/calendars.py (P12D-10); → 581: rulebook → config/rulebook.py (P12D-54); → 535: monitoring → config/monitoring_schema.py (ACIS-13 venue block); → 533: runtime block → config/runtime_schema.py
     "core/signals/agon.py": 506,
-    "core/governor/capital_governor.py": 434,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22); 447 (P12D-58); 437: exposure caps → exposure.py; 436; 434: `_rewrite` via replace (v1.6 min size)
+    "core/governor/capital_governor.py": 401,   # 464 → 448: calendar gates → calendar_gates.py (P12D-22); 447 (P12D-58); 437: exposure caps → exposure.py; 436; 434: `_rewrite` via replace (v1.6 min size); 401: entry guards → guards.py (R1.6)
     "scripts/download_histdata.py": 400,        # 456 → 400 after scripts/dl_common.py extraction
     "core/regime/nvma.py": 395,
     "core/signals/provenance.py": 391,
