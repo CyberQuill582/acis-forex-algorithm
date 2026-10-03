@@ -194,6 +194,11 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - It exits at the last tick at or before 09:55:00, the fix itself, at Dukascopy's quote. A live exit must fire seconds earlier on the venue's own quote, into the fix-time flow.
     - It assumes Dukascopy's spread, never the demo's.
     - Exit-time sensitivity (09:50, 09:45) would be a NEW look: register it first, never simulate it ad hoc.
+  - **Owner rulings 2026-10-03 (third session, all "Recommended"):**
+    - GOTOBI's live path is drafted now (`archive/GOTOBI_LIVE_DRAFT_2026-10-03.md`) and built AFTER the cutover, with its own audit.
+    - One realistic-exit look, v1c (v1a leaving at 09:54:00), is registered before any build (`--line exit0954`).
+    - After the cutover, GOTOBI's live build goes BEFORE REBAL's.
+    - Push.
   - Proof: `test_a_gotobi_day_off_the_bank_calendar_moves_back_and_two_that_meet_count_once`, `test_the_30th_rule_falls_to_february_end_and_the_month_end_rule_takes_the_31st`, `test_a_price_is_the_last_tick_at_or_before_the_time_never_a_later_or_stale_one`, `test_each_leg_pays_both_sides_and_the_gated_reversal_trades_only_after_a_rise`, `test_a_planted_gotobi_rise_earns_net_and_a_flat_market_loses_only_its_costs`.
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
