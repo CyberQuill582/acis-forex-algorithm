@@ -42,7 +42,7 @@ Full checklist in `TODO.md` → "Phase 12 — LIVE readiness". Headline items:
 1. **Real out-of-sample §14 validation** — review the full independent data validation (GAP-P12D-14), the historical event calendar, then the evolve-driver and the per-account grade. *Never present in-sample numbers vs §14.* **← next**
 2. **Phase-12 dual audit** re-examines the market-time changes (GAP-P12D-10/11, GAP-0023) as guardrail-adjacent — brief point (d) in `TODO.md`.
 3. **Three-loop runtime + in-loop wiring** — GAP-0091b, GAP-0099, GAP-0075, the MCP wire transport GAP-P12D-08, the SQLite signal store GAP-P12D-09.
-4. **Per-account universe + full §9.5 enforcement**, **futures/metals roll policy** (GAP-0109), **ACIS-13 spec**, phase-12 dual audits (auditor model Opus 5 — Fable only when the owner asks; the brief includes legibility GAP-P12M-01/02).
+4. **Per-account universe + full §9.5 enforcement**, **futures/metals roll policy** (GAP-0109), **ACIS-13 spec**, phase-12 dual audits (auditor model Opus 5.5, re-pinned 2026-10-03 — Fable only when the owner asks; the brief includes legibility GAP-P12M-01/02).
 5. **LIVE sign-off — HUMAN ONLY.** §14 minimums met out-of-sample on real data + explicit owner sign-off.
 
 ## Open risk — generated, never hand-copied

@@ -1,7 +1,7 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **Read the START HERE block below first (checkpoint 2026-10-03).** The Pepperstone demo runs the old code on `acis-demo-1` (practice, unattended, watchdog-guarded) until the AWS cutover 2026-10-15..17; master v2.30.
-> `ACIS_SPEC.md` v2.30 is the build authority. All master-spec guardrail decisions are human-ratified.
+> **Read the START HERE block below first (checkpoint 2026-10-03).** The Pepperstone demo runs the old code on `acis-demo-1` (practice, unattended, watchdog-guarded) until the AWS cutover 2026-10-15..17; master v2.33.
+> `ACIS_SPEC.md` v2.33 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
@@ -14,6 +14,7 @@
 - **The demo still RUNS the OLD code on `acis-demo-1`** (practice, the one QIEA champion; healthy at the 2026-10-02 20:19 UTC check, no trades, equity 99,996.42 after the owner's top-up). R1.6 reaches the demo only at the **AWS cutover, 2026-10-15..17** (`i-07b1b3952ac03f45e`, STOPPED; runbook deploy/README.md "The AWS demo host").
 - **Nothing runs.** All seven agents of 2026-10-02 finished; their reports are in `archive/` (`AUDIT_R1_6_{INTERNAL,EXTERNAL}_2026-10-02.md`, `RESEARCH_{FORENSICS,PRACTITIONERS,PROP_RETURNS,GATES,EXITS}_2026-10-02.md`). `acis-compute-1` is STOPPED and now an **n2d-standard-16** (c2d had no capacity; same disk and zone). The AWS data server is STOPPED.
 - **Repo (2026-10-03):** `main` = `origin/main` at `48663d3`; master **v2.31** (ACIS-02 v1.5, ACIS-04 v1.8, ACIS-05 v1.10, ACIS-07 v1.5); full suite **1377 passed, 6 skipped** on the server; ledger 0 violations. Before it, master **v2.28** (ACIS-04 v1.6, ACIS-05 v1.8, ACIS-13 v1.4); full suite **1343 passed, 6 skipped** on the server at `d7f0875`; ledger 0 violations. The gate is RED only on the constitution pin ([[GAP-C10-01]]).
+- **Correction, 2026-10-03 evening (found by `governance_gate.py --session` after `2ddeb25`):** the gate is ALSO red on comment shape (A12), with three NEW HEADER findings (a mental-model header over 20 lines) in `core/governor/target_gate.py` (21), `core/risk/alpha_decay.py` (22) and `scripts/r1_d1_kill_test.py` (23). Trim each header to 20 lines or fewer before the next commit that touches them. The ratchet only turns one way, so never rebase the baseline to absorb them.
 - **Laptop (owner, 2026-10-02):** start no new local background shells while agents run; heavy work goes to the server.
 
 **Owner rulings this session (all applied):** reconcile every 30 min so the history fits the request budget ([[GAP-P12D-143]] fixed; ACIS-13 v1.4); the demo account at **$100,000 with sizing on its $10k capital_ref** ([[GAP-P12D-142]]); the demo vol target **20%** (J1, ACIS-05 v1.8); push; "Launch both now" (R1.6's audits); the five research agents ("deduce what might be causing our engine to be losing … what prop firm traders are realistically making per week"); "triage all findings; dont take them at face value".
@@ -26,7 +27,14 @@
 - **In flight:** D3's faithful event harness on branch `wip/d3-event-harness` (pushed, untested): finish per [[GAP-P12D-154]], then its one kill-only look. The laptop holds the real candles at `data/r1_real/` (git-ignored; also in the bucket).
 - **Machines:** `acis-compute-1` STOPPED; `acis-demo-1` RUNS the old engine (last checked 2026-10-02 20:19 UTC, healthy, equity 99,996.42); the AWS host STOPPED until the cutover.
 
-**SCHEDULED AUDIT (owner, 2026-10-03: "One pair before the move (Recommended)"):** after the breadth and shadow-book builds, ~2026-10-10/11, the constitution's two audits (one Opus agent each) on everything since `f0d9524` (R1.4, the feed watch, breadth, the shadow book), triaged before the cutover. ASK the owner for the launch then (CLAUDE.md).
+**SCHEDULED AUDIT (owner, 2026-10-03: "One pair before the move (Recommended)"):** after the breadth and shadow-book builds, ~2026-10-10/11, the constitution's two audits (one Opus agent each) on everything since `f0d9524` (R1.4, the feed watch, breadth, the shadow book), triaged before the cutover. ASK the owner for the launch then (CLAUDE.md). It launches from the role files `.claude/agents/acis-auditor-{internal,external}.md` (Opus 5.5).
+
+**Claude Code update adoption ([[GAP-P12D-155]]; owner, 2026-10-03: a priority alongside the next actions, never ahead of the cutover):**
+- **Applied 2026-10-03:** the Opus 5.5 pin, the asks-first audit rule, the two auditor role files, and the adoption gate archived.
+- **Still owed, in a quiet slot:**
+  - run `/doctor prompt-audit` at a session start and triage its findings;
+  - the gate's step 2, documentation hygiene (the CLAUDE.md status line is one paragraph of about 1,900 words).
+- **Brief:** `Knowledgevault/claude-code-updates/projects/acis.md`.
 
 **Next actions, in order (2026-10-03, afternoon). The sort key (owner, 2026-10-03): does it get us closer to a real test, or protect the AWS move? Everything else waits. Audits at milestones only (R1.4 done, the AWS move), spec amendments batched per session.**
 1. **The cutover, 2026-10-15..17:** deploy/README.md's AWS order (stop the old engine flat first); attest the new rulebook hash (`--print-hashes`); measure the 17:00 decision's blocking time on the t3.small ([[GAP-P12D-144]] residual). The target entry's data check is now the feed watch ([[GAP-P12D-152]], master v2.33): count its refusal reasons (`TARGET_ENTRY_ZERO`) in the first two weeks. The H1-history venue facts ([[GAP-P12D-141]] (1), (2), (6)) are read at the first seeding.

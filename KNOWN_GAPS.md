@@ -145,6 +145,23 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-155: the Claude Code platform updates (2026-08-21 → 10-02) — stale model pins, the launch-rule contradiction, auditor role files, and the read-path hygiene owed since 2026-07-21
+- Severity: low · Likelihood: certain
+- Status: open (2026-10-03; owner rulings in chat 2026-10-03, all "Recommended": "Re-pin to Opus 5.5", "Reword :76 to defer to 09-25", "Create them now", "Shrink it to a pointer")
+- Area: CLAUDE.md (the line-3 pin, the adoption-gate pointer, the audit section), STATUS.md, the two auditor role files under `.claude/agents/`, `archive/CONSTITUTION_ADOPTION_GATE_2026-07-21.md`; the read path
+- Description: The owner had Anthropic's "This week in Claude Code" recommendations applied across the project family. Two model launches (Fable 5.1, Opus 5.5) had left ACIS's read path naming superseded models: the pin read "model floor Opus 4.8; audits run on Opus 5", with no literal `model-in-charge` (A2). The audit section ordered a session to "launch two background Opus 4.8 subagents" at every phase end, contradicting the 2026-09-25 directive that only the owner launches agents. The 2026-07-21 adoption gate said "FIRST ACTION … before the TODO.md worklist", contradicting "Start every session from TODO.md", while its step 2 sat in prose, unledgered.
+  **Applied 2026-10-03 (owner rulings):**
+  - model-in-charge and floor Opus 5.5, and audits on Opus 5.5 (CLAUDE.md, STATUS.md, the auditor memory);
+  - the audit section now asks first, then launches the two lenses from the role files `acis-auditor-internal` and `acis-auditor-external` (opus, effort xhigh, no memory; the internal lens has no web, and the external lens's search cap is 15 unless the brief sets one);
+  - the gate block moved verbatim to the archive, with a one-line pointer left in place;
+  - TODO's header version corrected to v2.33.
+
+  **Owed:**
+  - (1) Run `/doctor prompt-audit` at a session start and triage its findings under CLAUDE.md's NEVER list: rules, specs and tests stay owner-ruled.
+  - (2) The gate's step 2, documentation hygiene. The read path is not short: the CLAUDE.md status line is one paragraph of about 1,900 words, and the audit-model paragraph about 430.
+- Justification: open. The owed items are read-path work for a quiet slot, never ahead of the cutover (TODO's sort key). The role files are definitions only: every launch still needs the owner's explicit go (2026-09-25).
+- Linked: [[GAP-C10-01]], [[GAP-C09-01]], [[GAP-P12M-02]]
+
 ## GAP-P12D-154: D3 (the turn-of-month index long) is the next mechanism to kill-test on history; its faithful event harness is half-built
 - Severity: medium · Likelihood: certain
 - Status: open (2026-10-03; owner ruling "Faithful event harness (Recommended)")
