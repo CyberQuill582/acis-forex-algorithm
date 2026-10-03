@@ -148,7 +148,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-159: the pre-cutover dual audit (2026-10-03) — 20 findings (12 internal, 8 external), triaged by the lead
 - Severity: medium · Likelihood: certain
-- Status: open (GOTOBI's v2 looks, stage C and the weekday contrast, are to run and be recorded)
+- Status: open (one owner decision: GOTOBI's place in the post-cutover order, after its v2 looks)
 - Area: the change `f0d9524..9f57a6f` (brief `archive/AUDIT_BRIEF_PRECUTOVER_2026-10-03.md`, pinned at `35fd443`; owner's go "Launch both now (Recommended)"); reports `archive/AUDIT_PRECUTOVER_INTERNAL_2026-10-03.md` (saved by the lead from the hand-back text; the harness refused the subagent's write) and `archive/AUDIT_PRECUTOVER_EXTERNAL_2026-10-03.md`
 - Description: neither lens found a cutover blocker. The lead verified each finding before acting (a finder is not a clearer). The owner ruled the four decisions in chat on 2026-10-03, all "Recommended": the feed watch's floor and ceiling now; the spec batch (X-2, X-3, PC-I-04) as master v2.35; GOTOBI's two looks (the weekday contrast and stage C); the anchor's server-side gap recorded and decided with the compute home.
   - **PC-I-01 (medium), the feed watch never tested as wired: FIXED.** The runtime asserts `t.engine.feed_refusal == rt.feed.refusal` and that a fed tick ends `no_feed`; a loop test refuses the open at a slot and still sends the close. Proof: `test_a_feed_refusal_at_the_slot_stops_the_open_and_still_sends_the_close`, `_assert_the_target_wiring` in `test_a_runtime_from_the_shipped_config_wires_the_target_loop_and_silences_legacy` (the auditor's three mutants rerun on the server, recorded below).
@@ -172,7 +172,11 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **PCE-08, the Treasury record low: FIXED** in the downloader's header (0.52 on 2020-08-04).
   - **X-1, GOTOBI's looks label their benchmark "PASSIVE_LONG" but store the control: ACCEPTED.** The register is append-only and the declaration has only that name. The label is recorded in [[GAP-P12D-158]], and a verdict never reads it.
   - **X-2 and X-3: FIXED (master v2.35, ACIS-09 v1.13).**
-- Justification: open until stage C is ruled and GOTOBI's v2 looks are run and recorded. Every other finding is fixed, mitigated to a named owner, or accepted above.
+  - **THE v2 LOOKS (2026-10-03, `--line v2` at `04d64d7`; both lines registered before either grade; looks `000021` (stage C) and `000022` (contrast), outcomes `000023`/`000024`, anchored; register and `gotobi_v2.json` copied to `gs://acis-compute-0929-data/validation/2026-10-03g/`):**
+    - **Stage C, v1a on the 2024–25 holdout (125 trades): net Sharpe −0.20, HAC t −0.32, NOT killed** (the line is −0.5). It was −0.42 at 2× cost, and the control earned −0.17. Context from the stored vector: 2024 −0.25, 2025 −0.13; a mean of −0.6 bp a trade, hit rate 50%.
+    - **The weekday contrast, 2012–2023 (gross): 1.09, HAC t 3.94, NOT killed.** So the 2012–2023 edge was gotobi-specific beyond its Friday mix: about 1.42 bp a trade over the same weekday's non-gotobi days. Context: 2012–17 1.23, 2018–23 0.93; 2022 0.35, 2023 0.37.
+    - **Reading:** a real effect that faded. The contrast weakens from 2022, v1a was −0.51 in 2023, and stage C shows nothing in 2024–25. This matches the one outside post-2023 measurement (PCE-02's blog, UNCONFIRMED). Survival by the rule credits nothing, and the forward premise the live draft leans on is now weak.
+- Justification: open for one owner decision: GOTOBI's place in the post-cutover order, given stage C. Every finding is fixed, mitigated to a named owner, or accepted above.
 - Linked: [[GAP-P12D-158]], [[GAP-P12D-152]], [[GAP-P12D-150]], [[GAP-P12D-86]], [[GAP-P12D-156]], [[GAP-P12D-03]]
 
 ## GAP-P12D-158: how the next mechanisms are chosen — the owner's ranking rule with the evidence fix, and the candidate pipeline
@@ -229,7 +233,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - DECLARED departures from Bessho (PCE-03): Dukascopy ticks for EBS; every non-gotobi Tue–Fri bank day as the control (Bessho samples an equal-size random subset); v1b's H2 gate on the mid move, not profit net of spread; H2 entering at 09:55:00, not "just after".
     - X-1: looks `000015`, `000016` and `000019` declare benchmark "PASSIVE_LONG" (the only declaration name) but store the non-gotobi control. Context only.
     - **The weekday confound (PC-I-08):** 49% of gotobi days are Fridays against 14% of the control, and a synthetic Friday-only drift fakes a 0.81 Sharpe in the plain book. Owner ruled the v2 line: the weekday contrast (gross) on 2012–2023, built (`event_window.weekday_contrast`, `--line v2`).
-    - **Stage C (PCE-02):** v1a on the sealed 2024–25 holdout, graded once. Owner ruled it, then "Amend R1-D13 (Recommended)" when §5.6 blocked it (master v2.35 (3)). The v2 line registers stage C first.
+    - **Stage C (PCE-02):** v1a on the sealed 2024–25 holdout, graded once. Owner ruled it, then "Amend R1-D13 (Recommended)" when §5.6 blocked it (master v2.35 (3)). **RAN: −0.20 (t −0.32), not killed but no edge in 2024–25; the weekday contrast 1.09 (t 3.94) on 2012–2023** ([[GAP-P12D-159]]).
   - **Owner rulings 2026-10-03 (third session, all "Recommended"):**
     - GOTOBI's live path is drafted now (`archive/GOTOBI_LIVE_DRAFT_2026-10-03.md`) and built AFTER the cutover, with its own audit.
     - One realistic-exit look, v1c (v1a leaving at 09:54:00), is registered before any build (`--line exit0954`).
