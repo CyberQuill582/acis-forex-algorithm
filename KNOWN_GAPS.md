@@ -165,6 +165,21 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - Context: the passive long over the same half hour earned −0.26.
   - **Context, post-hoc, never a selection:** interpolating linearly between the 1× and 2× results puts gross at roughly +0.55 (v1a) and +0.30 (v1b). The dry check predicted this: a ~2.1 bp CFD round trip against the paper's ~2.7 bp gross per trade. The CFD's spread, not the signal, is what kills it, and a futures venue at one tick (~0.6 bp) is outside the swap-free CFD scope.
   - Killed by the pre-registered rule, so IMOM leaves the pipeline; next in the owner's order is GOTOBI.
+- **GOTOBI progress 2026-10-03 (third session).**
+  - **The lead's judgement: build.** The counterparty is constrained: importers settle at the 09:55 TTM fix. The effect survived Ito & Yamada's 2016 working paper into Bessho et al.'s 2018–2020 sample. The evidence is thin: a four-page note with profit factors and no t-statistics (Bessho H1, 03:00→09:55 JST on Tue–Fri gotobi days: N 185, PF 1.46 net of spread; non-gotobi control PF 0.51).
+  - **Definitions differ.** Bessho: days 5/10/15/20/25/30, a holiday moved to the previous bank day, Tue–Fri only. Ito & Yamada: the 5th and 10th days and the month's last trading day.
+  - **BUILT:**
+    - `scripts/download_jp_holidays.py`: the Cabinet Office's own CSV, 1,067 holidays 1955–2027, in `data/r1_real/jp_holidays`.
+    - `tests/backtest/jp_days.py`: bank days and gotobi days. It matches `exchange_days`' vetted XTKS month-turn rules on every in-scope day 2012–2024, except the TSE's 2020-10-01 outage, a day the banks were open.
+    - `bi5.decode_arrays`: vectorised; it equals the scalar decoder.
+    - `tests/backtest/event_window.py`: prices from the last tick at or before each JST wall time, legs and gated legs, P&L on the 17:00 New York mark.
+    - `scripts/r1_gotobi_kill_test.py`, with `--dry-check`.
+  - **Dry check (P&L-blind, 2012–2023):**
+    - Tue–Fri gotobi days: 745 under the "30" rule, 748 under month-end; about 62 a year. 115 Monday gotobi days are excluded, and 1,649 control days remain.
+    - All 740 graded days have prices.
+    - Median spreads are 0.34 bp at 03:00, 0.40 bp at 09:00, 0.36 bp at 09:55 and 0.36 bp at 12:00 JST, against 1.15 bp at 07:00 (the rollover) and 0.66 bp at 08:00. The research's post-rollover entry (X3) would pay about three times Bessho's 03:00 spread, and the swap-free venue makes the rollover free to hold through.
+  - **Owed:** the owner's rulings on the versions (entry time, day rule, H1 alone and/or H1+H2), then the looks.
+  - Proof: `test_a_gotobi_day_off_the_bank_calendar_moves_back_and_two_that_meet_count_once`, `test_the_30th_rule_falls_to_february_end_and_the_month_end_rule_takes_the_31st`, `test_a_price_is_the_last_tick_at_or_before_the_time_never_a_later_or_stale_one`, `test_each_leg_pays_both_sides_and_the_gated_reversal_trades_only_after_a_rise`, `test_a_planted_gotobi_rise_earns_net_and_a_flat_market_loses_only_its_costs`.
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
 

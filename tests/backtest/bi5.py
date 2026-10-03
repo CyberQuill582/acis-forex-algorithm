@@ -17,6 +17,8 @@ import struct
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, NamedTuple
 
+import numpy as np
+
 UTC = timezone.utc
 RECORD = struct.Struct(">IIIff")
 
@@ -66,3 +68,30 @@ def decode(raw: bytes, instrument: str, period_start: datetime) -> Iterator[Tick
         if not (lo <= bid <= hi and lo <= ask <= hi):
             raise Bi5Error(f"{instrument}: price {bid}/{ask} outside {lo}–{hi} — wrong point scale?")
         yield Tick(period_start + timedelta(milliseconds=ms), ask, bid, ask_v, bid_v)
+
+
+TICK = np.dtype([("ms", ">u4"), ("ask", ">u4"), ("bid", ">u4"), ("ask_volume", ">f4"), ("bid_volume", ">f4")])
+
+
+def decode_arrays(raw: bytes, instrument: str, period_start: datetime) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """`decode`'s checks, vectorised: (epoch ms, bid, ask) arrays of one `.bi5` file, for decades of day files."""
+    if not raw:
+        return np.empty(0, "i8"), np.empty(0), np.empty(0)
+    try:
+        data = lzma.decompress(raw, format=lzma.FORMAT_ALONE)
+    except lzma.LZMAError as e:
+        raise Bi5Error(f"{instrument} {period_start:%Y-%m-%d %H}h: bad LZMA stream: {e}") from e
+    if len(data) % RECORD.size:
+        raise Bi5Error(f"{instrument} {period_start:%Y-%m-%d %H}h: {len(data)} bytes is not "
+                       f"a whole number of {RECORD.size}-byte records")
+    r = np.frombuffer(data, TICK)
+    scale, (lo, hi) = SYMBOLS[instrument][1], PLAUSIBLE[instrument]
+    bid, ask = r["bid"] / scale, r["ask"] / scale
+    bad = ~((lo <= bid) & (bid <= hi) & (lo <= ask) & (ask <= hi))
+    if bad.any():
+        k = int(np.argmax(bad))
+        raise Bi5Error(f"{instrument}: price {bid[k]}/{ask[k]} outside {lo}–{hi} — wrong point scale?")
+    ms = int(period_start.timestamp() * 1000) + r["ms"].astype("i8")
+    if np.any(np.diff(ms) < 0):
+        raise Bi5Error(f"{instrument} {period_start:%Y-%m-%d %H}h: ticks out of order")
+    return ms, bid, ask
