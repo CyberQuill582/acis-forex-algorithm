@@ -30,6 +30,8 @@ class RegimeType(str, Enum):
 NEVER_TRADEABLE = frozenset(
     {RegimeType.MACRO_EVENT, RegimeType.ILLIQUID, RegimeType.UNCLASSIFIED}
 )
+# NVMA's judgement vetoes, as opposed to its data-integrity gates (GAP-P12D-147)
+CONFIDENCE_VETOES = frozenset({"LOW_CONFIDENCE", "NO_PARAMS_FOR_REGIME"})
 
 
 class VolClass(str, Enum):
@@ -75,3 +77,14 @@ class RegimeContext:
             raise DataQualityError("tradeable", True, f"{self.regime.value} is never tradeable")
         if not isinstance(self.inputs_snapshot, MappingProxyType):
             raise DataQualityError("inputs_snapshot", type(self.inputs_snapshot), "must be immutable Mapping")
+
+    def integrity_tradeable(self) -> bool:
+        """Tradeable for a daily target entry (ACIS-05 §6.4, GAP-P12D-147): every data-integrity
+        gate holds (no gate state: warm-up, NaN indicators, macro event, illiquid; no stale,
+        spread or dead-market veto), while the confidence and label vetoes do not apply. A veto
+        whose reasons were not recorded stays a veto."""
+        if self.tradeable:
+            return True
+        reasons = self.inputs_snapshot.get("veto_reasons")
+        return (self.regime not in NEVER_TRADEABLE and bool(reasons)
+                and set(reasons) <= CONFIDENCE_VETOES)

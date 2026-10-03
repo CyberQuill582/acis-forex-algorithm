@@ -10,6 +10,11 @@ ONLY after a confirmed recovery (`recovery_trades` closed trades whose rolling
 Sharpe exceeds `recovery_mult` × baseline). The Risk Monitor turns a state
 transition into the explicit `apply_risk_state(alpha_decay=…)` call — this
 module never talks to the Governor.
+
+GAP-P12D-145: the one human resume disarms it (`clear_by_human`); until the recent window is
+all post-resume trades, only those trades count as recent, judged against the baseline that
+armed it ("fresh evidence only", owner ruling 2026-10-03). Entries are zeroed while armed, so
+without this the same trades re-arm it at once and the book stays locked out.
 """
 
 from __future__ import annotations
@@ -81,6 +86,7 @@ class AlphaDecayDetector:
         self._recovery_trades = recovery_trades
         self._recovery_mult = recovery_mult
         self._armed = False           # persisted restrictive state (GAP-0050)
+        self._fresh_from: int | None = None   # trade count at a human clear (GAP-P12D-145)
 
     @property
     def armed(self) -> bool:
@@ -91,9 +97,20 @@ class AlphaDecayDetector:
         first evaluate — a restart is never a relaxation (GAP-0050)."""
         self._armed = bool(armed)
 
+    def clear_by_human(self, n_trades: int) -> None:
+        """Disarm; from here only trades after the first `n_trades` are recent evidence."""
+        self._armed = False
+        self._fresh_from = n_trades
+
     def evaluate(self, trades: list[Trade]) -> AlphaDecayReading:
         recent = trades[-self._recent_window:]
         baseline = trades[-200:-self._recent_window]
+        f = self._fresh_from
+        if f is not None and len(trades) - f < self._recent_window:
+            recent = trades[f:]
+            baseline = trades[max(0, f - 200):max(0, f - self._recent_window)]
+        else:
+            self._fresh_from = None
         n_recent, n_baseline = len(recent), len(baseline)
 
         if n_recent < self._min_trades or n_baseline < self._baseline_min:

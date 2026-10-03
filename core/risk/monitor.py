@@ -24,6 +24,7 @@ from config.schemas import RiskConfig, GuardrailLimits
 from core.data.errors import DataQualityError
 from core.execution.venue import BrokerAccount, BrokerPosition, FillReport, FillStatus
 from core.risk.alpha_decay import AlphaDecayDetector
+from core.risk.alpha_throttle import AlphaThrottle
 from core.risk.exposure_metrics import max_cluster_pct, portfolio_var_pct
 from core.risk.guardrails import GuardrailContext, Guardrails
 from core.risk.risk_types import RiskPosition, RiskSnapshot, Trade
@@ -50,7 +51,7 @@ class RiskMonitor:
         self._cfg = cfg
         self._limits = limits
         self._guards = guardrails
-        self._alpha = alpha
+        self._alpha = AlphaThrottle(alpha, sink, logger)
         self._sink = sink
         self._clusters = clusters
         self._session_id = session_id
@@ -63,7 +64,6 @@ class RiskMonitor:
         self._realised_by_day: dict[object, Decimal] = {}
         self._marks: dict[str, deque[float]] = {}
         self._slippage: deque[float] = deque(maxlen=cfg.slippage_window)
-        self._alpha_armed_prev = False
 
     # -- order metadata (so ingest can attach param_set_id/group/sl/tp) ------- #
 
@@ -176,16 +176,7 @@ class RiskMonitor:
             tierg_flatten=tierg_flatten or {}))
 
         # alpha decay — explicit set/clear on the upward edge (GAP-0050, C-RSK-9)
-        reading = self._alpha.evaluate(self._trades)
-        if reading.flag and not self._alpha_armed_prev:
-            self._log.event("ALPHA_DECAY_DETECTED", s_recent=reading.mean_sigma_recent,
-                            s_baseline=reading.mean_sigma_baseline, n=reading.n_recent)
-            self._sink.apply_risk_state(alpha_decay=True)
-        elif not reading.flag and self._alpha_armed_prev:
-            self._log.event("ALPHA_DECAY_RECOVERED", s_recent=reading.mean_sigma_recent,
-                            s_baseline=reading.mean_sigma_baseline)
-            self._sink.apply_risk_state(alpha_decay=False)
-        self._alpha_armed_prev = reading.flag
+        reading = self._alpha.update(self._trades)
 
         engine_daily_dd = next((s.measured_pct for s in outcome.platform_drawdown
                                 if s.rule_key == "engine:daily"), 0.0)
@@ -295,22 +286,20 @@ class RiskMonitor:
         if expired and self._store is not None:
             self._store.expire_halts([h.halt_id for h in expired], now)
         self._restored = True
-        self._alpha.restore_armed(alpha_armed)
-        self._alpha_armed_prev = alpha_armed
-        if alpha_armed:
-            self._sink.apply_risk_state(alpha_decay=True)
-            self._log.event("ALPHA_DECAY_RESTORED", armed=True)
+        self._alpha.restore(alpha_armed)
 
     def on_human_resume(self, human_token: str, now: datetime) -> None:
         """A human resume (MCP/Governor, phase 10) re-arms the latches — the equity breaker
-        is one-shot per ARMED CYCLE, never per process (GAP-P9I-06) — and clears the
-        persisted halts so a restart does not re-apply them (ACIS-07 §7). Human-only by
+        is one-shot per ARMED CYCLE, never per process (GAP-P9I-06) — clears the
+        persisted halts so a restart does not re-apply them (ACIS-07 §7), and clears an armed
+        alpha-decay throttle, which re-arms only on post-resume trades (GAP-P12D-145). Human-only by
         construction; a blank token is refused before anything is cleared."""
         if not isinstance(human_token, str) or not human_token.strip():
             raise DataQualityError("human_token", human_token, "only a human resumes")
         if self._store is not None:
             self._store.clear_halts(now, human_token)
         self._guards.rearm()
+        self._alpha.clear_by_human(self._trades)
 
     def reconcile_on_restart(self, broker_positions: tuple[BrokerPosition, ...],
                              now: datetime) -> bool:

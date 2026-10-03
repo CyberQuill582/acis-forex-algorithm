@@ -3,8 +3,8 @@
 Mental model:
   * delta = target − held. A reduction, or a flip's closing leg, is a reduce-only close NAMING the
     held position (§7 step 10). It passes no guard, because a reduction is never blocked (C-EXE-7).
-  * An opening leg is an ENTRY. It meets every §7.1 guard (core/governor/guards.py), then §7.4's hard
-    limits in order:
+  * An opening leg is an ENTRY. It meets every §7.1 guard (core/governor/guards.py) except NVMA's
+    confidence and label vetoes (`target=True`, GAP-P12D-147), then §7.4's hard limits in order:
     - the account's lot cap: zero, never clamp;
     - the Risk edge's taper and the alpha-decay ×0.25: each only shrinks, and the result goes back on
       the lots toward zero, so a throttled one-lot order is zero;
@@ -98,7 +98,7 @@ def _entry_size(gov, limits, rules, clusters, instrument, direction, size: Decim
                 portfolio, regime, marks, now, logger) -> tuple[Decimal, str]:
     if regime is None:                               # no tick classified yet: no entry
         return Decimal("0"), "no_regime"
-    guard = gov.guards.check(instrument, portfolio, regime, now)
+    guard = gov.guards.check(instrument, portfolio, regime, now, target=True)   # GAP-P12D-147
     if guard is not None:
         return Decimal("0"), guard
     if rules.max_lots is not None and size / LOT_UNITS > Decimal(str(rules.max_lots)):

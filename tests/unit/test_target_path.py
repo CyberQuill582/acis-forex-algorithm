@@ -27,6 +27,7 @@ from core.signals import rules
 from tests.backtest.lab_market import Effect, LabSpec, generate
 from tests.backtest.rsim import BookSpec, Lots as RsimLots, panel, run
 from tests.backtest.rsim_lab import carver_pct_vol, lab_costs, lab_market
+from core.regime.regime_types import LiqState, RegimeContext, RegimeType, VolClass
 from tests.signals_fixtures import T0, mk_regime
 from tests.unit.test_governor import mk_governor, mk_portfolio, mk_rulebook
 
@@ -105,6 +106,28 @@ def test_the_risk_edge_throttles_and_the_hard_caps_zero_a_one_lot_entry() -> Non
     assert _gate(rules_=mk_rulebook(max_lots=0.005)).reason == "lot_cap"
     full = mk_portfolio(per_cluster_exposure=MappingProxyType({"usd_short": Decimal("1790")}))
     assert _gate(portfolio=full).reason == "cluster_cap"           # 1,790 + 1,100 > 90% of 20% of 10,000
+
+
+def _nvma(regime=RegimeType.STRONG_TREND_UP, confidence=0.4, reasons=("LOW_CONFIDENCE",), tradeable=False):
+    return RegimeContext(
+        regime=regime, trend_direction=1, volatility_class=VolClass.HIGH, liquidity_state=LiqState.DEEP,
+        tradeable=tradeable, regime_stability_score=0.9, estimated_half_life_seconds=600, confidence=confidence,
+        timestamp=T0, instrument="EUR_USD", inputs_snapshot=MappingProxyType({"veto_reasons": reasons}))
+
+
+def test_a_target_entry_ignores_the_confidence_vetoes_but_not_the_integrity_gates() -> None:
+    """GAP-P12D-147 ("Exempt confidence vetoes"): low confidence or no params for the regime admits a
+    target entry; a stale, spread-vetoed or dead market, a gate state, or an unexplained veto does not.
+    The signal path keeps every veto."""
+    assert _gate(regime=_nvma()).reason == "open"
+    assert _gate(regime=_nvma(reasons=("LOW_CONFIDENCE", "NO_PARAMS_FOR_REGIME"))).reason == "open"
+    for reasons in (("STALE_STATE",), ("SPREAD_VETO", "LOW_CONFIDENCE"), ("DEAD_MARKET",), ()):
+        assert _gate(regime=_nvma(reasons=reasons)).reason == "veto", reasons
+    for gate in (RegimeType.MACRO_EVENT, RegimeType.ILLIQUID, RegimeType.UNCLASSIFIED):
+        assert _gate(regime=_nvma(regime=gate, reasons=("LOW_CONFIDENCE",))).reason == "veto", gate
+    gov, _ = mk_governor()
+    assert gov.guards.check("EUR_USD", mk_portfolio(), _nvma(), T0) == "veto"           # the signal path
+    assert gov.guards.check("EUR_USD", mk_portfolio(), _nvma(tradeable=True, reasons=()), T0) == "low_confidence"
 
 
 # -- the decision ------------------------------------------------------------------------------- #

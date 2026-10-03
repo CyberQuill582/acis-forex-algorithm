@@ -8,6 +8,7 @@ from decimal import Decimal
 
 import pytest
 
+from core.data.errors import DataQualityError
 from core.execution.venue import BrokerPosition, FillStatus
 from core.risk.sink import HaltSink
 from core.risk.store import RiskStore
@@ -83,6 +84,43 @@ def test_alpha_decay_sets_and_clears_explicitly() -> None:
     sink.risk_states.clear()
     mon.evaluate(acct(10000.0), T0 + timedelta(minutes=1))
     assert all(alpha is not False for _, alpha in sink.risk_states)
+
+
+def test_a_human_resume_clears_the_throttle_and_only_post_resume_decay_re_arms_it() -> None:
+    """GAP-P12D-145 ("Human resume clears it", "Fresh evidence only"): the trades that armed the
+    throttle cannot re-arm it after a resume; 30 decayed trades closed after it do."""
+    cfg, sink = load_cfg(), RecordingSink()
+    mon, _, alpha, log = build_monitor(cfg, sink)
+    for i in range(150):
+        mon._trades.append(mk_trade(12.0 if i % 2 else 8.0))
+    for i in range(50):
+        mon._trades.append(mk_trade(1.0 if i % 2 else -1.0))
+    mon.evaluate(acct(10000.0), T0)
+    assert alpha.armed
+    with pytest.raises(DataQualityError):
+        mon.on_human_resume("  ", T0)                     # no token: nothing clears
+    assert alpha.armed
+    sink.risk_states.clear()
+    mon.on_human_resume("human", T0)
+    assert not alpha.armed and sink.risk_states == [(None, False)]
+    assert any(e["event_type"] == "ALPHA_DECAY_CLEARED_BY_HUMAN" for e in log.events())
+    snap = mon.evaluate(acct(10000.0), T0 + timedelta(minutes=1))  # same trades: no re-arm
+    assert not alpha.armed and snap.alpha_decay_state == "inactive_warming"
+    for i in range(29):
+        mon._trades.append(mk_trade(1.0 if i % 2 else -1.0))
+    mon.evaluate(acct(10000.0), T0 + timedelta(minutes=2))
+    assert not alpha.armed                                # 29 fresh trades: still warming
+    mon._trades.append(mk_trade(-1.0))
+    mon.evaluate(acct(10000.0), T0 + timedelta(minutes=3))
+    assert alpha.armed and sink.risk_states[-1] == (None, True)   # decay persists: re-armed
+
+
+def test_a_human_resume_leaves_an_unarmed_throttle_alone() -> None:
+    cfg, sink = load_cfg(), RecordingSink()
+    mon, _, alpha, log = build_monitor(cfg, sink)
+    mon.on_human_resume("human", T0)
+    assert not alpha.armed and sink.risk_states == []
+    assert not any(e["event_type"] == "ALPHA_DECAY_CLEARED_BY_HUMAN" for e in log.events())
 
 
 def test_snapshot_alpha_state_is_first_class() -> None:

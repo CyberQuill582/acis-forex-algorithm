@@ -1,5 +1,5 @@
 # ACIS — Adaptive Capital Intelligence System
-## Master Specification v2.29 (build authority — spec COMPLETE, build in progress)
+## Master Specification v2.30 (build authority — spec COMPLETE, build in progress)
 
 Status: BUILD AUTHORITY. Consolidates and supersedes `ACIS_Agent_Prompt.md` (Drive, v1.0), `Super_Forex_Agent.html` (Drive, v1.0 architecture brief), and the ACIS sections of the July 2026 Master Spec doc. Where those disagreed (directory layout), this document decides: the detailed `core/` layout below is canonical; the coarse 4-folder layout from the master doc is retired. If any earlier document contradicts this one, this one wins.
 
@@ -169,6 +169,7 @@ Veto (`tradeable=False`) additionally when: confidence < 0.55; spread > 3× sess
 On regime shift: log full context. **Regime no longer gates families (v2.21, R-1 A7; corrected v2.22, GAP-P12D-109):**
 - Regimes no longer gate rule families or key their parameters.
 - The `tradeable=False` veto keeps every organic trigger: confidence, spread, dead market, MACRO_EVENT, ILLIQUID and UNCLASSIFIED. Its former "no evolved params for the regime" trigger is REPLACED by the §2 row "no registered, validated rule set" (A4).
+- **A daily target entry (v2.30, GAP-P12D-147)** is vetoed only by the data-integrity triggers: spread, dead market, stale state, MACRO_EVENT, ILLIQUID and UNCLASSIFIED (warm-up, NaN). The confidence trigger and the regime label do not gate it, because a daily decision should not hang on a 1-minute classification at its slot (ACIS-05 v1.9 §6.4). The signal path keeps every trigger; a target needs a registered family (§2).
 - NVMA's other effects on trading stand until separately amended: the §6 regime sizing factor (dampen-only; **owner-ratified 2026-09-25, the R1 audit triage: "Ratify all", decision D-b: it stays**, since removing it would raise sizes by up to 1/regime_f), the C4 volatility rules, and §3.6.
 - Any regime conditioning of a family enters only as a registered family-version (§5.6).
 - NVMA never triggers execution; it writes to `regime_store` only.
@@ -321,7 +322,7 @@ size     = apply_hard_limits(raw_size, signal, portfolio)
 
 **Correlation clusters** (config §9): usd_long, usd_short, commodity, yen_carry, risk_on, risk_off. Max 20% of NAV per cluster. Breach → size to zero, never split. **Entry headroom (v2.27, owner-ratified 2026-10-02, G-5):** the Governor admits an entry only up to 90% of the cluster and single-currency caps, so mark drift alone cannot carry the book into the Risk Monitor's 100% breach (a human-only global HALT); it can only shrink an order.
 
-**Hard overrides (size → 0 regardless of formula):** daily drawdown ≥ limit; net single-currency delta > 30%; NVMA `tradeable == False`; regime confidence < 0.55; instrument liquidity below ILLIQUID_THRESHOLD; **instrument inside a platform-rules blackout window (§3.5) on a rule-restricted account — no exception, ever**; account-rule overrides per §9.5 (lot caps, min hold, weekend bans).
+**Hard overrides (size → 0 regardless of formula):** daily drawdown ≥ limit; net single-currency delta > 30%; NVMA `tradeable == False`; regime confidence < 0.55 (a daily target entry: the integrity triggers only and no confidence override, v2.30 §4); instrument liquidity below ILLIQUID_THRESHOLD; **instrument inside a platform-rules blackout window (§3.5) on a rule-restricted account — no exception, ever**; account-rule overrides per §9.5 (lot caps, min hold, weekend bans).
 
 **Pre-limit taper (ratified, §9.5):** before the hard overrides evaluate, `raw_size` is additionally multiplied by the pre-limit taper factor delivered by the Risk Monitor (1.0 far from every hard drawdown limit, linearly down to 0 at the entry-halt fraction; v2.27, G-5: the portfolio VaR's distance to its cap is one more input, so new entries shrink from 60% of the VaR cap and stop at 80%, while the VaR HALT at 100% is unchanged). The taper arrives over the single upward Risk→Governor edge, exactly like HALT and alpha-decay cuts — **that edge carries only risk-restrictive instructions (halt, cut, taper); it can never raise a size.**
 
@@ -500,7 +501,9 @@ Both laws bind the implementing agent **and** every future spec pass. Neither ma
 
 ## CHANGELOG
 
-**v2.29 (2026-10-02, owner-ratified in chat — GAP-P12D-146)** — "21 days for weekly sources (Recommended)": R6-1's rate freshness limit follows each source's publication cadence, 21 days for the weekly ones (BIS for AUD, the SNB cube for CHF) and 10 for the daily overnight rates (ACIS-04 v1.7 §4b). The other two closing rulings (GAP-P12D-145, GAP-P12D-147) are still to build. No guardrail VALUE, HALT/veto/resume semantic, equity floor or live gate changed.
+**v2.30 (2026-10-03, owner-ratified in chat — the two remaining closing rulings)** — (1) GAP-P12D-145, "Human resume clears it (Recommended)" and, on 2026-10-03, "Fresh evidence only (Recommended)": the one human resume also clears the alpha-decay throttle, which then re-arms only on trades closed after the resume, judged against the baseline that armed it (ACIS-07 v1.4 §7). The literal "re-arm at the next evaluation" would have re-armed it on the same trades within a second, because entries are zeroed while it is armed. (2) GAP-P12D-147, "Exempt confidence vetoes (Recommended)": a daily target entry ignores NVMA's confidence and label vetoes and §6's low-confidence override, and keeps the data-integrity triggers (§4, ACIS-05 v1.9 §6.4). The signal path is unchanged. Both relax entry gating only through a human act or a ruled scope; no guardrail VALUE, equity floor, HALT trigger or live gate changed.
+
+**v2.29 (2026-10-02, owner-ratified in chat — GAP-P12D-146)** — "21 days for weekly sources (Recommended)": R6-1's rate freshness limit follows each source's publication cadence, 21 days for the weekly ones (BIS for AUD, the SNB cube for CHF) and 10 for the daily overnight rates (ACIS-04 v1.7 §4b). The other two closing rulings are v2.30. No guardrail VALUE, HALT/veto/resume semantic, equity floor or live gate changed.
 
 **v2.28 (2026-10-02, owner-ratified in chat — three R1.6 build findings)** — (1) GAP-P12D-143, "Reconcile every 30 min (Recommended)": ACIS-13 v1.4 §6.5 counts the target path's daily venue history in the request budget's projection, and the default reconcile interval is 1,800 s. (2) GAP-P12D-142, "$100k demo, $10k sizing (Recommended)": the demo account holds $100,000 so the hard caps admit the one-lot target book, while sizing keeps R6-5's $10k capital_ref (ACIS-05 v1.8). (3) GAP-P12D-101 / J1, "20% (Recommended)": the demo's vol target is 20%, not 10% (R6-5 re-ruled; ACIS-05 v1.8). Every position is still at most one minimum lot. No guardrail VALUE, HALT/veto/resume semantic, equity floor or live gate changed.
 
