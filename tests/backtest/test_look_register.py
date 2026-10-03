@@ -57,7 +57,8 @@ def canonical(tmp_path, monkeypatch):
     root = tmp_path / "data" / "validation" / "looks"
     monkeypatch.setattr(lr, "CANONICAL", root)
     monkeypatch.setattr(lr, "git_state", lambda repo=None: GIT)
-    monkeypatch.setattr(lc, "REAL_LOOKS_OPEN", True)      # opened here; closed in the repo until R1.4
+    monkeypatch.setattr(lc, "OPEN_ORIGINS", frozenset(lc.ORIGINS))       # the register's mechanics for every
+    monkeypatch.setattr(lc, "OPEN_SIMULATORS", frozenset(lc.SIMULATORS))  # claim; the scope has its own test
     return LookRegister(root)
 
 
@@ -279,6 +280,7 @@ def test_the_real_data_script_writes_its_line_before_it_grades(monkeypatch, tmp_
     monkeypatch.setattr(lr, "CANONICAL", tmp_path / "data" / "validation" / "looks")
     monkeypatch.setattr(lr, "git_state", lambda repo=None: GIT)
     monkeypatch.setattr(lc, "REAL_LOOKS_OPEN", True)
+    monkeypatch.setattr(lc, "OPEN_SIMULATORS", frozenset(lc.SIMULATORS))   # engine looks: R12I-12's scope
     seen: list = []
 
     def grade(inp):

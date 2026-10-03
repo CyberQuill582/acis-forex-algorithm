@@ -138,3 +138,38 @@ def test_a_stage_a_look_names_its_cycle_and_counts_only_there(canonical, acis_co
     c1, c2 = cycle_verdict(canonical.root, "c1"), cycle_verdict(canonical.root, "c2")
     assert [m.status for m in c1.chain] == ["failed", "untested", "untested"]
     assert c2.chain[0].status == "passed" and c2.alpha == 0.01 and len(c2.chain[0].looks) == 2
+
+
+def test_only_days_after_the_certifying_boundary_count_toward_a_pass(canonical, acis_config) -> None:
+    """Master §5.6: a literature rule published inside the window passes only on its later days. An edge
+    planted before publication and none after earns nothing; the same edge after publication passes."""
+    from tests.backtest.look_claims import Origin
+    paper = Origin("literature", reference="a 2014 paper", published="2014-07-01")
+    days = (date(2015, 7, 1) - date(2014, 1, 1)).days + 1                    # through mid-2015
+    cut = (date(2014, 7, 1) - date(2014, 1, 1)).days
+    before = np.concatenate([EDGE[:cut], NULL[:days - cut] + 0.00003])      # paired excess and 2x still > 0
+    after = np.concatenate([NULL[:cut] + 0.00003, EDGE[:days - cut]])
+    a = _claim(variant="early", simulator="rsim", origin=paper, declaration=Declaration("fixed", 1, "PASSIVE_LONG"))
+    b = _claim(variant="late", simulator="rsim", origin=paper, declaration=Declaration("fixed", 1, "PASSIVE_LONG"))
+    _cycle(canonical, [b], holm=[a])
+    _graded(canonical, acis_config, b, after)
+    _graded(canonical, acis_config, a, before)
+    v = cycle_verdict(canonical.root, "c1")
+    assert v.chain[0].status == "passed" and v.holm[0].status == "failed" and v.holm[0].p > 0.4
+
+
+def test_a_kill_only_look_names_no_cycle_and_is_killed_only_below_minus_half(canonical, acis_config) -> None:
+    """Owner rulings 2026-10-03: an LLM-selected rule's history look can only falsify; it spends no alpha
+    (no cycle) and is killed at HAC t < -0.5 (stage C's rule), never passed."""
+    from tests.backtest.look_claims import Origin
+    from tests.backtest.verdict import KILL_T, kill_verdict
+    picked = Origin("literature", model_id="claude-opus-5", model_cutoff="2026-01-01", proposed="2026-09-24",
+                    exposure="web", reference="Carver 2015", published="2015-10-01")
+    looks = {}
+    for name, series in (("noisy", NULL - 0.00005), ("bad", NULL - 0.0004), ("good", EDGE)):
+        claim = _claim(variant=name, simulator="rsim", origin=picked)
+        looks[name] = _graded(canonical, acis_config, claim, series)
+        assert looks[name].cycle is None
+    verdicts = {n: kill_verdict(canonical.root, look.look_id) for n, look in looks.items()}
+    assert KILL_T == -0.5 and verdicts["noisy"].hac_t < 0 and not verdicts["noisy"].killed
+    assert verdicts["bad"].killed and not verdicts["good"].killed

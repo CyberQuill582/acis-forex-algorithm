@@ -51,7 +51,7 @@ import tests.backtest.look_claims as lc
 import tests.backtest.look_anchor as look_anchor
 import tests.backtest.look_outcomes as look_outcomes
 from tests.backtest.look_claims import Claim, cost_map_hash, cycle_line
-from tests.backtest.look_cycles import is_stage_a, stage_a_cycle
+from tests.backtest.look_cycles import cycle_of
 from tests.backtest.look_tiers import FORWARD_START, TIER_NAMES, TierRefused  # noqa: F401 (re-export)
 from tests.backtest.look_tiers import data_tier as _data_tier
 from tests.backtest.walk_forward import Fold
@@ -237,7 +237,7 @@ class LookRegister:
                 lc.refuse_backwards_clock(scan.lines, now)
                 if claim is not None:
                     lc.admit_claim(claim, instruments, scan.lines, tier)
-                cycle = stage_a_cycle(claim.variant_hash, scan.lines) if claim and is_stage_a(tier, claim.simulator) else None
+                cycle = cycle_of(claim, tier, max(f.test_end for f in folds).date(), scan.lines)
             except ValueError as e:
                 raise LookRefused(str(e)) from None
             prior = [x for x in looks if x["family"] == family]

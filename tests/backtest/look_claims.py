@@ -24,9 +24,10 @@ Mental model:
     quarter; no line may be stamped earlier than the line before it.
   * A grade's DAILY VECTOR (dates, never datetimes) is stored once, content-addressed, and read
     back before its hash is returned.
-  * REAL-DATA LOOKS ARE CLOSED (GAP-P12D-127): R-1 allows no real-data look before R1.1–R1.4 are
-    green, and the register's recording fixes must land first, because an append-only line cannot
-    acquire a declaration later. `REAL_LOOKS_OPEN` becomes True only with R1.4.
+  * REAL-DATA LOOKS ARE OPEN, SCOPED (GAP-P12D-127; owner ruling 2026-10-03): only human- or
+    literature-origin claims graded by RSIM (`OPEN_ORIGINS`, `OPEN_SIMULATORS`). LLM plans stay
+    refused until the motif veto and plan schema (R12I-11) land, engine looks until `Backtest.run`
+    takes a consumed-look token (R12I-12).
 """
 
 from __future__ import annotations
@@ -51,7 +52,9 @@ SIMULATORS = ("engine", "rsim")
 EXPOSURES = ("none", "web", "repository")
 SPACE_KEYS = frozenset({"grid", "formula", "instruments"})
 MAX_CYCLE = 5
-REAL_LOOKS_OPEN = False          # GAP-P12D-127: opened by R1.4, with the recording fixes
+REAL_LOOKS_OPEN = True           # GAP-P12D-127: opened 2026-10-03 by the owner, SCOPED (below)
+OPEN_ORIGINS = frozenset({"human", "literature"})   # LLM plans wait for R12I-11 (motif veto, plan schema)
+OPEN_SIMULATORS = frozenset({"rsim"})               # engine looks wait for R12I-12 (Backtest.run's token)
 HEX64 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -189,6 +192,9 @@ def admit_claim(claim: Claim, instruments: Sequence[str], lines: Sequence[dict |
     declaration or overruns its look budget (look_declarations)."""
     if claim.declared_space["instruments"] != sorted(set(instruments)):
         raise ValueError("the claim's declared instruments are not the instruments this look grades (R12I-03)")
+    if tier > 0 and (claim.origin.kind not in OPEN_ORIGINS or claim.simulator not in OPEN_SIMULATORS):
+        raise ValueError(f"real looks are open for {sorted(OPEN_ORIGINS)} claims graded by {sorted(OPEN_SIMULATORS)} "
+                         "only (owner ruling 2026-10-03): LLM plans wait for R12I-11, engine looks for R12I-12")
     prior = [(x.get("claim") or {}) for x in lines if x is not None and x.get("kind", "look") == "look"]
     origins = [c["origin"] for c in prior if c.get("variant_hash") == claim.variant_hash]
     if any(o.get("model_id") for o in origins) and not claim.origin.llm_touched:

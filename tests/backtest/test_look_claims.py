@@ -36,7 +36,8 @@ def canonical(tmp_path, monkeypatch):
     root = tmp_path / "data" / "validation" / "looks"
     monkeypatch.setattr(lr, "CANONICAL", root)
     monkeypatch.setattr(lr, "git_state", lambda repo=None: GIT)
-    monkeypatch.setattr(lc, "REAL_LOOKS_OPEN", True)      # opened here; closed in the repo until R1.4
+    monkeypatch.setattr(lc, "OPEN_ORIGINS", frozenset(lc.ORIGINS))       # the register's mechanics for every
+    monkeypatch.setattr(lc, "OPEN_SIMULATORS", frozenset(lc.SIMULATORS))  # claim; the scope has its own test
     return LookRegister(root)
 
 
@@ -53,16 +54,24 @@ def _look(reg, cfg, claim=None, family="trend-v1", **kw):
                         family=family, account="dev_paper", git=GIT, claim=claim, **kw)
 
 
-def test_real_data_looks_and_cycle_rows_are_closed_until_r1_4(tmp_path, monkeypatch, acis_config) -> None:
-    """GAP-P12D-127: R-1 allows no real-data look before R1.1-R1.4 are green; the register's
-    recording fixes land first, because an append-only line cannot gain a declaration later."""
-    assert lc.REAL_LOOKS_OPEN is False
+def test_real_looks_are_open_only_for_literature_and_human_claims_graded_by_rsim(tmp_path, monkeypatch,
+                                                                              acis_config) -> None:
+    """GAP-P12D-127 (owner ruling 2026-10-03): the shipped scope refuses an LLM plan (R12I-11 owed) and an
+    engine look (R12I-12 owed); a human or literature claim graded by RSIM registers. An LLM-SELECTED
+    literature rule is literature (its boundary still binds); its kill-only look names no cycle."""
+    assert lc.REAL_LOOKS_OPEN and lc.OPEN_ORIGINS == {"human", "literature"} and lc.OPEN_SIMULATORS == {"rsim"}
     root = tmp_path / "data" / "validation" / "looks"
     monkeypatch.setattr(lr, "CANONICAL", root)
-    with pytest.raises(LookRefused, match="closed until R1.4"):
-        _look(LookRegister(root), acis_config, claim=_claim())
-    with pytest.raises(LookRefused, match="open with real-data looks"):
-        LookRegister(root).register_cycle(cycle_id="c1", order=[_claim().variant_hash])
+    monkeypatch.setattr(lr, "git_state", lambda repo=None: GIT)
+    reg = LookRegister(root)
+    with pytest.raises(LookRefused, match="LLM plans wait for R12I-11"):
+        _look(reg, acis_config, claim=_claim(origin=LLM, simulator="rsim"))
+    with pytest.raises(LookRefused, match="engine looks for R12I-12"):
+        _look(reg, acis_config, claim=_claim())
+    selected = Origin("literature", model_id="claude-opus-5", model_cutoff="2026-01-01", proposed="2026-09-24",
+                      exposure="web", reference="Carver 2015", published="2015-10-01")
+    look = _look(reg, acis_config, claim=_claim(origin=selected, simulator="rsim"))
+    assert look.cycle is None and look.claim["certifying_boundary"] == "2026-09-24"   # kill-only: no cycle
 
 
 def test_a_real_look_must_carry_its_own_familys_claim_and_the_line_records_it(canonical, acis_config) -> None:

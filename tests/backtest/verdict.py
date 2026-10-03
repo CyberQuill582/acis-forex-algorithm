@@ -18,18 +18,32 @@ Mental model:
     (a registered look has no outcome yet); `open` (looks left, none passed); `not_built` (an explored
     family: max-t + PBO is not built, so it can never pass); `untested` (after the chain stopped).
   * Fail closed: a broken or torn register, or an unknown cycle, refuses the verdict.
+  * Master §5.6: a look's HAC p counts toward a pass only over its days on or after the claim's
+    certifying boundary (a literature rule: its publication; an LLM-selected or LLM-originated one:
+    the later of the model's cutoff and the proposal date). Kill-only looks (the whole window before
+    the boundary; `look_cycles.is_kill_only`) name no cycle; `kill_verdict` judges them by stage C's
+    rule, killed at HAC t < -0.5 (owner rulings 2026-10-03).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from statistics import NormalDist
+
+import numpy as np
+
+from tests.backtest.hac import hac_t
+from tests.backtest.look_claims import load_vector
 
 from tests.backtest.look_cycles import STAGE_A_TIER
 from tests.backtest.look_outcomes import read as read_outcome
 from tests.backtest.look_register import LookRegister
 from tests.backtest.stage_a import from_register
+
+
+KILL_T = -0.5                        # stage C's kill rule (C-BT-11 v2 step 6), owner-chosen for kill-only looks
 
 
 class VerdictRefused(Exception):
@@ -74,7 +88,8 @@ def _member(root: Path, lines: list[dict], variant: str, alpha: float, cycle_id:
             a = from_register(root, x["look_id"], alpha / k, outcome)
             graded.append(x["look_id"])
             kill_ok = a.paired_excess > 0 and a.net_2x > 0 and not a.refusing
-            ps.append(1.0 - NormalDist().cdf(a.hac_t) if kill_ok else 1.0)
+            t = _certifying_t(root, outcome, x["claim"].get("certifying_boundary"))
+            ps.append(1.0 - NormalDist().cdf(t) if kill_ok and t is not None else 1.0)
     p = min(1.0, k * min(ps)) if ps else None
     if p is not None and p < alpha:
         status = "passed"
@@ -121,3 +136,29 @@ def cycle_verdict(root: Path, cycle_id: str) -> CycleVerdict:
     holm = _holm(holm, alpha) if not stopped else tuple(Member(m.variant, "untested", m.p, m.looks, m.budget)
                                                         for m in holm)
     return CycleVerdict(cycle_id, alpha, tuple(chain), tuple(holm))
+
+
+def _certifying_t(root: Path, outcome: dict, boundary: str | None) -> float | None:
+    """The HAC t over the graded days that may count toward a pass (master §5.6); None if too few."""
+    dates, returns = load_vector(root, outcome["daily_vector"])
+    keep = [r for d, r in zip(dates, returns) if boundary is None or d >= date.fromisoformat(boundary)]
+    return hac_t(np.asarray(keep)) if len(keep) >= 3 else None
+
+
+@dataclass(frozen=True)
+class KillVerdict:
+    look_id: str
+    hac_t: float                     # of the look's whole graded net daily portfolio series
+    killed: bool                     # hac_t < KILL_T
+
+
+def kill_verdict(root: Path, look_id: str) -> KillVerdict:
+    """A kill-only look's verdict, read from the register alone."""
+    scan = LookRegister(Path(root)).scan()
+    if scan.broken or scan.torn:
+        raise VerdictRefused("the register is broken or torn: " + "; ".join(scan.broken + scan.torn))
+    outcome = read_outcome(scan.lines, look_id)
+    if outcome is None:
+        raise VerdictRefused(f"look {look_id} has no outcome in the register")
+    t = hac_t(np.asarray(load_vector(Path(root), outcome["daily_vector"])[1]))
+    return KillVerdict(look_id, t, t < KILL_T)

@@ -1,5 +1,5 @@
 # ACIS — Adaptive Capital Intelligence System
-## Master Specification v2.31 (build authority — spec COMPLETE, build in progress)
+## Master Specification v2.32 (build authority — spec COMPLETE, build in progress)
 
 Status: BUILD AUTHORITY. Consolidates and supersedes `ACIS_Agent_Prompt.md` (Drive, v1.0), `Super_Forex_Agent.html` (Drive, v1.0 architecture brief), and the ACIS sections of the July 2026 Master Spec doc. Where those disagreed (directory layout), this document decides: the detailed `core/` layout below is canonical; the coarse 4-folder layout from the master doc is retired. If any earlier document contradicts this one, this one wins.
 
@@ -500,6 +500,8 @@ Both laws bind the implementing agent **and** every future spec pass. Neither ma
 > The system's job is not to make the most money possible on any given day. Its job is to **still be running, with positive expectancy, two years from now.** Every design decision must answer: *"Does this make the system more likely to survive a regime it has never seen?"* If the answer is no — redesign it.
 
 ## CHANGELOG
+
+**v2.32 (2026-10-03, owner-ratified in chat — the first real-data look)** — (1) "Open for literature/human (Recommended)": real-data looks open for human- and literature-origin claims graded by RSIM; LLM plans and engine looks stay refused until R12I-11/12. (2) "Standing approval (Recommended)": every register line pushes its chain head to GitHub. (3) "LLM-selected, kill test (Recommended)": D1, Carver's rule selected by the cloud lead's plan, is LLM-selected under §5.6, so 2012–2023 can only kill it; such a look names no cycle and spends no α, and the verdict counts toward any pass only days after a claim's certifying boundary. (4) "t < −0.5, stage C's rule (Recommended)": a kill-only look kills at a HAC t below −0.5. GAP-P12D-140's cycle-1 ruling ("D1 alone at 0.03") is superseded by (3): cycle 1's 0.03 stays free for the first family with a historical certifying window. ACIS-09 v1.11. No guardrail VALUE, HALT trigger, equity floor or live gate changed.
 
 **v2.31 (2026-10-03, owner-ratified in chat — the post-R1.6 audit's three decisions, GAP-P12D-150)** — (1) PR16E-01, "Report only on demo (Recommended)": on returns that never decay the alpha-decay throttle arms within 200 closed trades in 70–93% of runs and, after a human resume, falsely re-arms within ~50 in 39–70% (verified by the lead), so on the one-lot paper and practice book its ×0.25 is reported, not applied, to target entries; stage D's E2 is the forward decay test, and live keeps the throttle until GATES R8 replaces it with the post-edge plan (ACIS-05 v1.10, ACIS-07 v1.5). (2) PR16I-03, "Keep it, measure (Recommended)": ILLIQUID stays a data-integrity gate for target entries. (3) PR16E-02, "28 days for weekly (Recommended)": R6-1's weekly-source limit is 28 days, covering BIS's year-end publication gap (ACIS-04 v1.8). No guardrail VALUE, equity floor, HALT trigger or live gate changed.
 
