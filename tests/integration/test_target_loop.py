@@ -110,6 +110,7 @@ async def test_it_decides_after_the_close_and_executes_once_at_the_slot(tmp_path
     await loop.tick(AFTER)
     (decided,) = [e for e in rig.events("TARGET_DECIDED") if e["day"] == DAY.isoformat()]
     assert decided["reason"] == "target" and decided["target"] == "1000" and decided["slot"] == SLOT.isoformat()
+    assert decided["shadow"] > 0 and decided["close"] > 0 and decided["q"] == 1.0          # the shadow book's mark
     await loop.tick(SLOT - timedelta(seconds=1))
     assert rig.sent == []                                                      # never before the slot
     await loop.tick(SLOT + timedelta(seconds=30))

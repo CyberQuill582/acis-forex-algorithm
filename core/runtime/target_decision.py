@@ -27,7 +27,7 @@ from typing import Mapping
 
 from core.data.fx_clock import rollover_utc
 from core.data.rates import RateTable, StaleRateError, accrual
-from core.governor.target import VOL_DAYS, banded_target
+from core.governor.target import VOL_DAYS, banded_target, optimum_units
 from core.signals.daily import DailySeries
 from core.signals.forecast import Forecast, d1_forecast
 from core.signals.indicators import wilder_atr
@@ -65,6 +65,8 @@ class Decision:
     reason: str
     forecast: Forecast | None
     atr: float                       # the daily true-range ATR (the disaster stop's unit)
+    shadow: float | None = None      # the uncapped continuous position in units (`optimum_units`)
+    q: float | None = None           # USD per unit of the quote currency at the decision
 
 
 def class_equal_weights(classes: Mapping[str, str]) -> dict[str, float]:
@@ -109,4 +111,6 @@ def decide(instrument: str, asset_class: str, quote: str, s: DailySeries, day: d
     target = banded_target(float(held), f.value, f.pct_vol, f.price_basis, q, cash_vol=sizing.cash_vol,
                            weight=sizing.weights[instrument], idm=sizing.idm, buffer=sizing.buffer,
                            step=lots.step, minimum=lots.minimum, cap=lots.cap)
-    return Decision(instrument, day, held, target, "target", f, atr)
+    shadow = optimum_units(f.value, f.pct_vol, f.price_basis, q, cash_vol=sizing.cash_vol,
+                           weight=sizing.weights[instrument], idm=sizing.idm)
+    return Decision(instrument, day, held, target, "target", f, atr, shadow=shadow, q=q)

@@ -179,7 +179,8 @@ class TargetLoop:
                         held=str(d.held), target=None if d.target is None else str(d.target),
                         forecast=None if f is None else round(f.value, 6),
                         pct_vol=None if f is None else f.pct_vol, inputs_hash=None if f is None else f.inputs_hash,
-                        atr=d.atr, slot=slot.isoformat(), boot=boot)
+                        atr=d.atr, slot=slot.isoformat(), boot=boot,
+                        shadow=d.shadow, q=d.q, close=None if f is None else f.price_basis)   # the shadow book
         if d.target is not None and d.target != d.held:
             if boot and now > slot + self._grace:
                 self._log.event("TARGET_SLOT_PASSED", instrument=instrument, slot=slot.isoformat())

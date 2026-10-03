@@ -41,6 +41,15 @@ def buffered(current: float, optimum: float, band: float) -> float:
     return lo if current < lo else hi if current > hi else current
 
 
+def optimum_units(forecast: float, pct_vol: float, close: float, q: float, *, cash_vol: float, weight: float,
+                  idm: float) -> float:
+    """Carver's continuous position in units: forecast/10 x the average position; no band, lot or cap.
+    It is the SHADOW book's position (the forward record's uncapped twin, master v2.33 TODO)."""
+    if forecast != forecast or pct_vol != pct_vol or pct_vol <= 0:
+        return 0.0
+    return forecast / 10.0 * cash_vol / (pct_vol * close * q) * weight * idm
+
+
 def banded_target(current: float, forecast: float, pct_vol: float, close: float, q: float, *,
                   cash_vol: float, weight: float, idm: float, buffer: float,
                   step: Decimal, minimum: Decimal, cap: Decimal | None = None) -> Decimal:
