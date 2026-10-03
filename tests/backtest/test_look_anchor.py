@@ -82,3 +82,30 @@ def test_a_real_data_grade_refuses_an_unanchored_head(canonical, acis_config, re
     assert not (canonical.root / f"{look.look_id}.graded.json").exists()
     anchor(canonical, repo)
     begin_grade(look, **_grade_args(acis_config, _StandInMirror()))
+
+
+def test_a_tail_rolled_back_and_rewritten_is_not_anchored_though_its_new_head_was_pushed(repo, tmp_path) -> None:
+    """PC-I-06: every anchored line must match the register's prefix head, not only the last one."""
+    reg = LookRegister(tmp_path / "looks")
+    for name in ("c1", "c2", "c3"):
+        _line(reg, name)
+        anchor(reg, repo)
+    assert anchored(reg, repo)
+    (tmp_path / "looks" / "000003.json").unlink()                # roll the tail back ...
+    _line(reg, "c3-rewritten")                                   # ... and write a different line 3
+    anchor(reg, repo)
+    assert not anchored(reg, repo)                               # 000003 is anchored twice, once to the old head
+
+
+def test_a_forged_local_ref_cannot_stand_in_for_the_remote(repo, tmp_path) -> None:
+    """PCE-01: `anchored` fetches the remote's branch; a remote-tracking ref written locally is overwritten."""
+    reg = LookRegister(tmp_path / "looks")
+    _line(reg, "c1")
+    head = reg.scan().head
+    blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=repo, input=f"000001 {head} x\n".encode(),
+                          capture_output=True, check=True).stdout.decode().strip()
+    tree = subprocess.run(["git", "mktree"], cwd=repo, input=f"100644 blob {blob}\t{la.FILE}\n".encode(),
+                          capture_output=True, check=True).stdout.decode().strip()
+    commit = _git(repo, "commit-tree", tree, "-m", "forged")
+    _git(repo, "update-ref", f"refs/remotes/origin/{la.BRANCH}", commit)   # never pushed
+    assert not anchored(reg, repo)                               # the remote has no anchor branch at all

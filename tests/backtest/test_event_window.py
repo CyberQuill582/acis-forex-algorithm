@@ -107,3 +107,25 @@ def test_a_planted_gotobi_rise_earns_net_and_a_flat_market_loses_only_its_costs(
     flat = simulate_window(window_prices(flat_root, "USD_JPY", days, JST, t), cost, *span, [H1], JST, t)
     assert planted.daily.sum() > 0 and len(planted.events) == len(days)
     assert flat.daily.sum() == pytest.approx(-len(days) * 2 * cost.per_side_cost(0.004) / 108.0)
+
+
+def test_the_weekday_contrast_cancels_a_friday_drift_and_keeps_a_gotobi_one(tmp_path) -> None:
+    """PC-I-08: half the event days are Fridays and few controls are, as in GOTOBI's real calendar. A
+    Friday-only drift earns the plain long book but nothing in the contrast; an event-day drift survives it."""
+    from tests.backtest.event_window import weekday_contrast
+    events = [date(2020, 1, 10) + timedelta(days=7 * k) for k in range(10)]                 # Fridays
+    events += [date(2020, 1, 8) + timedelta(days=14 * k) for k in range(10)]               # some Wednesdays
+    controls = [date(2020, 1, 7) + timedelta(days=7 * k + j) for k in range(20) for j in (0, 1, 2)
+                if date(2020, 1, 7) + timedelta(days=7 * k + j) not in events]
+    controls += [date(2020, 1, 17) + timedelta(days=21 * k) for k in range(5)]             # a few control Fridays
+    t = {k: TIMES[k] for k in ("entry", "fix")}
+    span = (date(2020, 1, 6), date(2020, 1, 6), date(2020, 6, 30))
+    for name, drift, earns in (("friday", lambda d: 0.05 if d.weekday() == 4 else 0.0, False),
+                               ("gotobi", lambda d: 0.05 if d in events else 0.0, True)):
+        root = tmp_path / name
+        _jst_mornings(root, {d: {time(3, 0): 108.0, time(9, 55): 108.0 + drift(d)} for d in events + controls})
+        ev, ct = (window_prices(root, "USD_JPY", ds, JST, t) for ds in (events, controls))
+        plain = simulate_window(ev, None, *span, [H1], JST, t).daily.sum()
+        contrast = weekday_contrast(ev, ct, *span, [H1], JST, t).daily.sum()
+        assert plain > 0
+        assert (contrast > 0.5 * plain) if earns else contrast == pytest.approx(0.0, abs=1e-12)

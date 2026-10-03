@@ -97,6 +97,7 @@ async def test_a_runtime_from_the_shipped_config_wires_the_target_loop_and_silen
     assert isinstance(rt.p.targets, TargetLoop) and rt.p.target_universe == frozenset(sysc.targets.universe)
     assert rt.p.targets.sizing.weights["EUR_USD"] == 1 / 13 and rt.p.targets.sizing.cash_vol == 10_000 * 0.20 / 16
     _assert_the_target_wiring(rt, tmp_path / sysc.targets.macro_dir)       # PR16I-08's three wiring mutants
+    assert rt.feed.refusal("EUR_USD", VENUE_T0) == "no_feed"                 # no tick yet (PC-I-01)
     for regime in (RegimeType.MEAN_REVERTING, RegimeType.RANGING_TIGHT, RegimeType.RANGING_WIDE):
         rt.p.params.stage(make_paramset(regime=regime, param_set_id=f"ps-{regime.value}",
                                         mean_rev_zscore_entry=1.5), now=BOUNDARY - timedelta(hours=1))
@@ -107,6 +108,7 @@ async def test_a_runtime_from_the_shipped_config_wires_the_target_loop_and_silen
     rt.p.mode.set_mode("practice", guardrail_hash=guardrail_hash(cfg.guardrails),
                        rulebook_hash=rulebook_hash(cfg.platform_rules.accounts["pepperstone_demo"]))
     assert await rt.run() == "feed_ended"
+    assert rt.feed.refusal("EUR_USD", VENUE_T0) != "no_feed"                 # every tick reaches the feed watch
     assert rt.p.agon.take_rate()["signals_emitted"] == 0                    # R6-3: one path per instrument
     assert [m for m in fake.transport.sent if m["payloadType"] == 2106] == []
     await session.stop()
@@ -115,7 +117,9 @@ async def test_a_runtime_from_the_shipped_config_wires_the_target_loop_and_silen
 def _assert_the_target_wiring(rt, macro) -> None:
     """The runtime is wired to each R1.6 fix, not only the unit (PR16I-08): the slot's clock is the
     runtime's A8 proof (R16I-02), the rates honour the weekly limit (GAP-P12D-146), and the portfolio
-    reads the executor's in-flight orders (R16I-05, PR16I-04)."""
+    reads the executor's in-flight orders (R16I-05, PR16I-04), the rates read the shipped 28-day weekly
+    limit (GAP-P12D-150), and every entry asks the runtime's own feed
+    watch (GAP-P12D-152; the pre-cutover audit's PC-I-01)."""
     from datetime import date
     from decimal import Decimal
     from types import MappingProxyType
@@ -124,9 +128,11 @@ def _assert_the_target_wiring(rt, macro) -> None:
     from core.runtime.executor import WorkItem
     t = rt.p.targets
     assert t.engine.clock_ok == rt.clock_verified
+    assert t.engine.feed_refusal == rt.feed.refusal
     macro.mkdir(parents=True, exist_ok=True)
     for ccy, (sid, area) in CCY_SERIES.items():
-        last = "2026-09-21" if area else "2026-09-30"                     # AUD (BIS, weekly) 15 days old
+        last = "2026-09-11" if area else "2026-09-30"                     # AUD (BIS, weekly) 25 days old:
+                                                                          # fresh only at the shipped 28 (PC-I-12)
         body = (f"date,area,value\n2026-09-01,AU,3.6\n{last},AU,3.6\n" if area
                 else f"date,value\n2026-09-01,2.0\n{last},2.0\n")
         (macro / f"{sid}.csv").write_text(body, encoding="utf-8")

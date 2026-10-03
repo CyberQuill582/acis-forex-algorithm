@@ -2,8 +2,8 @@
 
 Invariants:
   * An item's instruments are BUSY from `submit` until its last report is ingested, so the
-    position policy routes nothing new to them meanwhile (GAP-0075: no firehose). Its opens are
-    IN FLIGHT over the same span, and the Governor's portfolio counts them (R16I-05).
+    position policy routes nothing new to them meanwhile (GAP-0075: no firehose). Its opens and
+    closes are IN FLIGHT over the same span, and the Governor's portfolio counts them (R16I-05, PR16I-04).
   * Items run serially, in the order the fast loop decided them.
   * Orders go only to the current mode's orchestrator (`route_to`): paper → the paper venue,
     practice → the attached venue. Any other answer sends nothing; this module opens no gate.

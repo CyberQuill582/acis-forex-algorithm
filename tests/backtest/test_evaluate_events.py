@@ -72,3 +72,14 @@ def test_a_grade_that_cannot_honestly_run_is_refused_before_any_line(reg, shippe
     with pytest.raises(LookRefused, match=match):
         _grade(reg, shipped_config, claim=claim, costs=costs, **window)
     assert not reg.scan().lines
+
+
+def test_the_grade_gate_itself_refuses_an_event_look_that_could_count_toward_a_pass(reg, shipped_config,
+                                                                                    monkeypatch) -> None:
+    """PC-I-07: kill-only is enforced by `begin_grade`, not only by the helper that writes the line."""
+    import tests.backtest.evaluate_events as ee
+    monkeypatch.setattr(ee, "is_kill_only", lambda boundary, end: True)      # a helper that forgot the rule
+    with pytest.raises(LookRefused, match="can only kill"):
+        _grade(reg, shipped_config, claim=replace(CLAIM, origin=Origin("human")))
+    (line,) = reg.scan().lines                                               # the line exists, never graded
+    assert line["kind"] == "look" and not any(reg.root.glob("000001.*.json"))

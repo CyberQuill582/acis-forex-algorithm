@@ -35,14 +35,15 @@ Its correlation with D1 is about 0, and with REBAL about 0.03. It is decaying: 2
 - **G-3 Size.** A fixed USD notional per trade, a multiple of `capital_ref` ($10k on the demo), set so the sleeve's ex-ante annual volatility is a declared target.
   - The window's per-trade sd was about 22 bp on history, so 1× notional gives about 1.7% a year; a 10% sleeve target is about 6× `capital_ref`.
   - Proposed: **a 10% sleeve volatility target, held fixed and re-estimated yearly** from the venue's own history. Every existing guard applies: currency and cluster caps with G-5 headroom, VaR, the daily loss, halts. So does the 10 × daily-ATR disaster stop (R6-2).
+  - **Conflict to rule (audit PCE-06, 2026-10-03):** about 6× `capital_ref` is about 0.6 lot on the demo, but D-a caps every target position at ONE minimum lot in paper and practice. On the demo the sleeve therefore trades one minimum lot unless the owner rules otherwise; the 10% target applies only after rung 1.
 - **G-4 Netting with D1.** D1 may hold USD/JPY at the same time. The account's USD/JPY target is D1's target plus the sleeve's units, so the guards see one position.
   - The sleeve's open and close are deltas on top of D1's target.
-  - **The clocks DO meet.** 03:00–09:54 JST is 14:00–20:54 New York in summer and 13:00–19:54 in winter, so D1's 17:00 decision and its slot fall INSIDE every sleeve hold.
-  - D1's target gate must therefore compare its target with the position MINUS the sleeve's open units. Otherwise D1 would "correct" the sleeve away at its slot, or the sleeve's close would undo a D1 trade.
+  - **Where the clocks meet (corrected by the audit, PCE-06).** 03:00–09:54 JST is 14:00–20:54 New York in summer and 13:00–19:54 in winter. D1's 17:00 DECISION falls inside every sleeve hold; its FX SLOT (08:00 New York, 21:00–22:00 JST) does not.
+  - So the netting belongs at the decision. D1 records the position it decided against; if that includes the sleeve's units, the slot finds a different position and skips with `position_changed`, on every gotobi day. D1's decision must therefore read the position MINUS the sleeve's open units, and its slot must compare against the same.
   - The sleeve's units are persisted, as the day's decision is, so a restart re-derives them. A test must cover a D1 slot inside a sleeve hold, in both directions.
   - D1's no-trade band does not apply to the sleeve's deltas.
 - **G-5 Version.** v1a/v1c (H1 only) is forwarded. v1b's short leg after the fix (+0.15 Sharpe on history) waits until H1's forward record exists: one mechanism at a time.
-- **G-6 The record.** The forward record is graded against a replay of the SAME live rule (stage D: G-1's clock on the venue's own ticks or M1). The shadow book and `scripts/demo_report.py` report the sleeve beside D1. The pre-declared cost check uses the demo's own USD/JPY spreads at 03:00 and 09:54 JST.
+- **G-6 The record.** The forward record is graded against a replay of the SAME live rule (stage D: G-1's clock on the venue's own ticks or M1). The shadow book and `scripts/demo_report.py` report the sleeve beside D1. The pre-declared cost check uses the demo's own USD/JPY spreads at 03:00 and 09:54 JST, **plus the venue's commission** (Pepperstone cTrader: $6 per lot round trip on FX, PCE-05; C8 declares 0) **and the swap**: every sleeve hold crosses the 17:00 New York rollover, so the demo account pays or earns USD/JPY's tom-next swap, triple on Wednesdays (sign unverified, PCE-06). A swap-free venue removes it; the history assumed none.
 
 ## 3. Before the build (P&L-blind)
 

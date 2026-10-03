@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 from typing import Sequence
 
 import tests.backtest.look_anchor as look_anchor
 import tests.backtest.look_register as lr
 from config.schemas import AcisConfig
+from tests.backtest.look_cycles import is_kill_only
 from tests.backtest.walk_forward import Fold
 
 
@@ -27,6 +29,11 @@ def begin_grade(look: object, *, cfg: AcisConfig, loader, source: str, instrumen
     if look.claim is not None and look.claim.get("simulator") != simulator:
         raise lr.LookRefused(f"look {look.look_id} claims the {look.claim.get('simulator')!r} simulator; "
                              f"this grader is {simulator!r} (R12I-03)")
+    if simulator == "event":                     # no event verdict exists for a pass (GAP-P12D-159 PC-I-07)
+        bound = (look.claim or {}).get("certifying_boundary")
+        if not is_kill_only(date.fromisoformat(bound) if bound else None, max(f.test_end for f in folds).date()):
+            raise lr.LookRefused(f"look {look.look_id} is an event look that could count toward a pass: "
+                                 "an event look can only kill")
     src = loader.source_object(source)
     if getattr(src, "name", None) != source:
         raise lr.LookRefused(f"the loader key {source!r} names a source whose own name is {getattr(src, 'name', None)!r}")

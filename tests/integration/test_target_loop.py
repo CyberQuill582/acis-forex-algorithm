@@ -162,6 +162,19 @@ async def test_a_flip_judges_its_open_net_of_its_own_close(tmp_path) -> None:
     assert [o.action for o in rig.sent[-1].orders] == ["close", "open"]
 
 
+async def test_a_feed_refusal_at_the_slot_stops_the_open_and_still_sends_the_close(tmp_path) -> None:
+    """PC-I-01: the loop passes the feed watch's verdict to the gate at every slot."""
+    rig = Rig(tmp_path)
+    rig.store.put("active_family", "trend_d1_v1")
+    rig.held["EUR_USD"] = Held("EUR_USD", -1, LOT)                            # short into an up-trend: a flip
+    rig.feed_refusal = "stale_feed"
+    loop = rig.loop()
+    await loop.tick(AFTER, boot=True)
+    await loop.tick(SLOT + timedelta(seconds=5))
+    assert [o.action for o in rig.sent[-1].orders] == ["close"]
+    assert rig.events("TARGET_ENTRY_ZERO")[-1]["reason"] == "stale_feed"
+
+
 async def test_a_family_frozen_after_the_decision_opens_nothing_at_the_slot(tmp_path) -> None:
     """PR16I-10: master §2 wants a registered AND validated rule set; the slot re-asks, so a family
     frozen or retired overnight sends its closes but no open."""

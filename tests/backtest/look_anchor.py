@@ -12,8 +12,11 @@ Mental model:
   * The anchor commit is written with git PLUMBING (hash-object, mktree, commit-tree, update-ref with
     the old value as a compare-and-swap): HEAD, the index and the working tree never move, so a look
     registered at a commit is still graded at that commit (`look_gate.begin_grade`'s clean-tree rule).
-  * `anchored` reads the REMOTE-TRACKING ref, which git updates only after a successful push: a head
-    that was committed locally but never reached the remote is not anchored, and the grade is refused.
+  * `anchored` FETCHES the remote's branch first (a forced refspec, so a local ref cannot stand in for
+    the remote), then requires every anchored line, in strictly rising order, to name the register's
+    chain head after that line, and the last to be the current head: a head committed locally but never
+    pushed, or a tail rolled back and rewritten, is not anchored and the grade is refused (GAP-P12D-159,
+    PC-I-06 and PCE-01). A fetch that fails refuses too. The branch is not server-protected (GAP-P12D-86).
   * Nothing here reads a threshold or touches a gate's value; it only refuses a real-data grade whose
     register head the outside world has not seen.
 """
@@ -67,6 +70,16 @@ def anchor(register, repo: Path, remote: str = "origin") -> str:
 
 
 def anchored(register, repo: Path, remote: str = "origin") -> bool:
-    """True when the pushed anchor's last line names the register's current chain head."""
-    lines = _content(repo, f"refs/remotes/{remote}/{BRANCH}").splitlines()
-    return bool(lines) and lines[-1].split()[1] == register.scan().head
+    """True when the remote's anchor names every anchored head in order, ending at the current head."""
+    try:
+        _git(repo, "fetch", "-q", remote, f"+refs/heads/{BRANCH}:refs/remotes/{remote}/{BRANCH}")
+    except AnchorError:
+        return False
+    scan = register.scan()
+    rows = [line.split() for line in _content(repo, f"refs/remotes/{remote}/{BRANCH}").splitlines()]
+    if not rows or scan.broken:
+        return False
+    seqs = [int(r[0]) for r in rows]
+    if any(b <= a for a, b in zip(seqs, seqs[1:])) or seqs[-1] != len(scan.heads):
+        return False
+    return all(scan.heads[s - 1] == r[1] for s, r in zip(seqs, rows))

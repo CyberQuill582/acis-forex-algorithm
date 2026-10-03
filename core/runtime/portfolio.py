@@ -12,8 +12,9 @@ caps to this snapshot, so it must be the real one. Invariants:
     restart, which halts entries) still counts in every exposure. It is left out of
     `open_positions`, whose `Position` needs a strategy, and logged: never a guessed strategy.
   * `stale` when the account is older than `max_age_s`: the Governor then zeroes entries.
-  * Opens IN FLIGHT (submitted, not yet reported) count in every exposure as if filled, so the
-    entries of one slot, or of one tick, are judged against each other (R16I-05).
+  * Opens AND closes IN FLIGHT (submitted, not yet reported) count in every exposure as if filled,
+    so the entries of one slot, or of one tick, are judged against each other (R16I-05, PR16I-04).
+    A close the venue then rejects was counted as filled until its report; declared, GAP-P12D-159.
 """
 
 from __future__ import annotations

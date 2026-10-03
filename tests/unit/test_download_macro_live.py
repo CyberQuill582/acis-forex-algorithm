@@ -52,3 +52,20 @@ def test_live_mode_validates_only_the_bis_areas_the_engine_reads() -> None:
     rows = [(date(2026, 9, 1), "AU", 3.6), (date(2026, 9, 24), "AU", 3.6)]
     assert dm.validate("bis_policy", rows, -1.5, 10, None, ends_by=date(2026, 9, 20), areas=dm.LIVE_BIS_AREAS) is None
     assert dm.validate("bis_policy", rows, -1.5, 10, None, ends_by=date(2026, 9, 20)) is not None   # all 7 wanted
+
+
+def test_main_holds_a_weekly_series_to_the_shipped_28_day_limit(tmp_path, monkeypatch) -> None:
+    """PC-I-12 (GAP-P12D-150's owner ruling, 28 days): `main --live` reads the engine's own limits from the
+    shipped config. A BIS file 25 days old is saved (it would fail at 21); one 29 days old is rejected."""
+    import sys
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).date()
+    monkeypatch.setattr(dm, "fetch", lambda url, via_os_tls=False: b"date,area,value\n")
+    for age, saved in ((25, True), (29, False)):
+        out = tmp_path / str(age)
+        rows = [(today - timedelta(days=age + 60), "AU", 3.6), (today - timedelta(days=age), "AU", 3.6)]
+        monkeypatch.setattr(dm, "live_series",
+                            lambda t, rows=rows: {"bis_policy": ("u", lambda raw: rows, False, (-1.5, 10.0), None)})
+        monkeypatch.setattr(sys, "argv", ["download_macro.py", "--live", str(out)])
+        assert dm.main() == (0 if saved else 1)
+        assert (out / "bis_policy.csv").exists() is saved

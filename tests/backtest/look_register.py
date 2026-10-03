@@ -140,6 +140,7 @@ class Scan:
     head: str                        # the chain head: sha256 of the last line's bytes
     broken: tuple[str, ...]          # tamper evidence: fail closed
     torn: tuple[str, ...]            # unparseable lines: reported and counted
+    heads: tuple[str, ...] = ()      # the chain head after each line, in order (the anchor checks each)
 
     @property
     def next_seq(self) -> int:
@@ -152,7 +153,7 @@ class LookRegister:
 
     def scan(self) -> Scan:
         files = sorted(self.root.glob("[0-9]" * 6 + ".json")) if self.root.exists() else []
-        lines, broken, torn, head, looked = [], [], [], GENESIS, set()
+        lines, broken, torn, head, looked, heads = [], [], [], GENESIS, set(), []
         for k, p in enumerate(files, start=1):
             data = p.read_bytes()
             if p.stem != f"{k:06d}":
@@ -173,10 +174,11 @@ class LookRegister:
                 broken.append(f"{p.name} does not chain to the line before it: a line was deleted, edited or inserted")
             lines.append(line)
             head = _sha(data)
+            heads.append(head)
         for marker in self.root.glob("[0-9]" * 6 + ".*.json") if self.root.exists() else ():
             if int(marker.name[:6]) > len(files):
                 broken.append(f"{marker.name} has no look line: its line was deleted")
-        return Scan(tuple(lines), head, tuple(broken), tuple(torn))
+        return Scan(tuple(lines), head, tuple(broken), tuple(torn), tuple(heads))
 
     def looks(self) -> list[dict]:
         return [x for x in self.scan().lines if x is not None and x.get("kind", "look") == "look"]

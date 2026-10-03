@@ -42,6 +42,20 @@ def test_refusals_and_the_shadow_books_daily_pnl(tmp_path) -> None:
     assert book["days"] == 1 and book["daily_usd"]["2026-10-16"] == pytest.approx(want)
 
 
+def test_a_day_decided_only_at_boot_still_marks_and_a_re_derivation_does_not_double_count(tmp_path) -> None:
+    """PC-I-03: the engine was down at 17:00 on the 16th and decided that day at boot; a restart later
+    re-derives the 16th again (boot=True), which must not add a second mark."""
+    decided = lambda day, shadow, close, boot: ("TARGET_DECIDED", {"instrument": "EUR_USD", "day": day,   # noqa: E731
+                                                                   "reason": "target", "shadow": shadow,
+                                                                   "close": close, "q": 1.0, "boot": boot})
+    _write(tmp_path / "target_log.jsonl", [decided("2026-10-15", 1000.0, 1.10, False),
+                                           decided("2026-10-16", 900.0, 1.11, True),
+                                           decided("2026-10-16", 900.0, 1.11, True),
+                                           decided("2026-10-19", 900.0, 1.12, False)])
+    book = dr.shadow_book(tmp_path, None)
+    assert book["daily_usd"] == pytest.approx({"2026-10-16": 1000.0 * 0.01, "2026-10-19": 900.0 * 0.01})
+
+
 def test_the_shadow_position_is_the_banded_sizers_optimum() -> None:
     """From flat with no band and a fine lot grid, the banded target IS the continuous optimum."""
     kw = dict(cash_vol=125.0, weight=1 / 13, idm=1.5)

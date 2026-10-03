@@ -6,8 +6,9 @@ Mental model:
   * One CSV a year from home.treasury.gov (the issuer; the repo takes rates from issuers, never mirrors).
     Each raw response is kept for provenance, and `ust_par.csv` holds `date,y7,y10` in percent.
   * Checks before anything is written: every year parses, has more than 240 bond-market days, every
-    yield lies in [-1, 10]%, and the documented record-low 10-year close reproduces (0.54 on
-    2020-03-09). `manifest.json` records URL, sha256 and rows.
+    yield lies in [-1, 10]%, and a documented 10-year close reproduces (0.54 on 2020-03-09, the March
+    2020 low; the series' record low is 0.52 on 2020-08-04, GAP-P12D-159 PCE-08). `manifest.json` records
+    URL, sha256 and rows.
 """
 
 from __future__ import annotations

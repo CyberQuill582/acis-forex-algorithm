@@ -9,8 +9,10 @@ Mental model (P&L-blind about the venue: it reads only what the engine logged):
   * THE SHADOW BOOK: the uncapped continuous position each decision logged (`shadow`, Carver's
     forecast/10 x average position at the demo's capital_ref and vol target), marked from one decision's
     close to the next: daily USD P&L = shadow(t-1) x (close(t) - close(t-1)) x q(t), summed over the
-    instruments; swap-free (no carry), cost-free (an upper bound). It is the forward twin of the book
-    RSIM grades, free of the one-lot cap, so stage D's daily series exists from the first decision.
+    instruments; swap-free (no carry), cost-free (an upper bound). DECLARED (GAP-P12D-159 PC-I-03): this
+    is the SIGNAL's close-to-close P&L, not RSIM's fill-to-fill book (fills at the 08:00 New York slot),
+    so it also earns the close-to-slot hours no real book captures. Stage D grades a replay of the live
+    rule, never this report. The first decision of each day counts, a boot re-derivation included.
   * It reports the shadow book's annualised Sharpe and realised volatility against the declared vol
     target (the realised-daily-vol report), and the count of decision days. Never a pass or a verdict.
 """
@@ -55,11 +57,11 @@ def shadow_book(logs: Path, since: str | None) -> dict:
     marks: dict[str, list[tuple[str, float, float, float]]] = defaultdict(list)     # day, shadow, close, q
     for e in _events(logs / "target_log.jsonl", {"TARGET_DECIDED"}, since):
         d = e["data"]
-        if d.get("boot") or d.get("shadow") is None or d.get("close") is None or d.get("q") is None:
+        if d.get("shadow") is None or d.get("close") is None or d.get("q") is None:
             continue
         rows = marks[d["instrument"]]
-        if rows and rows[-1][0] == d["day"]:
-            continue                                     # one mark per instrument per decision day
+        if rows and rows[-1][0] >= d["day"]:
+            continue                                     # one mark per instrument per day; a boot re-derives it
         rows.append((d["day"], float(d["shadow"]), float(d["close"]), float(d["q"])))
     daily: dict[str, float] = defaultdict(float)
     for rows in marks.values():

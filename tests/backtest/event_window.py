@@ -12,6 +12,10 @@ Mental model:
     Legs meeting at one label (out of a long, into a short) pay both sides there.
   * The days are the caller's (the gotobi days, or the control days for the benchmark). Each day's P&L
     lands on the first 17:00 New York mark at or after its last exit (`event_sim.marks`): RSIM's vector.
+  * WEEKDAY CONTRAST (owner ruling 2026-10-03, GAP-P12D-159 PC-I-08): long the legs on the event days,
+    short them on the control days of the SAME weekday, each weekday's short scaled by its count of event
+    days over control days in the graded window (a calendar count, never a return), gross of costs. A
+    weekday effect cancels; only an event-day excess over its own weekday survives.
 """
 
 from __future__ import annotations
@@ -70,6 +74,20 @@ def window_prices(root: Path, name: str, days: Sequence[date], zone: str, times:
             prices[label] = (float(m[1][k]), float(m[2][k])) if ok else None
         out.append(Session(d, prices))
     return out
+
+
+def weekday_contrast(events: Sequence[Session], controls: Sequence[Session], start: date, graded_from: date,
+                     end: date, legs: Sequence[Leg], zone: str, times: Mapping[str, time]) -> EventResult:
+    """Long `legs` on `events`, short them on same-weekday `controls` scaled to equal day counts; gross."""
+    graded = lambda ss, w: [s for s in ss if s.day.weekday() == w and graded_from <= s.day <= end]  # noqa: E731
+    parts = [simulate_window(events, None, start, graded_from, end, legs, zone, times)]
+    for w in sorted({s.day.weekday() for s in events}):
+        n_event, ctrl = len(graded(events, w)), graded(controls, w)
+        if ctrl:
+            short = [Leg(leg.entry, leg.exit, -leg.side * n_event / len(ctrl), leg.gate) for leg in legs]
+            parts.append(simulate_window(ctrl, None, start, graded_from, end, short, zone, times))
+    return EventResult(parts[0].days, sum(p.daily for p in parts), tuple(e for p in parts for e in p.events),
+                       tuple(s for p in parts for s in p.skipped))
 
 
 def simulate_window(sessions: Sequence[Session], cost: CostModel | None, start: date, graded_from: date, end: date,

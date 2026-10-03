@@ -50,7 +50,9 @@ class Runtime:
         self._clock_failed: set[str] = set()
         self._in_reserve = False
         self.feed = FeedWatch(max_age_s=2 * parts.regime_cycle_s,                 # the target path's data
-                              spread_mult=parts.cfg.system.regime.spread_veto_mult)   # check (master v2.33)
+                              spread_mult=parts.cfg.system.regime.spread_veto_mult,   # check (master v2.33,
+                              tick_size={i: spec.tick_size                            # v2.35's floor)
+                                         for i, spec in parts.cfg.instruments.instruments.items()})
         self._stop = asyncio.Event()
         self.stop_reason: str | None = None
 

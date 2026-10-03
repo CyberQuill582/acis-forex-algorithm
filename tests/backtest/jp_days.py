@@ -8,8 +8,8 @@ Mental model:
     previous bank day (Bessho, Sugimoto & Suzuki 2023 §2, after Akiyama et al. 2021). The nominal days
     are 5, 10, 15, 20, 25 and a last day: `last="30"` is the 30th, or the month's last day when the
     month is shorter (Bessho's "5, 10, 15, 20, 25, and 30"); `last="month_end"` is the month's last
-    calendar day (Ito & Yamada 2017's end-of-month effect). Two nominal days that move onto the same
-    bank day count once.
+    calendar day, an alternative reading (Ito & Yamada 2017 use 5..30 AND the month's last trading day:
+    not built; GAP-P12D-159 PCE-04). Two nominal days that move onto the same bank day count once.
   * Outside 2011-2025 the calendar refuses: an unvetted year can never decide a trade.
 """
 
