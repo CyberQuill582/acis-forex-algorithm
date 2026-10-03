@@ -24,10 +24,11 @@ Mental model:
     quarter; no line may be stamped earlier than the line before it.
   * A grade's DAILY VECTOR (dates, never datetimes) is stored once, content-addressed, and read
     back before its hash is returned.
-  * REAL-DATA LOOKS ARE OPEN, SCOPED (GAP-P12D-127; owner ruling 2026-10-03): only human- or
-    literature-origin claims graded by RSIM (`OPEN_ORIGINS`, `OPEN_SIMULATORS`). LLM plans stay
-    refused until the motif veto and plan schema (R12I-11) land, engine looks until `Backtest.run`
-    takes a consumed-look token (R12I-12).
+  * REAL-DATA LOOKS ARE OPEN, SCOPED (GAP-P12D-127; owner rulings 2026-10-03): only human- or
+    literature-origin claims graded by RSIM or the event simulator (`OPEN_ORIGINS`, `OPEN_SIMULATORS`;
+    the event grader admits kill-only looks alone, GAP-P12D-154). LLM plans stay refused until the
+    motif veto and plan schema (R12I-11) land, engine looks until `Backtest.run` takes a consumed-look
+    token (R12I-12).
 """
 
 from __future__ import annotations
@@ -48,13 +49,13 @@ from config.schemas import AcisConfig
 from tests.backtest.look_declarations import Declaration, admit_declaration
 
 ORIGINS = ("literature", "human", "llm")
-SIMULATORS = ("engine", "rsim")
+SIMULATORS = ("engine", "rsim", "event")
 EXPOSURES = ("none", "web", "repository")
 SPACE_KEYS = frozenset({"grid", "formula", "instruments"})
 MAX_CYCLE = 5
 REAL_LOOKS_OPEN = True           # GAP-P12D-127: opened 2026-10-03 by the owner, SCOPED (below)
 OPEN_ORIGINS = frozenset({"human", "literature"})   # LLM plans wait for R12I-11 (motif veto, plan schema)
-OPEN_SIMULATORS = frozenset({"rsim"})               # engine looks wait for R12I-12 (Backtest.run's token)
+OPEN_SIMULATORS = frozenset({"rsim", "event"})      # engine looks wait for R12I-12 (Backtest.run's token)
 HEX64 = re.compile(r"[0-9a-f]{64}")
 
 

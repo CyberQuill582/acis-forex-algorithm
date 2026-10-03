@@ -1,7 +1,7 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **Read the START HERE block below first (checkpoint 2026-10-03).** The Pepperstone demo runs the old code on `acis-demo-1` (practice, unattended, watchdog-guarded) until the AWS cutover 2026-10-15..17; master v2.33.
-> `ACIS_SPEC.md` v2.33 is the build authority. All master-spec guardrail decisions are human-ratified.
+> **Read the START HERE block below first (checkpoint 2026-10-03).** The Pepperstone demo runs the old code on `acis-demo-1` (practice, unattended, watchdog-guarded) until the AWS cutover 2026-10-15..17; master v2.34.
+> `ACIS_SPEC.md` v2.34 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
@@ -38,7 +38,7 @@
 
 **Next actions, in order (2026-10-03, afternoon). The sort key (owner, 2026-10-03): does it get us closer to a real test, or protect the AWS move? Everything else waits. Audits at milestones only (R1.4 done, the AWS move), spec amendments batched per session.**
 1. **The cutover, 2026-10-15..17:** deploy/README.md's AWS order (stop the old engine flat first); attest the new rulebook hash (`--print-hashes`); measure the 17:00 decision's blocking time on the t3.small ([[GAP-P12D-144]] residual). The target entry's data check is now the feed watch ([[GAP-P12D-152]], master v2.33): count its refusal reasons (`TARGET_ENTRY_ZERO`) in the first two weeks. The H1-history venue facts ([[GAP-P12D-141]] (1), (2), (6)) are read at the first seeding.
-2. **NEXT BUILD: finish D3's event harness and run its kill test ([[GAP-P12D-154]]).** Background: **D1's kill test RAN and D1 survived at a net Sharpe of 0.165** ([[GAP-P12D-151]]): far below the ~0.65–0.85 the weekly target needs. **Then D1 on the 21 instruments LOST (−0.12, passive long +0.36): owner ruled "FX13 only; shelve onboarding".** The demo trades D1-FX13; [[GAP-P12D-27]] is shelved; the next lever is a DIFFERENT mechanism from the edge slate, kill-tested on history (kill-only, no α) before it touches the demo.
+2. **D3's event harness is BUILT (2026-10-03, second session; owner: "Papers' window", master v2.34): run its one kill-only look ([[GAP-P12D-154]]).** Then: scan FX and metals for zero-volume quotes and decide the candle store's observation rule before the next look leaning on 2012–2013 index data ([[GAP-P12D-156]]). Earlier plan text: Background: **D1's kill test RAN and D1 survived at a net Sharpe of 0.165** ([[GAP-P12D-151]]): far below the ~0.65–0.85 the weekly target needs. **Then D1 on the 21 instruments LOST (−0.12, passive long +0.36): owner ruled "FX13 only; shelve onboarding".** The demo trades D1-FX13; [[GAP-P12D-27]] is shelved; the next lever is a DIFFERENT mechanism from the edge slate, kill-tested on history (kill-only, no α) before it touches the demo.
 3. **A clean forward record from the cutover:** BUILT 2026-10-03 — the shadow book (uncapped positions in every `TARGET_DECIDED`), the refusal counts and the realised-vol report: run `python scripts/demo_report.py --logs /opt/acis/repo/logs --since <cutover date>` weekly on the AWS host. Still owed: live = replay checks (stage D).
 4. **Make "validated on history" reachable:** stage B, stage C and the per-account re-grade ([[GAP-P12D-149]]).
 5. ~~Re-run the unverified research numbers~~ PROPRETURNS VERIFIED 2026-10-03 (20,000 paths); FORENSICS's legacy re-runs deprioritised ([[GAP-P12D-148]]).

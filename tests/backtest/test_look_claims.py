@@ -54,12 +54,14 @@ def _look(reg, cfg, claim=None, family="trend-v1", **kw):
                         family=family, account="dev_paper", git=GIT, claim=claim, **kw)
 
 
-def test_real_looks_are_open_only_for_literature_and_human_claims_graded_by_rsim(tmp_path, monkeypatch,
-                                                                              acis_config) -> None:
-    """GAP-P12D-127 (owner ruling 2026-10-03): the shipped scope refuses an LLM plan (R12I-11 owed) and an
-    engine look (R12I-12 owed); a human or literature claim graded by RSIM registers. An LLM-SELECTED
+def test_real_looks_are_open_only_for_literature_and_human_claims_graded_by_rsim_or_events(tmp_path, monkeypatch,
+                                                                                         acis_config) -> None:
+    """GAP-P12D-127 (owner rulings 2026-10-03; the event simulator GAP-P12D-154): the shipped scope refuses an
+    LLM plan (R12I-11 owed) and an engine look (R12I-12 owed); a human or literature claim graded by RSIM
+    or the event simulator registers. An LLM-SELECTED
     literature rule is literature (its boundary still binds); its kill-only look names no cycle."""
-    assert lc.REAL_LOOKS_OPEN and lc.OPEN_ORIGINS == {"human", "literature"} and lc.OPEN_SIMULATORS == {"rsim"}
+    assert lc.REAL_LOOKS_OPEN and lc.OPEN_ORIGINS == {"human", "literature"}
+    assert lc.OPEN_SIMULATORS == {"rsim", "event"}
     root = tmp_path / "data" / "validation" / "looks"
     monkeypatch.setattr(lr, "CANONICAL", root)
     monkeypatch.setattr(lr, "git_state", lambda repo=None: GIT)
@@ -72,6 +74,10 @@ def test_real_looks_are_open_only_for_literature_and_human_claims_graded_by_rsim
                       exposure="web", reference="Carver 2015", published="2015-10-01")
     look = _look(reg, acis_config, claim=_claim(origin=selected, simulator="rsim"))
     assert look.cycle is None and look.claim["certifying_boundary"] == "2026-09-24"   # kill-only: no cycle
+    tom = {**SPACE, "grid": {}, "formula": "long t-2 close -> t+3 close"}
+    event = _look(reg, acis_config, family="tom-v1", claim=_claim("tom-v1", origin=selected, simulator="event",
+                                                                 declared_space=tom))
+    assert event.cycle is None and event.claim["simulator"] == "event"
 
 
 def test_a_real_look_must_carry_its_own_familys_claim_and_the_line_records_it(canonical, acis_config) -> None:

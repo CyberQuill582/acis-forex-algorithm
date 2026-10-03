@@ -5,21 +5,18 @@
 
 Mental model (register-first: every refusal happens before any compute):
   * D1 is the registered TREND combination (`core/signals/rules.d1`: EWMAC 16/64, 32/128, 64/256 at equal
-    weight, x FDM, capped) on a universe: `fx13` the demo's 13 FX (`targets.universe`), or `r21` R6-4's 21
-    non-energy instruments (13 FX, gold, silver, six indices: a NEW family-version, its own look), at
-    class-equal weights as the target book sizes them, graded by RSIM: the research book
-    (capital $1M so the lot grid never binds, the 20% vol target, the targets' IDM and buffer), the
-    SWAP-FREE world (R1-D9, re-ruled 2026-10-02), the declared C8 costs plus the real quoted spread at
-    each fill, decisions at 17:00 New York and fills at the 08:00 New York slot (`rsim_real`).
-  * Its origin is Carver's published rule SELECTED by the cloud lead's R1 plan (claude-opus-5-5 with web
-    search, 2026-09-24). Master §5.6 then certifies a pass only after 2026-09-24, so this look can only
-    KILL: it names no cycle and spends no alpha (owner ruling "LLM-selected, kill test").
+    weight, x FDM, capped) on `fx13` (the demo's 13 FX) or `r21` (R6-4's 21 non-energy instruments, a NEW
+    family-version), class-equal weights, graded by RSIM: the research book ($1M so the lot grid never
+    binds, 20% vol target, the targets' IDM and buffer), SWAP-FREE (R1-D9), the declared C8 costs plus
+    each fill's quoted spread, decisions 17:00 New York, fills at the 08:00 New York slot (`rsim_real`).
+  * Its origin is Carver's rule SELECTED by the cloud lead's R1 plan (claude-opus-5-5, web, 2026-09-24),
+    so master §5.6 certifies a pass only after 2026-09-24: this look can only KILL; it names no cycle
+    and spends no alpha (owner ruling "LLM-selected, kill test").
   * `evaluate` writes the look line (pushed to the GitHub anchor), consumes it, runs RSIM and every
-    stage-A arm (the passive benchmark, D1 at 2x cost, the six C9 EWMAC/breakout members, D1's six
-    plateau neighbours), and chains the outcome. `verdict.kill_verdict` then judges it: killed at a HAC
-    t below -0.5 on the net daily portfolio series (stage C's rule, owner ruling "t < -0.5").
-  * Every number is printed and written to data/validation/r1_kill_test/d1.json. A kill drops D1 from
-    the forward demo; a survival credits nothing, and the forward record carries on.
+    stage-A arm (passive benchmark, 2x cost, the six C9 members, six plateau neighbours) and chains the
+    outcome; `verdict.kill_verdict` kills at a HAC t below -0.5 on the net daily portfolio series.
+  * Every number is printed and written to data/validation/r1_kill_test/d1_<universe>.json. A kill
+    drops D1 from the forward demo; a survival credits nothing, and the forward record carries on.
 """
 
 from __future__ import annotations

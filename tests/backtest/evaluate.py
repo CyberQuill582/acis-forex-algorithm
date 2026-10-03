@@ -48,7 +48,7 @@ class StageArms:
 
 
 @dataclass(frozen=True)
-class _OneSource:
+class OneSource:
     """`begin_grade` reads the source through a loader; RSIM has exactly one."""
     src: object
 
@@ -79,7 +79,7 @@ def evaluate(*, register: LookRegister, cfg: AcisConfig, source: object, family:
     look = register.register(cfg=cfg, source=source, instruments=instruments, folds=[fold], family=family,
                              account=account, changed=changed, cost_stress=cost_stress,
                              spread_floor=spread_floor, claim=claim)
-    begin_grade(look, cfg=cfg, loader=_OneSource(source), source=source.name, instruments=instruments,
+    begin_grade(look, cfg=cfg, loader=OneSource(source), source=source.name, instruments=instruments,
                 folds=[fold], account=account, cost_stress=cost_stress, spread_floor=spread_floor, simulator="rsim")
     result = run(market, forecast, pct_vol, spec)
     keep = [t for t, d in enumerate(days) if d >= graded_from]

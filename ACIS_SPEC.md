@@ -1,5 +1,5 @@
 # ACIS — Adaptive Capital Intelligence System
-## Master Specification v2.33 (build authority — spec COMPLETE, build in progress)
+## Master Specification v2.34 (build authority — spec COMPLETE, build in progress)
 
 Status: BUILD AUTHORITY. Consolidates and supersedes `ACIS_Agent_Prompt.md` (Drive, v1.0), `Super_Forex_Agent.html` (Drive, v1.0 architecture brief), and the ACIS sections of the July 2026 Master Spec doc. Where those disagreed (directory layout), this document decides: the detailed `core/` layout below is canonical; the coarse 4-folder layout from the master doc is retired. If any earlier document contradicts this one, this one wins.
 
@@ -500,6 +500,8 @@ Both laws bind the implementing agent **and** every future spec pass. Neither ma
 > The system's job is not to make the most money possible on any given day. Its job is to **still be running, with positive expectancy, two years from now.** Every design decision must answer: *"Does this make the system more likely to survive a regime it has never seen?"* If the answer is no — redesign it.
 
 ## CHANGELOG
+
+**v2.34 (2026-10-03, owner-ratified in chat — D3's history test, GAP-P12D-154)** — (1) "Faithful event harness (Recommended)": the real-data scope opens to a second simulator, the EVENT simulator (`tests/backtest/event_sim.py`, graded only through `evaluate_events()`), for scheduled-window rules RSIM's daily clock cannot express; an event look is KILL-ONLY (no event verdict exists for a pass), so its graded window must end by its claim's certifying boundary. (2) "Papers' window (Recommended)": D3 v1, the turn-of-month index long, holds each index in its OWN market from the cash close of T−2 to that of T+3 (McConnell & Xu 2008's [−1, +3]), superseding R1-B's 14:30-New-York entry and PLAN_R1's literal "T−1 close", both of which dropped the last trading day the cited window includes; T−1 and T+3 come from each exchange's own holiday rules (the index CFDs trade through exchange holidays). ACIS-09 v1.12. No guardrail VALUE, HALT trigger, equity floor or live gate changed.
 
 **v2.33 (2026-10-03, owner-ratified in chat)** — "Replace before the cutover (Recommended)": a daily target entry no longer reads NVMA; its data check is the runtime's feed watch (a tick within two NVMA cycles (120 s each) and not late, a spread within 3x the median of the instrument's last 600 quoted spreads, and no macro window (inert until the calendar is wired)). NVMA's veto, confidence, ILLIQUID, dead-market and warm-up states leave the target path, superseding v2.30–v2.31's veto split and the ILLIQUID measurement (GAP-P12D-147, GAP-P12D-150, GAP-P12D-152). ACIS-02 v1.6, ACIS-05 v1.11. No guardrail VALUE, HALT trigger, equity floor or live gate changed; the halts, the drawdown and blackout guards, the closure buffer and every hard limit still gate a target entry.
 

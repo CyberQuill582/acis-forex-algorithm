@@ -9,9 +9,7 @@ Mental model:
     `target=True`), then §7.4's hard limits in order:
     - the account's lot cap: zero, never clamp;
     - the Risk edge's taper and the alpha-decay ×0.25 (the latter only when `alpha_throttles`: live;
-      in paper and practice it is reported, not applied, owner ruling 2026-10-03, PR16E-01): each only
-      shrinks, and the result goes back on
-      the lots toward zero, so a throttled one-lot order is zero;
+      paper and practice report it, PR16E-01): each only shrinks, back on the lots toward zero;
     - the cluster and currency caps, with G-5's headroom.
     Every zero is returned with its reason.
   * The open carries the broker-side disaster stop at `stop_mult` × the daily true-range ATR from the

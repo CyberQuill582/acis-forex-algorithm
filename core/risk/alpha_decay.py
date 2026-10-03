@@ -1,15 +1,13 @@
 """Alpha-decay detection (ACIS-07 §7, master §8, C5/F13).
 
-Rolling Sharpe(recent) < threshold × Sharpe(baseline) ⇒ decay. The corrected
-version makes "not enough data" a first-class state (`inactive_warming`) so a
-short trade history never reads as "healthy" (C5), and the Sharpe is NaN-safe
-(σ≈0 ⇒ a defined sentinel, never a divide-by-near-zero spurious flag, F13).
+Rolling Sharpe(recent) < threshold × Sharpe(baseline) ⇒ decay. "Not enough data" is a
+first-class state (`inactive_warming`), so a short history never reads as "healthy" (C5);
+the Sharpe is NaN-safe (σ≈0 ⇒ a defined sentinel, never a spurious flag, F13).
 
-The GAP-0050 clear contract lives here as pure state: a fired throttle clears
-ONLY after a confirmed recovery (`recovery_trades` closed trades whose rolling
-Sharpe exceeds `recovery_mult` × baseline). The Risk Monitor turns a state
-transition into the explicit `apply_risk_state(alpha_decay=…)` call — this
-module never talks to the Governor.
+The GAP-0050 clear contract lives here as pure state: a fired throttle clears ONLY after a
+confirmed recovery (`recovery_trades` closed trades with rolling Sharpe > `recovery_mult` ×
+baseline). The Risk Monitor makes the `apply_risk_state(alpha_decay=…)` call; this module
+never talks to the Governor.
 
 GAP-P12D-145 ("fresh evidence only", owner ruling 2026-10-03): the one human resume disarms it
 (`clear_by_human`), and trades closed before the resume never count again. Until the post-resume
