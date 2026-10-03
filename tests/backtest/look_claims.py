@@ -188,6 +188,9 @@ def cost_map_hash(cfg: AcisConfig, instruments: Sequence[str], cost_stress: floa
                            "cost_stress": float(cost_stress), "spread_floor": float(spread_floor)})
 
 
+HOLDOUT_TIER = 3                     # look_tiers.TIER_NAMES: the 2024-25 holdout, graded once per variant (stage C)
+
+
 def admit_claim(claim: Claim, instruments: Sequence[str], lines: Sequence[dict | None], tier: int) -> None:
     """Refuse a claim that does not describe its run, launders an LLM variant (§5.6), changes its
     declaration or overruns its look budget (look_declarations)."""
@@ -201,8 +204,10 @@ def admit_claim(claim: Claim, instruments: Sequence[str], lines: Sequence[dict |
     if any(o.get("model_id") for o in origins) and not claim.origin.llm_touched:
         raise ValueError(f"variant {claim.variant_hash[:12]} was registered as an LLM plan: its origin is "
                          "the hypothesis's, and a new label does not remove the model's memory (§5.6)")
-    if claim.origin.llm_touched and origins:
+    if claim.origin.llm_touched and origins and tier != HOLDOUT_TIER:
         raise ValueError(f"an LLM plan repeats registered variant {claim.variant_hash[:12]} (§5.6, R1-D13)")
+    # v2.35 (GAP-P12D-159): stage C's one holdout look at a registered variant is not a re-proposal. An LLM
+    # boundary falls after 2026-01-01, so every holdout look is kill-only, and the budget below allows one.
     admit_declaration(claim.variant_hash, claim.declaration, tier, lines)
 
 

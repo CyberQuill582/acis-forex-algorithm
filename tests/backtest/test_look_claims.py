@@ -159,6 +159,25 @@ def test_an_llm_variant_is_refused_again_under_any_origin(canonical, acis_config
     _look(canonical, acis_config, claim=_claim(variant="fast=16"), changed="a different, human plan")
 
 
+def test_an_llm_variant_may_take_one_stage_c_holdout_look_and_no_more(canonical, acis_config) -> None:
+    """Master v2.35 (R1-D13 amended, GAP-P12D-159): a protocol stage's kill-only look at a registered variant is
+    not a re-proposal. One holdout look is admitted; a second is over budget; a repeat elsewhere is refused."""
+    from tests.backtest.walk_forward import Fold
+    utc = lambda y, m, d: datetime(y, m, d, tzinfo=timezone.utc)                     # noqa: E731
+    holdout = [Fold(0, utc(2024, 1, 2), utc(2024, 1, 3), utc(2024, 1, 3), utc(2026, 1, 1))]
+    _look(canonical, acis_config, claim=_claim(origin=LLM))                            # validation (2014-15)
+    stage_c = canonical.register(cfg=acis_config, source=_Real(), instruments=sorted(acis_config.instruments.enabled),
+                                 folds=holdout, family="trend-v1", account="dev_paper", git=GIT,
+                                 claim=_claim(origin=LLM), changed="stage C: the holdout, once")
+    assert stage_c.tier == 3 and stage_c.cycle is None                                 # kill-only: no cycle
+    with pytest.raises(LookRefused, match="look budget"):
+        canonical.register(cfg=acis_config, source=_Real(), instruments=sorted(acis_config.instruments.enabled),
+                           folds=holdout, family="trend-v1", account="dev_paper", git=GIT,
+                           claim=_claim(origin=LLM), changed="again")
+    with pytest.raises(LookRefused, match="repeats registered variant"):
+        _look(canonical, acis_config, claim=_claim(origin=LLM), changed="a second validation look")
+
+
 def test_the_cost_map_hash_separates_grades_priced_differently(acis_config) -> None:
     inst = sorted(acis_config.instruments.enabled)
     variants = [cost_map_hash(acis_config, inst, 1.0, 0.0), cost_map_hash(acis_config, inst, 2.0, 0.0),
