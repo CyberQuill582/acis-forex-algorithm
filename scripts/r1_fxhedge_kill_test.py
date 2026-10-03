@@ -2,6 +2,7 @@
 
     python scripts/r1_fxhedge_kill_test.py --dry-check        # P&L-blind
     python scripts/r1_fxhedge_kill_test.py --line v1          # v1a and v1c, both registered before either grade
+    python scripts/r1_fxhedge_kill_test.py --line exit1559    # v1d: v1a leaving at 15:59, a minute before the fix
 
 Mental model (register-first: every refusal happens before any compute):
   * The book (`fxhedge.py`): on each month's last weekday, each of EUR, GBP, JPY and AUD against the USD holds
@@ -15,8 +16,7 @@ Mental model (register-first: every refusal happens before any compute):
     register's only benchmark name, PASSIVE_LONG, as GOTOBI's looks did: X-1, GAP-P12D-159).
   * Its origin is the literature PROPOSED by this session's lead (claude-opus-5-5, web) on 2026-10-03, so
     master §5.6 certifies a pass only after that date: this look can only KILL (HAC t < -0.5).
-  * `--dry-check` reads no strategy return (months, countries, signal sizes, prices, spreads in bp). Every
-    number goes to data/validation/r1_kill_test/fxhedge_<line>.json.
+  * `--dry-check` reads no strategy return; every look's numbers go to data/validation/r1_kill_test/.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ from tests.backtest.verdict import KILL_T, kill_verdict  # noqa: E402
 
 START, GRADED_FROM, END = date(2012, 1, 3), date(2012, 2, 1), date(2023, 12, 29)
 PAIRS = tuple(sorted(p for p, _ in PAIR.values()))
-TIMES = {"open": time(8, 0), "entry": time(15, 0), "fix": time(16, 0)}
+TIMES = {"open": time(8, 0), "entry": time(15, 0), "early": time(15, 59), "fix": time(16, 0)}
 CORE = ("fxhedge: on each month's last weekday hold eur, gbp, jpy and aud against the usd at minus 25 x their equity "
         "index's return (first session's close to the last close before the day) less the five countries' mean "
         "(us500, eu50, uk100, jp225, aus200), into the 16:00 london fix, dukascopy ticks, c8 costs at each side's spread")
@@ -62,12 +62,15 @@ class Version:
     formula: str
     entry: str
     beta: float | None = None                   # set: the cost gate (`fxhedge.simulate_fix`)
+    exit: str = "fix"                           # "early": a minute before the fix, reachable from a CFD
 
 
 LINES = {"v1": {"fxhedge_v1a_hour": Version(f"{CORE}; from 15:00 london (the paper's hour)", "entry"),
                 "fxhedge_v1c_hour_gated": Version(f"{CORE}; from 15:00 london, a pair-day only if 0.0142 x its "
                                                   "currency's demeaned return beats a c8 round trip at its entry "
-                                                  "spread", "entry", BETA)}}
+                                                  "spread", "entry", BETA)},
+         "exit1559": {"fxhedge_v1d_exit1559": Version(f"{CORE}; from 15:00 london, leaving at 15:59:00, a minute "
+                                                      "before the fix", "entry", exit="early")}}
 ORIGIN = Origin("literature", model_id="claude-opus-5-5", model_cutoff="2026-06-30", proposed="2026-10-03",
                 exposure="web", reference="Melvin & Prins, Equity hedging and exchange rates at the London 4 p.m. "
                 "fix, Journal of Financial Markets 22 (2015) 50-72; proposed by the lead 2026-10-03 (GAP-P12D-158)",
@@ -162,12 +165,12 @@ def main(argv=None) -> int:
     vec = lambda h: np.asarray(load_vector(CANONICAL, h)[1])                       # noqa: E731
     out = {}
     for family, (look, fold) in looks.items():
-        entry, beta = versions[family].entry, versions[family].beta
+        entry, beta, leave = versions[family].entry, versions[family].beta, versions[family].exit
         grade_event_look(look, fold, register=reg, cfg=cfg, source=TickSource(), costs=costs, graded_from=GRADED_FROM,
-                         run=lambda s, entry=entry, beta=beta: simulate_fix(prices, book, stressed(s), START,
-                                                                            GRADED_FROM, END, TIMES, entry, beta=beta),
-                         benchmark=lambda entry=entry: simulate_fix(cprices, cbook, costs, START, GRADED_FROM, END,
-                                                                    TIMES, entry).daily,
+                         run=lambda s, entry=entry, beta=beta, leave=leave: simulate_fix(
+                             prices, book, stressed(s), START, GRADED_FROM, END, TIMES, entry, leave, beta=beta),
+                         benchmark=lambda entry=entry, leave=leave: simulate_fix(cprices, cbook, costs, START,
+                                                                                 GRADED_FROM, END, TIMES, entry, leave).daily,
                          summary=lambda r: {"pair_days_skipped": dict(Counter(x["reason"] for x in r.skipped)),
                                             "pair_days_traded": len(r.events), "reform_split": reform_split(r, GRADED_FROM)})
         outcome, verdict = reg.outcome(look.look_id), kill_verdict(CANONICAL, look.look_id)
