@@ -199,6 +199,14 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - One realistic-exit look, v1c (v1a leaving at 09:54:00), is registered before any build (`--line exit0954`).
     - After the cutover, GOTOBI's live build goes BEFORE REBAL's.
     - Push.
+  - **v1c, THE LOOK (2026-10-03, `--line exit0954` at `03e2d58`; look `000019`, outcome `000020`, anchored; copied to `…/validation/2026-10-03f/`): net Sharpe 1.79, HAC t 6.49, NOT killed**; 1.52 at 2× cost; control −0.07. Leaving a minute before the fix costs almost nothing.
+  - **The live draft** (`archive/GOTOBI_LIVE_DRAFT_2026-10-03.md`) proposes G-1..G-6:
+    - G-1: open at 03:00 JST, close by 09:54 JST.
+    - G-2: the calendar in core.
+    - G-3: a 10% sleeve volatility target on `capital_ref`.
+    - G-4: additive netting with D1. D1's 17:00 slot falls INSIDE every sleeve hold, so D1's gate must net out the sleeve's units.
+    - G-5: H1 only.
+    - G-6: stage D on the live rule, plus the demo-spread check.
   - Proof: `test_a_gotobi_day_off_the_bank_calendar_moves_back_and_two_that_meet_count_once`, `test_the_30th_rule_falls_to_february_end_and_the_month_end_rule_takes_the_31st`, `test_a_price_is_the_last_tick_at_or_before_the_time_never_a_later_or_stale_one`, `test_each_leg_pays_both_sides_and_the_gated_reversal_trades_only_after_a_rise`, `test_a_planted_gotobi_rise_earns_net_and_a_flat_market_loses_only_its_costs`.
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
