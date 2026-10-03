@@ -61,7 +61,7 @@ def main(argv=None) -> int:
         (a.out / "raw" / f"{y}.csv").write_bytes(body)
     lines = ["date,y7,y10"] + [f"{d.isoformat()},{v[0]},{v[1]}" for d, v in sorted(rows.items())]
     out = "\n".join(lines) + "\n"
-    (a.out / "ust_par.csv").write_text(out, encoding="utf-8")
+    (a.out / "ust_par.csv").write_bytes(out.encode("utf-8"))   # bytes: the manifest hashes what is on disk
     manifest["ust_par.csv"] = {"sha256": hashlib.sha256(out.encode()).hexdigest(), "rows": len(rows),
                                "span": [min(rows).isoformat(), max(rows).isoformat()]}
     (a.out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
