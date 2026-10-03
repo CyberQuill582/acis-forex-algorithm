@@ -298,7 +298,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **Dry check (P&L-blind, 2012-02..2023-12):** 2,998 sessions and 143 OE weeks; v1a holds 703 sessions. Good Friday moved the expiry in 2014-04, 2019-04 and 2022-04. The contrast's short leg is 0.306; 6 sessions have no anchor. The median US500 spread at the anchor is 1.31 bp (p95 3.28). Costs are about 3 bp a month, negligible. **Ex ante, the long-only book is mostly the equity premium; the contrast is the anomaly's test, and at the paper's excess (~0.3%/week before decay) it is worth about 0.2–0.3 Sharpe.**
   - Proof: `test_the_oe_week_is_monday_to_friday_around_the_third_friday`, `test_the_book_is_long_from_the_close_before_the_week_to_the_weeks_last_close`, `test_the_contrast_nets_a_constant_drift_to_zero`, `test_segments_grade_only_their_own_days`.
   - **Owner ruling (2026-10-03, fourth session): "v1a + v1b (Recommended)"**, both registered before either grade.
-  - **NEXT: `python scripts/r1_opex_kill_test.py --line v1`.**
+  - **THE LOOKS (2026-10-03, fourth session; `--line v1` at `9dba6db`; looks `000037` (v1a) and `000038` (v1b), outcomes `000039`/`000040`, anchored at `000040`; copied to `…/validation/2026-10-03h/`), graded 2012-02-01..2023-12-29:**
+    - **v1a (long the OE week): net 0.08, HAC t 0.29, not killed**, against the passive long's 0.71 (2× cost 0.04). Segments: 2012–14 1.10, 2015–23 −0.14.
+    - **v1b (the contrast): −0.30, HAC t −1.10: KILLED** (2× cost −0.35). Segments: 2012–14 (clean) 0.53, 2015–23 (seen) −0.49.
+    - **Verdict: OPEX leaves the pipeline.** The contrast is the anomaly's test, and since 2015 the OE week has done worse than an average week. The practitioner backtests' "+0.2% a week" that selected OPEX was the equity premium. v1a's survival is beta at about a quarter of the time, below the passive long, and is not forwarded.
+  - **The fourth session's tally:** FXHEDGE killed on the holdout (2012–23 0.80 → 2024–25 −0.35), GOLD-EW dropped ex ante on CFD costs, OPEX killed on history. Nothing survived to forward. The slate left: AUCTION (needs a bond instrument), IREV (2026 counter-evidence).
+  - **NEXT: the owner picks between the slate's remainder and a different lever (one ask).**
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
 
