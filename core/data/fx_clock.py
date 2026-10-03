@@ -24,6 +24,7 @@ ROLLOVER = ("America/New_York", "17:00")               # the FX day boundary
 _ZONES = {                                             # zone -> (standard offset h, DST rule)
     "UTC": (0, None), "Asia/Tokyo": (9, None), "Europe/London": (0, "uk"),
     "Europe/Prague": (1, "uk"), "America/New_York": (-5, "us"), "America/Chicago": (-6, "us"),
+    "Australia/Sydney": (10, "au"),
 }
 
 
@@ -51,7 +52,15 @@ def uk_summer_time(day: date) -> bool:
     return _last_sunday(day.year, 3) <= day < _last_sunday(day.year, 10)
 
 
-_DST_RULES = {"us": us_daylight_time, "uk": uk_summer_time}
+def au_daylight_time(day: date) -> bool:
+    """True if Sydney is on daylight time for local business hours on `day` (southern hemisphere:
+    first Sunday of October to first Sunday of April, the rule since 2008)."""
+    if day.year < 2009:
+        raise ValueError(f"{day}: the Australian DST rule before 2009 is not modelled")
+    return day >= _nth_sunday(day.year, 10, 1) or day < _nth_sunday(day.year, 4, 1)
+
+
+_DST_RULES = {"us": us_daylight_time, "uk": uk_summer_time, "au": au_daylight_time}
 
 
 def utc_offset(day: date, zone: str) -> timedelta:

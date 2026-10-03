@@ -37,6 +37,15 @@ calendars:
     half_days:
       "2026-11-27": "11:00"
 
+  # Index CFDs (declared 2026-10-03 for D1-21's history kill test; DISABLED). Provisional: the home
+  # exchange's CASH hours, a conservative subset of the venue's CFD hours that holds every execution
+  # slot (rsim_real.SLOTS). Holidays and the venue's real schedule are verified before any is enabled.
+  us_index_cash: {type: exchange, zone: America/New_York, open: "09:30", close: "16:00", days: [1, 2, 3, 4, 5]}
+  uk_index_cash: {type: exchange, zone: Europe/London, open: "08:00", close: "16:30", days: [1, 2, 3, 4, 5]}
+  eu_index_cash: {type: exchange, zone: Europe/Prague, open: "09:00", close: "17:30", days: [1, 2, 3, 4, 5]}   # Frankfurt keeps CET/CEST
+  jp_index_cash: {type: exchange, zone: Asia/Tokyo, open: "09:00", close: "15:00", days: [1, 2, 3, 4, 5]}
+  au_index_cash: {type: exchange, zone: Australia/Sydney, open: "10:00", close: "16:00", days: [1, 2, 3, 4, 5]}
+
 instruments:
   EUR_USD:
     enabled: true
@@ -244,7 +253,7 @@ instruments:
     calendar: fx_default
     costs: {commission_per_side: 0.0, slippage_per_side: 0.003}
     vol_target_atr_frac: 0.0008
-  XAU_USD:                # extension — declared, disabled until mature (SPEC §9)
+  XAU_USD:         # extension, disabled; median slot spread 0.30, commission $3.5/100k notional at the median price
     enabled: false
     asset_class: metal
     quote_ccy: USD
@@ -256,6 +265,114 @@ instruments:
     swap_convention: financing_daily
     max_plausible_spread: 1.2
     calendar: spot_metals        # OTC spot, not the CME day session (GAP-P12D-11)
+    costs:                   # provisional C8 (2026-10-03, P&L-blind): slippage = 25% of the median 2012-23 slot spread
+      commission_per_side: 0.05
+      slippage_per_side: 0.075
+  XAG_USD:         # disabled; median slot spread 0.030
+    enabled: false
+    asset_class: metal
+    quote_ccy: USD
+    tick_size: 0.001
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_cfd
+    swap_convention: financing_daily
+    max_plausible_spread: 0.2
+    calendar: spot_metals
+    costs:                   # provisional C8 (2026-10-03, P&L-blind): slippage = 25% of the median 2012-23 slot spread
+      commission_per_side: 0.0007
+      slippage_per_side: 0.0075
+  US500:           # disabled; median slot spread 0.46; tick unverified
+    enabled: false
+    asset_class: index_cfd
+    quote_ccy: USD
+    tick_size: 0.01
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_cfd
+    swap_convention: financing_daily
+    max_plausible_spread: 3.0
+    calendar: us_index_cash
+    costs:                   # provisional C8 (2026-10-03, P&L-blind): slippage = 25% of the median 2012-23 slot spread
+      commission_per_side: 0.0
+      slippage_per_side: 0.11
+  US30:            # disabled; median slot spread 1.66; tick unverified
+    enabled: false
+    asset_class: index_cfd
+    quote_ccy: USD
+    tick_size: 0.01
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_cfd
+    swap_convention: financing_daily
+    max_plausible_spread: 13.0
+    calendar: us_index_cash
+    costs:                   # provisional C8 (2026-10-03, P&L-blind): slippage = 25% of the median 2012-23 slot spread
+      commission_per_side: 0.0
+      slippage_per_side: 0.42
+  UK100:           # disabled; median slot spread 1.0; tick unverified
+    enabled: false
+    asset_class: index_cfd
+    quote_ccy: GBP
+    tick_size: 0.01
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_cfd
+    swap_convention: financing_daily
+    max_plausible_spread: 6.0
+    calendar: uk_index_cash
+    costs:                   # provisional C8 (2026-10-03, P&L-blind): slippage = 25% of the median 2012-23 slot spread
+      commission_per_side: 0.0
+      slippage_per_side: 0.25
+  JP225:           # disabled; median slot spread 7.0; tick unverified
+    enabled: false
+    asset_class: index_cfd
+    quote_ccy: JPY
+    tick_size: 0.01
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_cfd
+    swap_convention: financing_daily
+    max_plausible_spread: 50.0
+    calendar: jp_index_cash
+    costs:                   # provisional C8 (2026-10-03, P&L-blind): slippage = 25% of the median 2012-23 slot spread
+      commission_per_side: 0.0
+      slippage_per_side: 1.75
+  EU50:            # disabled; median slot spread 2.0; tick unverified
+    enabled: false
+    asset_class: index_cfd
+    quote_ccy: EUR
+    tick_size: 0.01
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_cfd
+    swap_convention: financing_daily
+    max_plausible_spread: 15.0
+    calendar: eu_index_cash
+    costs:                   # provisional C8 (2026-10-03, P&L-blind): slippage = 25% of the median 2012-23 slot spread
+      commission_per_side: 0.0
+      slippage_per_side: 0.5
+  AUS200:          # disabled; median slot spread 1.54; tick unverified
+    enabled: false
+    asset_class: index_cfd
+    quote_ccy: AUD
+    tick_size: 0.01
+    tick_value: 1.0
+    lot_step: 0.01
+    min_lot: 0.01
+    margin_model: retail_cfd
+    swap_convention: financing_daily
+    max_plausible_spread: 11.0
+    calendar: au_index_cash
+    costs:                   # provisional C8 (2026-10-03, P&L-blind): slippage = 25% of the median 2012-23 slot spread
+      commission_per_side: 0.0
+      slippage_per_side: 0.39
 
 # §5.5: every relationship declares its window AND method — schema-fatal otherwise.
 pair_relationships:

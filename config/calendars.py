@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # The zones fx_clock models (parity-tested against its rule table).
 Zone = Literal["UTC", "Asia/Tokyo", "Europe/London", "Europe/Prague", "America/New_York",
-               "America/Chicago"]
+               "America/Chicago", "Australia/Sydney"]
 
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 

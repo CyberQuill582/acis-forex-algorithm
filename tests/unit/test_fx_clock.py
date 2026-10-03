@@ -141,3 +141,17 @@ def test_last_local_is_at_or_before() -> None:
     assert last_local(jul, "America/New_York", "17:00") == jul
     assert last_local(jul, "Asia/Tokyo", "09:00") == datetime(2025, 7, 15, 0, tzinfo=UTC)
     assert last_local(jul.replace(hour=20), "America/New_York", "17:00") ==         datetime(2025, 7, 14, 21, tzinfo=UTC)
+
+
+
+def test_sydney_daylight_time_matches_the_tz_database_at_business_hours() -> None:
+    """AUS200's cash hours (declared 2026-10-03): Sydney's offset at 11:00 local, every day 2012-2026,
+    equals the IANA database's, through both southern-hemisphere switches."""
+    from datetime import date, datetime, timedelta
+    from zoneinfo import ZoneInfo
+    from core.data.fx_clock import utc_offset
+    day = date(2012, 1, 1)
+    while day < date(2027, 1, 1):
+        want = datetime(day.year, day.month, day.day, 11, 0, tzinfo=ZoneInfo("Australia/Sydney")).utcoffset()
+        assert utc_offset(day, "Australia/Sydney") == want, day
+        day += timedelta(days=1)
