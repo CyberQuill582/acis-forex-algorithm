@@ -326,6 +326,14 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - **B, human-origin hypotheses:** the owner writes 1–3 rules of their own before any data is looked at, with no LLM suggesting or refining them (§5.6 would make them LLM-origin). The template is in TODO. The lead builds each faithfully, registers it with `Origin("human")`, and grades it once in stage A (α 0.03 for the first family). **Caveat:** a pass on history exists only for RSIM claims (daily target positions on the 17:00 New York clock); an event-window rule stays kill-only until an event verdict is specified (master v2.34).
     - **D, the first win:** a forward-certified net Sharpe ≥ 0.5 over 6 months on the demo, and **no paid prop challenge before it** (the challenge's EV is negative below ~0.3–0.5, GAP-P12D-148). This is stricter than the current state and weakens no guard. It belongs in the next session's spec batch with the live-gate text (§14 and human sign-off are unchanged).
     - **Paper-mining with an LLM PAUSES:** IREV and further published anomalies are not pursued unless the owner reopens them.
+  - **Owner rulings (2026-10-03, fourth session, later; on the owner's "run agents to fix our edge problems as we proceed with the build … make [the Google credits] earn their keep"; both "Recommended"):**
+    - **Three agents launched (Opus 5.5, background):**
+      - TOURNAMENT, a forward shadow-book framework: many strategies' would-be daily P&L recorded forward in parallel, with a pre-registered promotion rule corrected for the number tested.
+      - FACTORY: cost-viable daily-clock candidates, kill-tested to feed the tournament. This reopens LLM paper-mining for this purpose only.
+      - EXECUTION: how much passive or limit entry cuts the 2–4 bp round trip, and which killed families it revives.
+      - Their IDs and briefs are in TODO.
+    - **The factory's looks are PRE-AUTHORISED:** each candidate gets ONE pre-declared version, no tuning, after a P&L-blind dry check, and one kill-only look on 2012–2023, registered and anchored. No stage C without the owner. Survivors enter only the forward tournament, never live.
+    - The agents edit no ledger or read-path file (the lead records), no guardrail, and nothing live. Every finding is triaged by the lead before it binds.
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
 

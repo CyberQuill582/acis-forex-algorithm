@@ -6,7 +6,7 @@
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
 
-## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-03, fourth session; master v2.35; full suite last run at `04d64d7`, so RUN IT at the next server start (this session added `fxhedge`, `opex`, `ust_auction`, extended `exchange_days`); `acis-compute-1` STOPPED)
+## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-03, fourth session; master v2.35; full suite 1458 passed / 6 skipped on the server at `5ecf45b`; THREE AGENTS RUNNING (TOURNAMENT, FACTORY, EXECUTION; IDs below); `acis-compute-1` RUNNING for them, STOP it when all three finish)
 
 **Where we stand on an edge (history only; every family so far is LLM-selected, so history can only KILL and credit comes only forward, §5.6):**
 
