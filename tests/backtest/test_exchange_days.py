@@ -3,11 +3,11 @@ CFD's hours, and a refusal outside the vetted scope."""
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, time
 
 import pytest
 
-from tests.backtest.exchange_days import CalendarRefused, easter, is_session, month_turn
+from tests.backtest.exchange_days import CalendarRefused, easter, hours, is_session, month_turn
 
 
 def test_easter_matches_the_published_dates() -> None:
@@ -55,8 +55,18 @@ def test_a_day_outside_the_vetted_scope_or_years_is_refused() -> None:
     with pytest.raises(CalendarRefused, match="scope"):
         is_session("XNYS", date(2019, 7, 15))                  # mid-month: no rule vets it
     with pytest.raises(CalendarRefused, match="scope"):
-        is_session("XTKS", date(2024, 11, 5))                  # Tokyo's close moved to 15:30
+        is_session("XTKS", date(2026, 1, 5))                   # past the vetted years
     with pytest.raises(CalendarRefused, match="scope"):
-        month_turn("XNYS", 2024, 10)                            # the next month is past the calendar
+        month_turn("XNYS", 2025, 12)                            # the next month is past the calendar
     with pytest.raises(CalendarRefused, match="no calendar"):
         is_session("XHKG", date(2019, 7, 1))
+
+
+def test_the_2024_25_extension_keeps_its_one_off_closures_and_tokyos_longer_session() -> None:
+    """Vetted against exchange_calendars 4.13.2 on every in-scope day of 2024-11..2025-12 (GAP-P12D-158)."""
+    assert not is_session("XNYS", date(2025, 1, 9))            # the national day of mourning for J. Carter
+    assert not is_session("XTKS", date(2025, 11, 24))          # Labour Thanksgiving, observed from a Sunday
+    assert not is_session("XTKS", date(2025, 2, 24))           # the Emperor's birthday, observed
+    assert not is_session("XASX", date(2025, 1, 27))           # Australia Day, observed
+    assert is_session("XTKS", date(2024, 11, 5))
+    assert hours("XTKS", date(2024, 11, 1))[2] == time(15, 0) and hours("XTKS", date(2024, 11, 5))[2] == time(15, 30)

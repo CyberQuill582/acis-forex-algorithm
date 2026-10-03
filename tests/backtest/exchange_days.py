@@ -1,4 +1,4 @@
-"""Exchange sessions at the month turns, 2012-01 to 2024-10 (D3's event harness, GAP-P12D-154).
+"""Exchange sessions at the month turns, 2012-01 to 2025-12 (D3's event harness, GAP-P12D-154; FXHEDGE, 158).
 
 Mental model:
   * D3 reads only a month's last two sessions (T-2, T-1) and the next month's first three (T+1..T+3),
@@ -11,7 +11,7 @@ Mental model:
   * A session is a weekday in the exchange's own date that is not a holiday; half days are sessions.
     The rules are each exchange's published regular holidays that can fall inside the scope, plus
     SPECIAL one-off closures. Eurex (XEUR) stands for EU50's home: its cash index and futures share
-    Eurex's trading days. Tokyo closes at 15:00 until 2024-11-04, so the years stop at 2024-10.
+    Eurex's trading days. `hours` is date-aware: Tokyo closes at 15:00 until 2024-11-04, 15:30 after.
   * Verified on every in-scope day against an outside calendar library (GAP-P12D-154 records the run).
 """
 
@@ -21,14 +21,16 @@ from calendar import monthrange
 from datetime import date, time, timedelta
 from functools import lru_cache
 
-FIRST, LAST = date(2012, 1, 1), date(2024, 10, 31)
+FIRST, LAST = date(2012, 1, 1), date(2025, 12, 31)
 SCOPE_HEAD, SCOPE_TAIL = 10, 7            # the first 10 and the last 7 days of every month
 SESSION = {"XNYS": ("America/New_York", time(9, 30), time(16, 0)),
            "XLON": ("Europe/London", time(8, 0), time(16, 30)),
            "XEUR": ("Europe/Berlin", time(9, 0), time(17, 30)),
            "XTKS": ("Asia/Tokyo", time(9, 0), time(15, 0)),
            "XASX": ("Australia/Sydney", time(10, 0), time(16, 0))}
-SPECIAL = {"XNYS": {date(2012, 10, 29), date(2012, 10, 30), date(2018, 12, 5)},   # Sandy; G. H. W. Bush
+CLOSE_FROM = {"XTKS": (date(2024, 11, 5), time(15, 30))}                       # the TSE's longer session
+SPECIAL = {"XNYS": {date(2012, 10, 29), date(2012, 10, 30), date(2018, 12, 5),   # Sandy; G. H. W. Bush
+                    date(2025, 1, 9)},                                            # J. Carter
            "XLON": {date(2023, 5, 8)},                                            # the coronation
            "XEUR": set(), "XASX": set(),
            "XTKS": {date(2019, 4, 30), date(2019, 5, 1), date(2019, 5, 2),        # the 2019 enthronement
@@ -37,6 +39,13 @@ SPECIAL = {"XNYS": {date(2012, 10, 29), date(2012, 10, 30), date(2018, 12, 5)}, 
 
 class CalendarRefused(Exception):
     """A day or month turn this calendar does not vouch for."""
+
+
+def hours(exchange: str, d: date) -> tuple[str, time, time]:
+    """(zone, open, close) of `exchange`'s regular session on `d`."""
+    zone, open_, close = SESSION[exchange]
+    since, later = CLOSE_FROM.get(exchange, (None, None))
+    return zone, open_, later if since is not None and d >= since else close
 
 
 def easter(y: int) -> date:

@@ -28,7 +28,7 @@ import numpy as np
 
 from core.optimizer.costs import CostModel
 from tests.backtest.candle_store import Hourly
-from tests.backtest.exchange_days import SESSION, month_turn
+from tests.backtest.exchange_days import hours, month_turn
 
 HOME = {"US500": "XNYS", "US30": "XNYS", "UK100": "XLON", "EU50": "XEUR", "JP225": "XTKS", "AUS200": "XASX"}
 NY = ZoneInfo("America/New_York")
@@ -78,7 +78,7 @@ class Leg:
         self.rets = self.mark[1:] / self.mark[:-1] - 1.0
 
     def anchor(self, exchange: str, d: date) -> int | None:
-        zone, open_, close = SESSION[exchange]
+        zone, open_, close = hours(exchange, d)
         j = int(np.searchsorted(self.ends, _epoch(d, close, ZoneInfo(zone)), side="right")) - 1
         return j if j >= 0 and self.starts[j] >= _epoch(d, open_, ZoneInfo(zone)) else None
 
@@ -91,7 +91,7 @@ class Leg:
 
 
 def _skip_reason(leg: Leg, exchange: str, t2: date, i: int | None, j: int | None, w: float | None) -> str | None:
-    zone, _, close = SESSION[exchange]
+    zone, _, close = hours(exchange, t2)
     if not len(leg.starts) or _epoch(t2, close, ZoneInfo(zone)) < leg.starts[0]:
         return "before_data"
     return "no_entry_anchor" if i is None else "no_exit_anchor" if j is None else "vol_warmup" if w is None else None

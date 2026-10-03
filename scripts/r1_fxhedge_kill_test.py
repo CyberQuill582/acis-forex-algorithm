@@ -2,7 +2,7 @@
 
     python scripts/r1_fxhedge_kill_test.py --dry-check        # P&L-blind
     python scripts/r1_fxhedge_kill_test.py --line v1          # v1a and v1c, both registered before either grade
-    python scripts/r1_fxhedge_kill_test.py --line exit1559    # v1d: v1a leaving at 15:59, a minute before the fix
+    python scripts/r1_fxhedge_kill_test.py --line exit1559    # v1d: leaving at 15:59; --line stage_c: v1d on 2024-25
 
 Mental model (register-first: every refusal happens before any compute):
   * The book (`fxhedge.py`): on each month's last weekday, each of EUR, GBP, JPY and AUD against the USD holds
@@ -50,6 +50,8 @@ from tests.backtest.rsim_real import CandleSource  # noqa: E402
 from tests.backtest.verdict import KILL_T, kill_verdict  # noqa: E402
 
 START, GRADED_FROM, END = date(2012, 1, 3), date(2012, 2, 1), date(2023, 12, 29)
+HOLDOUT = (date(2024, 1, 2), date(2024, 1, 3), date(2025, 12, 31))           # stage C: the sealed 2024-25 window
+STAGE_C = "stage C (ACIS-09 C-BT-11 v2 step 6): the same v1d, graded once on the sealed 2024-25 holdout"
 PAIRS = tuple(sorted(p for p, _ in PAIR.values()))
 TIMES = {"open": time(8, 0), "entry": time(15, 0), "early": time(15, 59), "fix": time(16, 0)}
 CORE = ("fxhedge: on each month's last weekday hold eur, gbp, jpy and aud against the usd at minus 25 x their equity "
@@ -63,14 +65,17 @@ class Version:
     entry: str
     beta: float | None = None                   # set: the cost gate (`fxhedge.simulate_fix`)
     exit: str = "fix"                           # "early": a minute before the fix, reachable from a CFD
+    window: tuple[date, date, date] = (START, GRADED_FROM, END)
+    changed: str = ""                            # a family's later look says what changed (look register)
 
 
+V1D = f"{CORE}; from 15:00 london, leaving at 15:59:00, a minute before the fix"
 LINES = {"v1": {"fxhedge_v1a_hour": Version(f"{CORE}; from 15:00 london (the paper's hour)", "entry"),
                 "fxhedge_v1c_hour_gated": Version(f"{CORE}; from 15:00 london, a pair-day only if 0.0142 x its "
                                                   "currency's demeaned return beats a c8 round trip at its entry "
                                                   "spread", "entry", BETA)},
-         "exit1559": {"fxhedge_v1d_exit1559": Version(f"{CORE}; from 15:00 london, leaving at 15:59:00, a minute "
-                                                      "before the fix", "entry", exit="early")}}
+         "exit1559": {"fxhedge_v1d_exit1559": Version(V1D, "entry", exit="early")},
+         "stage_c": {"fxhedge_v1d_exit1559": Version(V1D, "entry", exit="early", window=HOLDOUT, changed=STAGE_C)}}
 ORIGIN = Origin("literature", model_id="claude-opus-5-5", model_cutoff="2026-06-30", proposed="2026-10-03",
                 exposure="web", reference="Melvin & Prins, Equity hedging and exchange rates at the London 4 p.m. "
                 "fix, Journal of Financial Markets 22 (2015) 50-72; proposed by the lead 2026-10-03 (GAP-P12D-158)",
@@ -138,7 +143,8 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-check", action="store_true", help="P&L-blind: months, signal sizes, prices, no look")
     ap.add_argument("--line", choices=sorted(LINES), help="the registered line to look at (required for a look)")
     a = ap.parse_args(argv)
-    index_legs = legs({i: load(a.candles, i, (END.year, END.month)) for i, _ in COUNTRY.values()})
+    start, graded_from, end = next(iter(LINES[a.line].values())).window if a.line else (START, GRADED_FROM, END)
+    index_legs = legs({i: load(a.candles, i, (end.year, end.month)) for i, _ in COUNTRY.values()})
     cfg = load_config(ROOT / "config")
     costs = {p: cost_model(cfg, p) for p in PAIRS}
     if a.dry_check:
@@ -147,6 +153,8 @@ def main(argv=None) -> int:
     if a.line is None:
         ap.error("a look needs --line")
     versions, reg = LINES[a.line], LookRegister(CANONICAL)
+    if a.line == "stage_c" and any(x and x.get("family") in versions and x.get("tier") == 3 for x in reg.scan().lines):
+        raise SystemExit("stage C grades the 2024-25 holdout once: v1d already looked at it")
     looks = {}
     for family, v in versions.items():                       # every line first: no grade between them
         claim = Claim(family=family, variant="fixed", universe_id="R1-FXHEDGE-G5", origin=ORIGIN, simulator="event",
@@ -154,8 +162,8 @@ def main(argv=None) -> int:
                       recon_commit=git_state()[0], declaration=Declaration("fixed", 1, "PASSIVE_LONG"))
         looks[family] = register_event_look(register=reg, cfg=cfg, source=TickSource(), claim=claim,
                                             account="research", instruments=PAIRS, costs=costs,
-                                            start=START, graded_from=GRADED_FROM, end=END)
-    days = fix_days(GRADED_FROM, END)
+                                            start=start, graded_from=graded_from, end=end, changed=v.changed)
+    days = fix_days(graded_from, end)
     controls = [d - timedelta(days=7) for d in days]
     book, cbook = books(index_legs, days)[0], books(index_legs, controls, vetted=False)[0]
     prices = {p: window_prices(a.ticks, p, days, LONDON, TIMES) for p in PAIRS}
@@ -166,13 +174,13 @@ def main(argv=None) -> int:
     out = {}
     for family, (look, fold) in looks.items():
         entry, beta, leave = versions[family].entry, versions[family].beta, versions[family].exit
-        grade_event_look(look, fold, register=reg, cfg=cfg, source=TickSource(), costs=costs, graded_from=GRADED_FROM,
+        grade_event_look(look, fold, register=reg, cfg=cfg, source=TickSource(), costs=costs, graded_from=graded_from,
                          run=lambda s, entry=entry, beta=beta, leave=leave: simulate_fix(
-                             prices, book, stressed(s), START, GRADED_FROM, END, TIMES, entry, leave, beta=beta),
-                         benchmark=lambda entry=entry, leave=leave: simulate_fix(cprices, cbook, costs, START,
-                                                                                 GRADED_FROM, END, TIMES, entry, leave).daily,
+                             prices, book, stressed(s), start, graded_from, end, TIMES, entry, leave, beta=beta),
+                         benchmark=lambda entry=entry, leave=leave: simulate_fix(cprices, cbook, costs, start,
+                                                                                 graded_from, end, TIMES, entry, leave).daily,
                          summary=lambda r: {"pair_days_skipped": dict(Counter(x["reason"] for x in r.skipped)),
-                                            "pair_days_traded": len(r.events), "reform_split": reform_split(r, GRADED_FROM)})
+                                            "pair_days_traded": len(r.events), "reform_split": reform_split(r, graded_from)})
         outcome, verdict = reg.outcome(look.look_id), kill_verdict(CANONICAL, look.look_id)
         out[family] = {"look_id": look.look_id, "certifying_boundary": look.claim["certifying_boundary"],
                        "graded_days": outcome["graded_days"], "pair_days_traded": outcome["pair_days_traded"],
