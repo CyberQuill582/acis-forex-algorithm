@@ -27,7 +27,7 @@ from core.signals.daily import slot_of
 from core.signals.families import register_family
 
 
-def build_targets(cfg, *, root: Path, venue, calendars, prov, governor, risk, executor, nvma, runtime, mode,
+def build_targets(cfg, *, root: Path, venue, calendars, prov, governor, risk, executor, runtime, mode,
                   now_fn, logger, governor_log):
     t = cfg.system.targets
     if t is None:
@@ -59,11 +59,10 @@ def build_targets(cfg, *, root: Path, venue, calendars, prov, governor, risk, ex
     view = EngineView(
         held_of=lambda i: next((p for p in risk.positions() if p.instrument == i), None),
         busy=lambda: frozenset(executor.busy), marks=lambda: runtime.marks, portfolio=runtime.portfolio,
-        regime_of=nvma.regime_store.get, submit=executor.submit, flatten=executor.submit_flatten,
+        feed_refusal=runtime.feed.refusal, submit=executor.submit, flatten=executor.submit_flatten,
         clock_ok=runtime.clock_verified)
     gate = partial(target_orders, governor, limits=cfg.guardrails, rules=rulebook, clusters=cfg.instruments.clusters,
-                   stop_mult=cfg.system.signals.tsmom_disaster_stop_atr, logger=governor_log,
-                   context_max_age_s=2 * cfg.system.regime.cycle_seconds)   # PR16I-06: two missed NVMA cycles
+                   stop_mult=cfg.system.signals.tsmom_disaster_stop_atr, logger=governor_log)
     return TargetLoop(
         members=members, store=HistoryStore(root / "data" / "runtime" / "targets.db"), fetch=fetch,
         rates=lambda: load_rate_table(root / t.macro_dir, t.rate_max_stale_days,

@@ -179,8 +179,8 @@ async def test_opens_in_flight_count_in_every_exposure_so_one_slot_cannot_cross_
     second = target_orders(gov, limits=gov.guards._limits, rules=mk_rulebook(), clusters=clusters,
                            instrument="GBP_USD", held=None, target=Decimal("1000"), mark=1.30, atr=0.007,
                            stop_mult=10.0, step=Decimal("1000"), minimum=Decimal("1000"), portfolio=pf,
-                           regime=mk_regime(instrument="GBP_USD"), marks=marks, now=T0, family="trend_d1_v1",
-                           snapshot={}, logger=log, context_max_age_s=240.0)
+                           entry_refusal=None, marks=marks, now=T0, family="trend_d1_v1",
+                           snapshot={}, logger=log)
     assert second.reason == "cluster_cap"                                    # 1,100 + 1,300 > 90% × 20% × 10k
     task = asyncio.create_task(ex.run())
     await ex.queue.join()
@@ -250,8 +250,8 @@ async def test_a_flip_in_flight_nets_its_close_so_a_later_entry_cannot_cross_the
     def gate(inst, h, target, pf):
         return target_orders(gov, limits=gov.guards._limits, rules=mk_rulebook(), clusters={}, instrument=inst,
                              held=h, target=target, mark=marks[inst], atr=marks[inst] * 0.006, stop_mult=10.0,
-                             step=lot, minimum=lot, portfolio=pf, regime=mk_regime(instrument=inst), marks=marks,
-                             now=T0, family="trend_d1_v1", snapshot={}, logger=log, context_max_age_s=240.0)
+                             step=lot, minimum=lot, portfolio=pf, entry_refusal=None, marks=marks,
+                             now=T0, family="trend_d1_v1", snapshot={}, logger=log)
 
     eur_before = portfolio().per_currency_delta["EUR"]
     own_close = close_leg(held[0], lot, marks["EUR_USD"], T0, "target_flip")

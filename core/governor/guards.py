@@ -8,9 +8,9 @@ Invariants:
     `resume` (§7 step 8), which calls `clear`. The session drawdown halt alone auto-clears, at
     the next session boundary (master §8); reaching the daily-drawdown limit sets it.
   * Guards gate ENTRIES only. A reduction never passes through here, so no guard can block it.
-  * `target=True` (the daily target path only, GAP-P12D-147): NVMA's confidence and label
-    vetoes and the low-confidence guard do not apply; its data-integrity gates and every
-    other guard do (`RegimeContext.integrity_tradeable`).
+  * `target=True` (the daily target path only): no regime check applies (`regime` is None). The
+    target path's data check is its own feed watch (core/runtime/feed_check.py, master v2.33);
+    every other guard applies.
 """
 
 from __future__ import annotations
@@ -44,13 +44,13 @@ class EntryGuards:
         self.halts.clear()
         self.session_halt_until = None
 
-    def check(self, instrument: str, portfolio: PortfolioState, regime: RegimeContext, now: datetime, *,
+    def check(self, instrument: str, portfolio: PortfolioState, regime: RegimeContext | None, now: datetime, *,
               expires_at: datetime | None = None, strategy: StrategyType | None = None,
               target: bool = False) -> str | None:
         """§7.1 in order. Returns the zero-reason or None."""
         if expires_at is not None and now >= expires_at:
             return "expired"
-        if not (regime.integrity_tradeable() if target else regime.tradeable):
+        if not target and not regime.tradeable:
             return "veto"
         if "all" in self.halts or instrument in self.halts:
             return "halt"
@@ -62,9 +62,9 @@ class EntryGuards:
             self.session_halt_until = next_boundary(now, self._boundaries)
             self._log.event("HALT_APPLIED", scope="session", reason="daily_drawdown_limit")
             return "drawdown_halt"
-        if regime.confidence < self._confidence_veto and not target:
+        if not target and regime.confidence < self._confidence_veto:
             return "low_confidence"
-        if regime.liquidity_state is LiqState.ILLIQUID:
+        if not target and regime.liquidity_state is LiqState.ILLIQUID:
             return "illiquid"
         if portfolio.stale:
             self._log.event("PORTFOLIO_STALE", as_of=portfolio.as_of.isoformat())

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from functools import partial
@@ -24,7 +24,7 @@ from core.runtime.target_decision import BookSizing, Lots
 from core.runtime.target_loop import EngineView, Member, TargetLoop
 from core.signals.daily import SLOTS
 from tests.optimizer_fixtures import CapturingLogger
-from tests.signals_fixtures import mk_regime
+
 from tests.unit.test_governor import mk_governor, mk_portfolio, mk_rulebook
 
 UTC = timezone.utc
@@ -58,9 +58,6 @@ class Held:
     group_id: str | None = None
 
 
-FRESH = datetime(2100, 1, 1, tzinfo=timezone.utc)      # a regime context stamp no slot can find stale
-
-
 class Rig:
     def __init__(self, tmp_path, *, drift=0.0002, fetch_error=None, registered=True, open_=True) -> None:
         self.log, self.now = CapturingLogger(), AFTER
@@ -74,13 +71,13 @@ class Rig:
         self.fetch_error, self.registered, self.open_ = fetch_error, registered, open_
         self.clock_ok, self.cap = True, LOT
         self.closing = []                         # each slot's `closing` argument (PR16I-04)
+        self.feed_refusal = None                  # the feed watch's verdict at every slot
         gov, _ = mk_governor()
         days = [date(2024, 9, 1) + timedelta(days=k) for k in range(800)]
         self.rates = RateTable({"USD": [(d, 4.0) for d in days], "EUR": [(d, 3.0) for d in days],
                                 "GBP": [(d, 3.5) for d in days]})
         self.gate = partial(target_orders, gov, limits=gov.guards._limits, rules=mk_rulebook(),
-                            clusters={"usd_short": ["EUR_USD"]}, stop_mult=10.0, logger=self.log,
-                            context_max_age_s=240.0)
+                            clusters={"usd_short": ["EUR_USD"]}, stop_mult=10.0, logger=self.log)
 
     async def fetch(self, instrument, start, end):
         self.fetches.append((instrument, start, end))
@@ -91,9 +88,7 @@ class Rig:
     def loop(self, family="trend_d1_v1") -> TargetLoop:
         view = EngineView(held_of=self.held.get, busy=lambda: frozenset(self.busy), marks=lambda: {"EUR_USD": 1.2},
                           portfolio=lambda closing=(): (self.closing.append(closing), mk_portfolio(nav=Decimal("100000")))[1],
-                          # the rig's contexts never age (PR16I-06: staleness has its own test in test_target_path)
-                          regime_of=lambda i: replace(mk_regime(instrument=i), timestamp=FRESH),
-                          submit=self.sent.append,
+                          feed_refusal=lambda i, now: self.feed_refusal, submit=self.sent.append,
                           flatten=lambda scope, why: self.flattened.append((scope, why)),
                           clock_ok=lambda i: self.clock_ok)
         return TargetLoop(

@@ -258,7 +258,7 @@ def build(cfg: AcisConfig, *, root: Path, session_id: str, feed: FeedConnector,
     runtime = Runtime(parts)
     runtime_ref.append(runtime)
     parts.targets = build_targets(cfg, root=root, venue=venue, calendars=calendars, prov=prov, governor=governor,
-                                  risk=risk, executor=executor, nvma=nvma, runtime=runtime, mode=mode,
+                                  risk=risk, executor=executor, runtime=runtime, mode=mode,
                                   now_fn=now_fn, logger=logger("target_log", "runtime"), governor_log=governor_log)
     parts.target_universe = frozenset(sysc.targets.universe) if parts.targets is not None else frozenset()
     parts.pipeline = IngestionPipeline(feed, factory, writer, log, subscribers=[runtime.on_state],

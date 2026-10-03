@@ -145,6 +145,23 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-153: the legacy modules' retirement — what still carries QIEA, NVMA, AGON and the alpha-decay throttle after the target path stopped reading them
+- Severity: medium · Likelihood: certain
+- Status: open (2026-10-03, from the owner's process review: "a retirement plan"; R-1 retires them from the money paths)
+- Area: core/regime (NVMA: now only the legacy signal path and its logs), core/optimizer (QIEA; `core/signals/indicators.py` still imports its indicators, [[GAP-P12D-99]]), core/signals/agon.py (the legacy signal path, silenced on the demo universe, R6-3), core/risk/alpha_decay.py (reported, not applied, on the one-lot demo)
+- Description: since master v2.33 the target path reads none of NVMA; the legacy signal path still wires QIEA, NVMA and AGON for instruments outside the target universe (none on the demo). Under the lean-build law the dead weight goes, keeping the untrained baseline recoverable through the `baseline-untrained-v1` tag.
+- Justification: open: after the AWS move (not before it: the cutover carries enough change), list each legacy piece still on any path, retire what is dead, and replace the throttle with GATES R8 with the post-edge plan ([[GAP-P12D-61]]).
+- Linked: [[GAP-P12D-99]], [[GAP-P12D-152]], [[GAP-P12D-61]], [[GAP-P12D-150]]
+
+## GAP-P12D-152: the target path's own data check replaces NVMA (owner ruling 2026-10-03, "Replace before the cutover")
+- Severity: medium · Likelihood: certain
+- Status: fixed (2026-10-03, master v2.33, ACIS-02 v1.6, ACIS-05 v1.11)
+- Area: core/runtime/feed_check.py (`FeedWatch`), core/runtime/engine.py (`Runtime.feed`, observed on every tick), core/governor/target_gate.py (`entry_refusal`), core/governor/guards.py (`target=True` skips every regime check), core/runtime/target_loop.py and target_wiring.py (`EngineView.feed_refusal`)
+- Description: a daily target entry depended on NVMA's 1-minute regime context (its veto, ILLIQUID's σ rule, warm-up and NaN states, and the low-confidence guard), the interference GAP-P12D-147 and PR16I-03 measured. Owner ruling: replace it with a purpose-built check that reads only the tick feed. BUILT: `FeedWatch` refuses an entry with `no_feed`, `stale_feed` (no tick within 2 × 120 s, or a late tick), `feed_warming` (fewer than 50 spreads seen), `wide_spread` (above 3 × the median of the last 600 quoted spreads: session-agnostic, because the 08:00 New York slot sits on a session boundary) or `macro_event`. `RegimeContext.integrity_tradeable` and `CONFIDENCE_VETOES` (v2.30) are removed as dead; `build_targets` no longer takes NVMA. Exits never ask (C-EXE-7).
+- Residual: GAP-P12D-153 — NVMA, QIEA and AGON still run for the legacy signal path; their retirement is planned after the AWS move.
+- Justification: fixed; it supersedes GAP-P12D-147's veto split and GAP-P12D-150's "keep ILLIQUID, measure".
+- Linked: test_a_target_entry_reads_the_feed_check_and_no_regime, test_each_refusal_reads_only_the_tick_feed, test_a_refused_entry_still_sends_its_exit, [[GAP-P12D-147]], [[GAP-P12D-150]], [[GAP-P12D-153]]
+
 ## GAP-P12D-151: D1's first real-data look (2026-10-03) — a kill test it SURVIVED, at a net annual Sharpe of 0.16 (HAC t 0.57) on the 13 FX, 2013–2023
 - Severity: high · Likelihood: certain
 - Status: open (2026-10-03: look `000001`, outcome `000002`, both chain heads on GitHub `look-anchor`; owner rulings "LLM-selected, kill test" and "t < −0.5"; what follows is the owner's)
@@ -167,7 +184,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **PR16I-03 (medium): keeping ILLIQUID as an integrity gate keeps 72–76% of the slot blocking GAP-P12D-147 was opened about** (synthetic ticks; the generator's proportional spread inflates ILLIQUID, GAP-P12D-148), and the ruling's keep-list did not name it. OWNER DECISION. The spec now marks ILLIQUID as the lead's reading, pending.
   - **PR16I-04 (medium at $10k paper, low on the $100k demo): in-flight closes were not counted, so a flip was judged one lot short and a slot could carry EUR to 33% against the 30% cap.** FIXED: the executor tracks in-flight closes; `build_portfolio` nets them at the held average; a flip's opening leg is judged net of its own closing leg (`EngineView.portfolio(closing)`, `target_gate.close_leg`) (`test_a_flip_in_flight_nets_its_close_so_a_later_entry_cannot_cross_the_currency_cap`, `test_a_flip_judges_its_open_net_of_its_own_close`).
   - **PR16I-05 = PR16E-03 (low–medium): `download_macro.py --live` still required 10-day freshness of the weekly sources,** so the daily service failed Mon–Wed and a fresh host had no AUD file. FIXED: the live run reads the engine's own limits from config through `core/data/rates.stale_days`; the script runs from any directory; the series checks moved to `scripts/macro_checks.py` (A12); the unit and README text corrected (`test_a_weekly_source_is_held_to_its_own_freshness_limit_in_live_mode`).
-  - **PR16I-06 (medium/low): the timer-driven slot traded on a regime context and mark of any age,** so a silent feed was never "stale". FIXED: a target entry needs a context at most `2 × regime.cycle_seconds` old (`stale_context`); an exit stays ungated (`test_an_entry_on_a_stale_regime_context_is_refused_and_an_exit_is_not`). The loop test's contexts were 87 days old: they are now explicitly fresh.
+  - **PR16I-06 (medium/low): the timer-driven slot traded on a regime context and mark of any age,** so a silent feed was never "stale". FIXED: a target entry needs a context at most `2 × regime.cycle_seconds` old (`stale_context`); an exit stays ungated (former `test_an_entry_on_a_stale_regime_context_is_refused_and_an_exit_is_not` (superseded by the feed watch, GAP-P12D-152: `test_each_refusal_reads_only_the_tick_feed`)). The loop test's contexts were 87 days old: they are now explicitly fresh.
   - **PR16I-07 (low): master §2's priority list and ACIS-02 §1/§7 still called the veto absolute.** FIXED: both state the v2.30 target-entry exception (ACIS-02 v1.5).
   - **PR16I-08 (low, A16): five wirings or semantics survived mutation.** FIXED: the shipped-config runtime test asserts the clock, weekly-rate and in-flight wiring (`_assert_the_target_wiring` in `test_a_runtime_from_the_shipped_config_wires_the_target_loop_and_silences_legacy`); the PR16I-02 tests pin the frozen baseline and the window's end; `test_only_the_human_resume_reaches_the_throttles_clear` pins the one caller by AST.
   - **PR16I-09 (low, A13): STATUS, TODO and CLAUDE.md contradicted the spec header and the ledger.** FIXED (master v2.30, the rulings built, the top-up done).
@@ -216,7 +233,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - **Correction 2026-10-03 ([[GAP-P12D-150]]):** a target entry also needs a regime context at most two NVMA cycles old (`stale_context`, PR16I-06), and ILLIQUID's place in the keep-list is the lead's reading, an owner decision (PR16I-03).
 - Residual: GAP-P12D-141 — (10): the entry guards RSIM does not model; the demo's `TARGET_ENTRY_ZERO` reasons measure what still blocks target entries after this fix (TODO START HERE item 3).
 - Justification: fixed. Before the ruling the tradeable veto was HALT/veto semantics (CLAUDE.md), so nothing changed until the owner ruled.
-- Linked: test_a_target_entry_ignores_the_confidence_vetoes_but_not_the_integrity_gates, [[GAP-P12D-141]], [[GAP-P12D-148]]
+- Linked: former `test_a_target_entry_ignores_the_confidence_vetoes_but_not_the_integrity_gates` (superseded 2026-10-03 by the feed watch: `test_a_target_entry_reads_the_feed_check_and_no_regime`, GAP-P12D-152), [[GAP-P12D-141]], [[GAP-P12D-148]]
 
 ## GAP-P12D-146: AUD's overnight rate comes from BIS's weekly release, which lags more than R6-1's 10-day freshness rule allows most weekdays
 - Severity: medium · Likelihood: certain (on BIS's published cadence)

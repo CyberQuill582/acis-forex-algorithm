@@ -67,7 +67,7 @@ class EngineView:
     busy: Callable[[], frozenset]
     marks: Callable[[], Mapping[str, float]]
     portfolio: Callable[..., object]          # portfolio(closing=()): a flip's own close read as filled
-    regime_of: Callable[[str], object]
+    feed_refusal: Callable[[str, datetime], str | None]   # the entry data check (feed_check.py)
     submit: Callable[[WorkItem], None]
     flatten: Callable[[str, str], None]
     clock_ok: Callable[[str], bool]          # ACIS-13 A8: a live tick proved the host clock
@@ -216,7 +216,7 @@ class TargetLoop:
         closing = (close_leg(held, held.size_units, e.marks()[instrument], now, "target_flip"),) if flip else ()
         result = self._gate(instrument=instrument, held=held, target=target, mark=e.marks()[instrument],
                             atr=d.atr, step=lots.step, minimum=lots.minimum, portfolio=e.portfolio(closing),
-                            regime=e.regime_of(instrument), marks=e.marks(), now=now, family=self.family,
+                            entry_refusal=e.feed_refusal(instrument, now), marks=e.marks(), now=now, family=self.family,
                             alpha_throttles=lots.cap is None,     # the one-lot cap = paper/practice: report only
                             snapshot={"forecast": f.value, "pct_vol": f.pct_vol, "inputs_hash": f.inputs_hash,
                                       "decision_day": d.day.isoformat(), "target": str(target)})

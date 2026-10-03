@@ -3,10 +3,10 @@
 Mental model:
   * delta = target − held. A reduction, or a flip's closing leg, is a reduce-only close NAMING the
     held position (§7 step 10). It passes no guard, because a reduction is never blocked (C-EXE-7).
-  * An opening leg is an ENTRY. Its regime context must be fresh (at most `context_max_age_s` old: a
-    timer-driven slot otherwise trades on a silent feed's last tick, PR16I-06). It meets every §7.1
-    guard (core/governor/guards.py) except NVMA's confidence and label vetoes (`target=True`,
-    GAP-P12D-147), then §7.4's hard limits in order:
+  * An opening leg is an ENTRY. The feed watch must clear it (`entry_refusal` None: a fresh tick, a
+    spread within 3x its recent median, no macro window; core/runtime/feed_check.py, master v2.33,
+    replacing NVMA on this path). It meets every other §7.1 guard (core/governor/guards.py,
+    `target=True`), then §7.4's hard limits in order:
     - the account's lot cap: zero, never clamp;
     - the Risk edge's taper and the alpha-decay ×0.25 (the latter only when `alpha_throttles`: live;
       in paper and practice it is reported, not applied, owner ruling 2026-10-03, PR16E-01): each only
@@ -33,7 +33,6 @@ from core.governor.exposure import delta_contributions, exposure_breach
 from core.governor.portfolio_types import PortfolioState, SizedOrder
 from core.governor.target import target_on_lots
 from core.governor.units import usd_per_base_unit
-from core.regime.regime_types import RegimeContext
 
 LOT_UNITS = Decimal("100000")        # the account lot cap's unit; FX only until GAP-P12D-27
 
@@ -67,9 +66,8 @@ class GateResult:
 
 def target_orders(gov, *, limits, rules, clusters: Mapping, instrument: str, held: Held | None,
                   target: Decimal, mark: float, atr: float, stop_mult: float, step: Decimal, minimum: Decimal,
-                  portfolio: PortfolioState, regime: RegimeContext | None, marks: Mapping[str, float], now: datetime,
-                  family: str, snapshot: Mapping, logger, context_max_age_s: float,
-                  alpha_throttles: bool = True) -> GateResult:
+                  portfolio: PortfolioState, entry_refusal: str | None, marks: Mapping[str, float], now: datetime,
+                  family: str, snapshot: Mapping, logger, alpha_throttles: bool = True) -> GateResult:
     """The orders that move `held` to `target` now, the close first (see the mental model)."""
     current = Decimal(held.direction) * held.size_units if held is not None else Decimal("0")
     if target == current:
@@ -85,7 +83,7 @@ def target_orders(gov, *, limits, rules, clusters: Mapping, instrument: str, hel
         return GateResult(closes, "flat")
     direction = 1 if target > 0 else -1
     size, why = _entry_size(gov, limits, rules, clusters, instrument, direction, abs(target), mark, step, minimum,
-                            portfolio, regime, marks, now, logger, context_max_age_s, alpha_throttles)
+                            portfolio, entry_refusal, marks, now, logger, alpha_throttles)
     stop = mark - direction * stop_mult * atr
     if size and not (atr > 0 and stop > 0):
         size, why = Decimal("0"), "stop_invalid"
@@ -101,12 +99,10 @@ def target_orders(gov, *, limits, rules, clusters: Mapping, instrument: str, hel
 
 
 def _entry_size(gov, limits, rules, clusters, instrument, direction, size: Decimal, mark, step, minimum,
-                portfolio, regime, marks, now, logger, context_max_age_s, alpha_throttles) -> tuple[Decimal, str]:
-    if regime is None:                               # no tick classified yet: no entry
-        return Decimal("0"), "no_regime"
-    if (now - regime.timestamp).total_seconds() > context_max_age_s:   # a silent feed (PR16I-06)
-        return Decimal("0"), "stale_context"
-    guard = gov.guards.check(instrument, portfolio, regime, now, target=True)   # GAP-P12D-147
+                portfolio, entry_refusal, marks, now, logger, alpha_throttles) -> tuple[Decimal, str]:
+    if entry_refusal is not None:                    # the feed watch's data check (master v2.33)
+        return Decimal("0"), entry_refusal
+    guard = gov.guards.check(instrument, portfolio, None, now, target=True)
     if guard is not None:
         return Decimal("0"), guard
     if rules.max_lots is not None and size / LOT_UNITS > Decimal(str(rules.max_lots)):

@@ -1,5 +1,5 @@
 # ACIS — Adaptive Capital Intelligence System
-## Master Specification v2.32 (build authority — spec COMPLETE, build in progress)
+## Master Specification v2.33 (build authority — spec COMPLETE, build in progress)
 
 Status: BUILD AUTHORITY. Consolidates and supersedes `ACIS_Agent_Prompt.md` (Drive, v1.0), `Super_Forex_Agent.html` (Drive, v1.0 architecture brief), and the ACIS sections of the July 2026 Master Spec doc. Where those disagreed (directory layout), this document decides: the detailed `core/` layout below is canonical; the coarse 4-folder layout from the master doc is retired. If any earlier document contradicts this one, this one wins.
 
@@ -84,7 +84,7 @@ RISK MONITOR              → HALT ↑ (to Capital Governor ONLY)
 
 No layer imports a layer above it. No layer bypasses the layer directly below it. Enforce with module-level import guards plus an import-linter contract in `tests/unit/` that fails the build on violation. Objects crossing a boundary are frozen dataclasses — consumers never mutate producer state.
 
-Conflict resolution priority (highest wins): 1) Risk Monitor HALT · 2) NVMA `tradeable=False` veto (the one exception is a daily TARGET entry (v2.30, GAP-P12D-147): it is vetoed only by NVMA's data-integrity triggers (§4), never by its confidence or label vetoes; PR16I-07) · 3) Governor hard-limit override · 4) Signal expiry · 5) pending-parameter promotion.
+Conflict resolution priority (highest wins): 1) Risk Monitor HALT · 2) NVMA `tradeable=False` veto (the one exception is a daily TARGET entry: NVMA does not gate it, the runtime's feed watch does (§4, v2.33)) · 3) Governor hard-limit override · 4) Signal expiry · 5) pending-parameter promotion.
 
 | Conflict | Resolution |
 |---|---|
@@ -169,7 +169,7 @@ Veto (`tradeable=False`) additionally when: confidence < 0.55; spread > 3× sess
 On regime shift: log full context. **Regime no longer gates families (v2.21, R-1 A7; corrected v2.22, GAP-P12D-109):**
 - Regimes no longer gate rule families or key their parameters.
 - The `tradeable=False` veto keeps every organic trigger: confidence, spread, dead market, MACRO_EVENT, ILLIQUID and UNCLASSIFIED. Its former "no evolved params for the regime" trigger is REPLACED by the §2 row "no registered, validated rule set" (A4).
-- **A daily target entry (v2.30, GAP-P12D-147)** is vetoed only by the data-integrity triggers: spread, dead market, stale state (a late tick, or a regime context older than two NVMA cycles: a silent feed, PR16I-06), MACRO_EVENT, ILLIQUID and UNCLASSIFIED (warm-up, NaN). ILLIQUID stays a gate (owner ruling 2026-10-03, "Keep it, measure": the demo's first two weeks of `TARGET_ENTRY_ZERO` counts decide whether to revisit; GAP-P12D-150). The confidence trigger and the regime label do not gate it, because a daily decision should not hang on a 1-minute classification at its slot (ACIS-05 v1.9 §6.4). The signal path keeps every trigger; a target needs a registered family (§2).
+- **A daily target entry (v2.33, owner ruling "Replace before the cutover")** reads no NVMA output: its data check is the runtime's feed watch (a tick within two NVMA cycles (120 s each) and not late, a spread within 3x the median of the instrument's last 600 quoted spreads, and no macro window (inert until the calendar is wired); `core/runtime/feed_check.py`). NVMA's veto, confidence, ILLIQUID, dead-market and warm-up states do not reach it (R-1: NVMA leaves the money paths). It supersedes v2.30–v2.31's target-entry veto split (GAP-P12D-147, PR16I-03). The signal path keeps every trigger; a target needs a registered, entries-allowed family (§2).
 - NVMA's other effects on trading stand until separately amended: the §6 regime sizing factor (dampen-only; **owner-ratified 2026-09-25, the R1 audit triage: "Ratify all", decision D-b: it stays**, since removing it would raise sizes by up to 1/regime_f), the C4 volatility rules, and §3.6.
 - Any regime conditioning of a family enters only as a registered family-version (§5.6).
 - NVMA never triggers execution; it writes to `regime_store` only.
@@ -322,7 +322,7 @@ size     = apply_hard_limits(raw_size, signal, portfolio)
 
 **Correlation clusters** (config §9): usd_long, usd_short, commodity, yen_carry, risk_on, risk_off. Max 20% of NAV per cluster. Breach → size to zero, never split. **Entry headroom (v2.27, owner-ratified 2026-10-02, G-5):** the Governor admits an entry only up to 90% of the cluster and single-currency caps, so mark drift alone cannot carry the book into the Risk Monitor's 100% breach (a human-only global HALT); it can only shrink an order.
 
-**Hard overrides (size → 0 regardless of formula):** daily drawdown ≥ limit; net single-currency delta > 30%; NVMA `tradeable == False`; regime confidence < 0.55 (a daily target entry: the integrity triggers only and no confidence override, v2.30 §4); instrument liquidity below ILLIQUID_THRESHOLD; **instrument inside a platform-rules blackout window (§3.5) on a rule-restricted account — no exception, ever**; account-rule overrides per §9.5 (lot caps, min hold, weekend bans).
+**Hard overrides (size → 0 regardless of formula):** daily drawdown ≥ limit; net single-currency delta > 30%; NVMA `tradeable == False`; regime confidence < 0.55 (a daily target entry: the feed watch instead of both, v2.33 §4); instrument liquidity below ILLIQUID_THRESHOLD; **instrument inside a platform-rules blackout window (§3.5) on a rule-restricted account — no exception, ever**; account-rule overrides per §9.5 (lot caps, min hold, weekend bans).
 
 **Pre-limit taper (ratified, §9.5):** before the hard overrides evaluate, `raw_size` is additionally multiplied by the pre-limit taper factor delivered by the Risk Monitor (1.0 far from every hard drawdown limit, linearly down to 0 at the entry-halt fraction; v2.27, G-5: the portfolio VaR's distance to its cap is one more input, so new entries shrink from 60% of the VaR cap and stop at 80%, while the VaR HALT at 100% is unchanged). The taper arrives over the single upward Risk→Governor edge, exactly like HALT and alpha-decay cuts — **that edge carries only risk-restrictive instructions (halt, cut, taper); it can never raise a size.**
 
@@ -500,6 +500,8 @@ Both laws bind the implementing agent **and** every future spec pass. Neither ma
 > The system's job is not to make the most money possible on any given day. Its job is to **still be running, with positive expectancy, two years from now.** Every design decision must answer: *"Does this make the system more likely to survive a regime it has never seen?"* If the answer is no — redesign it.
 
 ## CHANGELOG
+
+**v2.33 (2026-10-03, owner-ratified in chat)** — "Replace before the cutover (Recommended)": a daily target entry no longer reads NVMA; its data check is the runtime's feed watch (a tick within two NVMA cycles (120 s each) and not late, a spread within 3x the median of the instrument's last 600 quoted spreads, and no macro window (inert until the calendar is wired)). NVMA's veto, confidence, ILLIQUID, dead-market and warm-up states leave the target path, superseding v2.30–v2.31's veto split and the ILLIQUID measurement (GAP-P12D-147, GAP-P12D-150, GAP-P12D-152). ACIS-02 v1.6, ACIS-05 v1.11. No guardrail VALUE, HALT trigger, equity floor or live gate changed; the halts, the drawdown and blackout guards, the closure buffer and every hard limit still gate a target entry.
 
 **v2.32 (2026-10-03, owner-ratified in chat — the first real-data look)** — (1) "Open for literature/human (Recommended)": real-data looks open for human- and literature-origin claims graded by RSIM; LLM plans and engine looks stay refused until R12I-11/12. (2) "Standing approval (Recommended)": every register line pushes its chain head to GitHub. (3) "LLM-selected, kill test (Recommended)": D1, Carver's rule selected by the cloud lead's plan, is LLM-selected under §5.6, so 2012–2023 can only kill it; such a look names no cycle and spends no α, and the verdict counts toward any pass only days after a claim's certifying boundary. (4) "t < −0.5, stage C's rule (Recommended)": a kill-only look kills at a HAC t below −0.5. GAP-P12D-140's cycle-1 ruling ("D1 alone at 0.03") is superseded by (3): cycle 1's 0.03 stays free for the first family with a historical certifying window. ACIS-09 v1.11. No guardrail VALUE, HALT trigger, equity floor or live gate changed.
 

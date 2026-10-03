@@ -28,6 +28,7 @@ from datetime import datetime
 from core.data.normaliser import MarketState
 from core.execution.venue import BrokerAccount
 from core.risk.store import restore_on_boot
+from core.runtime.feed_check import FeedWatch
 from core.runtime.executor import WorkItem
 from core.runtime.policy import exits_due, route, route_group
 from core.runtime.portfolio import build_portfolio
@@ -48,6 +49,8 @@ class Runtime:
         self._clock_verified: set[str] = set()
         self._clock_failed: set[str] = set()
         self._in_reserve = False
+        self.feed = FeedWatch(max_age_s=2 * parts.regime_cycle_s,                 # the target path's data
+                              spread_mult=parts.cfg.system.regime.spread_veto_mult)   # check (master v2.33)
         self._stop = asyncio.Event()
         self.stop_reason: str | None = None
 
@@ -65,6 +68,7 @@ class Runtime:
         p, now = self.p, st.timestamp
         self.seq += 1
         self.marks[st.instrument] = st.mid
+        self.feed.observe(st)
         p.paper.on_mark(st.instrument, st.bid, st.ask, now)
         for boundary in p.boundaries.crossed(now):
             p.params.on_boundary(boundary)       # C2: promotes only while flat

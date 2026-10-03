@@ -27,7 +27,7 @@ from core.signals import rules
 from tests.backtest.lab_market import Effect, LabSpec, generate
 from tests.backtest.rsim import BookSpec, Lots as RsimLots, panel, run
 from tests.backtest.rsim_lab import carver_pct_vol, lab_costs, lab_market
-from core.regime.regime_types import LiqState, RegimeContext, RegimeType, VolClass
+from core.regime.regime_types import LiqState
 from tests.signals_fixtures import T0, mk_regime
 from tests.unit.test_governor import mk_governor, mk_portfolio, mk_rulebook
 
@@ -49,8 +49,8 @@ def _gate(gov=None, rules_=None, **kw):
     gov = gov or mk_governor()[0]
     args = dict(limits=gov.guards._limits, rules=rules_ or mk_rulebook(), clusters={"usd_short": ["EUR_USD"]},
                 instrument="EUR_USD", held=None, target=LOT, mark=1.10, atr=ATR, stop_mult=10.0, step=LOT,
-                minimum=LOT, portfolio=mk_portfolio(), regime=mk_regime(), marks={"EUR_USD": 1.10}, now=T0,
-                family="trend_d1_v1", snapshot={"forecast": 7.0}, logger=gov._log, context_max_age_s=240.0)
+                minimum=LOT, portfolio=mk_portfolio(), entry_refusal=None, marks={"EUR_USD": 1.10}, now=T0,
+                family="trend_d1_v1", snapshot={"forecast": 7.0}, logger=gov._log)
     args.update(kw)
     return target_orders(gov, **args)
 
@@ -85,8 +85,7 @@ def test_a_blocked_entry_places_nothing_while_its_reduction_still_executes() -> 
     assert _gate(gov=gov).orders == () and _gate(gov=gov).reason == "halt"
     r = _gate(gov=gov, held=Held("EUR_USD", 1, LOT), target=-LOT)
     assert r.reason == "halt" and [o.action for o in r.orders] == ["close"]       # the reduction is never blocked
-    assert _gate(regime=mk_regime(tradeable=False)).reason == "veto"
-    assert _gate(regime=None).reason == "no_regime"
+    assert _gate(entry_refusal="stale_feed").reason == "stale_feed"           # the feed watch's word
     assert _gate(atr=math.nan).reason == "stop_invalid"
 
 
@@ -108,26 +107,19 @@ def test_the_risk_edge_throttles_and_the_hard_caps_zero_a_one_lot_entry() -> Non
     assert _gate(portfolio=full).reason == "cluster_cap"           # 1,790 + 1,100 > 90% of 20% of 10,000
 
 
-def _nvma(regime=RegimeType.STRONG_TREND_UP, confidence=0.4, reasons=("LOW_CONFIDENCE",), tradeable=False):
-    return RegimeContext(
-        regime=regime, trend_direction=1, volatility_class=VolClass.HIGH, liquidity_state=LiqState.DEEP,
-        tradeable=tradeable, regime_stability_score=0.9, estimated_half_life_seconds=600, confidence=confidence,
-        timestamp=T0, instrument="EUR_USD", inputs_snapshot=MappingProxyType({"veto_reasons": reasons}))
-
-
-def test_a_target_entry_ignores_the_confidence_vetoes_but_not_the_integrity_gates() -> None:
-    """GAP-P12D-147 ("Exempt confidence vetoes"): low confidence or no params for the regime admits a
-    target entry; a stale, spread-vetoed or dead market, a gate state, or an unexplained veto does not.
-    The signal path keeps every veto."""
-    assert _gate(regime=_nvma()).reason == "open"
-    assert _gate(regime=_nvma(reasons=("LOW_CONFIDENCE", "NO_PARAMS_FOR_REGIME"))).reason == "open"
-    for reasons in (("STALE_STATE",), ("SPREAD_VETO", "LOW_CONFIDENCE"), ("DEAD_MARKET",), ()):
-        assert _gate(regime=_nvma(reasons=reasons)).reason == "veto", reasons
-    for gate in (RegimeType.MACRO_EVENT, RegimeType.ILLIQUID, RegimeType.UNCLASSIFIED):
-        assert _gate(regime=_nvma(regime=gate, reasons=("LOW_CONFIDENCE",))).reason == "veto", gate
+def test_a_target_entry_reads_the_feed_check_and_no_regime() -> None:
+    """Master v2.33 (owner ruling "Replace before the cutover"): a target entry is gated by the feed
+    watch's refusal and every non-regime guard; NVMA's veto, confidence and ILLIQUID no longer reach it.
+    The signal path keeps every regime check."""
+    for why in ("no_feed", "stale_feed", "feed_warming", "wide_spread", "macro_event"):
+        assert _gate(entry_refusal=why).reason == why
     gov, _ = mk_governor()
-    assert gov.guards.check("EUR_USD", mk_portfolio(), _nvma(), T0) == "veto"           # the signal path
-    assert gov.guards.check("EUR_USD", mk_portfolio(), _nvma(tradeable=True, reasons=()), T0) == "low_confidence"
+    assert gov.guards.check("EUR_USD", mk_portfolio(), None, T0, target=True) is None
+    gov.apply_halt("all", "test")
+    assert gov.guards.check("EUR_USD", mk_portfolio(), None, T0, target=True) == "halt"   # the halt still binds
+    sig, _ = mk_governor()
+    assert sig.guards.check("EUR_USD", mk_portfolio(), mk_regime(tradeable=False), T0) == "veto"
+    assert sig.guards.check("EUR_USD", mk_portfolio(), mk_regime(liq=LiqState.ILLIQUID), T0) == "illiquid"
 
 
 # -- the decision ------------------------------------------------------------------------------- #
@@ -254,15 +246,9 @@ def test_a_weekly_source_stays_fresh_for_21_days_and_a_daily_one_for_10(tmp_path
         load_rate_table(tmp_path).rate("AUD", date(2026, 10, 1))           # no weekly limit: 10 days
 
 
-def test_an_entry_on_a_stale_regime_context_is_refused_and_an_exit_is_not() -> None:
-    """PR16I-06: a timer-driven slot must not trade on a silent feed's last tick. A context older than
-    the limit refuses the entry (`stale_context`); a reduction still goes out (C-EXE-7)."""
-    from dataclasses import replace
-    old = replace(mk_regime(), timestamp=T0 - timedelta(seconds=241))
-    assert _gate(regime=old).reason == "stale_context"
-    assert _gate(regime=replace(mk_regime(), timestamp=T0 - timedelta(seconds=239))).reason == "open"
-    held = Held("EUR_USD", 1, 2 * LOT)
-    r = _gate(regime=old, held=held, target=LOT)
+def test_a_refused_entry_still_sends_its_exit() -> None:
+    """C-EXE-7: the feed watch gates entries only; a reduction on a stale feed still goes out."""
+    r = _gate(entry_refusal="stale_feed", held=Held("EUR_USD", 1, 2 * LOT), target=LOT)
     assert r.reason == "reduce" and [o.action for o in r.orders] == ["close"]
 
 
