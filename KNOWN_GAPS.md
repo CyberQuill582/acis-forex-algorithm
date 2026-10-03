@@ -162,7 +162,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Justification: fixed; it supersedes GAP-P12D-147's veto split and GAP-P12D-150's "keep ILLIQUID, measure".
 - Linked: test_a_target_entry_reads_the_feed_check_and_no_regime, test_each_refusal_reads_only_the_tick_feed, test_a_refused_entry_still_sends_its_exit, [[GAP-P12D-147]], [[GAP-P12D-150]], [[GAP-P12D-153]]
 
-## GAP-P12D-151: D1's first real-data look (2026-10-03) — a kill test it SURVIVED, at a net annual Sharpe of 0.16 (HAC t 0.57) on the 13 FX, 2013–2023
+## GAP-P12D-151: D1's first real-data looks (2026-10-03) — kill tests it SURVIVED: net annual Sharpe 0.16 (HAC t 0.57) on the 13 FX, but −0.12 (t −0.40) on the 21 instruments, 2013–2023
 - Severity: high · Likelihood: certain
 - Status: open (2026-10-03: look `000001`, outcome `000002`, both chain heads on GitHub `look-anchor`; owner rulings "LLM-selected, kill test" and "t < −0.5"; what follows is the owner's)
 - Area: `scripts/r1_d1_kill_test.py` at `5d75e9e`; `data/validation/looks` and `data/validation/r1_kill_test/d1.json` (copied to `gs://acis-compute-0929-data/validation/2026-10-03/`)
@@ -171,7 +171,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **Context, P&L-honest:** the passive-long benchmark earned 0.07, and the paired excess is positive; at 2× cost D1 still earns 0.156, so cost is not what holds it back. The plateau is flat (its six neighbours earn 0.14–0.19): no cliff, so no tuning artifact.
   - **The arms (post-hoc, never a selection):** the slow members earned (EWMAC64/256 0.27, BREAKOUT160 0.32) and the fast ones lost (EWMAC16/64 −0.04, BREAKOUT40 −0.12). The best of 12 correlated arms looks better by chance. Choosing the slow members now would be a NEW family-version, LLM-refined after seeing this look, so it too is kill-only on history.
   - **Against the target:** at a Sharpe near 0.16 the 13-FX book is far from the ~0.2%-a-week target, which needs ~0.65–0.85 (GAP-P12D-148). The levers the research named are breadth (metals and indices, [[GAP-P12D-27]]; more independent mechanisms) and the forward record.
-- Justification: open, owner-owned: by the kill rule D1 stays on the forward demo; whether to widen the universe, add families, or change what the demo trades is the owner's decision.
+- **The second look, D1 on R6-4's 21 instruments (2026-10-03, look `000003`, outcome `000004`, anchored; `scripts/r1_d1_kill_test.py --universe r21` at `ce6c598`, class-equal weights: each FX 1/39, gold and silver 1/6 each, each index 1/18):** net annual Sharpe **−0.120**, HAC t **−0.40**: NOT killed (the line is −0.5), but WORSE than the 13 FX. The passive-long benchmark earned 0.36 (indices and gold rose strongly over 2013–2023; a trend rule that shorts the dips gives that back), the paired excess is negative, and at 2× cost it earns −0.15. Every plateau neighbour is negative (−0.10 to −0.14) and only the slowest members are near zero or positive (EWMAC64/256 +0.06, BREAKOUT160 +0.10). Reading: on history, breadth through THIS rule on metals and indices hurts; it is not a free lever for D1.
+- Justification: open, owner-owned: by the kill rule both versions may stay forward, but D1-21's history is negative; what the demo trades and whether metals and indices need a different mechanism is the owner's decision.
 - Linked: [[GAP-P12D-127]], [[GAP-P12D-140]], [[GAP-P12D-148]], [[GAP-P12D-27]], [[GAP-P12D-61]]
 
 ## GAP-P12D-150: the post-R1.6 dual audit (2026-10-03) — 14 findings (10 internal, 4 external), triaged by the lead
