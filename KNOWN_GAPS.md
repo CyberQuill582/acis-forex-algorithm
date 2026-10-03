@@ -319,7 +319,9 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - **v1b (outright, micro yield futures' form): 0.35, HAC t 1.27, not killed**; 2× cost 0.13. Segments: 2012–17 0.68, 2018–23 0.17. Control −0.01.
   - **Context, post-hoc, from the stored vectors only:** v1b positive in 8 of 12 years (2015 −0.78, 2019 −0.68, 2023 −0.92), but **0.07 without its 10 best days**. Correlation with D1 0.00, REBAL 0.03, GOTOBI 0.00, v1a 0.20.
   - **The lead's reading:** v1a, the paper's hedged test, is the one that isolates the auction effect, and it shows the effect gone since 2018. v1b's survival rests on a handful of large rate days (rate-direction luck), so it is not evidence of the mechanism. AUCTION survives the kill rule but is no basis for building a futures venue.
-  - **NEXT: the owner rules AUCTION's fate (one ask).**
+  - **Owner rulings (2026-10-03, fourth session, both "Recommended"): AUCTION NOT FORWARDED** (survived, like REBAL v1b, but no basis for a futures venue, so Lever 2 closes), and **a Lever 3 review**: paper-mining pauses while the lead writes a decision memo on what is realistic and what "winning" should mean.
+  - **The Lever 3 memo is WRITTEN** (`archive/LEVER3_MEMO_2026-10-03.md`). Four of four families that reached the holdout earned nothing; the causes are provenance (§5.6), decay and CFD friction. Options: A the forward clock, B human-origin hypotheses (§5.6's only route to history-based credit), C the weak survivors combined forward, D the first win defined as ≥ 0.5 forward over 6 months with no paid challenge before it, E spend less until forward data exists. The lead recommends A + B + D.
+  - **NEXT: the owner decides on the memo (one ask).**
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
 
