@@ -145,6 +145,14 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-154: D3 (the turn-of-month index long) is the next mechanism to kill-test on history; its faithful event harness is half-built
+- Severity: medium · Likelihood: certain
+- Status: open (2026-10-03; owner ruling "Faithful event harness (Recommended)")
+- Area: branch `wip/d3-event-harness` (pushed; event_sim.py under tests/backtest, untested); to build: evaluate_events.py beside it, an r1_d3_kill_test.py script, tests; `look_claims.SIMULATORS`/`OPEN_SIMULATORS` gain "event"
+- Description: D3 = R1-B's slate item (McConnell & Xu 2008; Etula et al. 2020): long from 14:30 New York on a month's last trading day (T−1) to the home cash close of the next month's third (T+3), zero free parameters, on US500, US30, UK100, JP225, EU50, AUS200. Like D1 it is literature SELECTED by the cloud lead's plan, so kill-only on history (t < −0.5). RSIM's daily clock cannot express its timing, so the owner chose a faithful event simulator, widening the open scope from "rsim" to "rsim + event". The branch holds `simulate()` (trading days from each index's cash session, the windows, entry and exit fills, 17:00-New-York daily marks, equal-risk legs on trailing 60-mark vol, real spreads plus the declared slippage, swap-free). Owed: (1) `evaluate_events` mirroring `evaluate()`: register first, `begin_grade(simulator="event")`, refuse any event look that is not kill-only (no event verdict exists for a pass), chain the outcome with the daily vector; (2) add "event" to `SIMULATORS` and `OPEN_SIMULATORS` and update the scope test; (3) unit tests on a synthetic Hourly (windows, the no-look-ahead vol, cost booking, a planted turn-of-month effect earning and a null not); (4) the script, a P&L-blind dry check, a clean commit, then the one look. If D3 survives, the shelved index onboarding ([[GAP-P12D-27]]) returns.
+- Justification: open; next in TODO START HERE item 2. Nothing runs on it; the branch is not merged.
+- Linked: [[GAP-P12D-151]], [[GAP-P12D-27]], [[GAP-P12D-127]]
+
 ## GAP-P12D-153: the legacy modules' retirement — what still carries QIEA, NVMA, AGON and the alpha-decay throttle after the target path stopped reading them
 - Severity: medium · Likelihood: certain
 - Status: open (2026-10-03, from the owner's process review: "a retirement plan"; R-1 retires them from the money paths)
