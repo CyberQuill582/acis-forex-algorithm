@@ -1,5 +1,7 @@
 # GOTOBI v1 live: the forward path (DRAFT for owner ratification, 2026-10-03)
 
+**Owner ruling, 2026-10-03 (after stage C, GAP-P12D-159): "REBAL first; GOTOBI shadow-only".** On the sealed 2024–25 holdout GOTOBI earned −0.20 (t −0.32), so no G-ruling below is built for live orders. After the cutover the demo only LOGS the sleeve's would-be trades each gotobi day (G-1's clock, G-2's calendar, no orders), and GOTOBI is revisited if that shadow record turns positive.
+
 **Status:** DRAFT. Nothing here binds until the owner ratifies it at build time, AFTER the 2026-10-15..17 AWS cutover. Owner rulings 2026-10-03: "Draft now, build after cutover" and "GOTOBI first", before REBAL. On ratification it is applied as one master version and then built. That version touches ACIS-04 §4b (a second, intraday decision clock), ACIS-05 §6.4 (the sleeve's sizing and its netting with D1) and ACIS-13 (the sleeve's orders). The build is audited at that milestone.
 
 **Why:** GOTOBI survived every kill-only look it was given (GAP-P12D-158):

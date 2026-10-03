@@ -148,7 +148,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-159: the pre-cutover dual audit (2026-10-03) — 20 findings (12 internal, 8 external), triaged by the lead
 - Severity: medium · Likelihood: certain
-- Status: open (one owner decision: GOTOBI's place in the post-cutover order, after its v2 looks)
+- Status: open (REBAL v1a's stage C, ruled 2026-10-03, is to run and be recorded)
 - Area: the change `f0d9524..9f57a6f` (brief `archive/AUDIT_BRIEF_PRECUTOVER_2026-10-03.md`, pinned at `35fd443`; owner's go "Launch both now (Recommended)"); reports `archive/AUDIT_PRECUTOVER_INTERNAL_2026-10-03.md` (saved by the lead from the hand-back text; the harness refused the subagent's write) and `archive/AUDIT_PRECUTOVER_EXTERNAL_2026-10-03.md`
 - Description: neither lens found a cutover blocker. The lead verified each finding before acting (a finder is not a clearer). The owner ruled the four decisions in chat on 2026-10-03, all "Recommended": the feed watch's floor and ceiling now; the spec batch (X-2, X-3, PC-I-04) as master v2.35; GOTOBI's two looks (the weekday contrast and stage C); the anchor's server-side gap recorded and decided with the compute home.
   - **PC-I-01 (medium), the feed watch never tested as wired: FIXED.** The runtime asserts `t.engine.feed_refusal == rt.feed.refusal` and that a fed tick ends `no_feed`; a loop test refuses the open at a slot and still sends the close. Proof: `test_a_feed_refusal_at_the_slot_stops_the_open_and_still_sends_the_close`, `_assert_the_target_wiring` in `test_a_runtime_from_the_shipped_config_wires_the_target_loop_and_silences_legacy` (the auditor's three mutants rerun on the server, recorded below).
@@ -176,7 +176,8 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - **Stage C, v1a on the 2024–25 holdout (125 trades): net Sharpe −0.20, HAC t −0.32, NOT killed** (the line is −0.5). It was −0.42 at 2× cost, and the control earned −0.17. Context from the stored vector: 2024 −0.25, 2025 −0.13; a mean of −0.6 bp a trade, hit rate 50%.
     - **The weekday contrast, 2012–2023 (gross): 1.09, HAC t 3.94, NOT killed.** So the 2012–2023 edge was gotobi-specific beyond its Friday mix: about 1.42 bp a trade over the same weekday's non-gotobi days. Context: 2012–17 1.23, 2018–23 0.93; 2022 0.35, 2023 0.37.
     - **Reading:** a real effect that faded. The contrast weakens from 2022, v1a was −0.51 in 2023, and stage C shows nothing in 2024–25. This matches the one outside post-2023 measurement (PCE-02's blog, UNCONFIRMED). Survival by the rule credits nothing, and the forward premise the live draft leans on is now weak.
-- Justification: open for one owner decision: GOTOBI's place in the post-cutover order, given stage C. Every finding is fixed, mitigated to a named owner, or accepted above.
+  - **Owner rulings after stage C (2026-10-03, both "Recommended"):** "REBAL first; GOTOBI shadow-only": after the cutover REBAL v1a's live build goes first, and GOTOBI places NO orders. The demo logs the sleeve's would-be trades each gotobi day (a shadow record), and GOTOBI is revisited if that record turns positive (build owned by [[GAP-P12D-158]]). "Yes, before its build": REBAL v1a gets its own stage C on the 2024–25 holdout, once, kill-only (`scripts/r1_rebal_kill_test.py --stage-c`; P&L-blind dry check: 502 sessions, all priced).
+- Justification: open until REBAL v1a's stage C is run and recorded. Every finding is fixed, mitigated to a named owner, or accepted above.
 - Linked: [[GAP-P12D-158]], [[GAP-P12D-152]], [[GAP-P12D-150]], [[GAP-P12D-86]], [[GAP-P12D-156]], [[GAP-P12D-03]]
 
 ## GAP-P12D-158: how the next mechanisms are chosen — the owner's ranking rule with the evidence fix, and the candidate pipeline
