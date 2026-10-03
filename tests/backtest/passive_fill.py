@@ -9,8 +9,8 @@ Mental model:
     (t0, t0 + window] whose ask_low is `through` ticks or more BELOW the limit. cTrader fills a buy
     limit when the ASK reaches it, so through = 0 is the venue's rule and 1 the conservative proxy.
     A sell mirrors it on the bid. A CFD limit never joins a queue: it cannot earn the spread.
-  * Unfilled at the deadline, it falls back to a MARKET order at the deadline's quote. The "delay"
-    control rests nothing: it is that market order alone, which separates spread timing from the limit.
+  * Unfilled at the deadline, it falls back to a MARKET order there. "chase" (Carver's rule) crosses as
+    soon as the near quote moves away; the "delay" control rests nothing: the deadline's market order alone.
   * SAVING (bp of the arrival mid) = side x (market price - price paid) = the P&L gap at any common
     mark after the deadline. The market price is the arrival quote's (an entry decided at t0) or the
     deadline's (an exit due at the deadline that starts resting a window early).
@@ -28,7 +28,7 @@ from typing import Iterable, Sequence
 import numpy as np
 
 STALE_S = 300
-LEVELS = ("touch", "mid", "delay")
+LEVELS = ("touch", "chase", "mid", "delay")
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ class Quotes:
 
 @dataclass(frozen=True)
 class Policy:
-    level: str             # "touch", "mid" or "delay"
+    level: str             # "touch", "chase", "mid" or "delay"
     window_s: int
     through: int = 1       # ticks the opposite quote must pass the limit by
 
@@ -72,7 +72,7 @@ class Outcome:
 
 def limit_price(bid: float, ask: float, side: int, level: str, tick: float) -> float:
     """The resting price: the near touch, or the mid rounded onto the tick grid away from the market."""
-    if level == "touch":
+    if level in ("touch", "chase"):
         return bid if side > 0 else ask
     n = (bid + ask) / 2 / tick
     return (math.floor(n + 1e-6) if side > 0 else math.ceil(n - 1e-6)) * tick
@@ -96,13 +96,18 @@ def simulate(q: Quotes, rest_ms: int, side: int, policy: Policy, tick: float, be
         hit = q.ask_low[lo:hi] <= limit - policy.through * tick + eps
     else:
         hit = q.bid_high[lo:hi] >= limit + policy.through * tick - eps
-    filled = bool(hit.any())
+    k_fill = lo + int(np.argmax(hit)) if hit.any() else None
+    k_away = None
+    if policy.level == "chase":                    # the near quote moved away; a tie in one row counts as away
+        away = q.bid_high[lo:hi] > bid0 + eps if side > 0 else q.ask_low[lo:hi] < ask0 - eps
+        k_away = lo + int(np.argmax(away)) if away.any() else None
+    filled = k_fill is not None and (k_away is None or k_fill < k_away)
     if filled:
-        k = lo + int(np.argmax(hit))
-        paid, exec_ms, exec_row = limit, int(q.t[k]), k
+        paid, exec_ms, exec_row = limit, int(q.t[k_fill]), k_fill
     else:
-        paid = float(q.ask[d] if side > 0 else q.bid[d])
-        exec_ms, exec_row = end_ms, d
+        exec_row = d if k_away is None else k_away
+        paid = float(q.ask[exec_row] if side > 0 else q.bid[exec_row])
+        exec_ms = end_ms if k_away is None else int(q.t[k_away])
     ref = a if benchmark == "arrival" else d
     market = float(q.ask[ref] if side > 0 else q.bid[ref])
     mid_exec = (q.bid[exec_row] + q.ask[exec_row]) / 2

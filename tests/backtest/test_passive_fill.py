@@ -62,6 +62,16 @@ def test_a_candle_whose_ask_low_dips_through_fills_though_its_close_does_not():
     assert o.filled and o.wait_s == 60
 
 
+def test_the_chase_rule_crosses_at_the_first_tick_the_bid_moves_up_and_otherwise_rests_like_the_touch():
+    up = _q([(0, 1.10000, 1.10002), (10, 1.10001, 1.10003), (20, 1.09998, 1.09999), (90, 1.09998, 1.09999)])
+    o = simulate(up, T0, +1, Policy("chase", 60), TICK)
+    assert not o.filled and o.wait_s == 10                 # Carver: cross when the market moves away
+    assert o.saving_bp == pytest.approx(-0.00001 / 1.10001 * 1e4)
+    down = _q([(0, 1.10000, 1.10002), (10, 1.09999, 1.10000), (20, 1.09998, 1.09999), (90, 1.09998, 1.09999)])
+    chase, touch = (simulate(down, T0, +1, Policy(lv, 60), TICK) for lv in ("chase", "touch"))
+    assert (chase.filled, chase.wait_s, chase.saving_bp) == (touch.filled, touch.wait_s, touch.saving_bp) == (True, 20, chase.saving_bp)
+
+
 def test_the_delay_control_never_rests_and_saves_half_the_spread_that_narrowed_while_it_waited():
     q = _q([(0, 1.10000, 1.10010), (10, 1.09990, 1.09995), (60, 1.10004, 1.10006)])   # wide, dip, narrow
     buy, sell = (simulate(q, T0, s, Policy("delay", 60), TICK) for s in (+1, -1))
@@ -87,13 +97,14 @@ def _walk(rng, n=400, spread_ticks=2):
 
 def test_on_a_martingale_the_venues_touch_rule_saves_nothing_and_one_tick_through_loses():
     rng = np.random.default_rng(7)
-    touch, through = [], []
+    touch, chase, through = [], [], []
     for _ in range(3000):
         q, side = _walk(rng), int(rng.choice([-1, 1]))
         touch.append(simulate(q, T0, side, Policy("touch", 300, through=0), TICK).saving_bp)
+        chase.append(simulate(q, T0, side, Policy("chase", 300, through=0), TICK).saving_bp)
         through.append(simulate(q, T0, side, Policy("touch", 300, through=1), TICK).saving_bp)
-    se = np.std(touch) / math.sqrt(len(touch))
-    assert abs(np.mean(touch)) < 3 * se                     # optional stopping: no edge in a CFD limit
+    for rule in (touch, chase):                              # optional stopping: no stopping rule has an edge
+        assert abs(np.mean(rule)) < 3 * np.std(rule) / math.sqrt(len(rule))
     assert np.mean(through) < np.mean(touch)                # the conservative rule only removes fills
 
 

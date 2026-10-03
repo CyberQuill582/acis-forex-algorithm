@@ -58,7 +58,7 @@ SLOTS = {                                   # label -> (instruments, zone, local
     "imom_1600et": (("US500",), NY, time(16), "exit"),
 }
 WINDOWS = (60, 300, 900, 1800)
-POLICIES = tuple(Policy(lv, w, th) for lv in ("touch", "mid") for w in WINDOWS for th in (0, 1)) + tuple(
+POLICIES = tuple(Policy(lv, w, th) for lv in ("touch", "chase", "mid") for w in WINDOWS for th in (0, 1)) + tuple(
     Policy("delay", w, 0) for w in WINDOWS)
 
 
