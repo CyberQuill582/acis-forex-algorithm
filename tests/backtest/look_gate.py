@@ -10,6 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
+import tests.backtest.look_anchor as look_anchor
 import tests.backtest.look_register as lr
 from config.schemas import AcisConfig
 from tests.backtest.walk_forward import Fold
@@ -46,6 +47,9 @@ def begin_grade(look: object, *, cfg: AcisConfig, loader, source: str, instrumen
                   look.tier, look.account, look.cost_stress, look.spread_floor)
     if registered != run:
         raise lr.LookRefused(f"look {look.look_id} was registered for another run: {registered} != {run}")
+    if tier > 0 and not look_anchor.anchored(register, lr.REPO):
+        raise lr.LookRefused("the register's head is not anchored on the GitHub remote: run "
+                             "look_anchor.anchor(register, REPO) and grade again (GAP-P12D-86)")
     if tier > 0:
         commit, dirty = lr.git_state()
         if dirty or commit != look.git_commit:

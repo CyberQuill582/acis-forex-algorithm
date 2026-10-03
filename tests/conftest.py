@@ -20,6 +20,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = REPO_ROOT / "config"
 
 
+@pytest.fixture(autouse=True)
+def _no_look_anchor_push(monkeypatch):
+    """GAP-P12D-86: no test pushes the real repository's look-anchor branch. The anchor's own tests
+    import `anchor`/`anchored` directly and run them against a temporary repository and remote."""
+    import tests.backtest.look_anchor as la
+    monkeypatch.setattr(la, "anchor", lambda register, repo, remote="origin": "")
+    monkeypatch.setattr(la, "anchored", lambda register, repo, remote="origin": True)
+
+
 @pytest.fixture(scope="session")
 def shipped_config() -> AcisConfig:
     return load_config(CONFIG_DIR)

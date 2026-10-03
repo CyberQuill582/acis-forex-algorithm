@@ -48,6 +48,7 @@ from typing import Callable, Sequence
 
 from config.schemas import AcisConfig
 import tests.backtest.look_claims as lc
+import tests.backtest.look_anchor as look_anchor
 import tests.backtest.look_outcomes as look_outcomes
 from tests.backtest.look_claims import Claim, cost_map_hash, cycle_line
 from tests.backtest.look_cycles import is_stage_a, stage_a_cycle
@@ -201,6 +202,8 @@ class LookRegister:
             try:
                 _write_new(path, json.dumps(asdict(line) if isinstance(line, Look) else line,
                                             sort_keys=True).encode("utf-8"))
+                if self.root.resolve() == CANONICAL.resolve():
+                    look_anchor.anchor(self, REPO)      # GAP-P12D-86: every canonical line leaves the machine
                 return line
             except FileExistsError:
                 continue                                     # another registrant won: re-read, re-decide
