@@ -108,7 +108,7 @@ def run_walk_forward(inp: RunInputs) -> ValidationReport:
     instruments = sorted(cfg.instruments.enabled)
     begin_grade(inp.look, cfg=cfg, loader=inp.loader, source=inp.source, instruments=instruments,
                 folds=inp.folds, account=inp.account, cost_stress=inp.cost_stress,
-                spread_floor=inp.spread_floor)     # GAP-P12D-64: the line exists and is consumed first
+                spread_floor=inp.spread_floor, simulator="engine")   # GAP-P12D-64: the line exists and is consumed first
     specs = cfg.instruments.instruments
     # ONE cost map, both places (master §5 C8): selection (QIEA, via evolve_fold) and the
     # graded book charge the same instances, so a stressed run cannot select cheap and grade

@@ -80,7 +80,7 @@ def _real(reg, cfg, family="trend-v1", **kw):
 def _grade_args(cfg, source_obj, key=None, **kw):
     args = dict(cfg=cfg, loader=BacktestDataLoader({key or source_obj.name: source_obj}, CapturingLogger()),
                 source=key or source_obj.name, instruments=sorted(cfg.instruments.enabled), folds=REAL_FOLDS,
-                account="dev_paper", cost_stress=1.0, spread_floor=0.0)
+                account="dev_paper", cost_stress=1.0, spread_floor=0.0, simulator="engine")
     args.update(kw)
     return args
 
@@ -304,3 +304,12 @@ def test_the_real_data_script_writes_its_line_before_it_grades(monkeypatch, tmp_
     assert seen[0]["family"] == "trend-v1" and seen[0]["tier_name"] == "validation" and seen[0]["operator"] == "owner"
     assert seen[0]["source_class"] == "DukascopyTickSource" and seen[0]["git_commit"] == "c0ffee"
     assert mod.main() == 2 and len(seen) == 1                # a second look must say what changed
+
+
+def test_a_look_claiming_one_simulator_cannot_be_graded_by_the_other(canonical, acis_config) -> None:
+    """R12I-03 (GAP-P12D-127): the claim's simulator must be the grader's; nothing is consumed on refusal."""
+    look = _real(canonical, acis_config)
+    with pytest.raises(LookRefused, match="this grader is 'rsim'"):
+        begin_grade(look, **_grade_args(acis_config, _StandInMirror(), simulator="rsim"))
+    assert not (canonical.root / f"{look.look_id}.graded.json").exists()
+    begin_grade(look, **_grade_args(acis_config, _StandInMirror()))

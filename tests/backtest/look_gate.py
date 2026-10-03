@@ -16,10 +16,16 @@ from tests.backtest.walk_forward import Fold
 
 
 def begin_grade(look: object, *, cfg: AcisConfig, loader, source: str, instruments: Sequence[str],
-                folds: Sequence[Fold], account: str, cost_stress: float, spread_floor: float) -> dict:
-    """Everything a grade must prove BEFORE any compute; then it consumes the line."""
+                folds: Sequence[Fold], account: str, cost_stress: float, spread_floor: float,
+                simulator: str) -> dict:
+    """Everything a grade must prove BEFORE any compute; then it consumes the line. `simulator` is the
+    grader's own ("rsim" for `evaluate`, "engine" for the walk-forward runner): a claim naming another
+    is refused (R12I-03), so a look registered for one grader cannot be spent by the other."""
     if not isinstance(look, lr.Look):
         raise lr.LookRefused("no registered look: a grade must write its look-register line first (GAP-P12D-64)")
+    if look.claim is not None and look.claim.get("simulator") != simulator:
+        raise lr.LookRefused(f"look {look.look_id} claims the {look.claim.get('simulator')!r} simulator; "
+                             f"this grader is {simulator!r} (R12I-03)")
     src = loader.source_object(source)
     if getattr(src, "name", None) != source:
         raise lr.LookRefused(f"the loader key {source!r} names a source whose own name is {getattr(src, 'name', None)!r}")

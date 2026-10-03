@@ -10,8 +10,8 @@ Only (1) spends alpha; (2)-(4) can only refuse, so they spend none (master §5.6
 Mental model:
   * Pure functions of daily series: the caller (the lab run here; `evaluate()` on real data,
     GAP-P12D-136) produces every series through RSIM, so no number here has a second source.
-  * `from_register` re-reads a stage-A look's stored series (`evaluate(arms=...)`), so the verdict
-    of a real look is a pure function of the register.
+  * `from_register` re-reads a stage-A look's chained outcome and its stored series
+    (`evaluate(arms=...)`), so the verdict of a real look is a pure function of the register.
   * The plateau neighbours of D1 (master §5): speeds ×0.9 and ×1.1 jointly (ratios kept), then
     each of its three parameters ±10% alone: the speed scale, the slow/fast ratio, the
     normaliser's span. The joint and the speed-scale-alone neighbours coincide for D1, so the
@@ -20,7 +20,6 @@ Mental model:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import NormalDist
@@ -30,6 +29,7 @@ import numpy as np
 
 from tests.backtest.hac import hac_t
 from tests.backtest.look_claims import load_vector
+from tests.backtest.look_register import LookRegister
 
 D1_BASE = {"speed_scale": 1.0, "ratio": 4.0, "vol_days": 35.0}
 
@@ -69,10 +69,11 @@ def stage_a(daily: np.ndarray, benchmark: np.ndarray, daily_2x: np.ndarray,
                   refusing=tuple(sorted(k for k, m in kill_only_means.items() if not m > 0)))
 
 
-def from_register(root: Path, look_id: str, alpha: float) -> StageA:
-    """Stage A of one graded stage-A look, read back from the register alone (`evaluate(arms=...)`)."""
-    outcome = json.loads((Path(root) / f"{look_id}.outcome.json").read_text(encoding="utf-8"))
-    if "stage_a" not in outcome:
+def from_register(root: Path, look_id: str, alpha: float, outcome: dict | None = None) -> StageA:
+    """Stage A of one graded stage-A look, read back from the register alone (`evaluate(arms=...)`).
+    `outcome` is the look's chained outcome when the caller already scanned the register."""
+    outcome = outcome if outcome is not None else LookRegister(root).outcome(look_id)
+    if outcome is None or "stage_a" not in outcome:
         raise ValueError(f"look {look_id} is not a stage-A grade: it stored no benchmark, 2x or kill-only series")
     arms = outcome["stage_a"]
     vec = lambda h: np.asarray(load_vector(root, h)[1])                       # noqa: E731

@@ -10,6 +10,7 @@ import pytest
 
 from tests.backtest.look_claims import store_vector
 from tests.backtest.look_declarations import Declaration
+from tests.backtest.look_register import LookRefused
 from tests.backtest.test_look_claims import _claim, _look, canonical  # noqa: F401 (fixture)
 from tests.backtest.verdict import VerdictRefused, cycle_verdict
 
@@ -22,7 +23,7 @@ WHEN = datetime.now(timezone.utc) - timedelta(days=1)
 
 def _variant(name: str, kind: str = "fixed", k: int = 1):
     boot = (20, 1) if kind == "explored" else (None, None)
-    return _claim(variant=name, declaration=Declaration(kind, k, "PASSIVE_LONG", *boot))
+    return _claim(variant=name, simulator="rsim", declaration=Declaration(kind, k, "PASSIVE_LONG", *boot))
 
 
 def _graded(reg, cfg, claim, daily, *, benchmark=None, cost2x=None, kill=None):
@@ -119,3 +120,21 @@ def test_a_stacked_instrument_day_panel_cannot_be_stored_as_the_graded_vector(ca
     days = [date(2014, 1, 1) + timedelta(days=i) for i in range(3)]
     with pytest.raises(ValueError, match="strictly increasing"):
         store_vector(canonical.root, days + days, [0.0] * 6)
+
+
+def test_a_stage_a_look_names_its_cycle_and_counts_only_there(canonical, acis_config) -> None:
+    """R12I-04 (GAP-P12D-127): a stage-A look outside any cycle is refused; its line names the latest
+    cycle that lists its variant and its look index; a cycle's verdict reads only its own looks."""
+    a, b, c = _variant("a"), _variant("b", k=2), _variant("c")
+    with pytest.raises(LookRefused, match="belongs to a registered cycle"):
+        _look(canonical, acis_config, claim=a, changed="no cycle yet")
+    canonical.register_cycle(cycle_id="c1", order=[a.variant_hash, b.variant_hash, c.variant_hash],
+                             now_fn=lambda: datetime.now(timezone.utc) - timedelta(days=100))   # an earlier quarter
+    _graded(canonical, acis_config, a, NULL)                    # c1 stops at a: b and c untested
+    canonical.register_cycle(cycle_id="c2", order=[b.variant_hash], now_fn=lambda: datetime.now(timezone.utc))
+    look = _graded(canonical, acis_config, b, EDGE)
+    assert look.cycle == {"cycle_id": "c2", "look_index": 1}
+    assert _graded(canonical, acis_config, b, EDGE).cycle == {"cycle_id": "c2", "look_index": 2}
+    c1, c2 = cycle_verdict(canonical.root, "c1"), cycle_verdict(canonical.root, "c2")
+    assert [m.status for m in c1.chain] == ["failed", "untested", "untested"]
+    assert c2.chain[0].status == "passed" and c2.alpha == 0.01 and len(c2.chain[0].looks) == 2

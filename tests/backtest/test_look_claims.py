@@ -41,8 +41,10 @@ def canonical(tmp_path, monkeypatch):
 
 
 def _claim(family="trend-v1", origin=Origin("human"), **kw) -> Claim:
+    """An ENGINE claim by default: these tests check rules that hold for every simulator, and an engine
+    look needs no cycle. Stage-A (rsim) looks, which must name their cycle, are tested in test_verdict."""
     base = dict(family=family, variant="fixed", declared_space=SPACE, universe_id="R1-23",
-                origin=origin, simulator="rsim", recon_commit="c0ffee", declaration=FIXED)
+                origin=origin, simulator="engine", recon_commit="c0ffee", declaration=FIXED)
     return Claim(**{**base, **kw})
 
 
@@ -77,7 +79,7 @@ def test_a_real_look_must_carry_its_own_familys_claim_and_the_line_records_it(ca
                               "proposed": "2026-09-29", "exposure": "web", "reference": "",
                               "published": ""}                                           # R12I-10 mutant 6
     assert line["certifying_boundary"] == "2026-09-29"                                # v2.24: the later date
-    assert line["simulator"] == "rsim" and line["recon_commit"] == "c0ffee"
+    assert line["simulator"] == "engine" and line["recon_commit"] == "c0ffee"
     assert line["cost_map_hash"] == cost_map_hash(acis_config, sorted(acis_config.instruments.enabled), 1.0, 0.0)
 
 
@@ -197,7 +199,7 @@ def test_the_daily_vector_is_stored_once_by_its_hash_and_an_edit_is_caught(canon
         canonical.record_outcome(look, {"sharpe": 0.1}, daily=(days, returns))
     canonical.consume(look)
     canonical.record_outcome(look, {"sharpe": 0.1}, daily=(days, returns))
-    outcome = json.loads((canonical.root / f"{look.look_id}.outcome.json").read_text(encoding="utf-8"))
+    outcome = canonical.outcome(look.look_id)
     assert load_vector(canonical.root, outcome["daily_vector"]) == (days, returns)
     assert store_vector(canonical.root, days, returns) == outcome["daily_vector"]      # stored once
     path = canonical.root / "vectors" / f"{outcome['daily_vector']}.json"
@@ -252,3 +254,30 @@ def test_a_cycle_registers_its_holm_set_outside_the_chain(canonical, acis_config
             canonical.register_cycle(cycle_id="c1", order=h[:2], holm=bad, now_fn=lambda: when)
     row = canonical.register_cycle(cycle_id="c1", order=h[:2], holm=h[2:5], now_fn=lambda: when)
     assert row["order"] == h[:2] and row["holm"] == h[2:5] and looked.claim["declaration"]["benchmark"] == "PASSIVE_LONG"
+
+
+def test_the_outcome_is_a_chained_line_and_an_edit_or_a_second_outcome_is_caught(canonical, acis_config) -> None:
+    """R12I-08 / E-R12-06 (GAP-P12D-127): the outcome sits inside the hash chain, not beside it."""
+    look = _look(canonical, acis_config, claim=_claim())
+    canonical.consume(look)
+    canonical.record_outcome(look, {"sharpe": 0.1})
+    assert canonical.outcome(look.look_id) == {"sharpe": 0.1} and canonical.outcome("999999") is None
+    assert not list(canonical.root.glob("*.outcome.json"))                   # no side file
+    with pytest.raises(LookRefused, match="already has its outcome"):
+        canonical.record_outcome(look, {"sharpe": 9.9})
+    with pytest.raises(ValueError):
+        canonical.record_outcome(look, {"sharpe": float("nan")})            # NaN refused before any line
+    _look(canonical, acis_config, claim=_claim(variant="next"), changed="a later line chains to the outcome")
+    line = canonical.root / "000002.json"
+    line.write_text(line.read_text(encoding="utf-8").replace("0.1", "0.9"), encoding="utf-8")
+    assert any("does not chain" in b for b in canonical.scan().broken)        # the edit is caught
+    # An edit of the LAST line leaves no trace inside the register: the GitHub anchor closes that (GAP-P12D-86).
+
+
+def test_an_outcome_line_naming_no_earlier_look_breaks_the_register(canonical, acis_config) -> None:
+    look = _look(canonical, acis_config, claim=_claim())
+    head = canonical.scan().head
+    forged = {"kind": "outcome", "look_id": "000009", "outcome": {"sharpe": 3.0}, "prev_hash": head,
+              "registered_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    (canonical.root / "000002.json").write_text(json.dumps(forged, sort_keys=True), encoding="utf-8")
+    assert any("no earlier look line" in b for b in canonical.scan().broken) and look.look_id == "000001"

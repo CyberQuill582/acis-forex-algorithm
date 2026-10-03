@@ -80,7 +80,7 @@ def evaluate(*, register: LookRegister, cfg: AcisConfig, source: object, family:
                              account=account, changed=changed, cost_stress=cost_stress,
                              spread_floor=spread_floor, claim=claim)
     begin_grade(look, cfg=cfg, loader=_OneSource(source), source=source.name, instruments=instruments,
-                folds=[fold], account=account, cost_stress=cost_stress, spread_floor=spread_floor)
+                folds=[fold], account=account, cost_stress=cost_stress, spread_floor=spread_floor, simulator="rsim")
     result = run(market, forecast, pct_vol, spec)
     keep = [t for t, d in enumerate(days) if d >= graded_from]
     daily = result.daily[keep]

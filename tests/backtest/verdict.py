@@ -5,7 +5,7 @@ GAP-P12D-111, GAP-P12D-100; the R1.4 verdict module).
 
 Mental model:
   * A pure function of the register: the cycle row (its chain order, Holm set and spending alpha) and
-    the graded stage-A looks (tier 2, 2012-2023) of its members, each re-read by
+    the graded stage-A looks (tier 2, 2012-2023) of its members that NAME this cycle, each re-read by
     `stage_a.from_register` from the look's stored PORTFOLIO daily vector. `store_vector` refuses a
     repeated date, so an instrument x day panel can never be the graded unit (GAP-P12D-100).
   * A member's p-value is k x the smallest one-sided HAC p over its graded looks, k its declared look
@@ -26,10 +26,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from statistics import NormalDist
 
+from tests.backtest.look_cycles import STAGE_A_TIER
+from tests.backtest.look_outcomes import read as read_outcome
 from tests.backtest.look_register import LookRegister
 from tests.backtest.stage_a import from_register
-
-STAGE_A_TIER = 2                     # look_tiers: 2 = validation, 2012-2023
 
 
 class VerdictRefused(Exception):
@@ -57,7 +57,7 @@ class CycleVerdict:
         return tuple(m.variant for m in self.chain + self.holm if m.status == "passed")
 
 
-def _member(root: Path, lines: list[dict], variant: str, alpha: float) -> Member:
+def _member(root: Path, lines: list[dict], variant: str, alpha: float, cycle_id: str) -> Member:
     mine = [x for x in lines if x.get("kind", "look") == "look"
             and (x.get("claim") or {}).get("variant_hash") == variant]
     if not mine:
@@ -66,11 +66,12 @@ def _member(root: Path, lines: list[dict], variant: str, alpha: float) -> Member
     k = declaration.get("look_budget")
     if declaration.get("kind") != "fixed":
         return Member(variant, "not_built", None, (), k)
-    stage = [x for x in mine if x["tier"] == STAGE_A_TIER]
+    stage = [x for x in mine if x["tier"] == STAGE_A_TIER and (x.get("cycle") or {}).get("cycle_id") == cycle_id]
     ps, graded = [], []
     for x in stage:
-        if (root / f"{x['look_id']}.outcome.json").exists():
-            a = from_register(root, x["look_id"], alpha / k)
+        outcome = read_outcome(lines, x["look_id"])
+        if outcome is not None:
+            a = from_register(root, x["look_id"], alpha / k, outcome)
             graded.append(x["look_id"])
             kill_ok = a.paired_excess > 0 and a.net_2x > 0 and not a.refusing
             ps.append(1.0 - NormalDist().cdf(a.hac_t) if kill_ok else 1.0)
@@ -113,10 +114,10 @@ def cycle_verdict(root: Path, cycle_id: str) -> CycleVerdict:
     alpha = row["alpha"]
     chain, stopped = [], False
     for variant in row["order"]:
-        m = Member(variant, "untested", None, (), None) if stopped else _member(root, lines, variant, alpha)
+        m = Member(variant, "untested", None, (), None) if stopped else _member(root, lines, variant, alpha, cycle_id)
         chain.append(m)
         stopped = stopped or m.status != "passed"
-    holm = [_member(root, lines, v, alpha) for v in row["holm"]]
+    holm = [_member(root, lines, v, alpha, cycle_id) for v in row["holm"]]
     holm = _holm(holm, alpha) if not stopped else tuple(Member(m.variant, "untested", m.p, m.looks, m.budget)
                                                         for m in holm)
     return CycleVerdict(cycle_id, alpha, tuple(chain), tuple(holm))

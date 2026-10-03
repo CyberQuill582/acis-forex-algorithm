@@ -78,7 +78,7 @@ def test_the_runner_grades_two_folds_end_to_end(tmp_path, acis_config) -> None:
     assert {k: loaded["look"][k] for k in ("look_id", "family", "tier", "family_looks", "tier_totals")} == {
         "look_id": "000001", "family": "test:runner", "tier": "synthetic",           # GAP-P12D-64
         "family_looks": {"test:runner": {"synthetic": 1}}, "tier_totals": {"synthetic": 1}}
-    outcome = json.loads((tmp_path / "looks" / "000001.outcome.json").read_text(encoding="utf-8"))
+    outcome = LookRegister(tmp_path / "looks").outcome("000001")
     assert outcome["passed"] is False and outcome["n_trades"] == report.out_of_sample.n_trades
     assert set(outcome) >= {"annual_sharpe", "deflated_sharpe", "trial_count", "targets_met", "trade_returns"}
     assert (tmp_path / "looks" / "000001.graded.json").exists()                   # the line was consumed

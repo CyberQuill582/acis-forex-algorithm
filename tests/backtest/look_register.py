@@ -48,7 +48,9 @@ from typing import Callable, Sequence
 
 from config.schemas import AcisConfig
 import tests.backtest.look_claims as lc
-from tests.backtest.look_claims import Claim, cost_map_hash, cycle_line, store_vector
+import tests.backtest.look_outcomes as look_outcomes
+from tests.backtest.look_claims import Claim, cost_map_hash, cycle_line
+from tests.backtest.look_cycles import is_stage_a, stage_a_cycle
 from tests.backtest.look_tiers import FORWARD_START, TIER_NAMES, TierRefused  # noqa: F401 (re-export)
 from tests.backtest.look_tiers import data_tier as _data_tier
 from tests.backtest.walk_forward import Fold
@@ -57,7 +59,7 @@ REPO = Path(__file__).resolve().parents[2]
 CANONICAL = REPO / "data" / "validation" / "looks"
 GENESIS = "0" * 64
 TORN = "(torn line)"
-KINDS = ("look", "cycle")
+KINDS = ("look", "cycle", "outcome")
 
 
 class LookRefused(Exception):
@@ -89,6 +91,7 @@ class Look:
     prev_hash: str                   # sha256 of the previous line's bytes (GENESIS for the first)
     kind: str = "look"               # every line is a look or a cycle row (R1.2)
     claim: dict | None = None        # the registered family-version (look_claims.Claim.line)
+    cycle: dict | None = None        # a stage-A look's {cycle_id, look_index} (look_cycles, R12I-04)
 
 
 def config_hash(cfg: AcisConfig) -> str:
@@ -148,7 +151,7 @@ class LookRegister:
 
     def scan(self) -> Scan:
         files = sorted(self.root.glob("[0-9]" * 6 + ".json")) if self.root.exists() else []
-        lines, broken, torn, head = [], [], [], GENESIS
+        lines, broken, torn, head, looked = [], [], [], GENESIS, set()
         for k, p in enumerate(files, start=1):
             data = p.read_bytes()
             if p.stem != f"{k:06d}":
@@ -162,6 +165,9 @@ class LookRegister:
                 torn.append(p.name)
             if line is not None and line.get("kind", "look") not in KINDS:
                 broken.append(f"{p.name} is a {line.get('kind')!r} line this register cannot read: fail closed")
+            if line is not None and line.get("kind") == "outcome" and line.get("look_id") not in looked:
+                broken.append(f"{p.name} is the outcome of {line.get('look_id')!r}, no earlier look line")
+            looked |= {p.stem} if line is not None and line.get("kind", "look") == "look" else set()
             if line is not None and line["prev_hash"] != head:
                 broken.append(f"{p.name} does not chain to the line before it: a line was deleted, edited or inserted")
             lines.append(line)
@@ -228,6 +234,7 @@ class LookRegister:
                 lc.refuse_backwards_clock(scan.lines, now)
                 if claim is not None:
                     lc.admit_claim(claim, instruments, scan.lines, tier)
+                cycle = stage_a_cycle(claim.variant_hash, scan.lines) if claim and is_stage_a(tier, claim.simulator) else None
             except ValueError as e:
                 raise LookRefused(str(e)) from None
             prior = [x for x in looks if x["family"] == family]
@@ -241,7 +248,8 @@ class LookRegister:
                         instruments=tuple(sorted(instruments)), start=span[0], end=span[1], account=account,
                         cost_stress=float(cost_stress), spread_floor=float(spread_floor),
                         changed=changed.strip() or ("first look" if previous is None else ""),
-                        previous=previous, operator=operator or getpass.getuser(), prev_hash=scan.head, claim=claimed)
+                        previous=previous, operator=operator or getpass.getuser(), prev_hash=scan.head, claim=claimed,
+                        cycle=cycle)
         return self._append(build)
 
     def register_cycle(self, *, cycle_id: str, order: Sequence[str], alpha: float | None = None,
@@ -270,15 +278,10 @@ class LookRegister:
     def record_outcome(self, look: Look, outcome: dict, daily: tuple[Sequence, Sequence[float]] | None = None) -> None:
         """The grade's outcome; `daily` = (dates, portfolio net returns), stored by its hash. Only for
         a look of THIS register whose line is on disk as written and that was graded (R12I-08)."""
-        line = self.root / f"{look.look_id}.json"
-        if (Path(look.path).parent.resolve() != self.root.resolve() or not line.exists()
-                or json.loads(line.read_bytes()) != json.loads(json.dumps(asdict(look)))
-                or not (self.root / f"{look.look_id}.graded.json").exists()):
-            raise LookRefused(f"look {look.look_id} is not a graded look of this register")
-        if daily is not None:
-            outcome = {**outcome, "daily_vector": store_vector(self.root, *daily)}
-        _write_new(self.root / f"{look.look_id}.outcome.json",
-                   json.dumps(outcome, sort_keys=True, allow_nan=False).encode("utf-8"))
+        look_outcomes.record(self, look, outcome, daily)          # a chained line (look_outcomes.py)
+
+    def outcome(self, look_id: str) -> dict | None:
+        return look_outcomes.read(self.scan().lines, look_id)
 
     def summary(self) -> dict:
         """What a report carries: per-family and per-tier counts (a renamed family still adds to

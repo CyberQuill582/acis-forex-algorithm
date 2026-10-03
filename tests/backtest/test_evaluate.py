@@ -3,7 +3,6 @@ grade, the outcome and daily vector stored, and every mismatch refused before an
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
 
 import numpy as np
@@ -40,7 +39,7 @@ def test_a_synthetic_grade_writes_its_line_first_then_its_outcome_and_vector(tmp
     look, result = evaluate(register=reg, cfg=acis_config, source=LabRsim(), family="trend_d1_v1", claim=None,
                             account="lab", market=m, forecast=f, pct_vol=v, spec=spec, graded_from=m.days[300])
     assert look.tier == 0 and (tmp_path / "looks" / f"{look.look_id}.graded.json").exists()
-    outcome = json.loads((tmp_path / "looks" / f"{look.look_id}.outcome.json").read_text())
+    outcome = reg.outcome(look.look_id)                                     # a chained line (R12I-08)
     dates, returns = load_vector(tmp_path / "looks", outcome["daily_vector"])
     assert dates[0] == m.days[300] and len(returns) == outcome["graded_days"] == len(m.days) - 300
     assert returns == pytest.approx(result.daily[300:].tolist())
@@ -53,7 +52,7 @@ def test_a_real_data_grade_is_refused_while_real_looks_are_closed(tmp_path, acis
     with pytest.raises(LookRefused):
         evaluate(register=LookRegister(tmp_path / "looks"), cfg=acis_config, source=RealRsim(), family="trend_d1_v1",
                  claim=None, account="ftmo", market=m, forecast=f, pct_vol=v, spec=spec, graded_from=m.days[300])
-    assert not (tmp_path / "looks").exists() or not list((tmp_path / "looks").glob("*.outcome.json"))
+    assert not (tmp_path / "looks").exists() or not LookRegister(tmp_path / "looks").looks()
 
 
 def test_mismatched_costs_or_window_are_refused_before_any_line(tmp_path, acis_config) -> None:
@@ -81,7 +80,7 @@ def test_a_stage_a_grade_stores_every_series_its_verdict_reads(tmp_path, acis_co
     look, result = evaluate(register=reg, cfg=acis_config, source=LabRsim(), family="trend_d1_v1", claim=None,
                             account="lab", market=m, forecast=f, pct_vol=v, spec=spec, graded_from=m.days[300],
                             arms=_arms(m))
-    stored = json.loads((tmp_path / "looks" / f"{look.look_id}.outcome.json").read_text())["stage_a"]
+    stored = reg.outcome(look.look_id)["stage_a"]
     assert stored["benchmark"] == "PASSIVE_LONG" and sorted(stored["kill_only_vectors"]) == ["BREAKOUT80", "EWMAC16_64"]
     doubled = BookSpec(costs={n: CostModel(0.0, 0.00002, stress=2.0) for n in m.names})
     _, x2 = load_vector(tmp_path / "looks", stored["cost2x_vector"])
