@@ -58,8 +58,9 @@ SLOTS = {                                   # label -> (instruments, zone, local
     "imom_1600et": (("US500",), NY, time(16), "exit"),
 }
 WINDOWS = (60, 300, 900, 1800)
-POLICIES = tuple(Policy(lv, w, th) for lv in ("touch", "chase", "mid") for w in WINDOWS for th in (0, 1)) + tuple(
-    Policy("delay", w, 0) for w in WINDOWS)
+POLICIES = (tuple(Policy(lv, w, th) for lv in ("touch", "mid") for w in WINDOWS for th in (0, 1))
+            + tuple(Policy("chase", w, th, r) for w in WINDOWS for th in (0, 1) for r in (0, 500, 3000))
+            + tuple(Policy("delay", w, 0) for w in WINDOWS))
 
 
 def tick(inst: str) -> float:
@@ -67,7 +68,7 @@ def tick(inst: str) -> float:
 
 
 def _key(p: Policy) -> str:
-    return f"{p.level}/{p.window_s}s/through{p.through}"
+    return f"{p.level}/{p.window_s}s/through{p.through}" + (f"/react{p.react_ms}" if p.react_ms else "")
 
 
 def run_slots(q: Quotes, inst: str, day: date, unit: str, source: str) -> list[tuple]:

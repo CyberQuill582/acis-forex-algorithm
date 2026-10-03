@@ -54,9 +54,10 @@ class Policy:
     level: str             # "touch", "chase", "mid" or "delay"
     window_s: int
     through: int = 1       # ticks the opposite quote must pass the limit by
+    react_ms: int = 0      # chase only: the round trip before its market order lands (the demo's is ~0.3-0.55 s)
 
     def __post_init__(self) -> None:
-        if self.level not in LEVELS or self.window_s <= 0 or self.through < 0:
+        if self.level not in LEVELS or self.window_s <= 0 or self.through < 0 or self.react_ms < 0:
             raise ValueError(f"bad policy {self}")
 
 
@@ -104,10 +105,14 @@ def simulate(q: Quotes, rest_ms: int, side: int, policy: Policy, tick: float, be
     filled = k_fill is not None and (k_away is None or k_fill < k_away)
     if filled:
         paid, exec_ms, exec_row = limit, int(q.t[k_fill]), k_fill
-    else:
-        exec_row = d if k_away is None else k_away
+    elif k_away is None:
+        exec_row, exec_ms = d, end_ms
+    else:                                          # the chase lands `react_ms` late, at that moment's quote
+        exec_ms = int(q.t[k_away]) + policy.react_ms
+        j = q.at(exec_ms)
+        exec_row = k_away if j is None else j
+    if not filled:
         paid = float(q.ask[exec_row] if side > 0 else q.bid[exec_row])
-        exec_ms = end_ms if k_away is None else int(q.t[k_away])
     ref = a if benchmark == "arrival" else d
     market = float(q.ask[ref] if side > 0 else q.bid[ref])
     mid_exec = (q.bid[exec_row] + q.ask[exec_row]) / 2

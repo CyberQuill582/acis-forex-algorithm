@@ -67,6 +67,8 @@ def test_the_chase_rule_crosses_at_the_first_tick_the_bid_moves_up_and_otherwise
     o = simulate(up, T0, +1, Policy("chase", 60), TICK)
     assert not o.filled and o.wait_s == 10                 # Carver: cross when the market moves away
     assert o.saving_bp == pytest.approx(-0.00001 / 1.10001 * 1e4)
+    late = simulate(up, T0, +1, Policy("chase", 60, react_ms=15_000), TICK)   # it lands at the 20 s quote
+    assert late.wait_s == 25 and late.saving_bp == pytest.approx(0.00003 / 1.10001 * 1e4)
     down = _q([(0, 1.10000, 1.10002), (10, 1.09999, 1.10000), (20, 1.09998, 1.09999), (90, 1.09998, 1.09999)])
     chase, touch = (simulate(down, T0, +1, Policy(lv, 60), TICK) for lv in ("chase", "touch"))
     assert (chase.filled, chase.wait_s, chase.saving_bp) == (touch.filled, touch.wait_s, touch.saving_bp) == (True, 20, chase.saving_bp)
