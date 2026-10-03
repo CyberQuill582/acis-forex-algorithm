@@ -303,7 +303,11 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - **v1b (the contrast): −0.30, HAC t −1.10: KILLED** (2× cost −0.35). Segments: 2012–14 (clean) 0.53, 2015–23 (seen) −0.49.
     - **Verdict: OPEX leaves the pipeline.** The contrast is the anomaly's test, and since 2015 the OE week has done worse than an average week. The practitioner backtests' "+0.2% a week" that selected OPEX was the equity premium. v1a's survival is beta at about a quarter of the time, below the passive long, and is not forwarded.
   - **The fourth session's tally:** FXHEDGE killed on the holdout (2012–23 0.80 → 2024–25 −0.35), GOLD-EW dropped ex ante on CFD costs, OPEX killed on history. Nothing survived to forward. The slate left: AUCTION (needs a bond instrument), IREV (2026 counter-evidence).
-  - **NEXT: the owner picks between the slate's remainder and a different lever (one ask).**
+  - **Owner ruling (2026-10-03, fourth session): "Lever 2 desk study (Recommended)"; push (done, `e83b550..8098781`).** The study is `archive/RESEARCH_LEVER2_FUTURES_2026-10-03.md` (paper only):
+    - Futures prop firms mostly exclude this setup: Topstep (Kenya ineligible, verified; VPS banned) and Apex (Kenya restricted; no full automation). Tradeify is doubtful (proof on "your own PC"). FundedNext Futures allows bots (verified), but a daily close-out is reported, unverified. An own-money IBKR account is the clean route.
+    - At micro-futures costs IMOM still nets about −0.24 (only full ES, too big for the account, clears) and GOLD-EW is uncertain. **AUCTION revives**: micro 10Y yield futures fit a ~$6k account and cost ~0.25 bp of yield against a 2–4 bp concession, and its kill test needs no venue (Treasury yields on disk plus TreasuryDirect's free auction calendar).
+    - Recommendation: AUCTION's kill test on history first; no venue build until a futures-only idea survives; any futures venue (outside R1-D9's swap-free CFD scope) needs the owner's ruling.
+  - **NEXT: the owner rules AUCTION's kill test (one ask).**
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
 
