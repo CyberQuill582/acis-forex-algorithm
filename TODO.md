@@ -8,6 +8,8 @@
 
 ## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-02, second session; the owner closed it)
 
+**RUNNING NOW (launched 2026-10-03 ~08:10 EAT, owner: "Launch both now (Recommended)"): the post-R1.6 audits** of `de96a75..f0d9524` (the R1.6 audit fixes, master v2.29, v2.30), brief `archive/AUDIT_BRIEF_POST_R1_6_2026-10-03.md`, opus: INTERNAL `a247a1c2a85e5b81c` → `archive/AUDIT_POST_R1_6_INTERNAL_2026-10-03.md`; EXTERNAL `a3553e1525e475723` (search cap 15) → `archive/AUDIT_POST_R1_6_EXTERNAL_2026-10-03.md`. Server helper: scratchpad `remote_audit_p16.sh` (checkouts `/opt/acis/audit-p16-<lens>[-base]`, bundle `/opt/acis/p16.bundle`). **`acis-compute-1` is RUNNING for them: stop it when both report.** After a session limit, RESUME each with SendMessage (never relaunch). When they report: triage every finding into the ledger before the cutover.
+
 **Live state (verify first, read-only; "How to check the demo" below):**
 - **The demo still RUNS the OLD code on `acis-demo-1`** (practice, the one QIEA champion; healthy at the 2026-10-02 20:19 UTC check, no trades, equity 99,996.42 after the owner's top-up). R1.6 reaches the demo only at the **AWS cutover, 2026-10-15..17** (`i-07b1b3952ac03f45e`, STOPPED; runbook deploy/README.md "The AWS demo host").
 - **Nothing runs.** All seven agents of 2026-10-02 finished; their reports are in `archive/` (`AUDIT_R1_6_{INTERNAL,EXTERNAL}_2026-10-02.md`, `RESEARCH_{FORENSICS,PRACTITIONERS,PROP_RETURNS,GATES,EXITS}_2026-10-02.md`). `acis-compute-1` is STOPPED and now an **n2d-standard-16** (c2d had no capacity; same disk and zone). The AWS data server is STOPPED.
