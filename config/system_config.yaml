@@ -168,4 +168,4 @@ targets:                         # ACIS-05 v1.7 §6.4 (R1.6): the target-positio
   slot_grace_s: 300              # a slot runs at most 5 min late; later it is skipped, never caught up
   macro_dir: data/macro_live     # `scripts/download_macro.py --live data/macro_live`, refreshed daily on the host
   rate_max_stale_days: 10        # R6-1: the daily overnight rates
-  rate_max_stale_days_weekly: 21 # GAP-P12D-146: the weekly sources (BIS for AUD, the SNB cube for CHF)
+  rate_max_stale_days_weekly: 28 # GAP-P12D-146/150: the weekly sources (BIS for AUD, the SNB cube for CHF); BIS's year-end gap

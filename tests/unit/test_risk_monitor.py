@@ -210,5 +210,46 @@ def test_store_persists_snapshot_and_restrictive_state(tmp_path) -> None:
     mon.evaluate(acct(10000.0), T0)
     assert store.snapshot_count() == 1
     store.save_restrictive_state(alpha_armed=True, taper_factor=0.5)
-    assert store.load_restrictive_state() == {"alpha_armed": True, "taper_factor": 0.5}
+    assert store.load_restrictive_state() == {"alpha_armed": True, "taper_factor": 0.5, "alpha_baseline": None}
     store.close()
+
+
+def test_the_throttle_and_its_arming_baseline_survive_a_restart_and_resume(tmp_path) -> None:
+    """PR16I-01: persisted with `alpha_armed`, the arming baseline lets a restarted, resumed monitor
+    re-arm on 30 decayed trades though its trade history starts empty."""
+    cfg, sink = load_cfg(), RecordingSink()
+    store = RiskStore(tmp_path / "risk.db")
+    mon, _, alpha, _ = build_monitor(cfg, sink, store=store, boot=T0)
+    for i in range(150):
+        mon._trades.append(mk_trade(12.0 if i % 2 else 8.0))
+    for i in range(50):
+        mon._trades.append(mk_trade(1.0 if i % 2 else -1.0))
+    mon.evaluate(acct(10000.0), T0)
+    arming = alpha.baseline
+    assert alpha.armed and arming > 0
+    sink2 = RecordingSink()
+    mon2, _, alpha2, _ = build_monitor(cfg, sink2, store=store, boot=T0 + timedelta(minutes=5))
+    assert alpha2.armed and alpha2.baseline == arming and (None, True) in sink2.risk_states
+    mon2.on_human_resume("human", T0 + timedelta(minutes=6))
+    for i in range(30):
+        mon2._trades.append(mk_trade(1.0 if i % 2 else -1.0))
+    mon2.evaluate(acct(10000.0), T0 + timedelta(minutes=7))
+    assert alpha2.armed and sink2.risk_states[-1] == (None, True)
+
+
+def test_only_the_human_resume_reaches_the_throttles_clear() -> None:
+    """PR16I-08: `clear_by_human` is called from exactly one place in core/, the monitor's resume gate,
+    and `on_human_resume` only from the Governor's resume (the runtime's `resume_gate`)."""
+    import ast
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2] / "core"
+    calls: dict[str, set[tuple[str, str]]] = {"clear_by_human": set(), "on_human_resume": set()}
+    for path in root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for fn in [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+            for node in ast.walk(fn):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in calls:
+                    calls[node.func.attr].add((path.relative_to(root).as_posix(), fn.name))
+    assert calls["clear_by_human"] == {("risk/alpha_throttle.py", "clear_by_human"),
+                                       ("risk/monitor.py", "on_human_resume")}
+    assert {f for f, _ in calls["on_human_resume"]} == {"runtime/wiring.py"}

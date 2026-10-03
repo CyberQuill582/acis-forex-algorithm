@@ -62,11 +62,13 @@ def build_targets(cfg, *, root: Path, venue, calendars, prov, governor, risk, ex
         regime_of=nvma.regime_store.get, submit=executor.submit, flatten=executor.submit_flatten,
         clock_ok=runtime.clock_verified)
     gate = partial(target_orders, governor, limits=cfg.guardrails, rules=rulebook, clusters=cfg.instruments.clusters,
-                   stop_mult=cfg.system.signals.tsmom_disaster_stop_atr, logger=governor_log)
+                   stop_mult=cfg.system.signals.tsmom_disaster_stop_atr, logger=governor_log,
+                   context_max_age_s=2 * cfg.system.regime.cycle_seconds)   # PR16I-06: two missed NVMA cycles
     return TargetLoop(
         members=members, store=HistoryStore(root / "data" / "runtime" / "targets.db"), fetch=fetch,
         rates=lambda: load_rate_table(root / t.macro_dir, t.rate_max_stale_days,
                                        t.rate_max_stale_days_weekly), sizing=sizing,
-        lots_of=lots_of, gate=gate, engine=view, family=t.family, registered=prov.is_registered,
+        lots_of=lots_of, gate=gate, engine=view, family=t.family,
+        registered=lambda f: prov.is_registered(f) and prov.entry_allowed(f, now_fn()),   # §2 + PR16I-10
         history_days=t.history_days, settle_s=t.settle_s, slot_grace_s=t.slot_grace_s,
         atr_period=cfg.system.signals.atr_period, now_fn=now_fn, logger=logger)

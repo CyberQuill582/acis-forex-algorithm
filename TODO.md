@@ -1,14 +1,14 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **2026-10-01: THE PEPPERSTONE DEMO IS RUNNING (practice, unattended, watchdog-guarded) on `acis-demo-1`; read the 2026-10-01 START HERE block first.** **STATUS (2026-09-29): SPEC COMPLETE (master v2.24 — the demo track: practice mode, Pepperstone cTrader demo; the stricter LLM-certification boundary). PHASES 1–11 ✅ (built + dual-audited + triaged). Phase 12 in progress: the cTrader adapter is BUILT (Track A step 3); R1.1 and R1.2 are built, dual-audited and triaged ([[GAP-P12D-125]], [[GAP-P12D-127]]). The full suite runs on the Google server. All three night-run branches are MERGED (BUILDER, BUILDER-3, BUILDER-2). The R-1 training direction is RATIFIED, and the cloud's R1 plan is imported and reviewed: read the R1 block below first.**
-> `ACIS_SPEC.md` v2.24 is the build authority. All master-spec guardrail decisions are human-ratified.
+> **Read the START HERE block below first (checkpoint 2026-10-03).** The Pepperstone demo runs the old code on `acis-demo-1` (practice, unattended, watchdog-guarded) until the AWS cutover 2026-10-15..17; master v2.30.
+> `ACIS_SPEC.md` v2.30 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
 
 ## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-02, second session; the owner closed it)
 
-**RUNNING NOW (launched 2026-10-03 ~08:10 EAT, owner: "Launch both now (Recommended)"): the post-R1.6 audits** of `de96a75..f0d9524` (the R1.6 audit fixes, master v2.29, v2.30), brief `archive/AUDIT_BRIEF_POST_R1_6_2026-10-03.md`, opus: INTERNAL `a247a1c2a85e5b81c` → `archive/AUDIT_POST_R1_6_INTERNAL_2026-10-03.md`; EXTERNAL `a3553e1525e475723` (search cap 15) → `archive/AUDIT_POST_R1_6_EXTERNAL_2026-10-03.md`. Server helper: scratchpad `remote_audit_p16.sh` (checkouts `/opt/acis/audit-p16-<lens>[-base]`, bundle `/opt/acis/p16.bundle`). **`acis-compute-1` is RUNNING for them: stop it when both report.** After a session limit, RESUME each with SendMessage (never relaunch). When they report: triage every finding into the ledger before the cutover.
+**DONE 2026-10-03: the post-R1.6 audits** (owner: "Launch both now (Recommended)"; INTERNAL `a247a1c2a85e5b81c`, EXTERNAL `a3553e1525e475723`, both finished) are TRIAGED in [[GAP-P12D-150]]: 10 of 14 fixed with tests, PR16E-04 recorded on [[GAP-P12D-03]], and the owner RULED its three decisions the same day (all Recommended: alpha decay report-only on the one-lot demo, ILLIQUID kept and measured, weekly rates 28 days), applied as master v2.31. `acis-compute-1`: stop it when the session's runs end.
 
 **Live state (verify first, read-only; "How to check the demo" below):**
 - **The demo still RUNS the OLD code on `acis-demo-1`** (practice, the one QIEA champion; healthy at the 2026-10-02 20:19 UTC check, no trades, equity 99,996.42 after the owner's top-up). R1.6 reaches the demo only at the **AWS cutover, 2026-10-15..17** (`i-07b1b3952ac03f45e`, STOPPED; runbook deploy/README.md "The AWS demo host").

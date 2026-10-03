@@ -106,7 +106,7 @@ def test_store_keeps_anchors_apart_from_the_legacy_restrictive_keys(tmp_path) ->
     store.save_restrictive_state(alpha_armed=False, taper_factor=0.5,
                                  anchors={"engine:daily": {"anchor": 10000.0,
                                                            "day": "2026-07-14", "last": 9900.0}})
-    assert store.load_restrictive_state() == {"alpha_armed": False, "taper_factor": 0.5}
+    assert store.load_restrictive_state() == {"alpha_armed": False, "taper_factor": 0.5, "alpha_baseline": None}
     assert store.load_anchors() == {"engine:daily": {"anchor": 10000.0, "day": "2026-07-14",
                                                      "last": 9900.0}}
     store.close()

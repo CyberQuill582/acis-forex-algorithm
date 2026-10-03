@@ -35,12 +35,15 @@ class _Close:
     close: float
 
 
-class _Open:
-    """An open in flight, read as the position it will be."""
+class _InFlight:
+    """An order submitted but not yet reported, read as filled (R16I-05, PR16I-04): an open adds the
+    position it will be; a close removes the units it closes, priced at the held position's average so
+    the two net exactly."""
 
-    def __init__(self, order: SizedOrder) -> None:
+    def __init__(self, order: SizedOrder, avg_of: Mapping[str, float]) -> None:
         self.instrument, self.direction, self.size_units = order.instrument, order.direction, order.size_units
-        self.avg_entry_price = order.entry_price
+        self.sign = 1 if order.action == "open" else -1
+        self.avg_entry_price = order.entry_price if self.sign > 0 else avg_of.get(order.instrument, order.entry_price)
 
 
 def build_portfolio(*, positions: Iterable[RiskPosition], strategy_of: Mapping[str, StrategyType],
@@ -52,12 +55,15 @@ def build_portfolio(*, positions: Iterable[RiskPosition], strategy_of: Mapping[s
     out: list[Position] = []
     cluster_exposure: dict[str, Decimal] = {}
     currency_delta: dict[str, Decimal] = {}
-    for pos in [*positions, *(_Open(o) for o in inflight)]:
+    positions = tuple(positions)
+    avg_of = {p.instrument: p.avg_entry_price for p in positions}
+    for pos in [*positions, *(_InFlight(o, avg_of) for o in inflight)]:
+        sign = pos.sign if isinstance(pos, _InFlight) else 1
         per_unit = usd_per_base_unit(pos.instrument, pos.avg_entry_price, prices)
         if per_unit is None:                # a cross with no USD leg marked: exposure unknown
             logger.event("PORTFOLIO_NO_USD_RATE", instrument=pos.instrument)
             return _stale(nav, as_of, daily_drawdown_pct)
-        notional = pos.size_units * per_unit
+        notional = sign * pos.size_units * per_unit
         for cluster, members in clusters.items():
             if pos.instrument in members:
                 cluster_exposure[cluster] = cluster_exposure.get(cluster, Decimal("0")) + notional
@@ -65,8 +71,8 @@ def build_portfolio(*, positions: Iterable[RiskPosition], strategy_of: Mapping[s
         signed = Decimal(pos.direction) * notional
         currency_delta[base] = currency_delta.get(base, Decimal("0")) + signed
         currency_delta[quote] = currency_delta.get(quote, Decimal("0")) - signed
-        if isinstance(pos, _Open):
-            continue                        # exposure only: not yet a position
+        if isinstance(pos, _InFlight):
+            continue                        # exposure only: not yet (or still) a position
         strategy = strategy_of.get(pos.instrument)
         if strategy is None:
             logger.event("PORTFOLIO_STRATEGY_UNKNOWN", instrument=pos.instrument,

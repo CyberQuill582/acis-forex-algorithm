@@ -47,6 +47,7 @@ def restore_on_boot(store: "RiskStore", monitor, now: datetime) -> None:
     every halt no human has cleared that is still in force (ACIS-07 §7, GAP-0050)."""
     state = store.load_restrictive_state()
     monitor.restore_restrictive_state(alpha_armed=bool(state.get("alpha_armed", False)),
+                                      alpha_baseline=state.get("alpha_baseline"),
                                       taper_factor=state.get("taper_factor"),
                                       anchors=store.load_anchors(), halts=store.open_halts(),
                                       now=now)
@@ -124,20 +125,21 @@ class RiskStore:
         return resume_id
 
     def persist_evaluate(self, snap: RiskSnapshot, *, alpha_armed: bool, taper_factor: float,
-                         anchors: dict[str, dict], log) -> None:
+                         anchors: dict[str, dict], log, alpha_baseline: float | None = None) -> None:
         """Bookkeeping AFTER the guard has acted (audit F0/X2): a failure is raised as a
         RISK_STORE_WRITE_FAILED alarm, never into the guard's path, and the next evaluate
         writes the whole state again."""
         try:
             self.write_snapshot(snap)
             self.save_restrictive_state(alpha_armed=alpha_armed, taper_factor=taper_factor,
-                                        anchors=anchors)
+                                        anchors=anchors, alpha_baseline=alpha_baseline)
         except (sqlite3.Error, OSError) as exc:
             log.event("RISK_STORE_WRITE_FAILED", error=str(exc))
 
     def save_restrictive_state(self, *, alpha_armed: bool, taper_factor: float,
-                               anchors: dict[str, dict] | None = None) -> None:
-        rows = [("alpha_armed", json.dumps(alpha_armed)),
+                               anchors: dict[str, dict] | None = None,
+                               alpha_baseline: float | None = None) -> None:
+        rows = [("alpha_armed", json.dumps(alpha_armed)), ("alpha_baseline", json.dumps(alpha_baseline)),
                 ("taper_factor", json.dumps(taper_factor))]
         rows += [(_ANCHOR + k, json.dumps(v)) for k, v in (anchors or {}).items()]
         self._conn.executemany(

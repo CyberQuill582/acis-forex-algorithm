@@ -96,6 +96,7 @@ async def test_a_runtime_from_the_shipped_config_wires_the_target_loop_and_silen
                now_fn=clock, intended_mode="practice")
     assert isinstance(rt.p.targets, TargetLoop) and rt.p.target_universe == frozenset(sysc.targets.universe)
     assert rt.p.targets.sizing.weights["EUR_USD"] == 1 / 13 and rt.p.targets.sizing.cash_vol == 10_000 * 0.20 / 16
+    _assert_the_target_wiring(rt, tmp_path / sysc.targets.macro_dir)       # PR16I-08's three wiring mutants
     for regime in (RegimeType.MEAN_REVERTING, RegimeType.RANGING_TIGHT, RegimeType.RANGING_WIDE):
         rt.p.params.stage(make_paramset(regime=regime, param_set_id=f"ps-{regime.value}",
                                         mean_rev_zscore_entry=1.5), now=BOUNDARY - timedelta(hours=1))
@@ -109,6 +110,36 @@ async def test_a_runtime_from_the_shipped_config_wires_the_target_loop_and_silen
     assert rt.p.agon.take_rate()["signals_emitted"] == 0                    # R6-3: one path per instrument
     assert [m for m in fake.transport.sent if m["payloadType"] == 2106] == []
     await session.stop()
+
+
+def _assert_the_target_wiring(rt, macro) -> None:
+    """The runtime is wired to each R1.6 fix, not only the unit (PR16I-08): the slot's clock is the
+    runtime's A8 proof (R16I-02), the rates honour the weekly limit (GAP-P12D-146), and the portfolio
+    reads the executor's in-flight orders (R16I-05, PR16I-04)."""
+    from datetime import date
+    from decimal import Decimal
+    from types import MappingProxyType
+    from core.data.rates import CCY_SERIES
+    from core.governor.portfolio_types import SizedOrder
+    from core.runtime.executor import WorkItem
+    t = rt.p.targets
+    assert t.engine.clock_ok == rt.clock_verified
+    macro.mkdir(parents=True, exist_ok=True)
+    for ccy, (sid, area) in CCY_SERIES.items():
+        last = "2026-09-21" if area else "2026-09-30"                     # AUD (BIS, weekly) 15 days old
+        body = (f"date,area,value\n2026-09-01,AU,3.6\n{last},AU,3.6\n" if area
+                else f"date,value\n2026-09-01,2.0\n{last},2.0\n")
+        (macro / f"{sid}.csv").write_text(body, encoding="utf-8")
+    assert t._rates().rate("AUD", date(2026, 10, 6)) == Decimal("3.6")
+    before = rt.portfolio().per_currency_delta.get("EUR", Decimal("0"))
+    order = SizedOrder(order_id="w1", signal_id="s", instrument="EUR_USD", direction=1, size_units=Decimal("1000"),
+                       entry_price=1.10, stop_loss=1.0, take_profit=None, reason="target_open",
+                       factors_snapshot=MappingProxyType({}), sized_at=VENUE_T0, param_set_id="trend_d1_v1")
+    rt.p.executor.submit(WorkItem((order,), valid_for_seconds=0))
+    assert rt.portfolio().per_currency_delta["EUR"] == before + Decimal("1100")
+    rt.p.executor.queue.get_nowait()                                       # never sent: the run below starts clean
+    rt.p.executor.inflight.clear()
+    rt.p.executor.busy.clear()
 
 
 async def test_opens_in_flight_count_in_every_exposure_so_one_slot_cannot_cross_a_cap() -> None:
@@ -149,7 +180,7 @@ async def test_opens_in_flight_count_in_every_exposure_so_one_slot_cannot_cross_
                            instrument="GBP_USD", held=None, target=Decimal("1000"), mark=1.30, atr=0.007,
                            stop_mult=10.0, step=Decimal("1000"), minimum=Decimal("1000"), portfolio=pf,
                            regime=mk_regime(instrument="GBP_USD"), marks=marks, now=T0, family="trend_d1_v1",
-                           snapshot={}, logger=log)
+                           snapshot={}, logger=log, context_max_age_s=240.0)
     assert second.reason == "cluster_cap"                                    # 1,100 + 1,300 > 90% × 20% × 10k
     task = asyncio.create_task(ex.run())
     await ex.queue.join()
@@ -178,3 +209,56 @@ async def test_the_legacy_max_hold_never_closes_a_target_universe_position(tmp_p
         await rt.run()
         closes[bool(universe)] = [o for item in sent for o in item.orders if o.reason == "max_hold"]
     assert closes[True] == [] and closes[False]
+
+
+async def test_a_flip_in_flight_nets_its_close_so_a_later_entry_cannot_cross_the_currency_cap() -> None:
+    """PR16I-04: an in-flight CLOSE counts as filled too, priced at the held average so it nets exactly,
+    and a flip's own opening leg is judged net of its closing leg. $10k NAV, EUR_USD +1 and EUR_JPY -1
+    held; the slot flips EUR_USD to -1, then EUR_GBP -1 would take EUR to 33% against the 30% cap."""
+    import asyncio
+    from decimal import Decimal
+    from core.governor.target_gate import close_leg, target_orders
+    from core.risk.risk_types import RiskPosition
+    from core.runtime.executor import Executor, WorkItem
+    from core.runtime.portfolio import build_portfolio
+    from tests.optimizer_fixtures import CapturingLogger
+    from tests.signals_fixtures import T0, mk_regime
+    from tests.unit.test_governor import mk_governor, mk_rulebook
+
+    lot, nav = Decimal("1000"), Decimal("10000")
+    marks = {"EUR_USD": 1.10, "EUR_JPY": 160.0, "USD_JPY": 145.4545, "EUR_GBP": 0.85, "GBP_USD": 1.2941}
+    held = [RiskPosition(instrument=i, direction=d, size_units=lot, avg_entry_price=p, opened_at=T0,
+                         param_set_id="trend_d1_v1", stop_loss=None)
+            for i, d, p in (("EUR_USD", 1, 1.08), ("EUR_JPY", -1, 160.0))]
+
+    class _Risk:
+        def positions(self):
+            return tuple(held)
+
+    async def _nothing():
+        return None
+
+    log, gov = CapturingLogger(), mk_governor()[0]
+    ex = Executor(route_to=lambda: None, risk=_Risk(), on_fill=_nothing, halt=lambda s, r: None,
+                  mark_of=marks.get, now_fn=lambda: T0, logger=log)
+
+    def portfolio(closing=()):
+        return build_portfolio(positions=held, strategy_of={}, marks=marks, nav=nav, daily_drawdown_pct=0.0,
+                               clusters={}, as_of=T0, account_age_s=0.0, max_age_s=60.0, logger=log,
+                               inflight=(*ex.inflight.values(), *closing))
+
+    def gate(inst, h, target, pf):
+        return target_orders(gov, limits=gov.guards._limits, rules=mk_rulebook(), clusters={}, instrument=inst,
+                             held=h, target=target, mark=marks[inst], atr=marks[inst] * 0.006, stop_mult=10.0,
+                             step=lot, minimum=lot, portfolio=pf, regime=mk_regime(instrument=inst), marks=marks,
+                             now=T0, family="trend_d1_v1", snapshot={}, logger=log, context_max_age_s=240.0)
+
+    eur_before = portfolio().per_currency_delta["EUR"]
+    own_close = close_leg(held[0], lot, marks["EUR_USD"], T0, "target_flip")
+    assert portfolio((own_close,)).per_currency_delta["EUR"] == eur_before - Decimal("1080")   # nets the held exactly
+    flip = gate("EUR_USD", held[0], -lot, portfolio((own_close,)))
+    assert flip.reason == "flip" and [o.action for o in flip.orders] == ["close", "open"]
+    ex.submit(WorkItem(flip.orders, valid_for_seconds=0))
+    assert portfolio().per_currency_delta["EUR"] == Decimal("-1100") + eur_before - Decimal("1080")
+    assert gate("EUR_GBP", None, -lot, portfolio()).reason == "currency_delta_cap"   # 3 lots short EUR: refused
+    await asyncio.sleep(0)

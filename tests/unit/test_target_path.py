@@ -50,7 +50,7 @@ def _gate(gov=None, rules_=None, **kw):
     args = dict(limits=gov.guards._limits, rules=rules_ or mk_rulebook(), clusters={"usd_short": ["EUR_USD"]},
                 instrument="EUR_USD", held=None, target=LOT, mark=1.10, atr=ATR, stop_mult=10.0, step=LOT,
                 minimum=LOT, portfolio=mk_portfolio(), regime=mk_regime(), marks={"EUR_USD": 1.10}, now=T0,
-                family="trend_d1_v1", snapshot={"forecast": 7.0}, logger=gov._log)
+                family="trend_d1_v1", snapshot={"forecast": 7.0}, logger=gov._log, context_max_age_s=240.0)
     args.update(kw)
     return target_orders(gov, **args)
 
@@ -252,3 +252,26 @@ def test_a_weekly_source_stays_fresh_for_21_days_and_a_daily_one_for_10(tmp_path
         table.rate("AUD", date(2026, 10, 5))                                # 22 days: stale
     with pytest.raises(StaleRateError):
         load_rate_table(tmp_path).rate("AUD", date(2026, 10, 1))           # no weekly limit: 10 days
+
+
+def test_an_entry_on_a_stale_regime_context_is_refused_and_an_exit_is_not() -> None:
+    """PR16I-06: a timer-driven slot must not trade on a silent feed's last tick. A context older than
+    the limit refuses the entry (`stale_context`); a reduction still goes out (C-EXE-7)."""
+    from dataclasses import replace
+    old = replace(mk_regime(), timestamp=T0 - timedelta(seconds=241))
+    assert _gate(regime=old).reason == "stale_context"
+    assert _gate(regime=replace(mk_regime(), timestamp=T0 - timedelta(seconds=239))).reason == "open"
+    held = Held("EUR_USD", 1, 2 * LOT)
+    r = _gate(regime=old, held=held, target=LOT)
+    assert r.reason == "reduce" and [o.action for o in r.orders] == ["close"]
+
+
+def test_on_the_one_lot_demo_alpha_decay_is_reported_not_applied() -> None:
+    """PR16E-01 (owner ruling "Report only on demo", master v2.31): the throttle arms on noise, so on the
+    one-lot paper/practice book its x0.25 is not applied to a target entry; live still applies it."""
+    gov, _ = mk_governor()
+    gov.apply_risk_state(alpha_decay=True)
+    assert _gate(gov=gov).reason == "alpha_decay"                              # live (the default)
+    assert _gate(gov=gov, alpha_throttles=False).reason == "open"              # paper / practice
+    gov.apply_risk_state(taper_factor=0.5)
+    assert _gate(gov=gov, alpha_throttles=False).reason == "taper"             # the taper still binds

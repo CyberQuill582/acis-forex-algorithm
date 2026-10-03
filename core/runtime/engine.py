@@ -137,9 +137,10 @@ class Runtime:
             self.p.log.event("FAST_LOOP_BUDGET_EXCEEDED", instrument=st.instrument,
                              elapsed_ms=round(elapsed_ms, 3), budget_ms=self.p.decision_budget_ms)
 
-    def portfolio(self):
+    def portfolio(self, closing=()):
         """The Governor's snapshot. Paper reads its always-current ledger; practice reads the
-        budgeted poll, whose age can make the snapshot stale (then entries are zeroed)."""
+        budgeted poll, whose age can make the snapshot stale (then entries are zeroed). `closing`:
+        closes about to be sent with the entry being judged (a flip's own leg), read as filled."""
         p = self.p
         if p.mode.mode == "practice" and p.venue is not None:
             account, at = p.venue.account, p.venue.account_at
@@ -151,7 +152,8 @@ class Runtime:
             positions=p.risk.positions(), strategy_of=p.executor.strategy_of, marks=self.marks,
             nav=nav, daily_drawdown_pct=self.snapshot.daily_drawdown_pct if self.snapshot else 0.0,
             clusters=p.clusters, as_of=p.now_fn(), account_age_s=age,
-            max_age_s=p.account_max_age_s(), logger=p.log, inflight=tuple(p.executor.inflight.values()))
+            max_age_s=p.account_max_age_s(), logger=p.log,
+            inflight=(*p.executor.inflight.values(), *closing))
 
     # -- Risk: evaluate, heartbeat ------------------------------------------------------- #
 

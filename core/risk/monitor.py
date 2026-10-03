@@ -200,7 +200,7 @@ class RiskMonitor:
         if self._store is not None:        # after the guard acted; never gates it (audit F0)
             self._store.persist_evaluate(                     # (GAP-0050 / GAP-P12D-55)
                 snap, alpha_armed=self._alpha.armed, taper_factor=outcome.taper_factor,
-                anchors=self._guards.series.export(), log=self._log)
+                anchors=self._guards.series.export(), log=self._log, alpha_baseline=self._alpha.baseline)
         return snap
 
     # -- quote→USD conversion (GAP-P9E-04 / rescoped GAP-0092) ---------------- #
@@ -276,7 +276,7 @@ class RiskMonitor:
 
     def restore_restrictive_state(self, *, alpha_armed: bool, taper_factor: float | None = None,
                                   anchors: dict | None = None, halts: list | None = None,
-                                  now: datetime | None = None) -> None:
+                                  now: datetime | None = None, alpha_baseline: float | None = None) -> None:
         """Restored BEFORE the first evaluate — a restart is never a relaxation (GAP-0050).
         GAP-P9I-05: the throttle is RE-PUSHED to the (fresh) Governor over the upward edge;
         so are the anchors, the taper (GAP-P12D-55) and open halts (ACIS-07 §7). A session
@@ -286,7 +286,7 @@ class RiskMonitor:
         if expired and self._store is not None:
             self._store.expire_halts([h.halt_id for h in expired], now)
         self._restored = True
-        self._alpha.restore(alpha_armed)
+        self._alpha.restore(alpha_armed, alpha_baseline)
 
     def on_human_resume(self, human_token: str, now: datetime) -> None:
         """A human resume (MCP/Governor, phase 10) re-arms the latches — the equity breaker

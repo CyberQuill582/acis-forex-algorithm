@@ -3,10 +3,14 @@
 Mental model:
   * delta = target − held. A reduction, or a flip's closing leg, is a reduce-only close NAMING the
     held position (§7 step 10). It passes no guard, because a reduction is never blocked (C-EXE-7).
-  * An opening leg is an ENTRY. It meets every §7.1 guard (core/governor/guards.py) except NVMA's
-    confidence and label vetoes (`target=True`, GAP-P12D-147), then §7.4's hard limits in order:
+  * An opening leg is an ENTRY. Its regime context must be fresh (at most `context_max_age_s` old: a
+    timer-driven slot otherwise trades on a silent feed's last tick, PR16I-06). It meets every §7.1
+    guard (core/governor/guards.py) except NVMA's confidence and label vetoes (`target=True`,
+    GAP-P12D-147), then §7.4's hard limits in order:
     - the account's lot cap: zero, never clamp;
-    - the Risk edge's taper and the alpha-decay ×0.25: each only shrinks, and the result goes back on
+    - the Risk edge's taper and the alpha-decay ×0.25 (the latter only when `alpha_throttles`: live;
+      in paper and practice it is reported, not applied, owner ruling 2026-10-03, PR16E-01): each only
+      shrinks, and the result goes back on
       the lots toward zero, so a throttled one-lot order is zero;
     - the cluster and currency caps, with G-5's headroom.
     Every zero is returned with its reason.
@@ -64,7 +68,8 @@ class GateResult:
 def target_orders(gov, *, limits, rules, clusters: Mapping, instrument: str, held: Held | None,
                   target: Decimal, mark: float, atr: float, stop_mult: float, step: Decimal, minimum: Decimal,
                   portfolio: PortfolioState, regime: RegimeContext | None, marks: Mapping[str, float], now: datetime,
-                  family: str, snapshot: Mapping, logger) -> GateResult:
+                  family: str, snapshot: Mapping, logger, context_max_age_s: float,
+                  alpha_throttles: bool = True) -> GateResult:
     """The orders that move `held` to `target` now, the close first (see the mental model)."""
     current = Decimal(held.direction) * held.size_units if held is not None else Decimal("0")
     if target == current:
@@ -73,13 +78,14 @@ def target_orders(gov, *, limits, rules, clusters: Mapping, instrument: str, hel
         if abs(target) > abs(current):
             logger.event("TARGET_ADD_REFUSED", instrument=instrument, held=str(current), target=str(target))
             return GateResult((), "add_unsupported")
-        return GateResult((_close(held, abs(current) - abs(target), mark, now, "target_reduce"),), "reduce")
-    closes = (_close(held, held.size_units, mark, now, "target_flat" if not target else "target_flip"),) if held else ()
+        return GateResult((close_leg(held, abs(current) - abs(target), mark, now, "target_reduce"),), "reduce")
+    leg = "target_flat" if not target else "target_flip"
+    closes = (close_leg(held, held.size_units, mark, now, leg),) if held else ()
     if not target:
         return GateResult(closes, "flat")
     direction = 1 if target > 0 else -1
     size, why = _entry_size(gov, limits, rules, clusters, instrument, direction, abs(target), mark, step, minimum,
-                            portfolio, regime, marks, now, logger)
+                            portfolio, regime, marks, now, logger, context_max_age_s, alpha_throttles)
     stop = mark - direction * stop_mult * atr
     if size and not (atr > 0 and stop > 0):
         size, why = Decimal("0"), "stop_invalid"
@@ -95,15 +101,18 @@ def target_orders(gov, *, limits, rules, clusters: Mapping, instrument: str, hel
 
 
 def _entry_size(gov, limits, rules, clusters, instrument, direction, size: Decimal, mark, step, minimum,
-                portfolio, regime, marks, now, logger) -> tuple[Decimal, str]:
+                portfolio, regime, marks, now, logger, context_max_age_s, alpha_throttles) -> tuple[Decimal, str]:
     if regime is None:                               # no tick classified yet: no entry
         return Decimal("0"), "no_regime"
+    if (now - regime.timestamp).total_seconds() > context_max_age_s:   # a silent feed (PR16I-06)
+        return Decimal("0"), "stale_context"
     guard = gov.guards.check(instrument, portfolio, regime, now, target=True)   # GAP-P12D-147
     if guard is not None:
         return Decimal("0"), guard
     if rules.max_lots is not None and size / LOT_UNITS > Decimal(str(rules.max_lots)):
         return Decimal("0"), "lot_cap"
     taper, decay = gov.throttle
+    decay = decay and alpha_throttles
     scaled = size * Decimal(str(taper)) * (Decimal("0.25") if decay else Decimal("1"))
     if scaled < size:
         size = target_on_lots(scaled, step, minimum)
@@ -118,7 +127,7 @@ def _entry_size(gov, limits, rules, clusters, instrument, direction, size: Decim
     return (Decimal("0"), breach) if breach is not None else (size, "open")
 
 
-def _close(pos: Held, size: Decimal, mark: float, now: datetime, reason: str) -> SizedOrder:
+def close_leg(pos: Held, size: Decimal, mark: float, now: datetime, reason: str) -> SizedOrder:
     return SizedOrder(
         order_id=str(uuid.uuid4()), signal_id=f"{reason}:{pos.instrument}", instrument=pos.instrument,
         direction=pos.direction, size_units=size, entry_price=mark,

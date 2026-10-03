@@ -7,7 +7,8 @@ Mental model:
     resume (GAP-P12D-145, owner rulings "Human resume clears it" and "Fresh evidence only"):
     after a human clear the detector judges only trades closed after the resume, so the verdict
     on the trades that armed it cannot re-arm it at the next evaluation.
-  * A restart restores an armed throttle before the first evaluation: never a relaxation.
+  * A restart restores an armed throttle, and the baseline a fresh window judges against, before
+    the first evaluation: never a relaxation.
 """
 
 from __future__ import annotations
@@ -28,6 +29,10 @@ class AlphaThrottle:
     def armed(self) -> bool:
         return self._det.armed
 
+    @property
+    def baseline(self) -> float | None:
+        return self._det.baseline              # persisted beside `armed` (GAP-P12D-145, PR16I-01)
+
     def update(self, trades: list[Trade]) -> AlphaDecayReading:
         reading = self._det.evaluate(trades)
         if reading.flag and not self._prev:
@@ -41,8 +46,8 @@ class AlphaThrottle:
         self._prev = reading.flag
         return reading
 
-    def restore(self, armed: bool) -> None:
-        self._det.restore_armed(armed)
+    def restore(self, armed: bool, baseline: float | None = None) -> None:
+        self._det.restore_armed(armed, baseline)
         self._prev = armed
         if armed:
             self._sink.apply_risk_state(alpha_decay=True)

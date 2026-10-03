@@ -74,6 +74,11 @@ class RateTable:
         return self._vals[ccy][i]
 
 
+def stale_days(source: str, daily_days: int, weekly_days: int) -> int:
+    """A rate source's freshness limit in days: its publication cadence decides (GAP-P12D-146)."""
+    return weekly_days if source in WEEKLY_SOURCES else daily_days
+
+
 def load_rate_table(macro_dir: Path, max_stale_days: int = 10,
                     weekly_stale_days: int | None = None) -> RateTable:
     """Read the normalised CSVs written by scripts/download_macro.py. With `weekly_stale_days`,
@@ -88,7 +93,7 @@ def load_rate_table(macro_dir: Path, max_stale_days: int = 10,
             series[ccy] = [(date.fromisoformat(r["date"]), float(r["value"])) for r in rows
                            if area is None or r.get("area") == area]
     weekly = {} if weekly_stale_days is None else {
-        ccy: weekly_stale_days for ccy, (sid, _) in CCY_SERIES.items() if sid in WEEKLY_SOURCES}
+        ccy: stale_days(sid, max_stale_days, weekly_stale_days) for ccy, (sid, _) in CCY_SERIES.items()}
     return RateTable(series, max_stale_days, weekly)
 
 

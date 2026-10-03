@@ -32,7 +32,7 @@ class TargetsConfig(_Strict):
     slot_grace_s: float = Field(gt=0, le=3600)
     macro_dir: str = Field(min_length=1)
     rate_max_stale_days: int = Field(gt=0, le=10)
-    rate_max_stale_days_weekly: int = Field(gt=0, le=21)   # GAP-P12D-146: BIS, SNB
+    rate_max_stale_days_weekly: int = Field(gt=0, le=28)   # GAP-P12D-146/150: BIS, SNB
 
 
 def check_targets(cfg) -> None:

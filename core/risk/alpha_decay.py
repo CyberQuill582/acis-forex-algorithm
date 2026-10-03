@@ -11,10 +11,14 @@ Sharpe exceeds `recovery_mult` × baseline). The Risk Monitor turns a state
 transition into the explicit `apply_risk_state(alpha_decay=…)` call — this
 module never talks to the Governor.
 
-GAP-P12D-145: the one human resume disarms it (`clear_by_human`); until the recent window is
-all post-resume trades, only those trades count as recent, judged against the baseline that
-armed it ("fresh evidence only", owner ruling 2026-10-03). Entries are zeroed while armed, so
-without this the same trades re-arm it at once and the book stays locked out.
+GAP-P12D-145 ("fresh evidence only", owner ruling 2026-10-03): the one human resume disarms it
+(`clear_by_human`), and trades closed before the resume never count again. Until the post-resume
+trades form a full baseline of their own (recent_window + baseline_min_trades of them), their
+recent window is judged against the FROZEN baseline that armed the throttle (PR16I-02); after
+that the standard rule runs on post-resume trades only. Entries are zeroed while armed, so without
+this the trades that armed it would re-arm it at once and lock the book out. The arming baseline
+and an open window are persisted with `armed` (`baseline`), so a restart and its `--resume` keep
+the rule though the trade history starts empty (PR16I-01).
 """
 
 from __future__ import annotations
@@ -86,31 +90,40 @@ class AlphaDecayDetector:
         self._recovery_trades = recovery_trades
         self._recovery_mult = recovery_mult
         self._armed = False           # persisted restrictive state (GAP-0050)
-        self._fresh_from: int | None = None   # trade count at a human clear (GAP-P12D-145)
+        self._origin = 0              # trades before the last human clear never count again
+        self._fresh = False           # a human clear's fresh-evidence window is open
+        self._arming_baseline: float | None = None   # mean/sigma of the baseline that armed it
 
     @property
     def armed(self) -> bool:
         return self._armed
 
-    def restore_armed(self, armed: bool) -> None:
-        """Restart reconciliation: a persisted throttle is restored BEFORE the
-        first evaluate — a restart is never a relaxation (GAP-0050)."""
+    @property
+    def baseline(self) -> float | None:
+        """What a restart keeps beside `armed`: the arming baseline while armed or while a fresh
+        window is open, else None."""
+        return self._arming_baseline if (self._armed or self._fresh) else None
+
+    def restore_armed(self, armed: bool, baseline: float | None = None) -> None:
+        """Restart reconciliation, BEFORE the first evaluate: a persisted throttle is restored (a
+        restart is never a relaxation, GAP-0050); a persisted baseline while not armed reopens the
+        fresh-evidence window on the new process's (empty) history."""
         self._armed = bool(armed)
+        self._arming_baseline = baseline
+        self._fresh = not self._armed and baseline is not None
+        self._origin = 0
 
     def clear_by_human(self, n_trades: int) -> None:
-        """Disarm; from here only trades after the first `n_trades` are recent evidence."""
-        self._armed = False
-        self._fresh_from = n_trades
+        """Disarm; the first `n_trades` closed trades never count again, and the fresh window opens."""
+        self._armed, self._fresh, self._origin = False, True, n_trades
 
     def evaluate(self, trades: list[Trade]) -> AlphaDecayReading:
-        recent = trades[-self._recent_window:]
-        baseline = trades[-200:-self._recent_window]
-        f = self._fresh_from
-        if f is not None and len(trades) - f < self._recent_window:
-            recent = trades[f:]
-            baseline = trades[max(0, f - 200):max(0, f - self._recent_window)]
-        else:
-            self._fresh_from = None
+        hist = trades[self._origin:]
+        if self._fresh and len(hist) < self._recent_window + self._baseline_min:
+            return self._fresh_window(hist)
+        self._fresh = False
+        recent = hist[-self._recent_window:]
+        baseline = hist[-200:-self._recent_window]
         n_recent, n_baseline = len(recent), len(baseline)
 
         if n_recent < self._min_trades or n_baseline < self._baseline_min:
@@ -130,7 +143,7 @@ class AlphaDecayDetector:
             # meaningful as erosion of a positive edge, so require s_baseline > 0.
             flag = s_baseline > 0.0 and s_recent < self._mult * s_baseline
             if flag:
-                self._armed = True
+                self._armed, self._arming_baseline = True, s_baseline
                 return AlphaDecayReading("flagged", True, s_recent, s_baseline,
                                          n_recent, n_baseline)
             return AlphaDecayReading("active", False, s_recent, s_baseline,
@@ -139,12 +152,29 @@ class AlphaDecayDetector:
         # Armed: clear ONLY on confirmed recovery (GAP-0050) — the last
         # `recovery_trades` closed trades' mean/σ must exceed recovery_mult ×
         # baseline. Otherwise the throttle stays armed.
-        recovery = trades[-self._recovery_trades:]
+        recovery = hist[-self._recovery_trades:]
         recovered = (len(recovery) >= self._recovery_trades
                      and mean_sigma(recovery) > self._recovery_mult * s_baseline)
         if recovered:
-            self._armed = False
+            self._armed, self._arming_baseline = False, None
             return AlphaDecayReading("active", False, s_recent, s_baseline,
                                      n_recent, n_baseline)
         return AlphaDecayReading("flagged", True, s_recent, s_baseline,
                                  n_recent, n_baseline)
+
+    def _fresh_window(self, hist: list[Trade]) -> AlphaDecayReading:
+        """Post-resume trades against the frozen arming baseline (GAP-P12D-145, PR16I-02)."""
+        recent, base = hist[-self._recent_window:], self._arming_baseline
+        s_recent, n = mean_sigma(recent), len(recent)
+        if self._armed:                           # re-armed inside the window: GAP-0050's recovery rule
+            recovery = hist[-self._recovery_trades:]
+            if len(recovery) >= self._recovery_trades and mean_sigma(recovery) > self._recovery_mult * base:
+                self._armed = False
+                return AlphaDecayReading("active", False, s_recent, base, n, 0)
+            return AlphaDecayReading("flagged", True, s_recent, base, n, 0)
+        if n < self._min_trades or base is None:  # no arming baseline known: never flag on a guess
+            return AlphaDecayReading("inactive_warming", False, s_recent, base or 0.0, n, 0)
+        if base > 0.0 and s_recent < self._mult * base:
+            self._armed = True
+            return AlphaDecayReading("flagged", True, s_recent, base, n, 0)
+        return AlphaDecayReading("active", False, s_recent, base, n, 0)

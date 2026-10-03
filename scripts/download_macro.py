@@ -46,14 +46,14 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))           # the live limits come from config/ and core/ (PR16E-03)
+from scripts.macro_checks import BIS_AREAS, LIVE_BIS_AREAS, validate  # noqa: E402,F401 (re-exported)
 OUT = ROOT / "data" / "macro"
 RAW = OUT / "raw"
 MANIFEST = OUT / "manifest.json"
 START, END = date(2011, 1, 1), date(2025, 12, 31)
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 CURL = r"C:\Windows\System32\curl.exe" if os.name == "nt" else "curl"   # Linux: the system curl
-BIS_AREAS = ("US", "XM", "JP", "GB", "AU", "CH", "CA")
-LIVE_BIS_AREAS = ("AU",)       # the runtime reads BIS for AUD only (core/data/rates.py); R16E-02
 
 
 # ------------------------------------------------------------------- fetching
@@ -196,43 +196,12 @@ SERIES = series(START, END)
 
 
 # Well-documented S&P 500 closes the downloaded series must reproduce (±0.02).
-SPX_KNOWN_CLOSES = {date(2012, 1, 3): 1277.06, date(2019, 12, 31): 3230.78, date(2020, 3, 23): 2237.40,  # COVID low
-                    date(2021, 12, 31): 4766.18, date(2022, 12, 30): 3839.50}
+
 
 
 def live_series(today: date) -> dict:
     """The runtime's rates (--live): every series but SPX, from START, never a rolling window (R16I-01)."""
     return {k: v for k, v in series(START, today).items() if k != "spx_yahoo"}
-
-
-def validate(sid: str, rows, lo: float, hi: float, first_by: date | None,
-             ends_by: date = date(2025, 12, 1), areas=BIS_AREAS) -> str | None:
-    """Return a rejection reason, or None if the series is usable."""
-    if not rows:
-        return "no rows"
-    if sid == "spx_yahoo":
-        got = dict(rows)
-        for d, want in SPX_KNOWN_CLOSES.items():
-            if d not in got or abs(got[d] - want) > 0.02:
-                return f"known close {d} = {want}, series has {got.get(d)}"
-    keyed = [(r[0], r[1]) for r in rows] if sid == "bis_policy" else [(r[0], "") for r in rows]
-    per_key: dict[str, list] = {}
-    for (d, k), r in zip(keyed, rows):
-        per_key.setdefault(k, []).append((d, r[-1]))
-    for k, pts in per_key.items():
-        ds = [d for d, _ in pts]
-        if any(b <= a for a, b in zip(ds, ds[1:])):
-            return f"{k or sid}: dates not strictly increasing"
-        bad = [v for _, v in pts if not (math.isfinite(v) and lo <= v <= hi)]
-        if bad:
-            return f"{k or sid}: {len(bad)} values outside [{lo}, {hi}] e.g. {bad[:3]}"
-        if first_by and ds[0] > first_by:
-            return f"{k or sid}: starts {ds[0]}, expected by {first_by}"
-        if ds[-1] < ends_by:
-            return f"{k or sid}: ends {ds[-1]}, expected by {ends_by}"
-    if sid == "bis_policy" and sorted(per_key) != sorted(areas):
-        return f"areas {sorted(per_key)} != {sorted(areas)}"
-    return None
 
 
 def write_atomic(path: Path, data: bytes) -> None:
@@ -247,9 +216,12 @@ def main() -> int:
     ap.add_argument("--live", type=Path, help="the runtime's rate directory (R1.6): always re-fetched")
     a = ap.parse_args()
     out, today, todo, ends_by = OUT, datetime.now(timezone.utc).date(), SERIES, date(2025, 12, 1)
-    areas = BIS_AREAS
+    areas, limits = BIS_AREAS, None
     if a.live:   # from START, never a rolling window: the history cache is never trimmed (R16I-01)
-        out, ends_by, areas = a.live, today - timedelta(days=10), LIVE_BIS_AREAS
+        from config.schemas import load_config
+        from core.data.rates import stale_days
+        t = load_config(ROOT / "config").system.targets   # the engine's limits, one source (PR16E-03)
+        out, areas, limits = a.live, LIVE_BIS_AREAS, (t.rate_max_stale_days, t.rate_max_stale_days_weekly)
         todo = live_series(today)
     raw_dir, manifest_path = out / "raw", out / "manifest.json"
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -268,7 +240,8 @@ def main() -> int:
             failed.append(sid)
             print(f"FAIL  {sid}: {e!r}"[:300])
             continue
-        why = validate(sid, rows, lo, hi, first_by, ends_by, areas)
+        due = ends_by if limits is None else today - timedelta(days=stale_days(sid, *limits))
+        why = validate(sid, rows, lo, hi, first_by, due, areas)
         if why:
             failed.append(sid)
             print(f"REJECT {sid}: {why}")

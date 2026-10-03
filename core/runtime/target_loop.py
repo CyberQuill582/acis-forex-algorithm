@@ -15,7 +15,8 @@ Mental model:
     target; a slot already passed is dropped, and the day's held position is persisted, so a restart
     after a stop-out does not re-enter (R16I-03). Only this loop opens positions on the universe.
   * FLATTEN-THEN-PROMOTE (ACIS-03 v2.2) is checked at each decision (target_promotion.py). The
-    family must be registered in provenance.
+    family must be registered in provenance AND allowed to enter (master §2's registered, validated
+    rule set), asked at the decision and again at the slot, where only its opens are dropped (PR16I-10).
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from core.data.ctrader.meter import BudgetRefused
 from core.data.ctrader.wire import VenueError
 from core.data.errors import DataQualityError
 from core.data.fx_clock import rollover_utc
+from core.governor.target_gate import close_leg
 from core.runtime.executor import WorkItem
 from core.runtime.history_store import HistoryStore
 from core.runtime.target_promotion import promotion_settled
@@ -64,7 +66,7 @@ class EngineView:
     held_of: Callable[[str], object]
     busy: Callable[[], frozenset]
     marks: Callable[[], Mapping[str, float]]
-    portfolio: Callable[[], object]
+    portfolio: Callable[..., object]          # portfolio(closing=()): a flip's own close read as filled
     regime_of: Callable[[str], object]
     submit: Callable[[WorkItem], None]
     flatten: Callable[[str, str], None]
@@ -130,7 +132,7 @@ class TargetLoop:
         if not promotion_settled(self.store, self.family, self.members, self.engine, self.pending, self._log):
             return True
         if not self._registered(self.family):
-            self._log.event("TARGETS_FAMILY_UNREGISTERED", family=self.family, severity="critical")
+            self._log.event("TARGETS_FAMILY_UNREGISTERED", family=self.family, severity="critical")   # or not allowed
             return True
         try:
             rates = self._rates()
@@ -210,14 +212,19 @@ class TargetLoop:
             return
         lots, f = self._lots_of(instrument), d.forecast
         target = d.target if lots.cap is None or abs(d.target) <= lots.cap else lots.cap.copy_sign(d.target)
+        flip = held is not None and target and (target > 0) != (held.direction > 0)
+        closing = (close_leg(held, held.size_units, e.marks()[instrument], now, "target_flip"),) if flip else ()
         result = self._gate(instrument=instrument, held=held, target=target, mark=e.marks()[instrument],
-                            atr=d.atr, step=lots.step, minimum=lots.minimum, portfolio=e.portfolio(),
+                            atr=d.atr, step=lots.step, minimum=lots.minimum, portfolio=e.portfolio(closing),
                             regime=e.regime_of(instrument), marks=e.marks(), now=now, family=self.family,
+                            alpha_throttles=lots.cap is None,     # the one-lot cap = paper/practice: report only
                             snapshot={"forecast": f.value, "pct_vol": f.pct_vol, "inputs_hash": f.inputs_hash,
                                       "decision_day": d.day.isoformat(), "target": str(target)})
         orders, reason = result.orders, result.reason
         if any(o.action == "open" for o in orders) and not e.clock_ok(instrument):
             orders, reason = tuple(o for o in orders if o.action == "close"), "clock_unverified"   # A8
+        if any(o.action == "open" for o in orders) and not self._registered(self.family):        # PR16I-10
+            orders, reason = tuple(o for o in orders if o.action == "close"), "family_not_allowed"
         self._log.event("TARGET_EXECUTED", instrument=instrument, reason=reason,
                         orders=[(o.action, o.direction, str(o.size_units)) for o in orders])
         if orders:

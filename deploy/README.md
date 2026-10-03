@@ -115,7 +115,8 @@ console (EC2 → `acis-demo-aws` → Connect → Session Manager), which logs in
   NOT enabled. Re-run it with a new bundle to update the checkout.
 - **Daily rates (R1.6):** the prepare step also installs and ENABLES `acis-macro.timer` (12:00 UTC
   daily, public data, no secret) and runs it once: `scripts/download_macro.py --live data/macro_live`,
-  the dated overnight rates the target path's excess-return price reads. If they age past 10 days the
+  the dated overnight rates the target path's excess-return price reads. If they age past their
+  source's limit (10 days for the daily rates, 28 for the weekly BIS and SNB sources, GAP-P12D-146/150) the
   engine makes no new targets (R6-1, `no_target:stale_rates` in `logs/target_log.jsonl`). Checked from
   Google's Linux server on 2026-10-02: all seven series fetched, the freshest 1–7 days old.
 

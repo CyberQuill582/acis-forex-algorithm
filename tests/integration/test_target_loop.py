@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from functools import partial
@@ -58,6 +58,9 @@ class Held:
     group_id: str | None = None
 
 
+FRESH = datetime(2100, 1, 1, tzinfo=timezone.utc)      # a regime context stamp no slot can find stale
+
+
 class Rig:
     def __init__(self, tmp_path, *, drift=0.0002, fetch_error=None, registered=True, open_=True) -> None:
         self.log, self.now = CapturingLogger(), AFTER
@@ -70,12 +73,14 @@ class Rig:
         self.sent, self.flattened, self.fetches = [], [], []
         self.fetch_error, self.registered, self.open_ = fetch_error, registered, open_
         self.clock_ok, self.cap = True, LOT
+        self.closing = []                         # each slot's `closing` argument (PR16I-04)
         gov, _ = mk_governor()
         days = [date(2024, 9, 1) + timedelta(days=k) for k in range(800)]
         self.rates = RateTable({"USD": [(d, 4.0) for d in days], "EUR": [(d, 3.0) for d in days],
                                 "GBP": [(d, 3.5) for d in days]})
         self.gate = partial(target_orders, gov, limits=gov.guards._limits, rules=mk_rulebook(),
-                            clusters={"usd_short": ["EUR_USD"]}, stop_mult=10.0, logger=self.log)
+                            clusters={"usd_short": ["EUR_USD"]}, stop_mult=10.0, logger=self.log,
+                            context_max_age_s=240.0)
 
     async def fetch(self, instrument, start, end):
         self.fetches.append((instrument, start, end))
@@ -85,8 +90,10 @@ class Rig:
 
     def loop(self, family="trend_d1_v1") -> TargetLoop:
         view = EngineView(held_of=self.held.get, busy=lambda: frozenset(self.busy), marks=lambda: {"EUR_USD": 1.2},
-                          portfolio=lambda: mk_portfolio(nav=Decimal("100000")),
-                          regime_of=lambda i: mk_regime(instrument=i), submit=self.sent.append,
+                          portfolio=lambda closing=(): (self.closing.append(closing), mk_portfolio(nav=Decimal("100000")))[1],
+                          # the rig's contexts never age (PR16I-06: staleness has its own test in test_target_path)
+                          regime_of=lambda i: replace(mk_regime(instrument=i), timestamp=FRESH),
+                          submit=self.sent.append,
                           flatten=lambda scope, why: self.flattened.append((scope, why)),
                           clock_ok=lambda i: self.clock_ok)
         return TargetLoop(
@@ -144,6 +151,45 @@ async def test_a_position_changed_since_the_decision_is_not_re_entered_the_same_
     del rig.held["EUR_USD"]                                                    # its disaster stop fired
     await loop.tick(SLOT + timedelta(seconds=5))
     assert rig.sent == [] and rig.events("TARGET_SLOT_SKIPPED")[-1]["reason"] == "position_changed"
+
+
+async def test_a_flip_judges_its_open_net_of_its_own_close(tmp_path) -> None:
+    """PR16I-04: at the slot, a flip's own closing leg is read as filled when the entry is judged."""
+    rig = Rig(tmp_path)
+    rig.store.put("active_family", "trend_d1_v1")
+    rig.held["EUR_USD"] = Held("EUR_USD", -1, LOT)                            # short into an up-trend
+    loop = rig.loop()
+    await loop.tick(AFTER, boot=True)
+    await loop.tick(SLOT + timedelta(seconds=5))
+    (closing,) = rig.closing[-1]
+    assert (closing.action, closing.direction, closing.size_units, closing.reason) == ("close", -1, LOT, "target_flip")
+    assert [o.action for o in rig.sent[-1].orders] == ["close", "open"]
+
+
+async def test_a_family_frozen_after_the_decision_opens_nothing_at_the_slot(tmp_path) -> None:
+    """PR16I-10: master §2 wants a registered AND validated rule set; the slot re-asks, so a family
+    frozen or retired overnight sends its closes but no open."""
+    rig = Rig(tmp_path)
+    rig.store.put("active_family", "trend_d1_v1")
+    rig.held["EUR_USD"] = Held("EUR_USD", -1, LOT)                            # short into an up-trend: a flip
+    loop = rig.loop()
+    await loop.tick(AFTER, boot=True)
+    rig.registered = False                                                     # frozen before the slot
+    await loop.tick(SLOT + timedelta(seconds=5))
+    (executed,) = rig.events("TARGET_EXECUTED")
+    assert executed["reason"] == "family_not_allowed" and [o.action for o in rig.sent[-1].orders] == ["close"]
+
+
+async def test_the_slot_reports_alpha_decay_on_the_capped_book_and_applies_it_live(tmp_path) -> None:
+    """PR16E-01: the loop passes `alpha_throttles` from the mode's cap (one lot = paper/practice)."""
+    for cap, sent in ((LOT, True), (None, False)):
+        rig = Rig(tmp_path / str(cap))
+        rig.cap = cap
+        rig.gate.args[0].apply_risk_state(alpha_decay=True)                     # the Governor behind the gate
+        loop = rig.loop()
+        await loop.tick(AFTER, boot=True)
+        await loop.tick(SLOT + timedelta(seconds=5))
+        assert bool(rig.sent) is sent, (cap, rig.events("TARGET_EXECUTED"))
 
 
 async def test_a_closed_market_or_a_busy_instrument_skips_the_slot(tmp_path) -> None:

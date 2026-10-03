@@ -53,12 +53,12 @@ class Executor:
         self._mark_of, self._now, self._log = mark_of, now_fn, logger
         self.queue: asyncio.Queue[WorkItem] = asyncio.Queue()
         self.busy: set[str] = set()
-        self.inflight: dict[str, SizedOrder] = {}      # opens submitted, not yet reported
+        self.inflight: dict[str, SizedOrder] = {}      # orders submitted, not yet reported (PR16I-04)
         self.strategy_of: dict[str, StrategyType] = {}
 
     def submit(self, item: WorkItem) -> None:
         self.busy |= item.instruments
-        self.inflight.update((o.order_id, o) for o in item.orders if o.action == "open")
+        self.inflight.update((o.order_id, o) for o in item.orders if o.action in ("open", "close"))
         self.queue.put_nowait(item)
 
     def submit_flatten(self, scope: str, reason: str) -> None:

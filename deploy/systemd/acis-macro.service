@@ -1,7 +1,8 @@
 # ACIS daily rates: the target path's dated overnight rates (R1.6, ACIS-04 v1.6 §4b, R6-1). One run
-# fetches the last 1,200 days of each central bank's overnight rate into data/macro_live
+# fetches each central bank's overnight rate from 2011-01-01 into data/macro_live
 # (`config/system_config.yaml` targets.macro_dir). Public data, no secret. A failed run keeps the last
-# good files; if they age past 10 days the engine makes no new targets (R6-1) and says so in
+# good files; if they age past their source's limit (10 days daily, 28 weekly: BIS for AUD, the SNB
+# cube for CHF; GAP-P12D-146) the engine makes no new targets (R6-1) and says so in
 # logs/target_log.jsonl. Started by acis-macro.timer; the AWS demo host's layout (/opt/acis/repo).
 
 [Unit]
