@@ -17,7 +17,8 @@
 | D3 turn of month | −0.002 | −0.01 | DROPPED |
 | **REBAL v1a (US500)** | **+0.50** | **1.82** | best so far, ρ −0.005 with D1; live path after the cutover |
 | REBAL v1b (minus the note) | +0.39 | 1.39 | not forwarded |
-| IMOM v1a / v1b | — | — | BUILT, looks owed (item 1) |
+| IMOM v1a (every session) | −0.72 | −2.55 | KILLED (looks `000011`/`000013`) |
+| IMOM v1b (top third) | −0.22 | −0.77 | KILLED (`000012`/`000014`); gross ≈ +0.55/+0.30, the CFD spread kills it |
 
 An equal-risk D1 + REBAL book would have earned about 0.47 against the ~0.65–0.85 the weekly target needs (GAP-P12D-148), BEFORE the publication decay the literature measures (about half; GAP-P12D-158). One or two more independent mechanisms, and months of forward data, stand between us and a certified edge.
 
@@ -31,7 +32,7 @@ An equal-risk D1 + REBAL book would have earned about 0.47 against the ~0.65–0
 **Owner rulings this session (all applied; GAP-P12D-154, 156, 157, 158, 03):** D3 to the papers' window, then DROPPED; REBAL next; the news calendar AFTER the cutover with RSIM modelling the same gate; REBAL v1 = the US500 leg close to close, v1a and v1b both registered before either graded; moving zero-volume quotes count as prices in the event book; the candidate ranking rule with the evidence fix; v1a's live path drafted now (`archive/REBAL_LIVE_DRAFT_2026-10-03.md`), built after the cutover, v1b not forwarded; IMOM research until the cutover: rest-of-day predictor, every-session and top-third versions registered first, US500 only; push.
 
 **Next actions, in order (sort key: closer to a real test, or protects the AWS move):**
-1. **IMOM's two kill-only looks** ([[GAP-P12D-158]]): `python scripts/r1_imom_kill_test.py --minutes data/r1_real/dukascopy_minutes` on a clean tree (about 15 min on the laptop: it decodes ~6,000 minute files); then copy the register to the bucket and record the result.
+1. ~~IMOM's two kill-only looks~~ **RAN 2026-10-03 (third session): both KILLED** (v1a −0.72, t −2.55; v1b −0.22, t −0.77; [[GAP-P12D-158]]); register copied to `gs://acis-compute-0929-data/validation/2026-10-03e/`. **Next in the pipeline: GOTOBI** (the lead judges it, then P&L-blind build, then the owner's rulings on versions before any look).
 2. **ASK the owner to launch the scheduled audit pair (~2026-10-10/11, before the cutover):** scope = everything since `f0d9524`, which now also covers this session's event simulator (`event_sim.py`, `event_daily.py`, `event_intraday.py`, `evaluate_events.py`), `exchange_days.py`, `rebal.py`, `candles_min.py` and the treasury/minute downloaders. Role files `.claude/agents/acis-auditor-{internal,external}.md`.
 3. **The cutover, 2026-10-15..17** (item 1 of the previous block below, unchanged).
 4. **After the cutover:** REBAL v1a live (ratify L-1..L-6, its timing look on minute data first, US500 onboarding; [[GAP-P12D-157]]); the news calendar with RSIM modelling the gate ([[GAP-P12D-03]]); RSIM's zero-volume rule and the FX/metals scan ([[GAP-P12D-156]]); the legacy retirement ([[GAP-P12D-153]]).
