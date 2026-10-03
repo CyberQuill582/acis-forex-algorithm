@@ -3,13 +3,16 @@ demo's rollover window, and the sealed holdout."""
 
 from __future__ import annotations
 
+import gzip
+import json
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
 
-from scripts.execution_passive_study import POLICIES, demo_rows, demo_slot, main, minute_quotes, run_slots, tick
+from scripts.execution_passive_study import (POLICIES, demo_quotes, demo_rows, demo_slot, main, minute_quotes,
+                                             run_slots, tick)
 from tests.backtest.candles_min import DAY
 from tests.backtest.passive_fill import Quotes
 
@@ -55,6 +58,22 @@ def test_the_venue_feed_runs_d1s_slot_on_every_demo_pair_and_the_minute_arrivals
     slots = {(src, slot) for src, _, slot, _, _, _ in rows}
     assert ("pepperstone_demo", "d1_0800ny") in slots and ("pepperstone_demo", "demo_day") in slots
     assert tick("USD_JPY") == pytest.approx(0.001) and tick("US500") == pytest.approx(0.1)
+
+
+def test_the_runtimes_data_log_and_the_csv_extract_give_the_same_fresh_ticks(tmp_path):
+    ticks = [("EUR_USD", "2026-10-02T12:00:00.100000+00:00", 1.1, 1.10001, False),
+             ("EUR_USD", "2026-10-02T12:00:00.050000+00:00", 1.1, 1.1, False),
+             ("EUR_USD", "2026-10-02T12:00:01+00:00", 1.2, 1.2, True)]
+    log = tmp_path / "data_log.jsonl"
+    log.write_text("\n".join([json.dumps({"event_type": "REGIME_SHIFT", "data": {}})] + [json.dumps(
+        {"event_type": "MARKET_STATE", "data": {"instrument": i, "event_time": t, "bid": b, "ask": a, "is_stale": s}})
+        for i, t, b, a, s in ticks]), encoding="utf-8")
+    extract = tmp_path / "x.csv.gz"
+    with gzip.open(extract, "wt", encoding="utf-8") as f:
+        f.write("instrument,event_time,bid,ask,is_stale\n" + "".join(f"{i},{t},{b},{a},{int(s)}\n" for i, t, b, a, s in ticks))
+    a, b = demo_quotes(log)["EUR_USD"], demo_quotes(extract)["EUR_USD"]
+    assert list(a.ask) == list(b.ask) == [1.1, 1.10001]       # in time order, the stale tick dropped
+    assert list(a.t) == list(b.t)
 
 
 def test_the_study_refuses_to_read_the_sealed_holdout(tmp_path):

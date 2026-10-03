@@ -115,17 +115,29 @@ def _minute_job(job: tuple[str, str]) -> list[tuple]:
     return run_slots(minute_quotes(bid, ask), "US500", day, "", "dukascopy_min")
 
 
-def demo_quotes(path: Path) -> dict[str, Quotes]:
-    """The demo's MARKET_STATE extract (instrument, event_time, bid, ask, is_stale): fresh ticks only."""
-    cols = defaultdict(lambda: ([], [], []))
+def _demo_records(path: Path):
+    """(instrument, event_time, bid, ask, is_stale) from the runtime's data_log.jsonl or this study's csv.gz extract."""
+    if path.suffix == ".jsonl":
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if '"MARKET_STATE"' in line:
+                    d = json.loads(line)["data"]
+                    yield d["instrument"], d["event_time"], d["bid"], d["ask"], bool(d.get("is_stale"))
+        return
     with gzip.open(path, "rt", encoding="utf-8") as f:
         for r in csv.DictReader(f):
-            if r["is_stale"] == "1":
-                continue
-            c = cols[r["instrument"]]
-            c[0].append(int(datetime.fromisoformat(r["event_time"]).timestamp() * 1000))
-            c[1].append(float(r["bid"]))
-            c[2].append(float(r["ask"]))
+            yield r["instrument"], r["event_time"], r["bid"], r["ask"], r["is_stale"] == "1"
+
+
+def demo_quotes(path: Path) -> dict[str, Quotes]:
+    """The venue's own ticks, fresh ones only, per instrument and in time order."""
+    cols = defaultdict(lambda: ([], [], []))
+    for inst, at, bid, ask, stale in _demo_records(path):
+        if not stale:
+            c = cols[inst]
+            c[0].append(int(datetime.fromisoformat(at).timestamp() * 1000))
+            c[1].append(float(bid))
+            c[2].append(float(ask))
     out = {}
     for inst, (t, b, a) in cols.items():
         order = np.argsort(np.array(t), kind="stable")
@@ -140,14 +152,16 @@ def demo_slot(at: datetime) -> str | None:
     return None if 20 <= at.hour <= 22 else "demo_day"
 
 
-def demo_rows(quotes: dict[str, Quotes]) -> list[tuple]:
-    """The venue's own slots on each day of the demo's span, then an entry arrival every minute of it."""
+def demo_rows(quotes: dict[str, Quotes], every_minute: bool = True) -> list[tuple]:
+    """The venue's own slots on each day of the demo's span, then (optionally) an entry arrival every minute."""
     rows = []
     for inst, q in quotes.items():
         d0, d1 = (datetime.fromtimestamp(int(x) / 1000, UTC).date() for x in (q.t[0], q.t[-1]))
         for k in range((d1 - d0).days + 1):
             rows.extend(run_slots(q, inst, d0 + timedelta(k), "", "pepperstone_demo"))
         first, last = int(q.t[0]) // 60_000 * 60_000 + 300_000, int(q.t[-1]) - 3_600_000
+        if not every_minute:
+            continue
         for rest in range(first, last, 60_000):
             at = datetime.fromtimestamp(rest / 1000, UTC)
             slot = demo_slot(at)
@@ -186,7 +200,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--ticks", type=Path, help="Dukascopy day files: <root>/<INST>/<YYYY>/<MM0>/<DD>_ticks.bi5")
     ap.add_argument("--minutes", type=Path, help="Dukascopy 1-minute candles root (USA500IDXUSD below it)")
-    ap.add_argument("--demo", type=Path, help="the demo's MARKET_STATE extract (csv.gz)")
+    ap.add_argument("--demo", type=Path, help="the venue's ticks: the runtime's data_log.jsonl, or a csv.gz extract")
+    ap.add_argument("--demo-every-minute", action="store_true", help="also an entry arrival every minute")
     ap.add_argument("--instruments", default=",".join(FX + ("XAU_USD",)))
     ap.add_argument("--start", type=date.fromisoformat, default=date(2019, 1, 1))
     ap.add_argument("--end", type=date.fromisoformat, default=date(2023, 12, 31))
@@ -206,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
             for r in ex.map(_minute_job, [(str(a.minutes), d) for d in _weekdays(a.start, a.end, nyse)], chunksize=16):
                 rows.extend(r)
     if a.demo:
-        rows.extend(demo_rows(demo_quotes(a.demo)))
+        rows.extend(demo_rows(demo_quotes(a.demo), a.demo_every_minute))
     summary = aggregate(rows)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps({"start": a.start.isoformat(), "end": a.end.isoformat(), "rows": summary}, indent=1),
