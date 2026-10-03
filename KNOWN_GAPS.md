@@ -179,6 +179,21 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - All 740 graded days have prices.
     - Median spreads are 0.34 bp at 03:00, 0.40 bp at 09:00, 0.36 bp at 09:55 and 0.36 bp at 12:00 JST, against 1.15 bp at 07:00 (the rollover) and 0.66 bp at 08:00. The research's post-rollover entry (X3) would pay about three times Bessho's 03:00 spread, and the swap-free venue makes the rollover free to hold through.
   - **Owner rulings 2026-10-03 (third session, all "Recommended"):** entry at 03:00 JST (Bessho's own time); Bessho's day rule (5/10/15/20/25/30, the month's last day when it is shorter, moved to the previous bank day, Tue–Fri); register BOTH v1a (H1) and v1b (H1+H2) before either grade, each kill-only, with forward eligibility pre-declared as survival plus a cost check on the demo's own spreads; push.
+  - **THE LOOKS (2026-10-03, third session; `scripts/r1_gotobi_kill_test.py` at `63d85f5`; both lines registered before either grade; looks `000015` (v1a) and `000016` (v1b), outcomes `000017`/`000018`, anchored on GitHub `look-anchor`; register, `gotobi.json` and the holiday calendar copied to `gs://acis-compute-0929-data/validation/2026-10-03f/`):** graded 2012-02-01 to 2023-12-29 (3,108 marks; 740 days traded, none skipped).
+    - **v1a (H1): net annual Sharpe 1.81, HAC t 6.51, NOT killed**; 1.54 at 2× cost.
+    - **v1b (H1+H2): 1.96, HAC t 7.12, NOT killed**; 1.61 at 2× cost.
+    - The control (the same legs on the 1,649 non-gotobi Tue–Fri bank days) earned −0.07 and +0.08.
+    - Survival credits nothing: the family is LLM-selected, so it is kill-only and earns credit only forward (§5.6).
+  - **Context, post-hoc, from the stored vectors only (no new variant was simulated):**
+    - v1a per trade: mean +5.3 bp, median +4.8 bp, sd 22 bp, hit rate 64%.
+    - Positive in 11 of 12 years, and 1.61 without its 10 best days.
+    - Decaying: 2.21 in 2012–17, 1.30 in 2018–23, and −0.51 in 2023.
+    - Correlation with REBAL v1a 0.03, and with D1-FX13 −0.01.
+    - The clock was spot-checked against the scalar decoder (2019-05-15, 2015-07-10: the entry tick at 17:59:5x UTC and the exit tick at 00:54:59 UTC, the same prices).
+  - **What the book idealises (fix before any forward trade):**
+    - It exits at the last tick at or before 09:55:00, the fix itself, at Dukascopy's quote. A live exit must fire seconds earlier on the venue's own quote, into the fix-time flow.
+    - It assumes Dukascopy's spread, never the demo's.
+    - Exit-time sensitivity (09:50, 09:45) would be a NEW look: register it first, never simulate it ad hoc.
   - Proof: `test_a_gotobi_day_off_the_bank_calendar_moves_back_and_two_that_meet_count_once`, `test_the_30th_rule_falls_to_february_end_and_the_month_end_rule_takes_the_31st`, `test_a_price_is_the_last_tick_at_or_before_the_time_never_a_later_or_stale_one`, `test_each_leg_pays_both_sides_and_the_gated_reversal_trades_only_after_a_rise`, `test_a_planted_gotobi_rise_earns_net_and_a_flat_market_loses_only_its_costs`.
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
