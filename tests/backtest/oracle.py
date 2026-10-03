@@ -18,10 +18,13 @@ Invariants:
   * The oracle obeys the account's evaluable rules (oracle_loop.py, audit F2). So a rule
     violation on ANY market means the oracle or the rule model is broken, and a control
     (null, permuted) counts as refused only by a §14 row, never by a rule or a sample floor.
-  * The oracle selects nothing, so its honest trial record is EMPTY. The ratified gate needs
-    >= 2 trials, so `passed` is False BY CONSTRUCTION; `non_dsr_failures` is every OTHER clause
-    of `report.build_report`'s `passed`, which is what a positive control must clear. Nothing
-    here modifies that gate.
+  * The oracle selects nothing and is no registered family-version, so it has no C-BT-11 v2 stage
+    record and `passed` is False BY CONSTRUCTION. `non_dsr_failures` is the LEGACY LAB CRITERION
+    the oracle controls were calibrated on (GAP-P12D-31/37): every §14 row the report still
+    reports (the five retired since v2.21 included, so a null is refused by a §14 row) plus
+    C-BT-2/4/7, the v2.20 clauses except the trials and the Deflated Sharpe. Since R1.4 it is
+    STRICTER than `passed`'s report-level clauses (`GATES` + C-BT-2/4/7), never looser. Nothing
+    here modifies the production gate.
 """
 
 from __future__ import annotations
@@ -105,8 +108,8 @@ def grade_oracle(spec: MarketSpec, cfg: AcisConfig, account: str, folds: Sequenc
 
 
 def non_dsr_failures(report: ValidationReport, expected_guardrail_hash: str) -> tuple[str, ...]:
-    """Every clause of the ratified `passed` EXCEPT the trial count and the Deflated Sharpe,
-    read from report.py's own constants (one source): what a positive control must clear."""
+    """The legacy lab criterion (see the mental model): every reported §14 row and C-BT-2/4/7, read
+    from report.py's own constants (one source): what a positive control must clear."""
     out = [f"section-14 {k}" for k, ok in report.targets_met.items() if not ok]
     years = (report.period[1] - report.period[0]) / timedelta(days=365.25)
     if years < _MIN_YEARS:

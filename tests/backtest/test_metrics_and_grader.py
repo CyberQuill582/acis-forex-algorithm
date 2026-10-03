@@ -17,7 +17,7 @@ from tests.backtest.metrics import (ClosedTrade, MetricBlock, annual_sharpe,
                                     positive_months_pct, profit_factor,
                                     rolling_var_breach_rate,
                                     var_breach_frequency, win_rate)
-from tests.backtest.report import build_report, grade_out_of_sample
+from tests.backtest.report import StageRecord, build_report, grade_out_of_sample
 from tests.backtest.walk_forward import generate_folds
 
 T0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -145,33 +145,49 @@ def _report(**over):
                 in_sample=_block(), out_of_sample=_block(), per_regime={},
                 guardrail_hash=GH, expected_guardrail_hash=GH,
                 var_breach_frequency=0.0, rule_violations=[], fidelity_caveats=["tick"],
-                trial_count=12, deflated_sharpe=0.97)
+                trial_count=12, deflated_sharpe=0.97, stages=STAGES)
     base.update(over)
     return build_report(**base)
+
+
+STAGES = StageRecord(b0=True, stage_a=True, stage_b=True, stage_c_killed=False)
 
 
 def test_passing_report_passes() -> None:
     assert _report().passed is True
 
 
-def test_deflated_sharpe_below_095_cannot_pass() -> None:
-    """GAP-P12D-16 (owner-ratified): every §14 metric passes, but the Sharpe does not
-    survive the correction for the trials behind it."""
-    r = _report(deflated_sharpe=0.94)
-    assert all(r.targets_met.values()) and r.passed is False
-    assert _report(deflated_sharpe=0.95).passed is True
-    assert _report(deflated_sharpe=float("nan")).passed is False       # no Sharpe at all
+def test_the_deflated_sharpe_and_trial_count_are_informational() -> None:
+    """C-BT-11 v2 (R1.4) superseded GAP-P12D-16's DSR clause: it stays a reported column."""
+    for r in (_report(deflated_sharpe=0.5), _report(deflated_sharpe=float("nan")), _report(trial_count=0)):
+        assert r.passed is True
+    assert _report(deflated_sharpe=0.5).deflated_sharpe == 0.5
 
 
-def test_unrecorded_trials_cannot_pass() -> None:
-    """Fewer than 2 trials means the selection went unrecorded, so the DSR corrects nothing."""
-    assert _report(trial_count=1).passed is False
+def test_without_its_stage_record_nothing_passes() -> None:
+    """GAP-P12D-104: `passed` needs B0, stages A and B passed and no stage-C kill; the defaults cannot pass."""
     r = _report()
     kwargs = dict(account=r.account, period=r.period, n_folds=3, in_sample=r.in_sample,
                   out_of_sample=r.out_of_sample, per_regime={}, guardrail_hash=GH,
                   expected_guardrail_hash=GH, var_breach_frequency=0.0, rule_violations=[],
                   fidelity_caveats=["tick"])
-    assert build_report(**kwargs).passed is False                       # the defaults cannot pass
+    assert build_report(**kwargs).passed is False and build_report(**kwargs).stages is None
+    for field in ("b0", "stage_a", "stage_b"):
+        assert _report(stages=StageRecord(**{**STAGES.__dict__, field: False})).passed is False, field
+    assert _report(stages=StageRecord(True, True, True, stage_c_killed=True)).passed is False
+
+
+def test_the_two_gates_bind_and_the_retired_shape_rows_are_only_reported() -> None:
+    """Master §14 v2.21: Max DD < 15% and SPX correlation < 0.25 gate; Sharpe, win rate, profit
+    factor, positive months and duration are reported, never gated. GAP-P12D-104: a verdict alone
+    could have passed a 30% drawdown."""
+    shape = _report(out_of_sample=_block(annual_sharpe=0.4, win_rate=0.35, profit_factor=1.1,
+                                         positive_months_pct=40.0, avg_trade_duration_s=10.0))
+    assert shape.passed is True
+    assert [k for k, ok in shape.targets_met.items() if not ok] == [
+        "annual_sharpe", "win_rate", "profit_factor", "positive_months", "avg_duration"]
+    assert _report(out_of_sample=_block(max_drawdown_pct=30.0)).passed is False
+    assert _report(out_of_sample=_block(spx_correlation=0.30)).passed is False
 
 
 def test_single_fold_cannot_pass() -> None:
@@ -201,9 +217,9 @@ def test_guardrail_hash_mismatch_invalidates() -> None:
 
 def test_grader_uses_out_of_sample_only() -> None:
     """C-BT-1: a stellar in-sample block cannot rescue a failing out-of-sample."""
-    r = _report(in_sample=_block(annual_sharpe=9.0),
-                out_of_sample=_block(annual_sharpe=0.5))     # OOS fails Sharpe
-    assert r.targets_met["annual_sharpe"] is False
+    r = _report(in_sample=_block(annual_sharpe=9.0, max_drawdown_pct=2.0),
+                out_of_sample=_block(annual_sharpe=0.5, max_drawdown_pct=25.0))   # OOS fails the DD gate
+    assert r.targets_met["annual_sharpe"] is False and r.targets_met["max_drawdown"] is False
     assert r.passed is False
 
 

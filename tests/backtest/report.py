@@ -7,15 +7,19 @@ The honesty guards live HERE, in code, not just in prose:
     (GAP-P11I-06 honesty: this is a FLOW guarantee, not a type barrier — both
     blocks are `MetricBlock`, so the guard is "the grader is never handed the
     in-sample block", proven by test, not "the type makes it impossible");
-  · `passed` additionally requires ≥2 years, >1 walk-forward fold (C-BT-2),
-    a minimum trade count (GAP-P11I-07 — a single lucky trade with PF=+inf
-    cannot clear §14), a Deflated Sharpe ≥ 0.95 over ≥ 2 recorded trials (C-BT-11,
-    GAP-P12D-16 — a raw Sharpe inflated by selection cannot pass), an empty
-    `rule_violations` (C-BT-7, §9.5 — a rule-
-    violating pass is not a pass), and a matching `guardrail_hash` (C-BT-4);
+  · `passed` is ACIS-09 C-BT-11 v2's (R1.4, GAP-P12D-104; master §14 v2.21/v2.22): the
+    family-version's STAGE RECORD holds (B0, stages A and B passed, stage C did not kill;
+    `verdict.py` decides stage A from the register), AND the two §14 gates (Max DD < 15%,
+    SPX correlation < 0.25), AND C-BT-2 (≥2 years, >1 fold, ≥30 trades — GAP-P11I-07),
+    C-BT-4 (the guardrail hash) and C-BT-7 (no §9.5 rule violation). A report without a
+    stage record never passes, so a 30% drawdown or a tampered hash cannot reach the human
+    token on a verdict alone (the GAP-P12D-104 defect);
+  · reported with every grade, never gated (master §14, the §5.6 expectancy law): annual
+    Sharpe, win rate, profit factor, positive months, average duration (`targets_met` keeps
+    all seven rows), and the Deflated Sharpe and trial count (informational, GAP-P12D-16 superseded);
   · grading is per account (C-BT-7).
-A single split, a too-thin sample, an in-sample grade, a rule-violating run, or
-a relaxed-limit run CANNOT pass — provable by test.
+A single split, a too-thin sample, an in-sample grade, a rule-violating run, a
+relaxed-limit run, or a family without its stage record CANNOT pass — provable by test.
 """
 
 from __future__ import annotations
@@ -37,12 +41,11 @@ POSITIVE_MONTHS_MIN_PCT = 70.0
 SPX_CORR_MAX = 0.25
 DURATION_MIN_S = 30 * 60            # 30 min
 DURATION_MAX_S = 48 * 3600         # 48 h
+GATES = ("max_drawdown", "spx_correlation")   # the only gated §14 rows since v2.21 (GAP-P12D-96)
 
 _MIN_YEARS = 2.0
 _MIN_FOLDS = 2                       # >1 fold — a single split cannot pass
-DSR_MIN = 0.95                       # GAP-P12D-16 (owner-ratified 2026-09-15): 95% confidence
-_MIN_TRIALS = 2                      # the ratified trial set holds ≥1 champion per fold, and
-#                                      C-BT-2 needs >1 fold — fewer means trials went unrecorded
+DSR_MIN = 0.95                       # GAP-P12D-16's former gate: now an informational column
 _MIN_TRADES = 30                     # GAP-P11I-07: a statistically meaningful sample
 #                                      (mirrors master §8 alpha_decay_min_trades) —
 #                                      one lucky PF=+inf trade cannot clear §14
@@ -50,6 +53,19 @@ _MIN_TRADES = 30                     # GAP-P11I-07: a statistically meaningful s
 
 class InSampleGradeError(Exception):
     """Raised if anything tries to grade an in-sample block (C-BT-1)."""
+
+
+@dataclass(frozen=True)
+class StageRecord:
+    """C-BT-11 v2's verdict on the graded family-version, read from its records (R1.4)."""
+    b0: bool                         # the machinery proven at the same recon_commit (step 0)
+    stage_a: bool                    # in its cycle's `verdict.cycle_verdict(...).passed`
+    stage_b: bool                    # the engine confirmation (step 4)
+    stage_c_killed: bool             # the held-out instruments or the 2024-25 holdout killed it (step 6)
+
+    @property
+    def holds(self) -> bool:
+        return self.b0 and self.stage_a and self.stage_b and not self.stage_c_killed
 
 
 @dataclass(frozen=True)
@@ -72,8 +88,8 @@ class ValidationReport:
     rule_violations: tuple[str, ...]
     fidelity_caveats: tuple[str, ...]
     guardrail_hash: str
-    # GAP-SP12E-03 / GAP-P12D-16: `passed` requires deflated_sharpe >= DSR_MIN over at least
-    # _MIN_TRIALS trials. NaN (the OOS returns carry no Sharpe) fails.
+    # GAP-SP12E-03 / GAP-P12D-16: informational since R1.4 (C-BT-11 v2: "the Deflated Sharpe
+    # stays as an informational column"); no clause of `passed` reads them.
     trial_count: int
     deflated_sharpe: float
     # GAP-P12D-18: the in-sample transparency record — one evolution summary per fold
@@ -82,6 +98,7 @@ class ValidationReport:
     # GAP-P12D-64: the look-register line this grade wrote first, and the register's
     # per-family look counts. Informational: no clause of `passed` reads it.
     look: Mapping = field(default_factory=dict)
+    stages: StageRecord | None = None       # C-BT-11 v2's stage record; None = not graded by it
 
 
 def grade_out_of_sample(block: MetricBlock) -> dict[str, bool]:
@@ -107,18 +124,18 @@ def build_report(*, account: str, period: tuple[datetime, datetime], n_folds: in
                  per_strategy: Mapping[str, SliceStats] = {},
                  split: str = "walk_forward", trial_count: int = 0,
                  deflated_sharpe: float = math.nan,
-                 in_sample_evolution: Sequence[Mapping] = ()) -> ValidationReport:
+                 in_sample_evolution: Sequence[Mapping] = (),
+                 stages: StageRecord | None = None) -> ValidationReport:
     targets_met = grade_out_of_sample(out_of_sample)          # C-BT-1: OOS only
 
     years = (period[1] - period[0]) / timedelta(days=365.25)
     guardrails_ok = guardrail_hash == expected_guardrail_hash  # C-BT-4
     passed = (
-        all(targets_met.values())
+        stages is not None and stages.holds    # C-BT-11 v2: B0, A, B passed, C did not kill
+        and all(targets_met[g] for g in GATES)  # §14: Max DD, SPX correlation
         and years >= _MIN_YEARS                # ≥2 years
         and n_folds >= _MIN_FOLDS              # >1 fold (C-BT-2)
         and out_of_sample.n_trades >= _MIN_TRADES  # thin-sample floor (P11I-07)
-        and trial_count >= _MIN_TRIALS         # the selection is recorded (P12D-16)
-        and deflated_sharpe >= DSR_MIN         # selection-bias-corrected Sharpe; NaN fails
         and not rule_violations                # §9.5 (C-BT-7)
         and guardrails_ok                      # production limits (C-BT-4)
     )
@@ -131,4 +148,4 @@ def build_report(*, account: str, period: tuple[datetime, datetime], n_folds: in
         var_breach_frequency=var_breach_frequency,
         rule_violations=tuple(rule_violations), fidelity_caveats=tuple(fidelity_caveats),
         guardrail_hash=guardrail_hash, trial_count=trial_count,
-        deflated_sharpe=deflated_sharpe, in_sample_evolution=tuple(in_sample_evolution))
+        deflated_sharpe=deflated_sharpe, in_sample_evolution=tuple(in_sample_evolution), stages=stages)

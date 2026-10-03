@@ -144,6 +144,14 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-149: C-BT-11 v2's stage record has no producers yet — B0's record, stage B, stage C and the per-account re-grade — so no report can pass
+- Severity: medium · Likelihood: certain
+- Status: open (2026-10-03, R1.4; found building GAP-P12D-104)
+- Area: tests/backtest/report.py `StageRecord`, tests/backtest/verdict.py (stage A only), ACIS-09 C-BT-11 v2 steps 0, 4, 5, 6
+- Description: `passed` now requires a stage record, but only stage A has a producer (`verdict.cycle_verdict`). B0's lab machinery exists (GAP-P12D-105) without a record at a `recon_commit`; stage B (one frozen expanding-WF run of the real engine on hourly bars, graded on daily OOS net returns, Bonferroni over ≤ 3 engine looks, the engine's Sharpe not significantly below RSIM's) is NOT BUILT and had no ledger owner; stage C (GAP-P12D-114) and the per-account re-grade (GAP-P12D-112) are open. Stage B also needs the R1.6 target path inside the backtest harness, since the legacy fast-loop harness grades the retired modules.
+- Justification: open and safe: every report fails closed (`passed` is False without a full record), and the live gate reads a rung-2 record that production wires to False. Not needed for the first stage-A look; needed before any family can be called "validated on history".
+- Linked: [[GAP-P12D-104]], [[GAP-P12D-105]], [[GAP-P12D-112]], [[GAP-P12D-114]], [[GAP-P12D-127]]
+
 ## GAP-P12D-148: the 2026-10-02 research pass (five agents) — why the engine loses, what winners do, what prop traders make: findings and triage
 - Severity: high · Likelihood: certain
 - Status: open (2026-10-02: five agents on the owner's go — "i need agents launched to do thorough research and deduce what might be causing our engine to be losing thus far … you can launch up to 5 agents each with different privileges"; triaged by the lead; owner decisions and verification remainders below)
@@ -472,6 +480,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - R12I-12's ungated `Backtest.run`: R1.4's `evaluate()` becomes the only producer of a graded number, with a required consumed-look token (GAP-P12D-98's residual).
   - **OWNER DECISIONS, RULED 2026-09-29:** E-R12-02 "The stricter boundary (Recommended)" — applied as master v2.24 §5.6 and ACIS-09 v1.10, and BUILT: `Origin` records the training-data cutoff, the proposal date and the exposure, an LLM-selected paper is LLM-touched, and the claim line records its certifying boundary (`test_the_certifying_boundary_is_the_later_of_the_cutoff_and_an_exposed_proposal`). E-R12-07 "Push the chain head to GitHub (Recommended)" — applied as ACIS-09 v1.10; built at R1.4 ([[GAP-P12D-86]]).
 - Justification: mitigated; the gate stays closed until the R1.3/R1.4 items and the GitHub anchor land. No real-data look has been registered (`data/validation/looks` does not exist), so nothing has been graded wrongly.
+- **Progress 2026-10-03 (R1.4):** the verdict module (stage A's chain, [[GAP-P12D-111]]), `passed` ([[GAP-P12D-104]]) and the portfolio unit ([[GAP-P12D-100]]) are BUILT. Still owed before `REAL_LOOKS_OPEN`: R12I-03 (the simulator binding), R12I-04 (each stage-A look names its cycle and look index), R12I-08 (the outcome as a chained line), R12I-11 (the motif veto, the void rule), R12I-12 (`evaluate()` the only producer, with a consumed-look token) and the anchor ([[GAP-P12D-86]]).
 - Residual: GAP-P12D-127 — the R1.3/R1.4 items listed above and the GitHub anchor ([[GAP-P12D-86]]), which must land before `REAL_LOOKS_OPEN` becomes True.
 - Linked: [[GAP-P12D-98]], [[GAP-P12D-64]], [[GAP-P12D-66]], [[GAP-P12D-86]], [[GAP-P12D-89]], [[GAP-P12D-111]]
 
@@ -668,11 +677,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-111: stage A controls family-wise error at ~2α, not α; its looks go unadjusted; and α restarts every quarter
 - Severity: high · Likelihood: certain
-- Status: open [impl — spec corrected v2.22; build R1.4 (verdict module)] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Status: fixed (2026-10-03, R1.4: serial gatekeeping, α/k per look and the spending schedule are built) (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
 - Area: ACIS-09 v1.7 C-BT-11 v2 stage A
 - Description: a fixed-sequence chain plus a parallel Holm set, each at α, gives FWER 0.081–0.096 (seeded; ≈ 0.0975 for independent sets, lead arithmetic). "≤ 3 looks per family" has no correction. The quarterly stream has no lifetime budget (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I13, archive/AUDIT_R1_AMENDMENTS_EXTERNAL_2026-09-25.md E2, FDA Multiple Endpoints guidance 2022 §§5, 7).
-- Justification: open. Disposition: C6: serial gatekeeping, a declared look budget k at α/k, and the order registered before any look; D-d (recommended: α-spending, 0.03 then half the remainder). APPLIED to the spec: the owner ratified the triage 2026-09-25 ("Ratify all"); the spec is corrected in master v2.22 and the deep specs. The build is owed; the as-built v2.20 behaviour stands until it lands.
-- Linked: [[GAP-P12D-102]], [[GAP-P12D-121]], [[GAP-P12D-103]]
+- **Fix 2026-10-03:** `tests/backtest/verdict.py` `cycle_verdict`: the chain's members are tested in the registered order at the cycle's α and testing stops at the first member that has not passed; a member's p is k × its best look's one-sided HAC p (each look at α/k, k the declared budget); the Holm set is tested only after the whole chain passed, Holm at the cycle's α; an explored member, a pending look or a broken register fails closed. The order-before-any-look rule and the spending schedule (0.03, then half the unspent remainder, one cycle a UTC quarter) were built at R1.2 (`look_claims.cycle_line`).
+- Residual: GAP-P12D-127 — each stage-A look does not yet name its cycle and look index (R12I-04), so a variant listed in two cycles would count its looks in both; that lands before real-data looks open.
+- Justification: fixed. Disposition C6 + D-d (owner-ratified 2026-09-25) built as specified; GAP-P12D-140 (1) may still re-rule cycle 1's allocation before its row is registered.
+- Linked: test_the_chain_passes_in_order_and_stops_at_the_first_member_that_has_not_passed, test_each_look_is_tested_at_alpha_over_k, test_the_holm_set_is_tested_only_after_the_whole_chain_passed, test_holm_passes_the_strong_member_first_and_then_tests_the_next_at_the_full_alpha, test_an_explored_member_a_pending_look_and_a_broken_register_fail_closed, [[GAP-P12D-102]], [[GAP-P12D-121]], [[GAP-P12D-103]]
 
 ## GAP-P12D-110: the stage-D forward bettors are mis-specified — E2 mixes a Sharpe with a return, σ* has no unit, and the clip contradicts "never clipped"
 - Severity: medium-high · Likelihood: high
@@ -739,11 +750,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-104: C-BT-11 v2 redefines `passed`, the field the live gate reads, without the §14 Max DD/SPX gates or C-BT-2/4/7
 - Severity: high · Likelihood: medium
-- Status: open [impl — spec corrected v2.22; build R1.4 (verdict module; `report.py`, `mode.py`)] (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
+- Status: fixed (2026-10-03, R1.4: `report.passed` is C-BT-11 v2's; built to the spec as corrected in v2.22) (2026-09-25 — from the dual audit of master v2.21; triage in R1_AUDIT_TRIAGE_2026-09-25.md)
 - Area: ACIS-09 v1.7 C-BT-11 v2 and its live-gate paragraph; ACIS-08; monitoring/mode.py
 - Description: a built verdict would pass a 30% drawdown or a guardrail-hash mismatch to the human token (the live gate reads `passed`: ACIS-09's live-gate paragraph, `mode.py`, verified by the lead). A2 ratified replacing only the DSR clause (archive/AUDIT_R1_AMENDMENTS_INTERNAL_2026-09-25.md I1).
-- Justification: open. Disposition: C1: `passed` = the verdict AND §14 gates AND C-BT-2/4/7; the live gate reads rung 2. APPLIED to the spec: the owner ratified the triage 2026-09-25 ("Ratify all"); the spec is corrected in master v2.22 and the deep specs. The build is owed; the as-built v2.20 behaviour stands until it lands.
-- Linked: [[GAP-P12D-96]], [[GAP-P12D-103]]
+- **Fix 2026-10-03:** `tests/backtest/report.py`: `passed` = a `StageRecord` that holds (B0, stages A and B passed, stage C did not kill) AND the two §14 gates (`GATES`: Max DD < 15%, SPX correlation < 0.25) AND C-BT-2 (≥ 2 years, > 1 fold, ≥ 30 trades), C-BT-4 and C-BT-7. A report without a stage record never passes. The five retired §14 rows stay in `targets_met`, reported and never gated; the Deflated Sharpe and trial count are informational. The legacy oracle's `non_dsr_failures` stays the v2.20 lab criterion its controls were calibrated on (GAP-P12D-31/37), and a test pins it as never looser than `passed`. The live gate is unchanged: production wires `validation_record_ok=lambda: False` (`core/runtime/wiring.py`), and the rung-2 record does not exist yet.
+- Residual: GAP-P12D-149 — the stage record's producers (B0's record, stage B, stage C, the per-account re-grade); until they exist every report's `passed` is False.
+- Justification: fixed. Disposition C1 (owner-ratified 2026-09-25, "Ratify all") is built as specified.
+- Linked: test_without_its_stage_record_nothing_passes, test_the_two_gates_bind_and_the_retired_shape_rows_are_only_reported, test_the_deflated_sharpe_and_trial_count_are_informational, test_non_dsr_failures_is_never_looser_than_passed, [[GAP-P12D-96]], [[GAP-P12D-103]]
 
 ## GAP-P12D-103: the dual audit of the applied R1 amendments (master v2.21, commit 271d8e0)
 - Severity: high · Likelihood: high
@@ -801,11 +814,13 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 
 ## GAP-P12D-100: a pooled rule must be graded on its portfolio daily series — the stacked instrument × day panel passes a zero-edge rule 9.5–32% of the time
 - Severity: high · Likelihood: medium
-- Status: open [impl] (2026-09-25 — from PLAN_R1 §9 #12, R1-A simulation; not re-run by the local lead)
+- Status: fixed (2026-10-03, R1.4: the verdict reads only the stored portfolio vector) (2026-09-25 — from PLAN_R1 §9 #12, R1-A simulation; not re-run by the local lead)
 - Area: the verdict module (PLAN_R1 R1.4), C-BT-11 v2 (A2)
 - Description: pooling instruments into one panel and testing the stacked instrument-days treats correlated observations as independent. R1-A measured 9.5–32% false passes on a zero-edge rule, against 3.8–6.0% for the portfolio daily series.
-- Justification: open; built with the verdict module, pinned by a lab test that the panel form is never the graded unit.
-- Linked: [[GAP-P12D-89]], [[GAP-P12D-98]]
+- **Fix 2026-10-03:** `tests/backtest/verdict.py` grades a member only through `stage_a.from_register`, which reads the look's stored daily vector; `evaluate()` stores RSIM's book-level `daily` (one net return per day), and `store_vector` refuses a repeated date, so a stacked instrument × day panel cannot be stored, let alone graded.
+- Residual: none — the graded unit is structural: one vector per look, keyed by strictly increasing dates.
+- Justification: fixed; the 9.5–32% figure is PLAN_R1's and was not re-run (it no longer matters: the panel form cannot reach the grader).
+- Linked: test_a_stacked_instrument_day_panel_cannot_be_stored_as_the_graded_vector, [[GAP-P12D-89]], [[GAP-P12D-98]]
 
 ## GAP-P12D-99: `core/signals/indicators.py` imports its indicators from `core/optimizer/fitness.py` — they must move before QIEA can be retired
 - Severity: low · Likelihood: certain
@@ -1907,7 +1922,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - the VALIDATOR's calibration shows it passes 0 of 1,200 planted edges.
     The gate itself was not touched.
   - **Lead review:** diff read; the lead re-ran the full suite on the branch (828 passed, 6 skipped). Close this entry when the branch merges, after audit and the owner's go.
-- Proof: `test_a_failed_oracle_voids_the_verdict_before_any_engine_compute`, `test_a_near_fail_rung_the_harness_passes_voids_the_verdict`, `test_the_planted_oracle_clears_every_non_dsr_clause_at_full_fold_scale`, `test_the_harness_passes_a_rung_just_above_the_cut_offs_and_refuses_one_just_below`, `test_non_dsr_failures_is_every_clause_of_passed_but_the_trials`.
+- Proof: `test_a_failed_oracle_voids_the_verdict_before_any_engine_compute`, `test_a_near_fail_rung_the_harness_passes_voids_the_verdict`, `test_the_planted_oracle_clears_every_non_dsr_clause_at_full_fold_scale`, `test_the_harness_passes_a_rung_just_above_the_cut_offs_and_refuses_one_just_below`, `test_non_dsr_failures_is_never_looser_than_passed (former `test_non_dsr_failures_is_every_clause_of_passed_but_the_trials`)`.
 - Residual: GAP-P12D-33 — the ratified DSR gate itself (it mixes sample lengths and passes 0 of 1,200 planted edges); the owner's option C+D decision is pending.
 - Linked: [[GAP-P12D-33]], [[GAP-P12D-31]], [[GAP-P12D-35]], [[GAP-P12D-36]], [[GAP-P12D-28]], [[GAP-P12D-16]]
 
@@ -2209,7 +2224,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Description: GAP-SP12E-03 required a Deflated Sharpe and a logged trial count before a §14 pass can gate live. Both are now in every `ValidationReport`, but `passed` ignores them, because neither master §14 nor ACIS-09 states a level or a trial definition. Without a gate, a report can pass on a raw Sharpe inflated by selection bias.
 - Justification: two decisions. (1) Level: the paper's worked example uses 95% confidence (DSR ≥ 0.95); gating is a tightening, which the grader allows. (2) Trials: which Sharpe ratios count — the distinct configurations in the ACIS-11 attempt registry, each walk-forward fold's champion, or every QIEA candidate (thousands, highly correlated, which over-deflates). Recommendation: gate at DSR ≥ 0.95; count the attempt-registry configurations for the strategy family plus the per-fold champions, and record N in the report.
 - Resolution: the recommendation is ratified and built. `build_report` now requires `deflated_sharpe >= DSR_MIN` (0.95) and `trial_count >= 2`, and a NaN DSR fails. Trials are the ACIS-11 attempt-registry configurations for the strategy family plus each walk-forward fold's champion. Because C-BT-2 requires more than one fold, a correctly recorded run always has at least 2 trials, so fewer means the selection went unrecorded and the run cannot pass; the harness caveat says so. ACIS-09 v1.4 (C-BT-11).
-- Proof: `test_deflated_sharpe_below_095_cannot_pass`, `test_unrecorded_trials_cannot_pass`, `test_passing_report_passes`
+- Proof: `test_the_deflated_sharpe_and_trial_count_are_informational` (former `test_deflated_sharpe_below_095_cannot_pass`; the DSR gate was superseded at R1.4, GAP-P12D-104), former `test_unrecorded_trials_cannot_pass`, `test_passing_report_passes`
 - Amendment (2026-09-15, GAP-P12D-18): the registry entries have no returns, so the computable trial set is each fold's out-of-sample daily Sharpe (the variance), with N lifted to every champion evolved plus the attempt-registry count.
 - Residual: GAP-P12D-23 — the runner must supply the trials and at least 2 folds, and GAP-P12D-25 replaces the trial set; until then no report can pass.
 - Linked: [[GAP-SP12E-03]], [[GAP-SP12E-01]], tests/backtest/deflated_sharpe.py
@@ -2294,7 +2309,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Description: `generate_folds` sets `test_start = train_end` (zero embargo/purge — boundary leakage not removed); no Deflated Sharpe / trial-count anywhere in code (grader applies raw `annual_sharpe>1.5`). These are the defences against the SP12E-01 overfit risk; the runbook cited them as its ground truth (López de Prado) while shipping neither.
 - Justification: dual-nature (read-path truth + faithful-method). Runbook corrected now; the build (embargo gap in generate_folds + deflated_sharpe/trial_count in ValidationReport) is a REQUIRED pre-grade item on the evolve-driver build, elevated from "enhancement" to "load-bearing".
 - Built (2026-09-15): `generate_folds` takes a required `embargo`, so `test_start = train_end + embargo`. `Backtest.run` refuses any fold whose real last-train → first-test tick gap is shorter than the max hold (`require_embargo`). tests/backtest/deflated_sharpe.py implements Bailey & López de Prado (2014) Eq. (2), with raw kurtosis, √(T−1) and per-period Sharpe ratios, and reproduces the paper's own numerical example (SR0 0.1132, DSR 0.9004 at N=100 and 0.9505 at N=46). `Backtest.run(trial_sharpes=…)` fills `ValidationReport.trial_count` and `deflated_sharpe`, and adds a caveat when fewer than 2 trials are supplied. ACIS-09 → v1.4 (C-BT-11).
-- Proof: `test_generate_folds_leaves_the_embargo_gap`, `test_harness_refuses_a_fold_shorter_than_the_max_hold`, `test_reproduces_the_papers_numerical_example`, `test_more_trials_deflate_more`, `test_no_selection_means_a_zero_threshold`, `test_moments_of_a_known_series`, `test_no_sharpe_means_nan`, `test_deflated_sharpe_below_095_cannot_pass`, `test_unrecorded_trials_cannot_pass`
+- Proof: `test_generate_folds_leaves_the_embargo_gap`, `test_harness_refuses_a_fold_shorter_than_the_max_hold`, `test_reproduces_the_papers_numerical_example`, `test_more_trials_deflate_more`, `test_no_selection_means_a_zero_threshold`, `test_moments_of_a_known_series`, `test_no_sharpe_means_nan`, `test_the_deflated_sharpe_and_trial_count_are_informational` (former `test_deflated_sharpe_below_095_cannot_pass`; the DSR gate was superseded at R1.4, GAP-P12D-104), former `test_unrecorded_trials_cannot_pass`
 - Residual: GAP-P12D-23 — the runner supplies the embargoed folds; GAP-P12D-25 — the trial set the gate deflates by.
 - Linked: OOS_VALIDATION.md, walk_forward.py:43, report.py, TODO.md phase-12 item (2), [[GAP-SP12E-01]], [[GAP-P12D-16]]
 

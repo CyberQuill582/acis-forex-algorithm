@@ -29,7 +29,7 @@ from tests.backtest.oracle import grade_oracle, non_dsr_failures, oracle_ticks, 
 from tests.backtest.oracle_loop import NOTIONAL_FRACTION, STRATEGY, OracleLoop, OracleTick
 from tests.backtest.synthetic_grade import FIRST_MID, START, plan
 from tests.backtest.synthetic_market import MarketSpec, SyntheticMarket, episodes
-from tests.backtest.report import SHARPE_MIN
+from tests.backtest.report import GATES, SHARPE_MIN
 from tests.backtest.test_metrics_and_grader import GH, _block, _report
 from tests.backtest.tick_stream import build_factory, market_states
 from tests.optimizer_fixtures import CapturingLogger
@@ -106,15 +106,19 @@ def test_the_oracle_sizes_one_nav_of_notional_on_every_instrument() -> None:
     assert [o.size_units for o in loop.book.orders] == [Decimal(9090), Decimal(10000), Decimal(5)]
 
 
-def test_non_dsr_failures_is_every_clause_of_passed_but_the_trials() -> None:
-    """The positive control's criterion must not drift from the ratified gate: with the trial
-    clauses satisfied, `passed` holds exactly when there is no non-DSR failure."""
+def test_non_dsr_failures_is_never_looser_than_passed() -> None:
+    """The legacy lab criterion must not drift below the production gate: with the stage record
+    holding, every report `passed` refuses also fails the criterion, and the criterion adds only the
+    retired §14 rows (R1.4, GAP-P12D-104)."""
     short = (START, START + timedelta(days=365))
     cases = [_report(), _report(out_of_sample=_block(annual_sharpe=0.5)), _report(n_folds=1),
              _report(period=short), _report(out_of_sample=_block(n_trades=5)),
+             _report(out_of_sample=_block(max_drawdown_pct=30.0)),
              _report(rule_violations=["min_hold"]), _report(guardrail_hash="TAMPERED")]
     for r in cases:
-        assert r.passed is (not non_dsr_failures(r, GH)), (r.passed, non_dsr_failures(r, GH))
+        fails = non_dsr_failures(r, GH)
+        assert r.passed or fails, (r.passed, fails)
+        assert r.passed is not any(not f.startswith("section-14") or f.split()[1] in GATES for f in fails), fails
     assert non_dsr_failures(_report(trial_count=0, deflated_sharpe=float("nan")), GH) == ()
 
 

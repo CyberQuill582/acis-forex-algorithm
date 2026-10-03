@@ -1,0 +1,121 @@
+"""The register-aware stage-A verdict (ACIS-09 C-BT-11 v2 steps 2-3; GAP-P12D-111, GAP-P12D-100):
+serial gatekeeping over a registered cycle, each look at alpha/k, Holm outside the chain, fail closed."""
+
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta, timezone
+
+import numpy as np
+import pytest
+
+from tests.backtest.look_claims import store_vector
+from tests.backtest.look_declarations import Declaration
+from tests.backtest.test_look_claims import _claim, _look, canonical  # noqa: F401 (fixture)
+from tests.backtest.verdict import VerdictRefused, cycle_verdict
+
+RNG = np.random.default_rng(7)
+NOISE = RNG.normal(0.0, 0.01, 2500)
+NULL = NOISE - NOISE.mean()                      # HAC t = 0: p = 0.5
+EDGE = NULL + 0.002                              # HAC t ~ 10: p ~ 0
+WHEN = datetime.now(timezone.utc) - timedelta(days=1)
+
+
+def _variant(name: str, kind: str = "fixed", k: int = 1):
+    boot = (20, 1) if kind == "explored" else (None, None)
+    return _claim(variant=name, declaration=Declaration(kind, k, "PASSIVE_LONG", *boot))
+
+
+def _graded(reg, cfg, claim, daily, *, benchmark=None, cost2x=None, kill=None):
+    look = _look(reg, cfg, claim=claim, changed=f"grade variant {claim.variant}")
+    reg.consume(look)
+    dates = [date(2014, 1, 1) + timedelta(days=i) for i in range(len(daily))]
+    vec = lambda v: store_vector(reg.root, dates, [float(x) for x in v])            # noqa: E731
+    arms = {"benchmark": "PASSIVE_LONG",
+            "benchmark_vector": vec(np.zeros(len(daily)) if benchmark is None else benchmark),
+            "cost2x_vector": vec(daily if cost2x is None else cost2x),
+            "kill_only_vectors": {n: vec(v) for n, v in (kill or {}).items()}}
+    reg.record_outcome(look, {"stage_a": arms}, daily=(dates, [float(x) for x in daily]))
+    return look
+
+
+def _cycle(reg, chain, holm=()):
+    reg.register_cycle(cycle_id="c1", order=[c.variant_hash for c in chain], holm=[c.variant_hash for c in holm],
+                       now_fn=lambda: WHEN)
+
+
+def test_the_chain_passes_in_order_and_stops_at_the_first_member_that_has_not_passed(canonical, acis_config) -> None:
+    a, b, c = (_variant(n) for n in ("a", "b", "c"))
+    _cycle(canonical, [a, b, c])
+    _graded(canonical, acis_config, a, EDGE)
+    _graded(canonical, acis_config, b, NULL)
+    _graded(canonical, acis_config, c, EDGE)                    # an edge, but behind a failure
+    v = cycle_verdict(canonical.root, "c1")
+    assert v.alpha == 0.03 and [m.status for m in v.chain] == ["passed", "failed", "untested"]
+    assert v.passed == (a.variant_hash,) and v.chain[1].p == 1.0      # a zero mean has no paired excess
+
+
+def test_each_look_is_tested_at_alpha_over_k(canonical, acis_config) -> None:
+    weak = NULL + 0.00045                                       # HAC p ~ 0.016
+    a, b = _variant("a", k=1), _variant("b", k=3)
+    _cycle(canonical, [a, b])
+    _graded(canonical, acis_config, a, weak)
+    _graded(canonical, acis_config, b, weak)
+    v = cycle_verdict(canonical.root, "c1")
+    assert 0.01 < v.chain[0].p < 0.03 and v.chain[0].status == "passed"
+    assert v.chain[1].p == pytest.approx(3 * v.chain[0].p) and v.chain[1].status == "open"   # 3p > 0.03, 2 looks left
+
+
+@pytest.mark.parametrize("bad", [{"benchmark": EDGE + 1e-4}, {"cost2x": EDGE - 0.003},
+                                 {"kill": {"D1:ratiox1.1": NULL - 1e-6}}])
+def test_a_kill_only_failure_refuses_an_edge(canonical, acis_config, bad) -> None:
+    a = _variant("a")
+    _cycle(canonical, [a])
+    _graded(canonical, acis_config, a, EDGE, **bad)
+    m = cycle_verdict(canonical.root, "c1").chain[0]
+    assert m.status == "failed" and m.p == 1.0
+
+
+def test_the_holm_set_is_tested_only_after_the_whole_chain_passed(canonical, acis_config) -> None:
+    a, h1, h2, h3 = _variant("a", k=2), _variant("h1"), _variant("h2"), _variant("h3")
+    _cycle(canonical, [a], holm=[h1, h2])
+    _graded(canonical, acis_config, h1, NULL + 0.00043)        # HAC p ~ 0.021 and ~ 0.026: each < 0.03 alone,
+    _graded(canonical, acis_config, h2, NULL + 0.00041)        # but the smaller is not < 0.03 / 2
+    first = cycle_verdict(canonical.root, "c1")
+    assert first.chain[0].status == "open" and [m.status for m in first.holm] == ["untested", "untested"]
+    _graded(canonical, acis_config, a, EDGE)
+    v = cycle_verdict(canonical.root, "c1")
+    assert v.chain[0].status == "passed"
+    ps = [m.p for m in v.holm]
+    assert all(0.015 < x < 0.03 for x in ps), ps                # the precondition the Holm step needs
+    assert [m.status for m in v.holm] == ["failed", "failed"]   # Holm stops at 0.015; each alone would pass
+
+
+def test_holm_passes_the_strong_member_first_and_then_tests_the_next_at_the_full_alpha(canonical, acis_config) -> None:
+    a, h1, h2 = _variant("a"), _variant("h1"), _variant("h2")
+    _cycle(canonical, [a], holm=[h1, h2])
+    _graded(canonical, acis_config, a, EDGE)
+    _graded(canonical, acis_config, h1, EDGE)
+    _graded(canonical, acis_config, h2, NULL + 0.00041)        # HAC p ~ 0.026 < 0.03 / 1
+    v = cycle_verdict(canonical.root, "c1")
+    assert [m.status for m in v.holm] == ["passed", "passed"] and len(v.passed) == 3
+
+
+def test_an_explored_member_a_pending_look_and_a_broken_register_fail_closed(canonical, acis_config) -> None:
+    e, p = _variant("e", kind="explored"), _variant("p")
+    _cycle(canonical, [p, e])
+    look = _look(canonical, acis_config, claim=p, changed="p")  # registered, never graded
+    v = cycle_verdict(canonical.root, "c1")
+    assert [m.status for m in v.chain] == ["pending", "untested"]
+    with pytest.raises(VerdictRefused, match="no cycle"):
+        cycle_verdict(canonical.root, "c2")
+    (canonical.root / "000001.json").write_bytes(b"{}")         # an edited line breaks the chain
+    with pytest.raises(VerdictRefused, match="broken or torn"):
+        cycle_verdict(canonical.root, "c1")
+    assert look.look_id
+
+
+def test_a_stacked_instrument_day_panel_cannot_be_stored_as_the_graded_vector(canonical) -> None:
+    """GAP-P12D-100: the graded unit is the portfolio daily series; a panel repeats dates."""
+    days = [date(2014, 1, 1) + timedelta(days=i) for i in range(3)]
+    with pytest.raises(ValueError, match="strictly increasing"):
+        store_vector(canonical.root, days + days, [0.0] * 6)

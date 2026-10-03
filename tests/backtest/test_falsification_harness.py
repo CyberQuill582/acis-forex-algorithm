@@ -17,6 +17,7 @@ from tests.backtest.harness import Backtest, FoldData
 from tests.backtest.test_harness_regressions import _FakeLoop, _fold, _ms, _order
 from tests.backtest.test_harness_runtime import NY_ROLL, _ParamsStub
 from tests.optimizer_fixtures import TEST_COSTS
+from tests.backtest.oracle import non_dsr_failures
 
 UTC = timezone.utc
 START = datetime(2016, 1, 4, tzinfo=UTC)                      # a Monday
@@ -70,7 +71,8 @@ def test_a_planted_edge_passes_every_gate() -> None:
     failed = [k for k, ok in report.targets_met.items() if not ok]
     assert failed == [], failed
     assert report.deflated_sharpe >= 0.95 and report.trial_count == 8
-    assert report.passed is True                               # the pipeline CAN pass
+    assert not non_dsr_failures(report, "GH")                  # the report-level grader CAN be cleared
+    assert report.passed is False and report.stages is None    # no stage record: C-BT-11 v2 (R1.4)
 
 
 def test_a_coin_flip_strategy_fails() -> None:
