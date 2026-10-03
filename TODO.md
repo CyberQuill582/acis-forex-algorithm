@@ -1,12 +1,47 @@
 # TODO.md — ACIS build ledger (keep this current, every session)
 
-> **Read the START HERE block below first (checkpoint 2026-10-03).** The Pepperstone demo runs the old code on `acis-demo-1` (practice, unattended, watchdog-guarded) until the AWS cutover 2026-10-15..17; master v2.34.
+> **Read the START HERE block below first (checkpoint 2026-10-03, second session).** The Pepperstone demo runs the old code on `acis-demo-1` (practice, unattended, watchdog-guarded) until the AWS cutover 2026-10-15..17; master v2.34.
 > `ACIS_SPEC.md` v2.34 is the build authority. All master-spec guardrail decisions are human-ratified.
 > **The next session starts at "Phase 12 — LIVE readiness" below** (the only remaining §15 phase; the
 > live-trading gate). Do not re-open spec design questions; do not re-do phases 1–11 — build phase 12.
 > Everything is still paper mode: enabling live requires §14 minimums out-of-sample + explicit human sign-off.
 
-## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-03 evening; `main` = `origin/main`, master v2.33, full suite 1383 passed / 6 skipped on the server; the owner closed the session)
+## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-03, second session; `main` = `origin/main`, master v2.34, full suite 1420 passed / 6 skipped on the server; the owner closed the session)
+
+**Where we stand on an edge (history only; every family so far is LLM-selected, so history can only KILL and credit comes only forward, §5.6):**
+
+| Family | Net Sharpe 2012–2023 | HAC t | Fate |
+|---|---|---|---|
+| D1 trend, 13 FX | +0.165 | 0.57 | the demo trades it from the cutover |
+| D1 trend, 21 instruments | −0.12 | −0.40 | breadth through D1 shelved |
+| D3 turn of month | −0.002 | −0.01 | DROPPED |
+| **REBAL v1a (US500)** | **+0.50** | **1.82** | best so far, ρ −0.005 with D1; live path after the cutover |
+| REBAL v1b (minus the note) | +0.39 | 1.39 | not forwarded |
+| IMOM v1a / v1b | — | — | BUILT, looks owed (item 1) |
+
+An equal-risk D1 + REBAL book would have earned about 0.47 against the ~0.65–0.85 the weekly target needs (GAP-P12D-148), BEFORE the publication decay the literature measures (about half; GAP-P12D-158). One or two more independent mechanisms, and months of forward data, stand between us and a certified edge.
+
+**Live state (verified 2026-10-03 12:31 UTC, read-only):** the demo RUNS the old code on `acis-demo-1` (practice, session `engine-20261001T123445Z`, heartbeat fresh, 0 positions, watchdog active). `acis-compute-1` STOPPED; the AWS data server STOPPED; the AWS demo host STOPPED until the cutover. Nothing else runs.
+
+**Data (git-ignored; where each copy lives):**
+- The look register `data/validation/looks` (looks `000001`–`000010`; heads on GitHub `look-anchor` at `000010`): laptop + `gs://acis-compute-0929-data/validation/2026-10-03d/` (also `…/2026-10-03c/`, D3). Copy it to the bucket after every new look.
+- Treasury par yields `data/r1_real/treasury`: laptop + the same bucket folder.
+- 1-minute index candles `data/r1_real/dukascopy_minutes` (59,358 files verified, `manifest.jsonl`): laptop + `s3://acis-transfer-565257597310/data/dukascopy_minutes_2012-2025.tgz` (sha256 `96d62c3b…`; the tgz is also at `data/r1_real/`).
+
+**Owner rulings this session (all applied; GAP-P12D-154, 156, 157, 158, 03):** D3 to the papers' window, then DROPPED; REBAL next; the news calendar AFTER the cutover with RSIM modelling the same gate; REBAL v1 = the US500 leg close to close, v1a and v1b both registered before either graded; moving zero-volume quotes count as prices in the event book; the candidate ranking rule with the evidence fix; v1a's live path drafted now (`archive/REBAL_LIVE_DRAFT_2026-10-03.md`), built after the cutover, v1b not forwarded; IMOM research until the cutover: rest-of-day predictor, every-session and top-third versions registered first, US500 only; push.
+
+**Next actions, in order (sort key: closer to a real test, or protects the AWS move):**
+1. **IMOM's two kill-only looks** ([[GAP-P12D-158]]): `python scripts/r1_imom_kill_test.py --minutes data/r1_real/dukascopy_minutes` on a clean tree (about 15 min on the laptop: it decodes ~6,000 minute files); then copy the register to the bucket and record the result.
+2. **ASK the owner to launch the scheduled audit pair (~2026-10-10/11, before the cutover):** scope = everything since `f0d9524`, which now also covers this session's event simulator (`event_sim.py`, `event_daily.py`, `event_intraday.py`, `evaluate_events.py`), `exchange_days.py`, `rebal.py`, `candles_min.py` and the treasury/minute downloaders. Role files `.claude/agents/acis-auditor-{internal,external}.md`.
+3. **The cutover, 2026-10-15..17** (item 1 of the previous block below, unchanged).
+4. **After the cutover:** REBAL v1a live (ratify L-1..L-6, its timing look on minute data first, US500 onboarding; [[GAP-P12D-157]]); the news calendar with RSIM modelling the gate ([[GAP-P12D-03]]); RSIM's zero-volume rule and the FX/metals scan ([[GAP-P12D-156]]); the legacy retirement ([[GAP-P12D-153]]).
+5. **Quiet slot:** [[GAP-P12D-155]] (constitution v0.10 re-point FIRST, then the prompt-audit triage and doc hygiene).
+6. **Decide the post-trial compute home before 2026-10-21.**
+7. Optional, owner: the 10-year T-Note's symbol on the demo's cTrader app (only matters if v1b is ever forwarded).
+
+**Helpers** (session scratchpad, recreate if gone): `remote.sh` must scope `MSYS_NO_PATHCONV=1` to its ssh call only (PAPERCUTS 2026-10-03). The AWS data server takes `aws ssm send-command` jobs (scripts via `s3://acis-transfer-565257597310/jobs/`; set `PYTHONIOENCODING=utf-8`); a job should end with `shutdown -h +2`.
+
+## Previous handover (2026-10-03, first session): history; the block above supersedes it
 
 **DONE 2026-10-03: the post-R1.6 audits** (owner: "Launch both now (Recommended)"; INTERNAL `a247a1c2a85e5b81c`, EXTERNAL `a3553e1525e475723`, both finished) are TRIAGED in [[GAP-P12D-150]]: 10 of 14 fixed with tests, PR16E-04 recorded on [[GAP-P12D-03]], and the owner RULED its three decisions the same day (all Recommended: alpha decay report-only on the one-lot demo, ILLIQUID kept and measured, weekly rates 28 days), applied as master v2.31. `acis-compute-1`: stop it when the session's runs end.
 
@@ -38,7 +73,7 @@
 
 **Next actions, in order (2026-10-03, afternoon). The sort key (owner, 2026-10-03): does it get us closer to a real test, or protect the AWS move? Everything else waits. Audits at milestones only (R1.4 done, the AWS move), spec amendments batched per session.**
 1. **The cutover, 2026-10-15..17:** deploy/README.md's AWS order (stop the old engine flat first); attest the new rulebook hash (`--print-hashes`); measure the 17:00 decision's blocking time on the t3.small ([[GAP-P12D-144]] residual). The target entry's data check is now the feed watch ([[GAP-P12D-152]], master v2.33): count its refusal reasons (`TARGET_ENTRY_ZERO`) in the first two weeks. The H1-history venue facts ([[GAP-P12D-141]] (1), (2), (6)) are read at the first seeding.
-2. **D3's event harness is BUILT and its one kill-only look RAN (2026-10-03, second session; owner: "Papers' window", master v2.34; look `000005`): survived at a net Sharpe of −0.002 (HAC t −0.01), below its passive long's 0.44 ([[GAP-P12D-154]]). Owner ruled the same day: D3 DROPPED ("Drop it"); **REBAL's two kill-only looks RAN 2026-10-03 ([[GAP-P12D-157]]): v1a (US500) survived at net Sharpe 0.50 (t 1.82), v1b (minus the note) at 0.39 (t 1.39); v1a is uncorrelated with D1 (−0.005). OWNER DECISION pending: v1a's forward path; then the pipeline in [[GAP-P12D-158]]'s order (IMOM, GOTOBI; H5 parked). OWNER: check the 10-year T-Note's symbol on the demo account's cTrader app**; the historical news calendar AFTER the cutover, with RSIM modelling the same gate ([[GAP-P12D-03]]); push.** Then: scan FX and metals for zero-volume quotes and decide the candle store's observation rule before the next look leaning on 2012–2013 index data ([[GAP-P12D-156]]). Earlier plan text: Background: **D1's kill test RAN and D1 survived at a net Sharpe of 0.165** ([[GAP-P12D-151]]): far below the ~0.65–0.85 the weekly target needs. **Then D1 on the 21 instruments LOST (−0.12, passive long +0.36): owner ruled "FX13 only; shelve onboarding".** The demo trades D1-FX13; [[GAP-P12D-27]] is shelved; the next lever is a DIFFERENT mechanism from the edge slate, kill-tested on history (kill-only, no α) before it touches the demo.
+2. **D3's event harness is BUILT and its one kill-only look RAN (2026-10-03, second session; owner: "Papers' window", master v2.34; look `000005`): survived at a net Sharpe of −0.002 (HAC t −0.01), below its passive long's 0.44 ([[GAP-P12D-154]]). Owner ruled the same day: D3 DROPPED ("Drop it"); **REBAL's two kill-only looks RAN 2026-10-03 ([[GAP-P12D-157]]): v1a (US500) survived at net Sharpe 0.50 (t 1.82), v1b (minus the note) at 0.39 (t 1.39); v1a is uncorrelated with D1 (−0.005). Owner ruled: v1a's live path drafted now (`archive/REBAL_LIVE_DRAFT_2026-10-03.md`), built AFTER the cutover with its own audit; v1b not forwarded. **NOW (until the cutover): IMOM research**; then the pipeline in [[GAP-P12D-158]]'s order (IMOM, GOTOBI; H5 parked). OWNER: check the 10-year T-Note's symbol on the demo account's cTrader app**; the historical news calendar AFTER the cutover, with RSIM modelling the same gate ([[GAP-P12D-03]]); push.** Then: scan FX and metals for zero-volume quotes and decide the candle store's observation rule before the next look leaning on 2012–2013 index data ([[GAP-P12D-156]]). Earlier plan text: Background: **D1's kill test RAN and D1 survived at a net Sharpe of 0.165** ([[GAP-P12D-151]]): far below the ~0.65–0.85 the weekly target needs. **Then D1 on the 21 instruments LOST (−0.12, passive long +0.36): owner ruled "FX13 only; shelve onboarding".** The demo trades D1-FX13; [[GAP-P12D-27]] is shelved; the next lever is a DIFFERENT mechanism from the edge slate, kill-tested on history (kill-only, no α) before it touches the demo.
 3. **A clean forward record from the cutover:** BUILT 2026-10-03 — the shadow book (uncapped positions in every `TARGET_DECIDED`), the refusal counts and the realised-vol report: run `python scripts/demo_report.py --logs /opt/acis/repo/logs --since <cutover date>` weekly on the AWS host. Still owed: live = replay checks (stage D).
 4. **Make "validated on history" reachable:** stage B, stage C and the per-account re-grade ([[GAP-P12D-149]]).
 5. ~~Re-run the unverified research numbers~~ PROPRETURNS VERIFIED 2026-10-03 (20,000 paths); FORENSICS's legacy re-runs deprioritised ([[GAP-P12D-148]]).
