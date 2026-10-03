@@ -178,7 +178,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - Tue–Fri gotobi days: 745 under the "30" rule, 748 under month-end; about 62 a year. 115 Monday gotobi days are excluded, and 1,649 control days remain.
     - All 740 graded days have prices.
     - Median spreads are 0.34 bp at 03:00, 0.40 bp at 09:00, 0.36 bp at 09:55 and 0.36 bp at 12:00 JST, against 1.15 bp at 07:00 (the rollover) and 0.66 bp at 08:00. The research's post-rollover entry (X3) would pay about three times Bessho's 03:00 spread, and the swap-free venue makes the rollover free to hold through.
-  - **Owed:** the owner's rulings on the versions (entry time, day rule, H1 alone and/or H1+H2), then the looks.
+  - **Owner rulings 2026-10-03 (third session, all "Recommended"):** entry at 03:00 JST (Bessho's own time); Bessho's day rule (5/10/15/20/25/30, the month's last day when it is shorter, moved to the previous bank day, Tue–Fri); register BOTH v1a (H1) and v1b (H1+H2) before either grade, each kill-only, with forward eligibility pre-declared as survival plus a cost check on the demo's own spreads; push.
   - Proof: `test_a_gotobi_day_off_the_bank_calendar_moves_back_and_two_that_meet_count_once`, `test_the_30th_rule_falls_to_february_end_and_the_month_end_rule_takes_the_31st`, `test_a_price_is_the_last_tick_at_or_before_the_time_never_a_later_or_stale_one`, `test_each_leg_pays_both_sides_and_the_gated_reversal_trades_only_after_a_rise`, `test_a_planted_gotobi_rise_earns_net_and_a_flat_market_loses_only_its_costs`.
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
