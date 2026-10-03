@@ -8,6 +8,8 @@
 
 ## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-03, fourth session; master v2.35; full suite 1458 passed / 6 skipped on the server at `5ecf45b`; THREE AGENTS RUNNING (TOURNAMENT, FACTORY, EXECUTION; IDs below); `acis-compute-1` RUNNING for them, STOP it when all three finish)
 
+**AGENTS IN FLIGHT (launched 2026-10-03/04, owner "All three (Recommended)"; resume with SendMessage after a limit, never relaunch):** TOURNAMENT `a4a20570f3ea35818` (worktree; forward shadow-book framework), FACTORY `a88f1eba2848511b5` (MAIN; single writer of the look register; pre-authorised kill-only looks), EXECUTION `ab9b420454c98800c` (worktree; passive-entry cost study). Server helper: scratchpad `remote_agent.sh <checkout> "<cmd>"`. The lead does not edit MAIN while FACTORY runs (clean-tree rule); triage everything when they report.
+
 **Where we stand on an edge (history only; every family so far is LLM-selected, so history can only KILL and credit comes only forward, §5.6):**
 
 | Family | Net Sharpe 2012–2023 | HAC t | Fate |
