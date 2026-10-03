@@ -314,7 +314,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
   - **Dry check (P&L-blind, 2012-02..2023-12, 2,981 curve days):** v1a has 143 2-year auctions (1 skipped), 2,706 days in the market, no overlaps, and costs **34.8 bp/yr, matching the paper's 35.04**. v1b has 430 auctions (143 2y, 143 5y, 144 10y), none skipped, 143 position changes a year, and costs 23 bp of yield a year per unit DV01, against ~4.8 bp a cycle × ~36 cycles before decay.
   - Proof: `test_the_curve_reads_the_tenors_it_needs_and_skips_a_row_missing_one`, `test_the_calendar_keeps_fixed_nominal_notes_and_counts_ten_year_reopenings`, `test_pre_holds_into_the_auction_close_post_holds_from_it_and_edges_are_skipped`, `test_the_butterfly_is_duration_neutral_and_earns_when_the_two_year_alone_cheapens`, `test_a_planted_auction_cycle_earns_net_and_a_flat_curve_only_pays_its_costs`.
   - **Owner ruling (2026-10-03, fourth session): "v1a + v1b (Recommended)"**, both registered before either grade.
-  - **NEXT: `python scripts/r1_auction_kill_test.py --line v1`.**
+  - **THE LOOKS (2026-10-03, fourth session; `--line v1` at `6e82c28`; looks `000041` (v1a) and `000042` (v1b), outcomes `000043`/`000044`, anchored at `000044`; register, `auction_v1.json` and `auctions.csv` copied to `…/validation/2026-10-03h/`), graded 2012-02-01..2023-12-29:**
+    - **v1a (the paper's butterfly): net 0.09, HAC t 0.34, not killed**; 2× cost −0.29. Segments: 2012–17 0.68, 2018–23 **−0.36**. Control (windows 10 closes earlier) −0.95.
+    - **v1b (outright, micro yield futures' form): 0.35, HAC t 1.27, not killed**; 2× cost 0.13. Segments: 2012–17 0.68, 2018–23 0.17. Control −0.01.
+  - **Context, post-hoc, from the stored vectors only:** v1b positive in 8 of 12 years (2015 −0.78, 2019 −0.68, 2023 −0.92), but **0.07 without its 10 best days**. Correlation with D1 0.00, REBAL 0.03, GOTOBI 0.00, v1a 0.20.
+  - **The lead's reading:** v1a, the paper's hedged test, is the one that isolates the auction effect, and it shows the effect gone since 2018. v1b's survival rests on a handful of large rate days (rate-direction luck), so it is not evidence of the mechanism. AUCTION survives the kill rule but is no basis for building a futures venue.
+  - **NEXT: the owner rules AUCTION's fate (one ask).**
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
 
