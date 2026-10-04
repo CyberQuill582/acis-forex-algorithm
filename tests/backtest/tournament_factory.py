@@ -61,7 +61,7 @@ def cot_view(store: InputStore) -> Path:
     return _write(store, "cot_gold.csv", "as_of," + ",".join(COT_FIELDS), lines)
 
 
-def hedgep_forecast(store: InputStore, real, end: date) -> np.ndarray:
+def hedgep_forecast(store: InputStore, real, end: date, forward_start: date) -> np.ndarray:
     h = _module("hedgep")
     return h.panel(real.market.days, h.load(cot_view(store)))[:, None]
 
@@ -76,10 +76,16 @@ def _month_end(y: int, m: int) -> date:
     return date(y + m // 12, m % 12 + 1, 1) - timedelta(days=1)
 
 
-def fxvalue_forecast(store: InputStore, real, end: date) -> np.ndarray:
+def fxvalue_forecast(store: InputStore, real, end: date, forward_start: date) -> np.ndarray:
+    """Ranks from the forward start only: rows before it are flat, and the US CPI print for 2025-10 is
+    missing (the shutdown), so 2026-02's warm-up rank is undefined under the registered rule."""
     fx, k = _module("fx_value"), kill_script("r1_fxvalue_kill_test")
-    return fx.panel(real.market.days, real.market.names, fx.load_spot(ecb_view(store)), fx.load_cpi(cpi_view(store)),
-                    k.FIRST)
+    days = real.market.days
+    k0 = next((i for i, d in enumerate(days) if d >= forward_start), len(days))
+    out = np.full((len(days), len(real.market.names)), np.nan)
+    out[k0:] = fx.panel(days[k0:], real.market.names, fx.load_spot(ecb_view(store)), fx.load_cpi(cpi_view(store)),
+                        k.FIRST)
+    return out
 
 
 def fxvalue_end(store: InputStore, today: date) -> date:

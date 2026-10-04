@@ -86,13 +86,13 @@ def _filled(hours: dict, names, days, cutoff: int) -> int:
 
 def d1_forecast(member: Callable) -> Callable:
     """A TREND member on the excess-return price, masked through each instrument's warm-up (D1's looks)."""
-    return lambda store, real, end: masked(panel(real.market, member), real)
+    return lambda store, real, end, forward_start: masked(panel(real.market, member), real)
 
 
 def rsim_book(forecast: Callable, names: tuple[str, ...], market_from: date, *, idm: float, buffer: float,
               capital: float = 1_000_000.0, vol_target: float = 0.20, input_end: Callable | None = None):
-    """`forecast(store, real, end)` is the family's panel; `input_end(store, today)` the last decision day its
-    other inputs (a weekly report, a monthly rank) have settled."""
+    """`forecast(store, real, end, forward_start)` is the family's panel (rows before the start are masked
+    flat anyway); `input_end(store, today)` the last decision day its other inputs have settled."""
     def book(store: InputStore, cfg, forward_start: date, today: date) -> BookSeries:
         t = cfg.system.targets
         seen = store.minute_horizon(names, today)
@@ -106,7 +106,7 @@ def rsim_book(forecast: Callable, names: tuple[str, ...], market_from: date, *, 
         rates = store.rates(end, t.rate_max_stale_days, t.rate_max_stale_days_weekly)
         real = build(None, names, rates, market_from, end, tier="forward", loader=loader)
         m = real.market
-        f = np.array(forecast(store, real, end), float, copy=True)
+        f = np.array(forecast(store, real, end, forward_start), float, copy=True)
         f[np.array([d < forward_start for d in m.days])] = np.nan          # flat before the forward start
         spec = BookSpec(costs={n: cost_model(cfg, n) for n in names}, capital=capital, vol_target=vol_target,
                         idm=idm, buffer=buffer, world="swap_free",
