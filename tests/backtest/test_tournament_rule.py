@@ -27,7 +27,8 @@ def _exact(n: int, sharpe: float, seed: int, sigma: float = SIGMA) -> np.ndarray
 def _state(series: dict[str, np.ndarray], sharpe_dev: float = 0.5) -> State:
     st = State(rule=rule_line())
     for sid, r in series.items():
-        st.entries[sid] = {"strategy": sid, "alpha": ALPHA, "sigma_daily": SIGMA, "sharpe_dev": sharpe_dev}
+        st.entries[sid] = {"strategy": sid, "alpha": ALPHA, "sigma_daily": SIGMA, "sharpe_dev": sharpe_dev,
+                           "history_worst_sigmas": 4.0}                     # k = max(6, 1.5 x 4) = 6
         st.days[sid] = [(date(2026, 10, 5) + timedelta(days=k), float(v)) for k, v in enumerate(r)]
     return st
 
@@ -107,3 +108,19 @@ def test_on_null_tournaments_the_family_wise_false_eligibility_stays_under_alpha
     assert hits / trials <= PARAMS["alpha_total"] + 3 * math.sqrt(0.05 * 0.95 / trials)
     assert screens / trials > 0.9                                           # the screen alone fires on noise
     assert 0.30 < singles / (trials * PARAMS["capacity"]) < 0.42            # about a third at 126 days
+
+
+def test_the_tripwire_is_pinned_per_entry_at_one_and_a_half_times_its_worst_history_day() -> None:
+    """Master v2.36 (P-5): the -6 sigma* tripwire would have fired in history (REBAL -8.5, GOTOBI -9.6)."""
+    from tests.backtest.tournament_rule import tripwire_sigmas
+    assert tripwire_sigmas({"strategy": "REBAL-v1a"}, PARAMS) == pytest.approx(1.5 * 8.46)
+    assert tripwire_sigmas({"strategy": "FXVALUE-ppp"}, PARAMS) == 6.0                       # the floor
+    assert tripwire_sigmas({"strategy": "new", "history_worst_sigmas": -10.0}, PARAMS) == 15.0
+    with pytest.raises(RuleMismatch):
+        tripwire_sigmas({"strategy": "undeclared"}, PARAMS)
+    r = _exact(300, 4.0, 6)
+    r[150] = -8.0 * SIGMA                                       # beyond 6, inside REBAL's 12.69
+    st = _state({"REBAL-v1a": r})
+    st.entries["REBAL-v1a"].pop("history_worst_sigmas")
+    (v,) = evaluate(st, True)
+    assert not v.e1_voided

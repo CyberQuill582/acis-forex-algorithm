@@ -14,7 +14,8 @@ Mental model:
     weighted Holm over the capacity (an empty slot or a retired entry keeps its alpha in the family);
     OR, anytime-valid, E1 >= 1/alpha_i (e-Bonferroni; Ville). Peeking between looks earns nothing.
   * STAGE D (ACIS-09 C-BT-11 v2 step 7): E1 and E2 as specified, sigma* the entry's declared daily vol;
-    E2's claim is half the development look's DAILY Sharpe times sigma*; a day below -6 sigma* voids E1.
+    E2's claim is half the development look's DAILY Sharpe times sigma*. The TRIPWIRE (master v2.36, P-5): a day
+    below -k sigma* voids E1, k = max(6, 1.5 x the entry's worst history day in sigma* units), pinned per entry.
   * ELIGIBLE = the screen AND significance AND an intact, reproducible record (the caller's check).
 """
 
@@ -31,9 +32,12 @@ from tests.backtest.forward_record import State
 from tests.backtest.hac import hac_t
 from tests.backtest.look_claims import canonical_hash
 
-PARAMS = {"version": "tournament-v1", "alpha_total": 0.05, "capacity": 20, "looks": [126, 252, 504],
+PARAMS = {"version": "tournament-v1.1", "alpha_total": 0.05, "capacity": 20, "looks": [126, 252, 504],
           "min_days": 126, "min_sharpe": 0.5, "lambdas": [0.05, 0.1, 0.2, 0.4, 0.8], "e_freeze": 5.0,
-          "e_kill": 20.0, "e_shown": 20.0, "tripwire_sigmas": 6.0,
+          "e_kill": 20.0, "e_shown": 20.0,
+          "tripwire": {"rule": "k = max(floor, multiple x the worst day of the entry's registered history looks, in sigma* units); a pinned value, else the entry's own history_worst_sigmas", "multiple": 1.5, "floor": 6.0,
+                       "pinned": {"D1-FX13": 5.49, "REBAL-v1a": 8.46, "GOTOBI-v1a": 9.60, "HALLOWEEN-v1": 12.64,
+                                  "HEDGEP-gold": 9.52, "FXVALUE-ppp": 2.21}},
           "test": "one-sided Newey-West HAC p of the mean daily net return over the first n rows at each look; "
                   "Bonferroni over the looks; weighted Holm over the capacity at alpha_total; or E1 >= 1/alpha_i",
           "output": "eligible for owner review: never a promotion, never live"}
@@ -79,11 +83,21 @@ def wealth(x: np.ndarray, lambdas) -> np.ndarray:
     return np.mean([np.cumprod(1.0 + lam * f) for lam in lambdas], axis=0)
 
 
-def stage_d(r: np.ndarray, sigma: float, sharpe_dev_annual: float, p: dict) -> tuple[float, bool, float, float]:
-    """(E1 now, E1 voided by a tripwire, E2 now, E2's running maximum)."""
+def tripwire_sigmas(entry: dict, p: dict) -> float:
+    """k for this entry (P-5): the pinned history worst day, else the entry's own declared one."""
+    t = p["tripwire"]
+    worst = t["pinned"].get(entry["strategy"], entry.get("history_worst_sigmas"))
+    if worst is None:
+        raise RuleMismatch(f"{entry['strategy']} declares no history_worst_sigmas for its tripwire (P-5)")
+    return max(t["floor"], t["multiple"] * abs(float(worst)))
+
+
+def stage_d(r: np.ndarray, sigma: float, sharpe_dev_annual: float, p: dict,
+            k: float = 6.0) -> tuple[float, bool, float, float]:
+    """(E1 now, E1 voided by a tripwire at -k sigma*, E2 now, E2's running maximum)."""
     if not len(r):
         return 1.0, False, 1.0, 1.0
-    unit = p["tripwire_sigmas"] * sigma
+    unit = k * sigma
     voided = bool(np.any(r < -unit))
     e1 = 0.0 if voided else float(wealth(r / unit, p["lambdas"])[-1])
     claim = sharpe_dev_annual / math.sqrt(252.0) / 2.0 * sigma
@@ -124,13 +138,14 @@ def evaluate(state: State, integrity_ok: bool | dict[str, bool], as_of: date | N
         r, ok = series[s], integrity_ok if isinstance(integrity_ok, bool) else integrity_ok.get(s, False)
         sr = float(r.mean() / r.std(ddof=1) * math.sqrt(252)) if len(r) > 2 and r.std(ddof=1) > 0 else None
         t = hac_t(r) if len(r) >= 3 else None
-        e1, voided, e2, e2max = stage_d(r, float(e["sigma_daily"]), float(e["sharpe_dev"]), p)
+        k = tripwire_sigmas(e, p)
+        e1, voided, e2, e2max = stage_d(r, float(e["sigma_daily"]), float(e["sharpe_dev"]), p, k)
         killed, e_bon = e2max >= p["e_kill"], (not voided) and e1 >= 1.0 / alpha[s]
         screen = len(r) >= p["min_days"] and sr is not None and sr >= p["min_sharpe"] and not killed and not voided
         luck = None if sr is None else 1.0 - N.cdf(sr * math.sqrt(len(r) / 252.0))
         why = [f"{len(r)} of {p['min_days']} days"] if len(r) < p["min_days"] else []
         why += [f"Sharpe {sr:.2f} < {p['min_sharpe']}"] if sr is not None and sr < p["min_sharpe"] else []
-        why += ["killed: E2 reached 20"] * killed + ["E1 voided by a -6 sigma* day"] * voided
+        why += ["killed: E2 reached 20"] * killed + [f"E1 voided by a -{k:.1f} sigma* day"] * voided
         why += [] if s in rejected or e_bon else ["not significant after the correction for the capacity"]
         why += [] if ok else ["the record failed its integrity or recompute check"]
         out.append(Verdict(s, len(r), sr, t, pl[s], pstar[s], s in rejected, e1, voided, e2, e2max,

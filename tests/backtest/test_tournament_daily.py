@@ -42,7 +42,8 @@ class Stub:
                 "instruments": ["EUR_USD"], "formula": "f", "origin": {}, "certifying_boundary": "2026-10-01",
                 "forward_start": self.forward_start.isoformat(),
                 "first_exposure_utc": f"{self.forward_start.isoformat()}T21:00:00+00:00", "sigma_daily": 0.01,
-                "sharpe_dev": 0.5, "alpha": alpha, "spec_hash": canonical_hash({"sid": self.sid, "tag": self.tag})}
+                "sharpe_dev": 0.5, "history_worst_sigmas": 4.0, "alpha": alpha,
+                "spec_hash": canonical_hash({"sid": self.sid, "tag": self.tag})}
 
     def drift(self, cfg, entry: dict) -> str | None:
         return None if self.entry()["spec_hash"] == entry["spec_hash"] else "RULE DRIFT: the stub changed"

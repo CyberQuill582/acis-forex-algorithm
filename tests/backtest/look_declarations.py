@@ -53,8 +53,10 @@ class Declaration:
                 "block_length": self.block_length, "bootstrap_seed": self.bootstrap_seed}
 
 
-def admit_declaration(variant_hash: str, declaration: Declaration, tier: int, lines: Sequence[dict | None]) -> None:
-    """Refuse a declaration unlike the variant's first, or a real-data look past its budget."""
+def admit_declaration(variant_hash: str, declaration: Declaration, tier: int, lines: Sequence[dict | None],
+                      budget: int | None = None) -> None:
+    """Refuse a declaration unlike the variant's first, or a real-data look past its budget (`budget`
+    overrides the declaration's k for one tier: stage D's forward looks, master v2.36 P-6)."""
     prior = [x for x in lines if x is not None and x.get("kind", "look") == "look"
              and (x.get("claim") or {}).get("variant_hash") == variant_hash]
     first = next((x["claim"].get("declaration") for x in prior), None)
@@ -62,6 +64,6 @@ def admit_declaration(variant_hash: str, declaration: Declaration, tier: int, li
         raise ValueError(f"variant {variant_hash[:12]} was registered with {first}: a declaration is sticky "
                          "(a new benchmark, kind or budget is a new plan, not a new look)")
     spent = sum(1 for x in prior if x.get("tier", 0) == tier)
-    if tier > 0 and spent >= declaration.look_budget:
-        raise ValueError(f"variant {variant_hash[:12]} has spent its look budget k={declaration.look_budget} "
-                         "in this tier")
+    k = declaration.look_budget if budget is None else budget
+    if tier > 0 and spent >= k:
+        raise ValueError(f"variant {variant_hash[:12]} has spent its look budget k={k} in this tier")

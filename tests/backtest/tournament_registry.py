@@ -54,6 +54,7 @@ class Strategy:
     cost_map: str                             # the C8 cost map its looks registered (look_claims.cost_map_hash)
     params: dict = field(repr=False)
     book: Callable = field(repr=False, compare=False)
+    history_worst_sigmas: float | None = None   # P-5: a NEW entry declares its worst history day in sigma*
 
     @property
     def variant_hash(self) -> str:
@@ -74,7 +75,8 @@ class Strategy:
                 "forward_start": self.forward_start.isoformat(),
                 "first_exposure_utc": self.first_exposure_utc().isoformat(timespec="seconds"),
                 "sigma_daily": self.sigma_daily, "sharpe_dev": self.sharpe_dev, "cost_map_hash": self.cost_map,
-                "params": self.params}
+                "params": self.params,
+                **({} if self.history_worst_sigmas is None else {"history_worst_sigmas": self.history_worst_sigmas})}
 
     def entry(self, alpha: float = ALPHA) -> dict:
         spec = self.spec()

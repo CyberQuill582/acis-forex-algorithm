@@ -189,6 +189,7 @@ def cost_map_hash(cfg: AcisConfig, instruments: Sequence[str], cost_stress: floa
 
 
 HOLDOUT_TIER = 3                     # look_tiers.TIER_NAMES: the 2024-25 holdout, graded once per variant (stage C)
+FORWARD_TIER, FORWARD_LOOKS = 4, 3   # stage D: a registered variant's pre-registered forward looks (126/252/504 days)
 
 
 def admit_claim(claim: Claim, instruments: Sequence[str], lines: Sequence[dict | None], tier: int) -> None:
@@ -204,11 +205,14 @@ def admit_claim(claim: Claim, instruments: Sequence[str], lines: Sequence[dict |
     if any(o.get("model_id") for o in origins) and not claim.origin.llm_touched:
         raise ValueError(f"variant {claim.variant_hash[:12]} was registered as an LLM plan: its origin is "
                          "the hypothesis's, and a new label does not remove the model's memory (§5.6)")
-    if claim.origin.llm_touched and origins and tier != HOLDOUT_TIER:
+    if claim.origin.llm_touched and origins and tier not in (HOLDOUT_TIER, FORWARD_TIER):
         raise ValueError(f"an LLM plan repeats registered variant {claim.variant_hash[:12]} (§5.6, R1-D13)")
     # v2.35 (GAP-P12D-159): stage C's one holdout look at a registered variant is not a re-proposal. An LLM
     # boundary falls after 2026-01-01, so every holdout look is kill-only, and the budget below allows one.
-    admit_declaration(claim.variant_hash, claim.declaration, tier, lines)
+    # v2.36 (P-6, GAP-P12D-158): stage D's pre-registered forward looks at a registered variant are not re-proposals
+    # either; tier 4 holds at most FORWARD_LOOKS of them per variant (the tournament's 126, 252 and 504 days).
+    admit_declaration(claim.variant_hash, claim.declaration, tier, lines,
+                      budget=FORWARD_LOOKS if tier == FORWARD_TIER else None)
 
 
 def refuse_backwards_clock(lines: Sequence[dict | None], now: datetime) -> None:

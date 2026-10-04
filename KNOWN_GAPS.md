@@ -399,7 +399,15 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
       - P-7: the forward hours are rebuilt from 1-minute files (matching the hourly closes on ~95% of hours, the rest within ~1.5 pips).
       - P-8: the calendar/envelope facts. FXVALUE's rule is undefined where US CPI 2025-10 is missing, so it ranks only from its forward start.
     - **Deployment:** the AWS data server `i-08cd48694bea9e3db` (free plan to 2027-03-11). The lead installs it via SSM. The OWNER creates an EventBridge schedule `cron(15 6 * * ? *)` UTC that starts the instance (root/admin only), and chooses the anchor ([[GAP-P12D-86]]). Until then, `python scripts/tournament_daily.py` on the laptop advances the record (~3 min).
-    - **NEXT: one grouped ask** (P-4 milestone D and P-1 promotion; adopt the record and FXVALUE; host and anchor; the P-2/3/5/6/7/8 spec batch).
+    - **Owner rulings (2026-10-04): "Spending gate (Recommended)", "Adopt all six (Recommended)", "AWS data server + GitHub (Recommended)", "Apply as recommended": master v2.36, ACIS-09 v1.14.**
+      - **Built the same day:**
+        - P-5: per-family tripwires, k = max(6, 1.5 × the worst registered-history day), pinned in `tournament_rule.PARAMS` (version `tournament-v1.1`), with history_worst_sigmas as a new entry field. Proof: `test_the_tripwire_is_pinned_per_entry_at_one_and_a_half_times_its_worst_history_day`.
+        - P-6: `look_claims.admit_claim` admits three tier-4 forward looks per registered variant. Proof: `test_an_llm_variant_may_take_three_stage_d_forward_looks_and_no_more`.
+      - **The rule line changes**, so the next `tournament_daily.py` run appends the v1.1 rule line, which the record allows before its first day.
+    - **Still owed (owned here):**
+      - (a) The AWS deployment: install via SSM and the forward-anchor push. The OWNER creates the EventBridge schedule `cron(15 6 * * ? *)` UTC to start `i-08cd48694bea9e3db`.
+      - (b) The stage-D GRADER that turns the record into register looks at 126/252/504 days (first due ~2027-04; P-6's interface).
+      - (c) Registering each of the owner's `hypotheses/` rules before its first exposure.
     - **Owner rulings (2026-10-04, all "Recommended"):**
       - Market orders stay at the slot, and passive-first is REJECTED for CFD venues.
       - ~~C8's commission/slippage split is recalibrated from 4 weeks of real demo fills after the cutover~~ **WITHDRAWN 2026-10-04 (owner: "Keep D4 (Recommended)")**. The lead's option contradicted ACIS-13 §4.2's owner ruling D4: demo fills and costs never calibrate C8. C8 may take only published contract facts (the venue's stated commission, like its published swap rates); slippage is calibrated from a real funded or live account (GAP-0001). Past looks stay comparable meanwhile.

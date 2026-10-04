@@ -178,6 +178,26 @@ def test_an_llm_variant_may_take_one_stage_c_holdout_look_and_no_more(canonical,
         _look(canonical, acis_config, claim=_claim(origin=LLM), changed="a second validation look")
 
 
+def test_an_llm_variant_may_take_three_stage_d_forward_looks_and_no_more(canonical, acis_config) -> None:
+    """Master v2.36 (P-6, GAP-P12D-158): stage D's pre-registered forward looks (126/252/504 days) at a registered
+    variant are admitted on tier 4, three of them; a fourth is over budget; a repeat elsewhere is still refused."""
+    from tests.backtest.walk_forward import Fold
+    utc = lambda y, m, d: datetime(y, m, d, tzinfo=timezone.utc)                     # noqa: E731
+    _look(canonical, acis_config, claim=_claim(origin=LLM))                            # validation (2014-15)
+    for n, end in enumerate((utc(2027, 4, 1), utc(2027, 10, 1), utc(2028, 10, 1))):
+        look = canonical.register(cfg=acis_config, source=_Real(), instruments=sorted(acis_config.instruments.enabled),
+                                  folds=[Fold(0, utc(2026, 10, 4), utc(2026, 10, 5), utc(2026, 10, 5), end)],
+                                  family="trend-v1", account="dev_paper", git=GIT, claim=_claim(origin=LLM),
+                                  changed=f"stage D forward look {n + 1}")
+        assert look.tier == 4
+    with pytest.raises(LookRefused, match="look budget k=3"):
+        canonical.register(cfg=acis_config, source=_Real(), instruments=sorted(acis_config.instruments.enabled),
+                           folds=[Fold(0, utc(2026, 10, 4), utc(2026, 10, 5), utc(2026, 10, 5), utc(2029, 1, 1))],
+                           family="trend-v1", account="dev_paper", git=GIT, claim=_claim(origin=LLM), changed="a fourth")
+    with pytest.raises(LookRefused, match="repeats registered variant"):
+        _look(canonical, acis_config, claim=_claim(origin=LLM), changed="a second validation look")
+
+
 def test_the_cost_map_hash_separates_grades_priced_differently(acis_config) -> None:
     inst = sorted(acis_config.instruments.enabled)
     variants = [cost_map_hash(acis_config, inst, 1.0, 0.0), cost_map_hash(acis_config, inst, 2.0, 0.0),
