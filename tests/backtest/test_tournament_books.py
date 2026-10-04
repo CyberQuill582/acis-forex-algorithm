@@ -17,7 +17,7 @@ from tests.backtest.candle_store import Hourly
 from tests.backtest.exchange_days import holidays as exchange_holidays
 from tests.backtest.jp_days import CalendarRefused, is_bank_day
 from tests.backtest.rebal import signals
-from tests.backtest.tournament_books import (close_book, gotobi_tue_fri, kill_script, nyse_sessions_after,
+from tests.backtest.tournament_books import (close_book, d1_forecast, gotobi_tue_fri, kill_script, nyse_sessions_after,
                                              rebal_position, rsim_book, window_book)
 from tests.backtest.tournament_registry import FX13, REGISTRY
 
@@ -79,7 +79,7 @@ def _same_prefix(short, long) -> None:
 
 
 def test_the_rsim_book_is_causal_flat_before_its_start_and_settled_only_through_real_fills(shipped_config) -> None:
-    book, start = rsim_book(rules.d1, ("EUR_USD", "USD_JPY"), DATA_FROM, idm=1.5, buffer=0.1), date(2021, 3, 1)
+    book, start = rsim_book(d1_forecast(rules.d1), ("EUR_USD", "USD_JPY"), DATA_FROM, idm=1.5, buffer=0.1), date(2021, 3, 1)
     long = book(FakeStore(DATA_TO), shipped_config, start, DATA_TO + timedelta(days=1))
     for cut in (date(2021, 6, 15), date(2021, 9, 3), date(2021, 11, 26)):
         _same_prefix(book(FakeStore(cut), shipped_config, start, cut + timedelta(days=1)), long)

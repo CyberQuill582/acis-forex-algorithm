@@ -41,6 +41,8 @@ ARCHIVE_END = date(2025, 12, 31)
 HOLE_AFTER_DAYS = 4
 SIDES = ("BID", "ASK")
 SPX, Y7 = "spx_yahoo", "ust_y7"
+ECB, CPI, COT = "ecb_exr", "bis_cpi", "cot_gold"          # FACTORY's inputs: area = currency, CPI area, COT field
+COT_FIELDS = ("open_interest", "commercial_long", "commercial_short")
 RATE_SIDS = tuple(sorted({sid for sid, _ in CCY_SERIES.values()}))
 
 
@@ -184,9 +186,19 @@ class InputStore:
             return [(date.fromisoformat(r["date"]), r.get("area") or None, float(r["value"])) for r in csv.DictReader(f)]
 
     def _archive(self, sid: str) -> list[tuple[date, str | None, float]]:
+        root = self.archive_macro.parent
         if sid == Y7:
             with (self.archive_treasury / "ust_par.csv").open(newline="", encoding="utf-8") as f:
                 rows = [(date.fromisoformat(r["date"]), None, float(r["y7"])) for r in csv.DictReader(f)]
+        elif sid in (ECB, CPI, COT):
+            path = root / ("cot/cot_gold.csv" if sid == COT else f"fx_value/{'ecb_daily' if sid == ECB else 'bis_cpi'}.csv")
+            if not path.exists():
+                return []
+            with path.open(newline="", encoding="utf-8") as f:
+                raw = list(csv.DictReader(f))
+            rows = ([(date.fromisoformat(r["date"]), r["currency"], float(r["eur_rate"])) for r in raw] if sid == ECB
+                    else [(date.fromisoformat(r["month"] + "-01"), r["area"], float(r["cpi"])) for r in raw] if sid == CPI
+                    else [(date.fromisoformat(r["as_of"]), k, float(r[k])) for r in raw for k in COT_FIELDS])
         else:
             rows = self._rows(self.archive_macro / f"{sid}.csv")
         return [r for r in rows if r[0] <= ARCHIVE_END]

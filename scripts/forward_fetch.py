@@ -9,9 +9,9 @@ Mental model (P&L-blind: it reads no strategy return):
     the next. Each month in scope is one `aws s3 sync` into a staging copy, then every file is imported
     write-once (`InputStore.add_file`): a changed remote file becomes a revision line, never a new value.
   * A needed file still missing HOLE_AFTER_DAYS after its day is declared a hole (read as no data).
-  * SERIES: Yahoo's S&P 500 closes and the Treasury's par curve freeze through yesterday (at most their
-    last printed date); the issuers' overnight rates through two days ago, so a late print is ignored
-    and the table forward-fills, as the live engine does. A failed source does not advance.
+  * SERIES: Yahoo's S&P 500 closes, the Treasury's par curve, the ECB fixings and the CFTC gold report
+    freeze through yesterday (at most their last print); the overnight rates through two days ago (a late
+    print is ignored, the table forward-fills, as the live engine does); BIS CPI through month - 5.
   * Every action is a JSONL event (logs/tournament_log.jsonl); the summary is printed as JSON.
 """
 
@@ -29,8 +29,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from core.data.jsonl_logging import JsonlEventLogger  # noqa: E402
 from core.data.rates import CCY_SERIES  # noqa: E402
-from tests.backtest.forward_store import (ARCHIVE_END, EPOCH, HOLE_AFTER_DAYS, RATE_SIDS, SIDES, SPX, Y7,  # noqa: E402
-                                          InputStore, days_between, hour_rel, minute_rel, tick_rel)
+from tests.backtest.forward_store import (ARCHIVE_END, COT, CPI, ECB, EPOCH, HOLE_AFTER_DAYS, RATE_SIDS, SIDES,  # noqa: E402
+                                          SPX, Y7, InputStore, days_between, hour_rel, minute_rel, tick_rel)
 from tests.backtest.tournament_registry import REGISTRY  # noqa: E402
 from tests.backtest.universe import BY_NAME  # noqa: E402
 
@@ -137,6 +137,36 @@ def fetch_series(store: InputStore, today: date, now: datetime) -> dict:
         out[Y7] = _freeze(store, Y7, rows, today, now)
     except Exception as e:
         out[Y7] = f"FAILED: {e!r}"[:200]
+    return out | fetch_factory_series(store, today, now)
+
+
+def fetch_factory_series(store: InputStore, today: date, now: datetime) -> dict:
+    """FACTORY's inputs from their issuers with FACTORY's own parsers: ECB fixings (through their last
+    print), BIS CPI (through month - 5, the latest month its m - 4 read needs), CFTC gold (last report)."""
+    import importlib
+    import tests.backtest.tournament_factory as tf
+    out, start = {}, ARCHIVE_END + timedelta(days=1)
+    try:
+        dfv, dc = importlib.import_module("download_fx_value"), importlib.import_module("download_cot")
+    except ModuleNotFoundError as e:
+        return {"skipped": f"FACTORY's downloaders are not on this branch: {e}"}
+    old_ecb, old_bis = "startPeriod=2005-01-01&endPeriod=2025-12-31", "startPeriod=2004-01&endPeriod=2025-12"
+    assert old_ecb in dfv.ECB and old_bis in dfv.BIS, "download_fx_value's URLs changed: re-check the forward fetch"
+    jobs = {ECB: lambda: tf.read_rows(raw_ecb=dfv.parse_ecb(dfv._get(dfv.ECB.replace(
+                old_ecb, f"startPeriod={start}&endPeriod={today}"))))[ECB],
+            CPI: lambda: tf.read_rows(raw_cpi=dfv.parse_bis(dfv._get(dfv.BIS.replace(
+                old_bis, f"startPeriod={start:%Y-%m}&endPeriod={today:%Y-%m}"))))[CPI],
+            COT: lambda: tf.read_rows(raw_cot=[r for y in range(start.year, today.year + 1)
+                                               for r in dc.rows(dfv._get(dc.URL.format(y=y)))])[COT]}
+    m5 = today.year * 12 + today.month - 1 - 5
+    for sid, job in jobs.items():
+        try:
+            rows = job()
+            through = date(m5 // 12, m5 % 12 + 1, 1) if sid == CPI else min(today - timedelta(days=1),
+                                                                             max(r[0] for r in rows))
+            out[sid] = {"rows": store.freeze_series(sid, rows, through, now), "through": store.through(sid).isoformat()}
+        except Exception as e:                       # a failed source does not advance; the others do
+            out[sid] = f"FAILED: {e!r}"[:200]
     return out
 
 

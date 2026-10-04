@@ -11,8 +11,9 @@ Mental model:
     development look's stored vector. sharpe_dev is that look's net annual Sharpe (E2's claim).
   * forward_start is the first trading day after registration; `first_exposure_utc` (the first instant
     the book could hold risk) must come after the entry is written, and the record refuses it otherwise.
-  * Adding a survivor is one `Strategy(...)` in REGISTRY built on a `tournament_books` shape. FXHEDGE was
-    killed and AUCTION not forwarded (GAP-P12D-158), so they are absent.
+  * Adding a survivor is one `Strategy(...)` built on a `tournament_books` shape: FACTORY's three (each
+    present once its kill script is on the branch) and, the same way, the owner's `hypotheses/` rules with
+    `Origin("human")` (no boundary). FXHEDGE was killed and AUCTION not forwarded, so they are absent.
 """
 
 from __future__ import annotations
@@ -26,8 +27,9 @@ from zoneinfo import ZoneInfo
 from core.signals import rules
 from tests.backtest.look_claims import Claim, Origin, canonical_hash, cost_map_hash
 from tests.backtest.look_declarations import Declaration
-from tests.backtest.tournament_books import (close_book, gotobi_tue_fri, kill_script, rebal_position, rsim_book,
-                                             window_book)
+from tests.backtest.tournament_books import (close_book, d1_forecast, gotobi_tue_fri, kill_script, rebal_position,
+                                             rsim_book, window_book)
+import tests.backtest.tournament_factory as tf
 from tests.backtest.tournament_rule import PARAMS
 
 FX13 = ("AUD_JPY", "AUD_USD", "CHF_JPY", "EUR_AUD", "EUR_CHF", "EUR_GBP", "EUR_JPY", "EUR_USD", "GBP_JPY",
@@ -95,7 +97,7 @@ def _d1() -> Strategy:
                     {"market_from": "2012-01-02", "capital": 1_000_000.0, "vol_target": 0.20, "world": "swap_free",
                      "settled": "every instrument's next slot fill in the data", "weights": "class_equal",
                      "idm": 1.5, "buffer": 0.10},
-                    rsim_book(rules.d1, FX13, date(2012, 1, 2), idm=1.5, buffer=0.10))
+                    rsim_book(d1_forecast(rules.d1), FX13, date(2012, 1, 2), idm=1.5, buffer=0.10))
 
 
 def _rebal() -> Strategy:
@@ -119,5 +121,46 @@ def _gotobi() -> Strategy:
                     window_book(k.NAME, (k.H1,), k.TIMES, k.ZONE, gotobi_tue_fri))
 
 
-REGISTRY: tuple[Strategy, ...] = (_d1(), _rebal(), _gotobi())
+FACTORY_START = date(2026, 10, 6)                  # FACTORY's survivors: the first trading day after their review
+
+
+def _factory() -> tuple[Strategy, ...]:
+    """FACTORY's three survivors (looks 000045/000049/000053, all kill-only and weak), each present once its
+    kill script is on the branch; caveats from its report are part of the hashed declaration."""
+    out, ny = [], "America/New_York"
+    k = kill_script("r1_halloween_kill_test")
+    if k is not None:
+        out.append(Strategy("HALLOWEEN-v1", k.FAMILY, k.UNIVERSE, ("000053",), "home_cash_closes", k.NAMES, k.FORMULA,
+                            k.ORIGIN, FACTORY_START, (time(16, 0), "Australia/Sydney"), 0.04144645, 0.2579,
+                            "28bc253267bc23585203796fe4ef070ff374fe2dd3ac194627110396b968e6b8",
+                            {"market_from": k.START.isoformat(), "next_session": "the next weekday",
+                             "caveats": "0.00 without its 10 best days; 2023 alone 2.20; two switches a year, so "
+                                        "about two seasons of evidence a year; rho +0.15 with REBAL"},
+                            tf.halloween_book(k.NAMES, k.START)))
+    k = kill_script("r1_hedgep_kill_test")
+    if k is not None:
+        out.append(Strategy("HEDGEP-gold", k.FAMILY, k.UNIVERSE, ("000045",), "rsim_17ny", k.NAMES, k.FORMULA, k.ORIGIN,
+                            FACTORY_START, (time(17, 0), ny), 0.20 / math.sqrt(252), 0.1414,
+                            "b5522ca5a549f5d4a20496e746830c31795e1425b5b2ac6cd31ac62e741e7dde",
+                            {"market_from": k.START.isoformat(), "capital": 1_000_000.0, "vol_target": 0.20,
+                             "idm": 1.0, "buffer": 0.10, "world": "swap_free", "report": "CFTC legacy COMEX gold",
+                             "caveats": "seen years 2012-2014 -0.32, post-sample +0.29; -0.17 without its 10 best "
+                                        "days; one market; passive long gold earned 0.19"},
+                            rsim_book(tf.hedgep_forecast, k.NAMES, k.START, idm=1.0, buffer=0.10,
+                                      input_end=tf.hedgep_end)))
+    k = kill_script("r1_fxvalue_kill_test")
+    if k is not None:
+        out.append(Strategy("FXVALUE-ppp", k.FAMILY, k.UNIVERSE, ("000049",), "rsim_17ny", k.NAMES, k.FORMULA, k.ORIGIN,
+                            FACTORY_START, (time(17, 0), ny), 0.20 / math.sqrt(252), 0.0657,
+                            "aa7b5ba758725efd76724e1c78a0a99996e1c3a72c85cb3b08be235ef8919091",
+                            {"market_from": k.START.isoformat(), "capital": 1_000_000.0, "vol_target": 0.20,
+                             "idm": 1.0, "buffer": 0.10, "world": "swap_free", "first_rank_month": list(k.FIRST),
+                             "caveats": "flat (0.07, t 0.21); clean segment 2021-2023 -0.25; -0.18 without its 10 "
+                                        "best days; its one merit is rho -0.28 with D1-FX13; the lead may decline it"},
+                            rsim_book(tf.fxvalue_forecast, k.NAMES, k.START, idm=1.0, buffer=0.10,
+                                      input_end=tf.fxvalue_end)))
+    return tuple(out)
+
+
+REGISTRY: tuple[Strategy, ...] = (_d1(), _rebal(), _gotobi(), *_factory())
 BY_ID = {s.sid: s for s in REGISTRY}

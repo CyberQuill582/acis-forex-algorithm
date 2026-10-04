@@ -55,7 +55,10 @@ class BookSeries:
 
 @lru_cache(maxsize=None)
 def kill_script(name: str):
-    """A registered kill-only look's own script, so its constants define the forward rule by identity."""
+    """A registered kill-only look's own script, so its constants define the forward rule by identity; None
+    while the script is not on this branch (a survivor whose book the lead has not integrated yet)."""
+    if not (ROOT / "scripts" / f"{name}.py").exists():
+        return None
     spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
@@ -81,12 +84,20 @@ def _filled(hours: dict, names, days, cutoff: int) -> int:
     return n
 
 
-def rsim_book(member: Callable, names: tuple[str, ...], market_from: date, *, idm: float, buffer: float,
-              capital: float = 1_000_000.0, vol_target: float = 0.20):
+def d1_forecast(member: Callable) -> Callable:
+    """A TREND member on the excess-return price, masked through each instrument's warm-up (D1's looks)."""
+    return lambda store, real, end: masked(panel(real.market, member), real)
+
+
+def rsim_book(forecast: Callable, names: tuple[str, ...], market_from: date, *, idm: float, buffer: float,
+              capital: float = 1_000_000.0, vol_target: float = 0.20, input_end: Callable | None = None):
+    """`forecast(store, real, end)` is the family's panel; `input_end(store, today)` the last decision day its
+    other inputs (a weekly report, a monthly rank) have settled."""
     def book(store: InputStore, cfg, forward_start: date, today: date) -> BookSeries:
         t = cfg.system.targets
         seen = store.minute_horizon(names, today)
-        end = min(seen, *(store.through(s) for s in RATE_SIDS))          # decisions need that day's rates
+        end = min(seen, *(store.through(s) for s in RATE_SIDS),           # decisions need that day's rates
+                  *((input_end(store, today),) if input_end else ()))
         hours: dict = {}
         def loader(n: str):
             if n not in hours:
@@ -95,7 +106,7 @@ def rsim_book(member: Callable, names: tuple[str, ...], market_from: date, *, id
         rates = store.rates(end, t.rate_max_stale_days, t.rate_max_stale_days_weekly)
         real = build(None, names, rates, market_from, end, tier="forward", loader=loader)
         m = real.market
-        f = masked(panel(m, member), real)
+        f = np.array(forecast(store, real, end), float, copy=True)
         f[np.array([d < forward_start for d in m.days])] = np.nan          # flat before the forward start
         spec = BookSpec(costs={n: cost_model(cfg, n) for n in names}, capital=capital, vol_target=vol_target,
                         idm=idm, buffer=buffer, world="swap_free",

@@ -85,7 +85,7 @@ def record(rec: ForwardRecord, store, cfg, today: date, now: datetime) -> dict:
         if sid in st.retired:
             continue
         s = BY_ID.get(sid)
-        why = "RULE DRIFT: the strategy left the registry" if s is None else s.drift(cfg, e)
+        why = "NOT ON THIS BRANCH: its book is not in the registry here" if s is None else s.drift(cfg, e)
         if why:
             summary[sid] = why
             continue
