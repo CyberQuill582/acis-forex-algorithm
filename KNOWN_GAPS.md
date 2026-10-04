@@ -334,6 +334,26 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
       - Their IDs and briefs are in TODO.
     - **The factory's looks are PRE-AUTHORISED:** each candidate gets ONE pre-declared version, no tuning, after a P&L-blind dry check, and one kill-only look on 2012–2023, registered and anchored. No stage C without the owner. Survivors enter only the forward tournament, never live.
     - The agents edit no ledger or read-path file (the lead records), no guardrail, and nothing live. Every finding is triaged by the lead before it binds.
+  - **FACTORY REPORTED (2026-10-04; `archive/RESEARCH_FACTORY_2026-10-03.md`; commits `00b9d3c` (all five versions pre-declared before the first look) and `5eff506`; looks `000045`–`000054`, anchored at `000054`, the register copied to `…/validation/2026-10-03h/`):**
+    - **Five looks, 2012-02..2023-12, kill-only:**
+      - HEDGEP v1 (gold hedgers' weekly net trading, Kang, Rouwenhorst & Tang 2020): **+0.14, t 0.49, survived**.
+      - IREV v1 (index reversal, Baltussen et al. 2019): −0.21, t −0.70, **KILLED**.
+      - FXVALUE v1 (FX value against PPP, Asness, Moskowitz & Pedersen 2013): **+0.07, t 0.21, survived**.
+      - DCARRY v1 (dollar carry on spot only, Lustig et al. 2014): −0.31, t −1.12, **KILLED**.
+      - HALLOWEEN v1 (winter long / summer short contrast, Bouman & Jacobsen 2002): **+0.26, t 0.77, survived**.
+    - **The survivors are weak:**
+      - HALLOWEEN is 0.00 without its 10 best days, and 2023 alone made 2.20.
+      - HEDGEP is −0.17 without its 10 best days, and −0.32 on its source's own sample years.
+      - FXVALUE is −0.25 on its clean segment; its only merit is a −0.28 correlation with D1.
+      - Held at equal risk, the three make 0.28 (context only).
+    - **Dropped before a look** (the report lists every reason): HEDGEP silver, IREV EU50/AUS200 (cost gate), lagged US returns, vol-managed exposure, the announcement premium (data), and nine near-duplicates or dead mechanisms.
+    - **The factory's open points:**
+      - (1) The survivors enter TOURNAMENT only with their caveats, and each needs a written live rule.
+      - (2) The brief wrongly listed GER40 and US100 as usable; they are held-out instruments (`universe.py`), and the factory correctly did not use them.
+      - (3) An optional owner FRED API key would unlock the announcement-premium data.
+      - (4) GAP-P12D-156's shared "quoted price" rule is still open.
+      - (5) The full suite has not run on `00b9d3c`'s three new test files: run it on the server.
+    - **The lead's reading:** the factory did its job, killing fast and honestly, and found no edge. The three survivors are survivors in name only.
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
 
