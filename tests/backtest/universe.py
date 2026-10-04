@@ -47,7 +47,7 @@ UNIVERSE: tuple[Instrument, ...] = (
     Instrument("US500", "USA500IDXUSD", 1_000, "2012-01", "index", "USD", False, (1100.0, 8000.0)),
     Instrument("US30", "USA30IDXUSD", 1_000, "2013-09", "index", "USD", False, (12000.0, 55000.0)),
     Instrument("UK100", "GBRIDXGBP", 1_000, "2012-01", "index", "GBP", False, (4500.0, 11000.0)),
-    Instrument("JP225", "JPNIDXJPY", 1_000, "2012-01", "index", "JPY", False, (7500.0, 60000.0)),
+    Instrument("JP225", "JPNIDXJPY", 1_000, "2012-01", "index", "JPY", False, (7500.0, 120000.0)),  # 2026-04 > 60k
     Instrument("EU50", "EUSIDXEUR", 1_000, "2012-01", "index", "EUR", False, (1800.0, 7000.0)),
     Instrument("AUS200", "AUSIDXAUD", 1_000, "2013-01", "index", "AUD", False, (3800.0, 10000.0)),
     Instrument("GER40", "DEUIDXEUR", 1_000, "2013-09", "index", "EUR", True, (7000.0, 27000.0)),
