@@ -374,7 +374,12 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - **Cost-model findings (GAP-0001):** C8's FX totals are about right, but the split is wrong. EUR_USD is 0.62 bp in C8 against ~0.55–0.6 at the venue, and USD_JPY 0.61 against ~0.75. C8 has no commission, while the venue is mostly commission ($3 a lot a side). The old engine's 13 daytime fills averaged +0.007 bp of slippage, against C8's 0.17–0.18.
     - **New gaps:** [[GAP-P12D-160]] (`VENUE_COSTS` is never written) and the [[GAP-P12D-138]] re-estimate (0.5–0.8 GB a day).
     - **The lead's reading:** verified (the `VENUE_COSTS` grep, the policy quote, the merged tests). The cost wall stands on this venue. Execution is not where ACIS's edge will come from.
-    - **NEXT: one grouped ask** covering market orders stay, C8's commission, the gold/US500 spread probe, `VENUE_COSTS` before the cutover, and log rotation before the cutover.
+    - **Owner rulings (2026-10-04, all "Recommended"):**
+      - Market orders stay at the slot, and passive-first is REJECTED for CFD venues.
+      - C8's commission/slippage split is recalibrated from 4 weeks of real demo fills after the cutover (GAP-0001), so past looks stay comparable until then.
+      - BOTH pre-cutover builds: [[GAP-P12D-160]] `VENUE_COSTS` and [[GAP-P12D-138]] log rotation.
+      - The gold/US500 spread probe runs AFTER the cutover, on the AWS host (it needs the owner's app credentials).
+      - Push (done).
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
 
