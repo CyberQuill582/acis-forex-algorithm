@@ -146,6 +146,14 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-160: ACIS-13 specifies a `VENUE_COSTS` log of each deal's commission and swap, and no code writes it
+- Severity: medium · Likelihood: certain
+- Status: open (2026-10-04, found by the EXECUTION agent and verified by the lead: `grep VENUE_COSTS` across core/, scripts/, monitoring/ and tests/ finds nothing, while specs/ACIS-13-VENUE_ADAPTERS.md §4, §7.3 step 7 and §9 require it)
+- Area: the cTrader adapter's deal handling (core/), the cutover's cost check
+- Description: the venue reports each deal's commission and swap, but the adapter never logs them. The cutover's planned real-against-modelled cost check (GAP-0001, GAP-P12D-141, GAP-P12D-159 PCE-05) would therefore have no commission data. On this venue commission is most of the cost: the demo's EUR_USD quotes a 0.0 spread on 86% of ticks, and the commission is $3 a lot a side.
+- Justification: open; it protects the AWS move. The fix implements the locked spec, with no spec change: log `VENUE_COSTS` per deal, with a test. The owner's go is asked with the EXECUTION findings.
+- Linked: [[GAP-0001]], [[GAP-P12D-141]], [[GAP-P12D-159]], [[GAP-P12D-158]]
+
 ## GAP-P12D-159: the pre-cutover dual audit (2026-10-03) — 20 findings (12 internal, 8 external), triaged by the lead
 - Severity: medium · Likelihood: certain
 - Status: open (one item owed: PC-I-07's grader-built cost models checked against the claim's `cost_map_hash`)
@@ -354,6 +362,19 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
       - (4) GAP-P12D-156's shared "quoted price" rule is still open.
       - (5) The full suite has not run on `00b9d3c`'s three new test files: run it on the server.
     - **The lead's reading:** the factory did its job, killing fast and honestly, and found no edge. The three survivors are survivors in name only.
+  - **EXECUTION REPORTED (2026-10-04; merged as `44ebbe9`: `tests/backtest/passive_fill.py`, `scripts/execution_passive_study.py`, 17 tests; `archive/EXECUTION_REPORT_2026-10-03.md`, `archive/EXECUTION_PROPOSAL_2026-10-03.md`; data subsets ≤ 2023 in `gs://acis-compute-0929-data/agents/execution/`; full suite 1487 passed / 6 skipped at `44ebbe9`):**
+    - **Passive-first execution adds cost on this CFD venue.** Pepperstone is the sole counterparty (its Order Execution Policy, Oct 2022, §10.1, quoted in the report): a cTrader limit fills when the venue's own ask reaches it and is then executed as a market order. There is no queue to earn the spread from, so a resting limit is a timing bet on the venue's quote, worth zero on a random walk (unit-tested) and negative at our slots.
+      - Measured over 44 policies, 2019–2023 ticks, signal-blind, and 33 h of the demo's own feed. A plain 5-minute limit at the touch costs −0.11 to −0.21 bp a side at D1's slot, −0.56 to −0.77 at FXHEDGE's 15:00 London (data releases), and −0.34 / −1.01 at IMOM's 15:30 / 16:00 ET.
+      - Carver's chase rule saves +0.03 to +0.15 bp only at zero latency; that is gone at the demo's 0.30–0.55 s submit-to-fill. Waiting helps only at the 17:00 New York rollover, which D1 avoids.
+      - **GAP-P12D-148's T4 (passive-first, −25 to −40% of cost) is therefore REJECTED for CFD venues.** It holds only where there is a queue (futures).
+    - **Revivals, ex ante:**
+      - IMOM: no; about 0 to +0.45 even at the venue's plain market cost, below the 0.5 bar.
+      - FXHEDGE and D1: no.
+      - GOLD-EW: not through execution. However, Pepperstone's published gold cost (a $0.18 average spread plus $7 round trip a lot, ~1.0–1.4 bp) is ~2.4× below C8's ~3.3–3.7 bp. On that basis GOLD-EW's ex-ante Sharpe is ~0.3–0.4 before decay. Any revival is a NEW family, kill-only, and only after the venue's own gold spread at 02:00/11:00 New York is measured.
+    - **Cost-model findings (GAP-0001):** C8's FX totals are about right, but the split is wrong. EUR_USD is 0.62 bp in C8 against ~0.55–0.6 at the venue, and USD_JPY 0.61 against ~0.75. C8 has no commission, while the venue is mostly commission ($3 a lot a side). The old engine's 13 daytime fills averaged +0.007 bp of slippage, against C8's 0.17–0.18.
+    - **New gaps:** [[GAP-P12D-160]] (`VENUE_COSTS` is never written) and the [[GAP-P12D-138]] re-estimate (0.5–0.8 GB a day).
+    - **The lead's reading:** verified (the `VENUE_COSTS` grep, the policy quote, the merged tests). The cost wall stands on this venue. Execution is not where ACIS's edge will come from.
+    - **NEXT: one grouped ask** covering market orders stay, C8's commission, the gold/US500 spread probe, `VENUE_COSTS` before the cutover, and log rotation before the cutover.
 - Justification: open by design: it governs every next choice; a new candidate enters only with a cited source, its forced trader, its data and its venues.
 - Linked: [[GAP-P12D-157]], [[GAP-P12D-154]], [[GAP-P12D-148]], [[GAP-P12D-151]]
 
@@ -637,6 +658,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Area: logs/*.jsonl (the engine's structured logs), data/runtime/market_state.sqlite, the demo hosts' disks
 - Description: in the 7 h since the practice start at 12:34 UTC the engine wrote 75 MB of logs (data_log.jsonl 53 MB, signal_log.jsonl 24 MB), about 0.26 GB a day, and `market_state.sqlite` stood at 58 MB (its growth rate is not yet measured separately). Nothing rotates, compresses or prunes either. The AWS demo host's 30 GB disk (the free-plan EBS allowance, with the OS and venv taking about 3 GB) therefore fills in roughly two months, and a full disk stops the JSONL writes the §12 plane and the operational ledger read.
 - Justification: open, bounded: the demo trades a demo account and the watchdog flattens a silent engine, so a full disk ends in a flat, halted engine, not in a loss. Before about 2026-11-15: measure the store's growth on the AWS host over a day, then choose with the owner between rotation (logrotate with copytruncate, or the engine reopening its files), pruning the store, or a larger disk. The logs are the operational-referent audit's evidence, so rotated files are archived, never deleted.
+- **Re-estimated 2026-10-04 (the EXECUTION agent, from the demo's own `data_log.jsonl`):** logging every tick of 13 pairs is about 0.5–0.8 GB a day, 2–3× the first measurement, so the AWS host's 30 GB disk could fill 5–8 weeks after the cutover, not about two months. Rotation before the cutover is asked with the EXECUTION findings ([[GAP-P12D-158]]).
 - Linked: [[GAP-P12D-76]], [[GAP-P12D-12]]
 
 ## GAP-P12D-137: the energy CFDs (UKOIL, NATGAS, USOIL) carry unadjusted futures rolls, and their swap markup is unexplained
