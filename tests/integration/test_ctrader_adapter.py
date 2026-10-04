@@ -240,6 +240,30 @@ async def test_our_own_close_is_never_reported_as_unsolicited(tmp_path) -> None:
     assert face.router.unsolicited.empty()
 
 
+async def test_each_deal_logs_its_venue_costs_once_and_a_close_adds_its_swap_and_balance(tmp_path) -> None:
+    # GAP-P12D-160: ACIS-13 §4.2 / §7.3 step 7 / §9 specified VENUE_COSTS and nothing wrote it
+    venue, _, face, buf = await _face(tmp_path)
+    await _open(face)
+    await face.close_position(fragment_id="c1", order_id="oc", instrument="EUR_USD", direction=1,
+                              units=Decimal("1000"), requested_price=1.10, now=T0, session_id="s")
+    costs = events(buf, "VENUE_COSTS")
+    assert len(costs) == 2 and len({c["deal_id"] for c in costs}) == 2      # one per deal, never twice
+    opened, closed = costs
+    assert opened["commission"] == "-3.00" and "swap" not in opened          # cents at moneyDigits 2
+    assert closed["commission"] == "-3.00" and closed["swap"] == "0.00"
+    assert closed["balance_after"] == "10000.00" and closed["gross_profit"] == "0.00"
+
+
+async def test_a_stop_firing_logs_the_venue_costs_of_its_deal(tmp_path) -> None:
+    venue, _, face, buf = await _face(tmp_path)
+    await _open(face)
+    (pid,) = venue.positions
+    venue.fire_stop(pid, 1.0850)
+    await asyncio.wait_for(anext(face.venue_fills()), 2)
+    stop = events(buf, "VENUE_COSTS")[-1]
+    assert stop["position_id"] == pid and stop["commission"] == "-3.00" and stop["balance_after"] == "10000.00"
+
+
 async def test_the_budget_reserve_refuses_opens_but_never_a_close(tmp_path) -> None:
     venue, session, face, _ = await _face(tmp_path, budget=6, reserve=2)
     await _open(face)

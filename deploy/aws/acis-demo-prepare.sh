@@ -39,6 +39,8 @@ install -D -m644 /opt/acis/repo/deploy/demo/acis-watchdog.aws.conf \
 # and run once, so the first 17:00 decision finds fresh rates
 install -m644 /opt/acis/repo/deploy/systemd/acis-macro.service /opt/acis/repo/deploy/systemd/acis-macro.timer \
   /etc/systemd/system/
+install -m644 /opt/acis/repo/deploy/aws/acis-logrotate.conf /etc/logrotate.d/acis   # GAP-P12D-138
+logrotate --debug /etc/logrotate.d/acis >/dev/null 2>&1 || echo "acis logrotate: config check failed" >&2
 systemctl daemon-reload
 systemctl enable --now acis-macro.timer
 systemctl start acis-macro.service || echo "acis-macro: first run failed; the timer retries daily (R6-1)"

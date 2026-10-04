@@ -31,7 +31,7 @@ from core.execution import ctrader_sync as sync
 from core.execution.ctrader_close import CloseMixin, _acked, _Order
 from core.execution.ctrader_account import snapshot
 from core.execution.ctrader_events import EventRouter, Tracker
-from core.execution.ctrader_orders import (broker_positions, direction_of, fill_report, label,
+from core.execution.ctrader_orders import (broker_positions, direction_of, fill_report, label, venue_costs,
                                            protocol_volume, quantize, relative_stop, side)
 from core.execution.ctrader_store import VenueStore
 from core.execution.ctrader_symbols import VenueSymbolSpec
@@ -65,6 +65,7 @@ class CTraderExecutionFace(CloseMixin, ExecutionFace):
         self._reports: dict[str, FillReport] = {}
         self._trackers: dict[str, Tracker] = {}
         self._opens: deque[datetime] = deque()
+        self._costed: set[int] = set()              # deals whose VENUE_COSTS is logged (once each)
 
     def start(self) -> asyncio.Task:
         """Begin consuming the session's execution events."""
@@ -231,6 +232,10 @@ class CTraderExecutionFace(CloseMixin, ExecutionFace):
                              direction=o.direction, requested_units=o.units,
                              requested_price=o.requested_price, session_id=o.session_id,
                              now=self._now(), cancelled=cancelled)
+        for deal in deals:                          # ACIS-13 §7.3 step 7: each deal's costs, once
+            if int(deal["dealId"]) not in self._costed:
+                self._costed.add(int(deal["dealId"]))
+                self._log.event("VENUE_COSTS", **venue_costs(deal))
         if fill_id is None:
             self._store.terminal(o.fragment_id, venue_order_id, position_id, self._now())
             if position_id is not None:

@@ -13,6 +13,7 @@ Invariants:
   * One venue order → one FillReport: the volume-weighted price over its deals, the exact filled
     Decimal, FILLED / PARTIAL / REJECTED / CANCELLED by the ACIS-06 invariants (§4.2).
   * ACIS's own positions carry the binding's label; anything else on the account is foreign.
+  * A deal's venue costs (`VENUE_COSTS`, §4.2) are exact Decimals at the deal's `moneyDigits`, as strings.
 """
 
 from __future__ import annotations
@@ -100,6 +101,22 @@ def fill_report(deals: Iterable[Mapping], *, fill_id: str, order_id: str, fragme
         fill_time=datetime.fromtimestamp(last / 1000, tz=timezone.utc), venue="ctrader",
         status=FillStatus.FILLED if filled >= requested_units else FillStatus.PARTIAL,
         remaining_units=max(requested_units - filled, Decimal("0")), session_id=session_id)
+
+
+def venue_costs(deal: Mapping) -> dict:
+    """ACIS-13 §4.2 / §9: the deal's commission and, on a closing deal, its swap, gross profit,
+    P&L conversion fee and the balance after it, in the deposit currency (F-21, F-38)."""
+    digits = int(deal.get("moneyDigits", 2))
+    money = lambda v, d=digits: str(Decimal(int(v)).scaleb(-d))           # noqa: E731
+    out = {"deal_id": int(deal["dealId"]), "position_id": int(deal["positionId"]),
+           "commission": money(deal.get("commission", 0))}
+    detail = deal.get("closePositionDetail")
+    if detail is not None:
+        d = int(detail.get("moneyDigits", digits))
+        out.update(swap=money(detail.get("swap", 0), d), gross_profit=money(detail.get("grossProfit", 0), d),
+                   pnl_conversion_fee=money(detail.get("pnlConversionFee", 0), d),
+                   balance_after=money(detail["balance"], d) if "balance" in detail else None)
+    return out
 
 
 def unsolicited_report(deal: Mapping, *, account_key: str, instrument: str,

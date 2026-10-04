@@ -41,3 +41,15 @@ def test_each_demo_helper_parses(script: str) -> None:
     bash = shutil.which("bash")                     # the found one: a bare "bash" can resolve to WSL on Windows
     done = subprocess.run([bash, "-n", (ROOT / "deploy" / script).as_posix()], capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
+
+
+def test_the_aws_host_rotates_only_the_two_high_volume_logs_and_keeps_them_compressed() -> None:
+    """GAP-P12D-138 (owner ruling 2026-10-04): data_log and signal_log rotate daily with copytruncate (the
+    engine appends), compressed, kept 60 days; the evidence logs are never rotated away by this file."""
+    conf = (ROOT / "deploy" / "aws" / "acis-logrotate.conf").read_text(encoding="utf-8")
+    body = [ln.strip() for ln in conf.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    assert body[0] == "/opt/acis/repo/logs/data_log.jsonl /opt/acis/repo/logs/signal_log.jsonl {"
+    assert {"daily", "rotate 60", "compress", "copytruncate", "su acis acis"} <= set(body)
+    assert not any(e in body[0] for e in ("trade_log", "risk_log", "target_log", "governor_log", "venue_events"))
+    prepare = (ROOT / "deploy" / "aws" / "acis-demo-prepare.sh").read_text(encoding="utf-8")
+    assert "deploy/aws/acis-logrotate.conf /etc/logrotate.d/acis" in prepare

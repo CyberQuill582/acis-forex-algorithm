@@ -22,7 +22,7 @@ from typing import Mapping
 
 from core.data.ctrader.schema import PT, ExecutionType, OrderType, PositionStatus, enum_value
 from core.data.ctrader.wire import Frame
-from core.execution.ctrader_orders import unsolicited_report
+from core.execution.ctrader_orders import unsolicited_report, venue_costs
 
 FINISH = {ExecutionType.ORDER_FILLED: "filled", ExecutionType.ORDER_CANCELLED: "cancelled",
           ExecutionType.ORDER_EXPIRED: "cancelled", ExecutionType.ORDER_REJECTED: "rejected"}
@@ -162,6 +162,7 @@ class EventRouter:
                                     stop_price=self.stops.get(pid))
         self._log.event("VENUE_UNSOLICITED_FILL", deal_id=deal_id, position_id=pid,
                         fill_px=report.fill_price, stop_px=report.requested_price)
+        self._log.event("VENUE_COSTS", **venue_costs(deal))
         self.unsolicited.put_nowait(report)
 
     def _claim(self, frame: Frame) -> Tracker | None:
