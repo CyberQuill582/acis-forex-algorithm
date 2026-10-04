@@ -1,0 +1,19 @@
+# The forward tournament's daily run (TOURNAMENT, 2026-10-04): one shot at every boot of the AWS data server,
+# which an EventBridge Scheduler rule starts each morning (06:15 UTC, after Dukascopy's ~03:30 UTC publish).
+# When the run ends, ok or not, the server powers off again unless /etc/acis/forward.keepalive exists.
+# Install: sudo cp deploy/forward/acis-forward.service /etc/systemd/system/ && sudo systemctl enable acis-forward
+[Unit]
+Description=ACIS forward tournament daily run
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+User=ec2-user
+ExecStart=/bin/bash /data/acis/forward/repo/deploy/forward/acis-forward-run.sh
+ExecStopPost=+/bin/sh -c '[ -e /etc/acis/forward.keepalive ] || /usr/sbin/shutdown -h +2'
+TimeoutStartSec=3600
+
+[Install]
+WantedBy=multi-user.target
