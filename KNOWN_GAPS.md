@@ -376,6 +376,30 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - **Cost-model findings (GAP-0001):** C8's FX totals are about right, but the split is wrong. EUR_USD is 0.62 bp in C8 against ~0.55–0.6 at the venue, and USD_JPY 0.61 against ~0.75. C8 has no commission, while the venue is mostly commission ($3 a lot a side). The old engine's 13 daytime fills averaged +0.007 bp of slippage, against C8's 0.17–0.18.
     - **New gaps:** [[GAP-P12D-160]] (`VENUE_COSTS` is never written) and the [[GAP-P12D-138]] re-estimate (0.5–0.8 GB a day).
     - **The lead's reading:** verified (the `VENUE_COSTS` grep, the policy quote, the merged tests). The cost wall stands on this venue. Execution is not where ACIS's edge will come from.
+  - **TOURNAMENT REPORTED (2026-10-04; merged as `1b89161`; `archive/TOURNAMENT_REPORT_2026-10-03.md`, `archive/TOURNAMENT_SPEC_PROPOSAL_2026-10-03.md` (P-1..P-8); full suite 1527 passed / 6 skipped at `1b89161`):**
+    - **Built (research side, off the money path):**
+      - `forward_record.py`: append-only and hash-chained. It refuses pre-start, unsettled and duplicate days, late registration, and drift in a rule or its costs.
+      - `forward_store.py`: write-once inputs, revisions as lines, holes after 4 days.
+      - The tournament books, registry, factory views and pre-registered promotion rule (`tournament_rule.py`).
+      - `scripts/forward_fetch.py`, `tournament_daily.py`, `tournament_report.py`, and `deploy/forward/`.
+      - 37 tests.
+      - Shared-module changes, defaults unchanged: `candle_store.load(since=)`, `rsim_real.build(loader=, tier=)`, `look_anchor(branch=, file=)`, `jp_days` to 2027, and JP225's envelope to 120,000.
+    - **Parity:** each forward book reproduces its registered look's stored vector exactly: D1 `000028`, REBAL `000026`, GOTOBI `000023`, HALLOWEEN `000054`, HEDGEP `000046`, FXVALUE `000050`. All variant hashes and cost maps equal the register's.
+    - **The record is REGISTERED** (7 lines, copied to MAIN `data/forward/record` with its input store; bucket copies in `gs://acis-compute-0929-data/agents/tournament/record/` with object timestamps 2026-10-03 22:19 and 2026-10-04 06:44 UTC). Six strategies start forward on 2026-10-05/06: D1-FX13, REBAL v1a, GOTOBI v1a, HALLOWEEN, HEDGEP-gold and FXVALUE. No day is recorded yet. Dukascopy keeps past days, so a late start loses nothing.
+    - **The finding that binds (verified by the lead's arithmetic): milestone D cannot tell an edge from luck.**
+      - Over 126 days a zero-edge family shows ≥ 0.5 with probability 0.36 (the SE of an annual Sharpe is √2 ≈ 1.41), and at least one of six with probability 0.93.
+      - Certifying a true 0.5 forward at 95% needs about 11 years for one family (t = 0.5·√T ≥ 1.645).
+      - With P-1a's correction (capacity 20) the bar is a Sharpe of 4.45 at 126 days, 3.14 at 252 and 2.22 at 504.
+      - **The lead's 2026-10-03 memo set milestone D without this; it is corrected with the owner (P-4).** The tournament's real yield is fast kills plus a ranked scoreboard with the luck shown, never certification. By contrast, 12 years of history certify an edge of about S ≥ 0.55 (t = S·√12 ≥ 1.88 at α 0.03): **route B (human-origin hypotheses, graded on history) is the only practical certifier.**
+    - **Other findings:**
+      - P-5: the −6σ* tripwire as written would have fired in history (REBAL −8.5σ*, GOTOBI −8.1σ*).
+      - P-6: `look_claims.admit_claim` refuses a stage-D (tier 4) look of a registered LLM variant; it needs an amendment like v2.35's for stage C.
+      - P-2: E2's units (SR̂_dev read as daily).
+      - P-3: σ* for unscaled books.
+      - P-7: the forward hours are rebuilt from 1-minute files (matching the hourly closes on ~95% of hours, the rest within ~1.5 pips).
+      - P-8: the calendar/envelope facts. FXVALUE's rule is undefined where US CPI 2025-10 is missing, so it ranks only from its forward start.
+    - **Deployment:** the AWS data server `i-08cd48694bea9e3db` (free plan to 2027-03-11). The lead installs it via SSM. The OWNER creates an EventBridge schedule `cron(15 6 * * ? *)` UTC that starts the instance (root/admin only), and chooses the anchor ([[GAP-P12D-86]]). Until then, `python scripts/tournament_daily.py` on the laptop advances the record (~3 min).
+    - **NEXT: one grouped ask** (P-4 milestone D and P-1 promotion; adopt the record and FXVALUE; host and anchor; the P-2/3/5/6/7/8 spec batch).
     - **Owner rulings (2026-10-04, all "Recommended"):**
       - Market orders stay at the slot, and passive-first is REJECTED for CFD venues.
       - ~~C8's commission/slippage split is recalibrated from 4 weeks of real demo fills after the cutover~~ **WITHDRAWN 2026-10-04 (owner: "Keep D4 (Recommended)")**. The lead's option contradicted ACIS-13 §4.2's owner ruling D4: demo fills and costs never calibrate C8. C8 may take only published contract facts (the venue's stated commission, like its published swap rates); slippage is calibrated from a real funded or live account (GAP-0001). Past looks stay comparable meanwhile.
