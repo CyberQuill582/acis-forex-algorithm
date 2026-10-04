@@ -136,16 +136,20 @@ def test_the_window_book_trades_only_tuesday_to_friday_gotobi_days_and_is_causal
 
 
 def test_the_registry_reproduces_the_registers_variant_hashes_and_the_shipped_universe(shipped_config) -> None:
-    assert [s.variant_hash for s in REGISTRY] == [
-        "bcd0a0d8951ae2095d56f944e38244aef46c202be2cd10bc5b6d290c6a3d8802",     # looks 000001, 000027
-        "f2cbbb5c5d2cbf3e9ae959be6cb5ad33abb208fc57eaaabb48b4acce9671ba6d",     # looks 000007, 000025
-        "bf98356cae9d1027b9f41fe0db1b00fc8b9cdae4c8eb02f1d67d525050e2c128"]     # looks 000015, 000021
+    registered = {                                                              # the look register's claims
+        "D1-FX13": "bcd0a0d8951ae2095d56f944e38244aef46c202be2cd10bc5b6d290c6a3d8802",       # 000001, 000027
+        "REBAL-v1a": "f2cbbb5c5d2cbf3e9ae959be6cb5ad33abb208fc57eaaabb48b4acce9671ba6d",     # 000007, 000025
+        "GOTOBI-v1a": "bf98356cae9d1027b9f41fe0db1b00fc8b9cdae4c8eb02f1d67d525050e2c128",    # 000015, 000021
+        "HALLOWEEN-v1": "696a559239a5cda59b3f6255468d9d4c357ae68bc717d1dd36ddd48e72375dd8",  # 000053
+        "HEDGEP-gold": "7ef409005f492a17e82d30cb5a0f0156c7c01717dcaaab2586d7d0bd1f31be8e",   # 000045
+        "FXVALUE-ppp": "b146068859006ccc87d8ba42eeb0f006e4fbd8c1384c95fb558089f8c92ae661"}   # 000049
+    assert {"D1-FX13", "REBAL-v1a", "GOTOBI-v1a"} <= {s.sid for s in REGISTRY} <= set(registered)
+    assert all(s.variant_hash == registered[s.sid] for s in REGISTRY)
     assert list(FX13) == sorted(shipped_config.system.targets.universe)
     for s in REGISTRY:
         e = s.entry()
         assert e["certifying_boundary"] <= e["forward_start"] and datetime.fromisoformat(e["first_exposure_utc"]).date() \
             >= date(2026, 10, 4)
-    assert {s.sid for s in REGISTRY} == {"D1-FX13", "REBAL-v1a", "GOTOBI-v1a"}
     assert all(s.drift(shipped_config, s.entry()) is None for s in REGISTRY)     # the looks' C8 costs, unchanged
 
 
