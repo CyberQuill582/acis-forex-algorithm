@@ -8,11 +8,19 @@
 
 ## ▶ NEXT SESSION — START HERE (checkpoint 2026-10-04, fifth session; master v2.36; full suite 1529 passed / 6 skipped on the server; all three agents FINISHED and merged; `acis-compute-1` STOPPED; the next session can start after the weekly limit resets, Tuesday 01:00)
 
+**OWNER PLAN 2026-10-04 ("let all that be the work of the next session"; [[GAP-P12D-158]]):** the owner has no forex hypotheses of their own, so route B is EMPTY for now.
+1. **The forward record is the main path.** Run `tournament_daily.py` first, deploy it to the AWS data server, and keep the 10-15..17 cutover on schedule.
+2. **Add the combined book:** register an equal-risk D1 + REBAL + GOTOBI (+ HALLOWEEN/HEDGEP) portfolio as ONE more pre-registered forward entry, BEFORE its first exposure.
+3. **Route B stays open, unprompted.** If the owner finds a paper or book and chooses a rule from it with no LLM suggesting, listing or ranking options, register it as literature origin. **Never suggest sources to the owner.**
+4. **Milestone D stays the spending gate.** No paid challenge until the forward record clears it AND the owner accepts the luck odds shown.
+5. **Low-cost autopilot after the cutover:** the demo and the forward record run on near-free hosting and need only minutes a month. Agents only on the owner's explicit request; the compute server stopped when idle; the Google credits end 10-21. Plan for a cheaper Claude plan.
+6. **Review date 2027-04 (6 months):** if no forward strategy shows life by then, recommend STOPPING, with the money intact. If something does, revisit it carefully.
+
 **Resume in this order (2026-10-04 checkpoint):**
 1. `python scripts/tournament_daily.py` (laptop, ~3 min). It appends the v1.1 rule line (P-5) BEFORE the first day, then records every settled day since 2026-10-05. A late run loses nothing: Dukascopy keeps past days. Then copy `data/forward/` to `gs://acis-compute-0929-data/forward/` and push the `forward-anchor` branch.
 2. Deploy the daily job to the AWS data server (`i-08cd48694bea9e3db`) by the steps in `archive/TOURNAMENT_REPORT_2026-10-03.md` §Deployment. The OWNER creates the EventBridge schedule (below).
 3. The cutover 2026-10-15..17 (deploy/README.md's AWS order). Check `/etc/logrotate.d/acis` and `VENUE_COSTS` after the first fill.
-4. The owner's `hypotheses/` files: register each before its first exposure, then grade it on history (human origin can certify).
+4. The combined book's forward entry (owner plan item 2), registered before its first exposure. Route B is empty: wait, unprompted.
 5. Owed later: the stage-D grader for forward looks (first due ~2027-04), the gold/US500 spread probe after the cutover, and [[GAP-P12D-155]] in a quiet slot.
 
 
