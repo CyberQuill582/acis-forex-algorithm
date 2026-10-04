@@ -33,9 +33,10 @@ class Hourly:
     traded: np.ndarray       # bool
 
 
-def load(root: Path, name: str, until: tuple[int, int] = LAST) -> Hourly:
+def load(root: Path, name: str, until: tuple[int, int] = LAST, since: tuple[int, int] | None = None) -> Hourly:
+    """`since` (year, month) starts later than the instrument's first month (the forward store's months)."""
     inst = BY_NAME[name]
-    fy, fm = (int(x) for x in inst.first.split("-"))
+    fy, fm = since or tuple(int(x) for x in inst.first.split("-"))
     rows = []
     y, m = fy, fm
     while (y, m) <= until:

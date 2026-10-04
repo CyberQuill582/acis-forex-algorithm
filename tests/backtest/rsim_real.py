@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -46,7 +46,7 @@ SLOTS = {"fx": ("America/New_York", 8), "metal": ("America/New_York", 8), "energ
 TO_USD = {"EUR": ("EUR_USD", 1), "GBP": ("GBP_USD", 1), "AUD": ("AUD_USD", 1), "NZD": ("NZD_USD", 1),
           "JPY": ("USD_JPY", -1), "CAD": ("USD_CAD", -1), "CHF": ("USD_CHF", -1)}
 TIERS = {"development": (EXPLORED, date(2023, 12, 31)), "stage_c": (tuple(HELD_OUT), date(2023, 12, 31)),
-         "holdout": (EXPLORED, date(2025, 12, 31))}
+         "holdout": (EXPLORED, date(2025, 12, 31)), "forward": (EXPLORED, date(2099, 12, 31))}   # the tournament
 STALE_S = 4 * 86400
 
 
@@ -91,7 +91,9 @@ def _slot_index(h: Hourly, zone: str, hour: int) -> np.ndarray:
     return np.asarray(keep, np.int64)
 
 
-def build(root: Path, names: Sequence[str], rates: RateTable, start: date, end: date, *, tier: str) -> RealMarket:
+def build(root: Path | None, names: Sequence[str], rates: RateTable, start: date, end: date, *, tier: str,
+          loader: Callable[[str], Hourly] | None = None) -> RealMarket:
+    """`loader` (an instrument's Hourly through `end`) replaces the archive read: the forward store's."""
     allowed, last = TIERS[tier]
     if bad := [n for n in names if n not in allowed]:
         raise SourceRefused(f"tier {tier!r} may not read {bad}")
@@ -100,7 +102,8 @@ def build(root: Path, names: Sequence[str], rates: RateTable, start: date, end: 
     if energy := [n for n in names if BY_NAME[n].asset_class == "energy"]:
         raise SourceRefused(f"{energy}: unadjusted futures rolls (GAP-P12D-137)")
     until = (end.year, end.month)
-    series = {n: load(root, n, until) for n in {*names, *(TO_USD[BY_NAME[n].quote][0] for n in names if BY_NAME[n].quote != "USD")}}
+    read = loader or (lambda n: load(root, n, until))
+    series = {n: read(n) for n in {*names, *(TO_USD[BY_NAME[n].quote][0] for n in names if BY_NAME[n].quote != "USD")}}
     closes = {n: _Closes(h) for n, h in series.items()}
     days = [(d, at) for d, at in _decisions(start, end)
             if any((c := closes[n].at(at)) and at - c[1] < 86400 for n in names)]
