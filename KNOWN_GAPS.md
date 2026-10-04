@@ -153,7 +153,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Description: the venue reports each deal's commission and swap, but the adapter never logs them. The cutover's planned real-against-modelled cost check (GAP-0001, GAP-P12D-141, GAP-P12D-159 PCE-05) would therefore have no commission data. On this venue commission is most of the cost: the demo's EUR_USD quotes a 0.0 spread on 86% of ticks, and the commission is $3 a lot a side.
 - Fix: `ctrader_orders.venue_costs(deal)` gives the deal's commission and, on a closing deal, its swap, gross profit, P&L conversion fee and balance after, as exact Decimals at the deal's `moneyDigits`. The face logs `VENUE_COSTS` once per deal for ACIS's own orders (`_finish`, so opens, closes and recovered orders), and the router logs it for unsolicited deals (a stop firing). This implements the locked spec; no spec change.
 - Proof: `test_each_deal_logs_its_venue_costs_once_and_a_close_adds_its_swap_and_balance`, `test_a_stop_firing_logs_the_venue_costs_of_its_deal`.
-- Residual: [[GAP-0001]]: the real-against-modelled cost comparison itself, from the first weeks of fills after the cutover. Note ACIS-13 §4.2's D4 rule that demo costs never calibrate C8 ([[GAP-P12D-158]], raised with the owner 2026-10-04).
+- Residual: [[GAP-0001]]: the real-against-modelled cost comparison itself, from the first weeks of fills after the cutover. Owner re-ruled 2026-10-04 "Keep D4": demo costs never calibrate C8; only published contract facts do ([[GAP-P12D-158]]).
 - Linked: [[GAP-0001]], [[GAP-P12D-141]], [[GAP-P12D-159]], [[GAP-P12D-158]]
 
 ## GAP-P12D-159: the pre-cutover dual audit (2026-10-03) — 20 findings (12 internal, 8 external), triaged by the lead
@@ -378,7 +378,7 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
     - **The lead's reading:** verified (the `VENUE_COSTS` grep, the policy quote, the merged tests). The cost wall stands on this venue. Execution is not where ACIS's edge will come from.
     - **Owner rulings (2026-10-04, all "Recommended"):**
       - Market orders stay at the slot, and passive-first is REJECTED for CFD venues.
-      - C8's commission/slippage split is recalibrated from 4 weeks of real demo fills after the cutover (GAP-0001), so past looks stay comparable until then.
+      - ~~C8's commission/slippage split is recalibrated from 4 weeks of real demo fills after the cutover~~ **WITHDRAWN 2026-10-04 (owner: "Keep D4 (Recommended)")**. The lead's option contradicted ACIS-13 §4.2's owner ruling D4: demo fills and costs never calibrate C8. C8 may take only published contract facts (the venue's stated commission, like its published swap rates); slippage is calibrated from a real funded or live account (GAP-0001). Past looks stay comparable meanwhile.
       - BOTH pre-cutover builds: [[GAP-P12D-160]] `VENUE_COSTS` and [[GAP-P12D-138]] log rotation.
       - The gold/US500 spread probe runs AFTER the cutover, on the AWS host (it needs the owner's app credentials).
       - Push (done).
