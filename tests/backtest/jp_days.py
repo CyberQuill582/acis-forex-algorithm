@@ -1,4 +1,4 @@
-"""Japanese bank business days and gotobi days, 2011-2025 (GOTOBI's calendar, GAP-P12D-158).
+"""Japanese bank business days and gotobi days, 2011-2027 (GOTOBI's calendar, GAP-P12D-158).
 
 Mental model:
   * A BANK DAY is a weekday that is neither a national holiday (the Cabinet Office's own list,
@@ -10,7 +10,8 @@ Mental model:
     month is shorter (Bessho's "5, 10, 15, 20, 25, and 30"); `last="month_end"` is the month's last
     calendar day, an alternative reading (Ito & Yamada 2017 use 5..30 AND the month's last trading day:
     not built; GAP-P12D-159 PCE-04). Two nominal days that move onto the same bank day count once.
-  * Outside 2011-2025 the calendar refuses: an unvetted year can never decide a trade.
+  * Outside 2011-2027 the calendar refuses: an unvetted year can never decide a trade (2026-27 for the
+    forward tournament: the Cabinet Office list's 2026-27 rows, vetted 2026-10-04 against XTKS).
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from calendar import monthrange
 from datetime import date, timedelta
 from pathlib import Path
 
-FIRST, LAST = date(2011, 1, 1), date(2025, 12, 31)
+FIRST, LAST = date(2011, 1, 1), date(2027, 12, 31)
 NOMINAL = (5, 10, 15, 20, 25)
 BANK_CLOSED = ((12, 31), (1, 2), (1, 3))
 

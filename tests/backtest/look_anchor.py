@@ -45,38 +45,40 @@ def _git(repo: Path, *args: str, stdin: str | None = None, check: bool = True) -
     return r.stdout.decode("utf-8") if r.returncode == 0 else ""
 
 
-def _content(repo: Path, ref: str) -> str:
-    return _git(repo, "show", f"{ref}:{FILE}", check=False)
+def _content(repo: Path, ref: str, file: str = FILE) -> str:
+    return _git(repo, "show", f"{ref}:{file}", check=False)
 
 
-def anchor(register, repo: Path, remote: str = "origin") -> str:
-    """Append the register's current head to the anchor branch and push it; return the anchor commit."""
+def anchor(register, repo: Path, remote: str = "origin", *, branch: str = BRANCH, file: str = FILE) -> str:
+    """Append the register's current head to the anchor branch and push it; return the anchor commit.
+    `branch`/`file` let another chained ledger (the forward record) keep its own anchor."""
     scan = register.scan()
     if scan.broken:
         raise AnchorError("a broken register is never anchored: " + "; ".join(scan.broken))
-    prev = _git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{BRANCH}", check=False).strip()
-    old = _content(repo, f"refs/heads/{BRANCH}") if prev else ""
+    prev = _git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{branch}", check=False).strip()
+    old = _content(repo, f"refs/heads/{branch}", file) if prev else ""
     if old.splitlines() and old.splitlines()[-1].split()[1] == scan.head:
         commit = prev                                         # already anchored locally: push again
     else:
         stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         blob = _git(repo, "hash-object", "-w", "--stdin", stdin=f"{old}{len(scan.lines):06d} {scan.head} {stamp}\n").strip()
-        tree = _git(repo, "mktree", stdin=f"100644 blob {blob}\t{FILE}\n").strip()
+        tree = _git(repo, "mktree", stdin=f"100644 blob {blob}\t{file}\n").strip()
         parent = ("-p", prev) if prev else ()
-        commit = _git(repo, "commit-tree", tree, *parent, "-m", f"look register anchor {len(scan.lines):06d}").strip()
-        _git(repo, "update-ref", f"refs/heads/{BRANCH}", commit, prev or "0" * 40)   # compare-and-swap
-    _git(repo, "push", remote, f"refs/heads/{BRANCH}:refs/heads/{BRANCH}")
+        what = "look register" if branch == BRANCH else branch
+        commit = _git(repo, "commit-tree", tree, *parent, "-m", f"{what} anchor {len(scan.lines):06d}").strip()
+        _git(repo, "update-ref", f"refs/heads/{branch}", commit, prev or "0" * 40)   # compare-and-swap
+    _git(repo, "push", remote, f"refs/heads/{branch}:refs/heads/{branch}")
     return commit
 
 
-def anchored(register, repo: Path, remote: str = "origin") -> bool:
+def anchored(register, repo: Path, remote: str = "origin", *, branch: str = BRANCH, file: str = FILE) -> bool:
     """True when the remote's anchor names every anchored head in order, ending at the current head."""
     try:
-        _git(repo, "fetch", "-q", remote, f"+refs/heads/{BRANCH}:refs/remotes/{remote}/{BRANCH}")
+        _git(repo, "fetch", "-q", remote, f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}")
     except AnchorError:
         return False
     scan = register.scan()
-    rows = [line.split() for line in _content(repo, f"refs/remotes/{remote}/{BRANCH}").splitlines()]
+    rows = [line.split() for line in _content(repo, f"refs/remotes/{remote}/{branch}", file).splitlines()]
     if not rows or scan.broken:
         return False
     seqs = [int(r[0]) for r in rows]

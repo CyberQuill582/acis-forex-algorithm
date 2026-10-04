@@ -1,0 +1,161 @@
+"""The tournament's books (TOURNAMENT): no look-ahead (a book run on data cut at any day reproduces every day
+it settled on the longer data, exactly), flat and costless before the forward start, never past its settled
+horizon, REBAL's calendar term causal in returns, and the registry reproducing the register's variants."""
+
+from __future__ import annotations
+
+import lzma
+from datetime import date, datetime, time, timedelta, timezone
+
+import numpy as np
+import pytest
+
+from core.data.rates import RateTable
+from core.signals import rules
+from tests.backtest.bi5 import TICK
+from tests.backtest.candle_store import Hourly
+from tests.backtest.exchange_days import holidays as exchange_holidays
+from tests.backtest.jp_days import CalendarRefused, is_bank_day
+from tests.backtest.rebal import signals
+from tests.backtest.tournament_books import (close_book, gotobi_tue_fri, kill_script, nyse_sessions_after,
+                                             rebal_position, rsim_book, window_book)
+from tests.backtest.tournament_registry import FX13, REGISTRY
+
+DATA_FROM, DATA_TO = date(2020, 1, 1), date(2021, 12, 31)
+
+
+def _hours(seed: int, base: float, vol: float = 0.0008, spread: float = 0.0001) -> Hourly:
+    t0 = int(datetime.combine(DATA_FROM, time(0), timezone.utc).timestamp())
+    n = ((DATA_TO - DATA_FROM).days + 1) * 24
+    start = t0 + 3600 * np.arange(n, dtype=np.int64)
+    weekday = np.array([datetime.fromtimestamp(int(s), timezone.utc).weekday() < 5 for s in start])
+    steps = np.where(weekday, np.random.default_rng(seed).standard_normal(n) * vol, 0.0)
+    trend = np.where(weekday, 0.00004 * np.sin(np.arange(n) / 2000.0), 0.0)
+    mid = base * np.exp(np.cumsum(steps + trend))
+    return Hourly("X", start, np.r_[mid[0], mid[:-1]], mid, np.full(n, spread * base), weekday)
+
+
+class FakeStore:
+    """Duck-typed InputStore over in-memory hours and series, cut at `data_end`."""
+
+    def __init__(self, data_end: date, root=None) -> None:
+        self.data_end, self.root = data_end, root
+        self.h = {"EUR_USD": _hours(1, 1.1), "USD_JPY": _hours(2, 110.0), "US500": _hours(3, 3200.0, 0.002)}
+        days = [d for d in (DATA_FROM + timedelta(k) for k in range((DATA_TO - DATA_FROM).days + 1))
+                if d.weekday() < 5 and d not in exchange_holidays("XNYS", d.year)]          # the S&P's sessions
+        rng = np.random.default_rng(4)
+        self.spx = dict(zip(days, 3200.0 * np.exp(np.cumsum(rng.standard_normal(len(days)) * 0.01))))
+        self.y7 = dict(zip(days, 1.5 + np.cumsum(rng.standard_normal(len(days)) * 0.03)))
+
+    def minute_horizon(self, names, today):
+        return min(today - timedelta(days=1), self.data_end)
+
+    tick_horizon = minute_horizon
+
+    def through(self, sid):
+        return self.data_end - timedelta(days=1)
+
+    def hourly(self, name, through):
+        h, cut = self.h[name], int(datetime.combine(through + timedelta(days=1), time(0), timezone.utc).timestamp())
+        k = h.start < cut
+        return Hourly(name, h.start[k], h.mid_open[k], h.mid_close[k], h.spread_open[k], h.traded[k])
+
+    def rates(self, through, a, b):
+        pts = [(DATA_FROM + timedelta(days=k - 5), 1.0) for k in range((through - DATA_FROM).days + 6)]
+        return RateTable({c: pts for c in ("USD", "EUR", "JPY")}, a, {})
+
+    def closes(self, sid, through):
+        return {d: v for d, v in (self.spx if sid == "spx_yahoo" else self.y7).items() if d <= through}
+
+    def holidays_jp(self):
+        return frozenset()
+
+
+def _same_prefix(short, long) -> None:
+    assert short.dates and short.horizon < long.horizon
+    got = dict(zip(long.dates, long.net))
+    assert all(d in got and got[d] == v for d, v in zip(short.dates, short.net))     # exact: no look-ahead
+    assert all(d <= short.horizon for d in short.dates)
+
+
+def test_the_rsim_book_is_causal_flat_before_its_start_and_settled_only_through_real_fills(shipped_config) -> None:
+    book, start = rsim_book(rules.d1, ("EUR_USD", "USD_JPY"), DATA_FROM, idm=1.5, buffer=0.1), date(2021, 3, 1)
+    long = book(FakeStore(DATA_TO), shipped_config, start, DATA_TO + timedelta(days=1))
+    for cut in (date(2021, 6, 15), date(2021, 9, 3), date(2021, 11, 26)):
+        _same_prefix(book(FakeStore(cut), shipped_config, start, cut + timedelta(days=1)), long)
+    assert long.dates[0] >= start and long.net[0] <= 0.0 and np.any(long.net != 0)  # day one pays its entry only
+    short = book(FakeStore(date(2021, 9, 3)), shipped_config, start, date(2021, 9, 4))
+    assert short.horizon == date(2021, 9, 2)                      # decided at the rates' horizon, filled on the cut day
+    assert book(FakeStore(date(2021, 9, 4)), shipped_config, start, date(2021, 9, 5)).horizon == date(2021, 9, 2)
+
+
+def test_the_close_book_is_causal_and_reads_only_the_published_calendar_ahead(shipped_config) -> None:
+    book, start = close_book("US500", rebal_position, DATA_FROM), date(2021, 2, 1)
+    long = book(FakeStore(DATA_TO), shipped_config, start, DATA_TO + timedelta(days=1))
+    for cut in (date(2021, 5, 25), date(2021, 11, 24), date(2021, 11, 29)):        # inside month-end weeks
+        _same_prefix(book(FakeStore(cut), shipped_config, start, cut + timedelta(days=1)), long)
+    assert long.dates[0] == start and long.net[0] <= 0.0
+
+
+def test_rebal_position_on_any_day_equals_the_full_grids_when_the_sessions_were_as_published() -> None:
+    s = FakeStore(DATA_TO)
+    days = [d for d in sorted(s.spx) if d.year == 2021]
+    full = signals(days, s.spx, s.y7)["position"]
+    for k in range(5, len(days) - 45, 7):
+        assert rebal_position(days[: k + 1], s.spx, s.y7)[k] == full[k]
+
+
+def test_the_nyse_sessions_ahead_skip_its_month_end_holidays() -> None:
+    nov = nyse_sessions_after(date(2026, 11, 20), months=1)
+    assert date(2026, 11, 26) not in nov and date(2026, 11, 27) in nov and nov[-1] == date(2026, 11, 30)
+    assert date(2026, 12, 25) not in nyse_sessions_after(date(2026, 12, 1), months=1)
+
+
+def _ticks(root, d: date, sec_bid_ask) -> None:
+    r = np.zeros(len(sec_bid_ask), TICK)
+    r["ms"] = [s * 1000 for s, _, _ in sec_bid_ask]
+    r["bid"], r["ask"] = [round(b * 1000) for _, b, _ in sec_bid_ask], [round(a * 1000) for _, _, a in sec_bid_ask]
+    f = root / "ticks" / "USD_JPY" / str(d.year) / f"{d.month - 1:02d}" / f"{d.day:02d}_ticks.bi5"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_bytes(lzma.compress(r.tobytes(), format=lzma.FORMAT_ALONE))
+
+
+def test_the_window_book_trades_only_tuesday_to_friday_gotobi_days_and_is_causal(tmp_path, shipped_config) -> None:
+    g = kill_script("r1_gotobi_kill_test")
+    for k in range(40):
+        d = date(2021, 3, 1) + timedelta(days=k)
+        _ticks(tmp_path, d, [(s, 110.0 + 0.01 * (d.day % 7) + s / 864000, 110.004 + 0.01 * (d.day % 7) + s / 864000)
+                             for s in range(0, 86400, 60)])
+    book = window_book("USD_JPY", (g.H1,), g.TIMES, g.ZONE, gotobi_tue_fri)
+    start, end = date(2021, 3, 2), date(2021, 4, 8)
+    long = book(FakeStore(end, tmp_path), shipped_config, start, end + timedelta(days=1))
+    traded = {d for d, v in zip(long.dates, long.net) if v != 0}
+    assert traded == {d for d in gotobi_tue_fri(start, end, frozenset())}
+    assert all(d.weekday() in (1, 2, 3, 4) for d in traded)
+    _same_prefix(book(FakeStore(date(2021, 3, 20), tmp_path), shipped_config, start, date(2021, 3, 21)), long)
+
+
+def test_the_registry_reproduces_the_registers_variant_hashes_and_the_shipped_universe(shipped_config) -> None:
+    assert [s.variant_hash for s in REGISTRY] == [
+        "bcd0a0d8951ae2095d56f944e38244aef46c202be2cd10bc5b6d290c6a3d8802",     # looks 000001, 000027
+        "f2cbbb5c5d2cbf3e9ae959be6cb5ad33abb208fc57eaaabb48b4acce9671ba6d",     # looks 000007, 000025
+        "bf98356cae9d1027b9f41fe0db1b00fc8b9cdae4c8eb02f1d67d525050e2c128"]     # looks 000015, 000021
+    assert list(FX13) == sorted(shipped_config.system.targets.universe)
+    for s in REGISTRY:
+        e = s.entry()
+        assert e["certifying_boundary"] <= e["forward_start"] and datetime.fromisoformat(e["first_exposure_utc"]).date() \
+            >= date(2026, 10, 4)
+    assert {s.sid for s in REGISTRY} == {"D1-FX13", "REBAL-v1a", "GOTOBI-v1a"}
+    assert all(s.drift(shipped_config, s.entry()) is None for s in REGISTRY)     # the looks' C8 costs, unchanged
+
+
+def test_the_bank_calendar_reaches_the_forward_years_and_its_2026_q4_gotobi_days_are_besshos() -> None:
+    hol = frozenset({date(2026, 10, 12), date(2026, 11, 3), date(2026, 11, 23)})     # the Cabinet Office's 2026 Q4
+    assert gotobi_tue_fri(date(2026, 10, 1), date(2026, 12, 31), hol) == [
+        date(2026, 10, 9), date(2026, 10, 15), date(2026, 10, 20), date(2026, 10, 23), date(2026, 10, 30),
+        date(2026, 11, 5), date(2026, 11, 10), date(2026, 11, 13), date(2026, 11, 20), date(2026, 11, 25),
+        date(2026, 12, 4), date(2026, 12, 10), date(2026, 12, 15), date(2026, 12, 18), date(2026, 12, 25),
+        date(2026, 12, 30)]                         # 10-05 and 11-30 are Mondays; 12-31 is the banks' closure
+    assert not is_bank_day(date(2027, 1, 2), frozenset())
+    with pytest.raises(CalendarRefused):
+        is_bank_day(date(2028, 1, 5), frozenset())
