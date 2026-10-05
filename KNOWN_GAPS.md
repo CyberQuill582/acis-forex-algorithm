@@ -146,6 +146,16 @@ batch SP12I-01/04/05. Accepted-risk: SP12E-05.
 - Proof: `test_ecb_fixing_is_1415_frankfurt_in_both_seasons`, `test_day_metrics_ecb_gap_and_weekend_ticks`, `test_a_clock_shifted_by_an_hour_is_flagged`, `test_triangle_flags_an_inconsistent_cross`, `test_a_price_disagreement_is_flagged`
 - Linked: [[GAP-P12D-13]], [[GAP-P12D-03]], [[GAP-SP12E-03]], tests/backtest/OOS_VALIDATION.md
 
+## GAP-P12D-161: edge research by two Fable agents (2026-10-05) — what to trade, and the factory that keeps finding and retiring edges
+- Severity: high · Likelihood: certain
+- Status: open (launched 2026-10-05 ~22:50 EAT on the owner's explicit request; both stopped at once on the weekly limit and were RESUMED 2026-10-06 01:05 by SendMessage, not relaunched)
+- Area: research only (no code); reports not yet written (due in archive/ as EDGE_RESEARCH_A_SUPPLY and EDGE_RESEARCH_B_FACTORY, dated 2026-10-05; link them here when they land)
+- Description: no family has earned on the 2024–25 holdout ([[GAP-P12D-158]]). The owner asked for two Fable agents, from different angles, on how to get an edge that works and a way to keep generating new ones as markets change. Brief pinned before launch: `archive/EDGE_RESEARCH_BRIEF_2026-10-05.md`. Agent A: the supply of edges (post-mortem, taxonomy, diversification arithmetic, venue changes, ≤ 8 candidates with pre-registration specs). Agent B: the edge factory (lifecycle, forward power math, adaptive allocation, decay tripwires, honest automated generation under §5.6).
+- Justification: research, not an A3 audit. Its proposals are LLM-origin (§5.6): history can only kill them, credit comes only forward. No real-data look is run by the agents; any test they want comes back as a pre-registration spec for the owner. They may use `acis-compute-1` (own dirs `/opt/acis/edge-A|B/`) and must not stop it: **the lead stops the VM when both finish.**
+- Launch note: the medium-effort role file `.claude/agents/acis-edge-researcher.md` (Fable, effort medium) was written before launch, but a new role file loads only in a new session, so both ran as `general-purpose` with `model: fable` at the session's effort, told to work at a medium budget.
+- Residual: open until both reports are read, triaged (claims verified, not taken at face value) and the owner rules on what to register.
+- Linked: [[GAP-P12D-158]], [[GAP-P12D-148]]
+
 ## GAP-P12D-160: ACIS-13 specifies a `VENUE_COSTS` log of each deal's commission and swap, and no code writes it
 - Severity: medium · Likelihood: certain
 - Status: fixed (2026-10-04, owner ruling "Both (Recommended)", before the cutover; found by the EXECUTION agent and verified by the lead: nothing wrote it, while specs/ACIS-13-VENUE_ADAPTERS.md §4.2, §7.3 step 7 and §9 require it)
