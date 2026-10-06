@@ -39,3 +39,7 @@ E3 is specified but not built. The forward record grades Dukascopy-simulated P&L
 3. **Cheap report-only builds after the cutover:** B2 (an evidence-weight line beside the luck odds) and B3 (per-entry CUSUM decay flags, report-only, so no spec change). Then B5 = E3 once real fills exist.
 4. **TREND-BREADTH:** hold (see above).
 5. **Admission card (B4) and the 2027-04 review as a kill review with a decision table (B8):** draft for the next spec version.
+
+## Outcome (2026-10-06, after the owner's rulings)
+- **POOL-5** registered in the forward record (line `000009`, first exposure 2026-10-06 18:00 UTC); its 1.29 claim was kept after the E2 kill-odds check (a true-0.3 pool is killed 0.6% of the time over 3 years).
+- **RATES** v1a 0.57 (t 1.94) and v1b 0.46 (t 1.65) on 2012–23, concentrated in 2018–23; **stage C killed v1a on 2024–25 (−0.99, t −1.39)**. No forward entry.
