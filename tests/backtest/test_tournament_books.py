@@ -4,6 +4,7 @@ horizon, REBAL's calendar term causal in returns, and the registry reproducing t
 
 from __future__ import annotations
 
+import json
 import lzma
 from datetime import date, datetime, time, timedelta, timezone
 
@@ -17,9 +18,10 @@ from tests.backtest.candle_store import Hourly
 from tests.backtest.exchange_days import holidays as exchange_holidays
 from tests.backtest.jp_days import CalendarRefused, is_bank_day
 from tests.backtest.rebal import signals
-from tests.backtest.tournament_books import (close_book, d1_forecast, gotobi_tue_fri, kill_script, nyse_sessions_after,
-                                             rebal_position, rsim_book, window_book)
-from tests.backtest.tournament_registry import FX13, REGISTRY
+from tests.backtest.look_claims import load_vector
+from tests.backtest.tournament_books import (ROOT, BookSeries, close_book, d1_forecast, gotobi_tue_fri, kill_script,
+                                             nyse_sessions_after, pool_book, rebal_position, rsim_book, window_book)
+from tests.backtest.tournament_registry import BY_ID, FX13, POOL_SD, REGISTRY
 
 DATA_FROM, DATA_TO = date(2020, 1, 1), date(2021, 12, 31)
 
@@ -163,3 +165,40 @@ def test_the_bank_calendar_reaches_the_forward_years_and_its_2026_q4_gotobi_days
     assert not is_bank_day(date(2027, 1, 2), frozenset())
     with pytest.raises(CalendarRefused):
         is_bank_day(date(2028, 1, 5), frozenset())
+
+
+def test_the_pool_averages_its_scaled_components_flat_where_one_has_no_row_and_settles_through_the_earliest() -> None:
+    d = [date(2026, 10, 7) + timedelta(days=k) for k in range(3)]
+    a = lambda store, cfg, fs, today: BookSeries(tuple(d), np.array([0.01, 0.02, 0.03]), d[2])   # noqa: E731
+    b = lambda store, cfg, fs, today: BookSeries((d[1],), np.array([-0.04]), d[1])               # noqa: E731
+    s = pool_book(((a, 2.0), (b, 0.5)))(None, None, d[0], d[2])
+    assert s.dates == (d[0], d[1]) and s.horizon == d[1]               # b has settled only through d[1]
+    assert np.allclose(s.net, [2.0 * 0.01 / 2, (2.0 * 0.02 + 0.5 * -0.04) / 2])
+
+
+def test_the_pool_declares_its_components_development_numbers_before_its_first_exposure(shipped_config) -> None:
+    pool = BY_ID["POOL-5"]
+    e = pool.entry()
+    assert set(e["params"]["components"]) == set(POOL_SD) and "FXVALUE-ppp" not in POOL_SD
+    assert all(e["params"]["components"][k] == BY_ID[k].entry()["spec_hash"] for k in POOL_SD)
+    assert e["first_exposure_utc"] == "2026-10-06T18:00:00+00:00" and e["certifying_boundary"] == "2026-10-04"
+    assert pool.drift(shipped_config, e) is None
+    looks = ROOT / "data" / "validation" / "looks"
+    outcomes = {"D1-FX13": "000002", "REBAL-v1a": "000009", "GOTOBI-v1a": "000017", "HALLOWEEN-v1": "000054",
+                "HEDGEP-gold": "000046"}
+    if not (looks / "vectors").exists():
+        pytest.skip("the look register's vectors are git-ignored data")
+    vec = {}
+    for sid, lid in outcomes.items():
+        o = json.loads((looks / f"{lid}.json").read_text(encoding="utf-8"))
+        ds, rs = load_vector(looks, o["outcome"]["daily_vector"] if "outcome" in o else o["daily_vector"])
+        vec[sid] = dict(zip(ds, rs))
+    lo, hi = max(min(v) for v in vec.values()), min(max(v) for v in vec.values())
+    days = sorted({x for v in vec.values() for x in v if lo <= x <= hi})
+    sd = {s: float(np.std([v.get(x, 0.0) for x in days])) for s, v in vec.items()}
+    assert all(abs(sd[s] - POOL_SD[s]) < 5e-8 for s in POOL_SD)
+    unit = 0.20 / np.sqrt(252)
+    pool_r = np.mean([[vec[s].get(x, 0.0) * unit / POOL_SD[s] for x in days] for s in POOL_SD], axis=0)
+    assert abs(pool_r.std() - pool.sigma_daily) < 5e-7
+    assert abs(pool_r.mean() / pool_r.std() * np.sqrt(252) - pool.sharpe_dev) < 5e-4
+    assert abs(-pool_r.min() / pool_r.std() - pool.history_worst_sigmas) < 5e-3

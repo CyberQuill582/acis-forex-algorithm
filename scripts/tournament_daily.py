@@ -39,7 +39,7 @@ from tests.backtest.forward_store import StoreGap  # noqa: E402
 from tests.backtest.jp_days import CalendarRefused  # noqa: E402
 from tests.backtest.look_claims import canonical_hash  # noqa: E402
 from tests.backtest.rsim_real import SourceRefused  # noqa: E402
-from tests.backtest.tournament_registry import BY_ID, REGISTRY  # noqa: E402
+from tests.backtest.tournament_registry import BY_ID, ENTRIES  # noqa: E402
 from tests.backtest.tournament_rule import PARAMS, rule_line  # noqa: E402
 
 TOL = 1e-12
@@ -51,7 +51,7 @@ def register(rec: ForwardRecord, now: datetime) -> list[str]:
     if st.rule is None or (st.rule["rule_hash"] != canonical_hash(PARAMS) and not st.any_days):
         rec.append(rule_line(), now)
         out.append("rule")
-    for s in REGISTRY:
+    for s in ENTRIES:
         if s.sid not in rec.state().entries:
             try:
                 rec.append(s.entry(), now)

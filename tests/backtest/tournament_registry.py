@@ -11,6 +11,9 @@ Mental model:
     development look's stored vector. sharpe_dev is that look's net annual Sharpe (E2's claim).
   * forward_start is the first trading day after registration; `first_exposure_utc` (the first instant
     the book could hold risk) must come after the entry is written, and the record refuses it otherwise.
+  * POOLS (GAP-P12D-161, owner ruling 2026-10-06): the equal-risk combined book is one more entry over
+    registered books, no look of its own (so it is outside the register's variant-hash pin), its weights
+    the development looks' daily sd, declared before its first exposure; a component change is RULE DRIFT.
   * Adding a survivor is one `Strategy(...)` built on a `tournament_books` shape: FACTORY's three (each
     present once its kill script is on the branch) and, the same way, the owner's `hypotheses/` rules with
     `Origin("human")` (no boundary). FXHEDGE was killed and AUCTION not forwarded, so they are absent.
@@ -27,8 +30,8 @@ from zoneinfo import ZoneInfo
 from core.signals import rules
 from tests.backtest.look_claims import Claim, Origin, canonical_hash, cost_map_hash
 from tests.backtest.look_declarations import Declaration
-from tests.backtest.tournament_books import (close_book, d1_forecast, gotobi_tue_fri, kill_script, rebal_position,
-                                             rsim_book, window_book)
+from tests.backtest.tournament_books import (close_book, d1_forecast, gotobi_tue_fri, kill_script, pool_book,
+                                             rebal_position, rsim_book, window_book)
 import tests.backtest.tournament_factory as tf
 from tests.backtest.tournament_rule import PARAMS
 
@@ -164,5 +167,33 @@ def _factory() -> tuple[Strategy, ...]:
     return tuple(out)
 
 
+POOL_START = date(2026, 10, 7)                     # the first trading day after the owner's 2026-10-06 ruling
+POOL_SD = {"D1-FX13": 0.0104699, "REBAL-v1a": 0.0047064, "GOTOBI-v1a": 0.0011293, "HALLOWEEN-v1": 0.0420577,
+           "HEDGEP-gold": 0.0112712}                # each development vector's daily sd, NY weekdays 2012-12-31..2023-12-29
+
+
+def _pool(registry: tuple[Strategy, ...]) -> Strategy:
+    """POOL-5: D1 + REBAL + GOTOBI + HALLOWEEN + HEDGEP at equal risk (FXVALUE left out by the owner's ruling).
+    Its development numbers are the same combination of those five looks' vectors: a selected set's history,
+    so biased upward; all three components graded on 2024-25 earned <= 0 there."""
+    parts = tuple(s for s in registry if s.sid in POOL_SD)
+    unit = 0.20 / math.sqrt(252)
+    names = tuple(sorted({n for s in parts for n in s.instruments}))
+    return Strategy("POOL-5", "pool_eqrisk_v1", "POOL-5", tuple(sorted({k for s in parts for k in s.kill_looks})),
+                    "pool_daily", names, "mean_i(net_i * unit / sd_i), unit = 0.20/sqrt(252); flat where a component "
+                    "has no row; settled through the earliest component horizon",
+                    Origin("llm", model_id="claude-opus-5-5", model_cutoff="2026-06-30", proposed="2026-10-04",
+                           exposure="repository"),
+                    POOL_START, (time(3, 0), "Asia/Tokyo"), 0.0056874, 1.2917, POOL_COST_MAP,
+                    {"components": {s.sid: s.entry()["spec_hash"] for s in parts}, "sd": POOL_SD, "unit": unit,
+                     "weights": "equal risk, fixed; never re-composed (a new composition is a new entry)",
+                     "caveats": "history Sharpe 1.29 is the five selected survivors' 2013-2023; GOTOBI dominates it "
+                                "and faded; D1, REBAL and GOTOBI each earned <= 0 on the 2024-25 holdout"},
+                    pool_book(tuple((s.book, unit / POOL_SD[s.sid]) for s in parts)), history_worst_sigmas=8.43)
+
+
+POOL_COST_MAP = "e403f60154c2dedcb5791cfd1b417571281b29e6fcad0d7aba650cf828ead9f8"   # the union's C8 costs today
 REGISTRY: tuple[Strategy, ...] = (_d1(), _rebal(), _gotobi(), *_factory())
-BY_ID = {s.sid: s for s in REGISTRY}
+POOLS: tuple[Strategy, ...] = (_pool(REGISTRY),)
+ENTRIES: tuple[Strategy, ...] = REGISTRY + POOLS
+BY_ID = {s.sid: s for s in ENTRIES}

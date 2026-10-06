@@ -4,7 +4,8 @@ by the SAME simulator and constants as its kill-only looks, from the frozen inpu
 Mental model:
   * Three shapes, so a new family is one registry entry: `rsim_book` (daily target positions on the 17:00
     New York clock: RSIM), `close_book` (a position set at each US cash close: event_daily), `window_book`
-    (fixed local-time windows priced from ticks: event_window). Each returns a `BookSeries` of NY-weekday
+    (fixed local-time windows priced from ticks: event_window). A fourth, `pool_book`, is a fixed equal-risk
+    average of registered books (GAP-P12D-161), settled through its earliest component. Each returns a `BookSeries` of NY-weekday
     marks from the forward start through its SETTLED horizon, flat (and costless) before the forward start.
   * SETTLED: every input of every returned day is frozen. RSIM's day t ends at the fill after decision t,
     so it counts once every instrument's next slot hour is in the data; a close book is settled through
@@ -164,4 +165,21 @@ def window_book(instrument: str, legs: tuple, times: dict, zone: str, day_rule: 
         if res is None:
             return BookSeries((), np.zeros(0), end, {})
         return _from(res.days, res.daily, forward_start, end, {"traded": len(res.events), "skipped": len(res.skipped)})
+    return book
+
+
+def pool_book(parts: tuple[tuple[Callable, float], ...]):
+    """Equal risk (GAP-P12D-161): the mean over the components of each one's net times its declared scale (the
+    unit over its development look's daily sd), fixed before the first exposure and never re-weighted. A day a
+    component has no row is flat for it; the pool is settled only through its earliest component's horizon."""
+    def book(store: InputStore, cfg, forward_start: date, today: date) -> BookSeries:
+        series = [(b(store, cfg, forward_start, today), w) for b, w in parts]
+        horizon = min(s.horizon for s, _ in series)
+        days = sorted({d for s, _ in series for d in s.dates if d <= horizon})
+        at, net = {d: k for k, d in enumerate(days)}, np.zeros(len(days))
+        for s, w in series:
+            for d, v in zip(s.dates, s.net):
+                if d <= horizon:
+                    net[at[d]] += w * float(v) / len(series)
+        return BookSeries(tuple(days), net, horizon, {"components": len(series)})
     return book

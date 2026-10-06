@@ -64,7 +64,7 @@ class Store:
 def stubs(monkeypatch):
     vals = {START + timedelta(days=k): 0.001 * ((k % 3) - 1) for k in range(30) if (START + timedelta(days=k)).weekday() < 5}
     s = {"A": Stub("A", dict(vals)), "B": Stub("B", dict(vals))}
-    monkeypatch.setattr(daily, "REGISTRY", tuple(s.values()))
+    monkeypatch.setattr(daily, "ENTRIES", tuple(s.values()))
     monkeypatch.setattr(daily, "BY_ID", s)
     return s
 
@@ -74,7 +74,7 @@ def test_registration_writes_the_rule_and_each_entry_once_and_never_in_the_past(
     assert daily.register(rec, T0) == ["rule", "A", "B"]
     assert daily.register(rec, T0) == []
     late = Stub("C", {}, start=date(2026, 10, 3))
-    daily.REGISTRY = (*daily.REGISTRY, late)
+    daily.ENTRIES = (*daily.ENTRIES, late)
     assert daily.register(rec, T0)[0].startswith("C: REFUSED")
     assert set(rec.state().entries) == {"A", "B"}
 
