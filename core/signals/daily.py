@@ -29,7 +29,7 @@ from core.data.bars import Bar
 from core.data.fx_clock import rollover_utc
 
 STALE = timedelta(days=4)
-DAY = timedelta(days=1)
+DAY = timedelta(hours=4)
 SLOTS = {"fx": ("America/New_York", 8), "metal": ("America/New_York", 8), "energy": ("America/New_York", 10),
          "US500": ("America/New_York", 10), "US30": ("America/New_York", 10), "US100": ("America/New_York", 10),
          "UK100": ("Europe/London", 9), "EU50": ("Europe/Berlin", 9), "GER40": ("Europe/Berlin", 9),

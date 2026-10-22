@@ -106,6 +106,8 @@ def d1(price: Sequence[float], *, speed_scale: float = 1.0, ratio: float = 4.0,
     (4) and the normaliser's span (35); the defaults ARE the registered family."""
     speeds = [ewmac(price, f * speed_scale, f * speed_scale * ratio, scalar=k, vol_days=vol_days)
               for (f, _), k in EWMAC_SCALARS.items()]
+    out_breakout = breakout(price, 40)
+    speeds.append(out_breakout)
     out = []
     for xs in zip(*speeds):
         out.append(NAN if any(x != x for x in xs)
