@@ -71,11 +71,9 @@ def target_orders(gov, *, limits, rules, clusters: Mapping, instrument: str, hel
     if target == current:
         return GateResult((), "hold")
     if current and target and (target > 0) == (current > 0):
-        if abs(target) > abs(current):
-            logger.event("TARGET_ADD_REFUSED", instrument=instrument, held=str(current), target=str(target))
-            return GateResult((), "add_unsupported")
-        return GateResult((close_leg(held, abs(current) - abs(target), mark, now, "target_reduce"),), "reduce")
-    leg = "target_flat" if not target else "target_flip"
+        if abs(target) < abs(current):
+            return GateResult((close_leg(held, abs(current) - abs(target), mark, now, "target_reduce"),), "reduce")
+    leg = "target_flat" if not target else ("target_add" if (current and (target > 0) == (current > 0)) else "target_flip")
     closes = (close_leg(held, held.size_units, mark, now, leg),) if held else ()
     if not target:
         return GateResult(closes, "flat")

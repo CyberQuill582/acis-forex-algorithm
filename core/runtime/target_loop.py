@@ -213,8 +213,8 @@ class TargetLoop:
             return
         lots, f = self._lots_of(instrument), d.forecast
         target = d.target if lots.cap is None or abs(d.target) <= lots.cap else lots.cap.copy_sign(d.target)
-        flip = held is not None and target and (target > 0) != (held.direction > 0)
-        closing = (close_leg(held, held.size_units, e.marks()[instrument], now, "target_flip"),) if flip else ()
+        reopen = held is not None and target and ((target > 0) != (held.direction > 0) or abs(target) > held.size_units)
+        closing = (close_leg(held, held.size_units, e.marks()[instrument], now, "target_reopen"),) if reopen else ()
         result = self._gate(instrument=instrument, held=held, target=target, mark=e.marks()[instrument],
                             atr=d.atr, step=lots.step, minimum=lots.minimum, portfolio=e.portfolio(closing),
                             entry_refusal=e.feed_refusal(instrument, now), marks=e.marks(), now=now, family=self.family,

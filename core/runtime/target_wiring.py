@@ -49,7 +49,7 @@ def build_targets(cfg, *, root: Path, venue, calendars, prov, governor, risk, ex
         spec = venue.attached.specs.get(instrument)
         if spec is None:
             return None
-        capped = mode.mode in ("paper", "practice")
+        capped = mode.mode == "paper"
         return Lots(spec.step_units, spec.min_units, spec.min_units if capped else None)
 
     async def fetch(instrument, start, end):
